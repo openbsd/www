@@ -1,0 +1,505 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Authpf: Gebruiker-Shell voor Authentiserende Gateways</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+</head>
+
+<!--
+Copyright (c) 2003-2005 Joel Knight <enabled@myrealbox.com>
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<a href="../../../nl/index.html">
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif" border="0">
+</a>
+<p>
+[<a href="ftp.html">Vorige: Problemen met FTP</a>]
+[<a href="index.html">Inhoud</a>]
+[<a href="example1.html">Volgende: Voorbeeld: Firewall voor Thuis of
+Klein Kantoor</a>]
+
+<h1><font color="#e00000">PF: Authpf: Gebruiker-Shell voor Authentiserende
+Gateways</font></h1>
+
+<hr>
+
+<h3>Inhoudstafel</h3>
+<ul>
+<li><a href="#intro">Inleiding</a>
+<li><a href="#config">Configuratie</a>
+	<ul>
+	<li><a href="#enable">Authpf inschakelen</a>
+	<li><a href="#linkmain">Authpf in de hoofdregelset koppelen</a>
+	<li><a href="#loadrules">Geladen regels configureren</a>
+	<li><a href="#acl">Access Control Lijsten</a>
+	<li><a href="#message">Een login-boodschap vertonen</a>
+	<li><a href="#shell">Authpf als shell van een gebruiker toekennen</a>
+	</ul>
+<li><a href="#loginclass">Een authpf login-klasse aanmaken</a>
+<li><a href="#wholog">Zien wie er ingelogd is</a>
+<li><a href="#example">Voorbeeld</a>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Inleiding</h2>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=authpf&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>Authpf(8)</a> is een gebruiker-shell voor authentiserende gateways. Een
+authentiserende gateway is net zoals een gewone netwerk gateway (ook bekend
+als een router) behalve dat gebruikers zich eerst moeten authentiseren voor
+hij verkeer zal toelaten om er doorheen te gaan. Wanneer de shell van een
+gebruiker ingesteld is op <tt>/usr/sbin/authpf</tt> (dus in plaats van de
+shell van een gebruiker in te stellen op
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ksh&amp;sektion=1&amp;manpath=OpenBSD+3.6"
+>ksh(1)</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=csh&amp;sektion=1&amp;manpath=OpenBSD+3.6"
+>csh(1)</a>, enz.) en de gebruiker logt in met SSH, zal authpf de nodige
+veranderingen uitvoeren aan de actieve
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+3.6"
+>pf(4)</a> regelset zodat het verkeer van de gebruiker doorheen de filter
+gelaten wordt en/of vertaald wordt met Network Address Translation of
+omleiding. Zodra de gebruiker uitlogt of zijn verbinding verbreekt, zal
+authpf regels verwijderen die voor de gebruiker geladen werden en "stateful"
+verbindingen die de gebruiker open heeft staan, afsluiten. Hierdoor bestaat
+de mogelijkheid van de gebruiker om verkeer doorheen de gateway te laten
+enkel terwijl de gebruiker zijn SSH sessie open houdt.
+
+<p>
+Authpf laadt de filter/NAT regels van een gebruiker in een uniek
+<a href="anchors.html">ankerpunt</a>.
+Het anker wordt benoemd door de UNIX gebruikersnaam van de gebruiker en het
+authpf proces-id te combineren in het formaat "<tt>gebruikersnaam(PID)</tt>".
+Het anker van elke gebruiker wordt opgeslagen in het <tt>authpf</tt> anker
+dat op zijn beurt geankerd wordt in de hoofdregelset.
+Het "fully qualified anchor path" wordt dan:
+
+<blockquote>
+<tt>
+<i>main_ruleset</i>/authpf/<i>username</i>(<i>PID</i>)
+</tt>
+</blockquote>
+
+<p>
+De regels die authpf laadt, kunnen per gebruiker of globaal
+geconfigureerd worden.
+
+<p>
+Voorbeeldtoepassingen van authpf omvatten:
+<ul>
+<li>Vereisen dat gebruikers zich authentiseren alvorens Internet toegang
+toe te laten.
+<li>Bepaalde gebruikers -- zoals beheerders -- toegang verlenen tot beperkte
+delen van het netwerk.
+<li>Alleen gekende gebruikers toelaten om de rest van het netwerk of het
+Internet te benaderen vanaf een draadloos netwerksegment.
+<li>Werknemers van thuis, onderweg, enz. toelaten om middelen op het
+bedrijfsnetwerk te benaderen. Gebruikers buiten het kantoor kunnen niet
+alleen toegang tot het bedrijfsnetwerk openen, maar ook omgeleid worden naar
+bepaalde middelen (bv. hun eigen desktop) op basis van de gebruikersnaam
+waarmee ze zich authentiseren.
+<li>Op plaatsen zoals een bibliotheek of andere plaatsen met publieke
+Internet terminals, kan PF geconfigueerd worden om beperkte Internettoegang
+toe te laten aan gastgebruikers. Authpf kan dan gebruikt worden om
+geregistreerde gebruikers volledige toegang te verlenen.
+</ul>
+
+<p>
+Authpf logt de gebruikersnaam en het IP adres van elke gebruiker die zich
+met succes authentiseert, evenals de start- en stoptijden van hun loginsessie
+via
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=syslogd&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>syslogd(8)</a>. Door deze informatie te gebruiken, kan een beheerder
+bepalen wie wanneer ingelogd was en ook gebruikers verantwoordelijk maken
+voor hun netwerkverkeer.
+
+<a name="config"></a>
+<h2>Configuratie</h2>
+De basisstappen nodig om authpf te configureren worden hier opgesomd.
+Verwijs voor een volledige beschrijving van authpf configuratie alstublieft
+naar de
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=authpf&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>authpf man pagina</a>.
+
+<a name="enable"></a>
+<h3>Authpf inschakelen</h3>
+
+<p>
+Authpf zal niet draaien als het configuratiebestand
+<tt>/etc/authpf/authpf.conf</tt> niet aanwezig is.
+Zelfs als het bestand leeg is (grootte nul), moet het nog steeds aanwezig
+zijn, anders zal authpf zich onmiddellijk beëindigen nadat een gebruiker zich
+met succes heeft aangemeld.
+
+<p>
+De volgende configuratie-opdrachten kunnen in <tt>authpf.conf</tt>
+geplaatst worden:
+
+<ul>
+<li><tt>anchor=<i>name</i></tt> - Gebruik de gespecificeerde
+<a href="anchors.html">anker</a>naam in plaats van "authpf".
+<li><tt>table=<i>name</i></tt> - Gebruik te gespecificeerde 
+<a href="tables.html">tabel</a>naam in plaats van "authpf_users".
+</ul>
+
+<a name="linkmain"></a>
+<h3>Authpf in de hoofdregelset koppelen</h3>
+Authpf wordt in de hoofdregelset gekoppeld door <tt>anchor</tt> regels te
+gebruiken:
+<blockquote>
+<tt>
+nat-anchor "authpf/*"<br>
+rdr-anchor "authpf/*"<br>
+binat-anchor "authpf/*"<br>
+anchor "authpf/*"<br>
+</tt>
+</blockquote>
+
+<p>
+Overal waar <tt>anchor</tt> regels geplaatst worden in de regelset, is waar
+PF van de hoofregelset zal aftakken om de authpf regels te evalueren.
+Het is niet nodig dat alle vier <tt>anchor</tt> regels aanwezig zijn;
+bijvoorbeeld, als authpf niet ingesteld is om <tt>nat</tt> regels te laden,
+kan de <tt>nat-anchor</tt> regel overgeslagen worden.
+
+<a name="loadrules"></a>
+<h3>Geladen regels configureren</h3>
+Authpf laadt zijn regels uit één van deze twee bestanden:
+<ul>
+<li><tt>/etc/authpf/users/$USER/authpf.rules</tt>
+<li><tt>/etc/authpf/authpf.rules</tt>
+</ul>
+
+<p>
+Het eerste bestand bevat regels die alleen geladen worden wanneer de gebruiker
+<tt>$USER</tt> (dit wordt vervangen door de gebruikersnaam van de gebruiker)
+inlogt. De per-gebruiker regelconfiguratie wordt gebruikt wanneer een
+specifieke gebruiker -- zoals een beheerder -- een set van regels vereist
+die verschilt van de standaard set. Het tweede bestand bevat de standaard
+regels die geladen worden voor gelijk welke gebruiker die geen eigen
+<tt>authpf.rules</tt> bestand heeft. Als het gebruiker-specifieke bestand
+bestaat, zal het het standaard bestand opheffen. Ten minste één van deze
+bestanden moet bestaan, anders zal authpf niet draaien.
+
+<p>
+Filter- en vertalingsregels hebben dezelfde syntaxis als in gelijk welke
+andere PF regelset, met één uitzondering: Authpf laat het gebruik toe van
+twee voorgedefinieerde macro's:
+<ul>
+<li><tt>$user_ip</tt> - het IP adres van de ingelogde gebruiker
+<li><tt>$user_id</tt> - de gebruikersnaam van de ingelogde gebruiker
+</ul>
+
+<p>
+Het is aanbevolen praktijk om de <tt>$user_ip</tt> macro alleen te gebruiken
+om verkeer doorheen de gateway te laten vanaf de computer van de
+geauthentiseerde gebruiker.
+
+<p>
+Bovenop de <tt>$user_ip</tt> macro zal authpf gebruik maken van de
+<tt>authpf_users</tt> tabel (als ze bestaat) om de IP adressen van alle
+geauthentiseerde gebruikers op te slaan.
+Zorg ervoor de tabel te definiëren alvorens ze te gebruiken:
+
+<blockquote>
+<tt>
+table &lt;authpf_users&gt; persist<br>
+pass in on $ext_if proto tcp from &lt;authpf_users&gt; \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;to port  smtp flags S/SA keep state
+</tt>
+</blockquote>
+
+<p>
+Deze tabel wordt best alleen gebruikt in regels die bedoeld zijn om van
+toepassing te zijn op alle geauthentiseerde gebruikers.
+
+<a name="acl"></a>
+<h3>Access Control Lijsten</h3>
+Gebruikers kunnen verhinderd worden authpf te gebruiken door een bestand
+te maken in de <tt>/etc/authpf/banned/</tt> directory en het te noemen naar
+de gebruikersnaam die toegang geweigerd moet worden. De inhoud van het
+bestand zal aan de gebruiker getoond worden alvorens zijn verbinding te
+verbreken. Dit biedt een handige manier om gebruikers te informeren over
+waarom hun geen toegang verleend wordt en tot wie ze zich moeten wenden om
+hun toegang te laten herstellen.
+
+<p>
+Omgekeerd is het ook mogelijk om alleen aan bepaalde gebruikers toegang te
+verlenen door gebruikersnamen te plaatsen in het
+<tt>/etc/authpf/authpf.allow</tt> bestand. Als het
+<tt>/etc/authpf/authpf.allow</tt> bestand niet bestaat of "<tt>*</tt>" in
+het bestand gezet wordt, dan zal authpf toegang verlenen voor gelijk welke
+gebruiker die met succes inlogt via SSH, zolang ze niet expliciet verbannen
+zijn.
+
+<p>
+Als authpf niet kan bepalen of een gebruiker toegelaten of verboden is,
+zal het een korte boodschap tonen en vervolgens de verbinding met de
+gebruiker verbreken. Een entry in <tt>/etc/authpf/banned/</tt> heft altijd
+een entry in <tt>/etc/authpf/authpf.allow</tt> op.
+
+<a name="message"></a>
+<h3>Een login-boodschap vertonen</h3>
+
+<p>
+Telkens wanneer een gebruiker zich met succes aanmeldt bij authpf, zal een
+begroeting getoond worden die aangeeft dat de gebruiker geauthentiseerd is.
+
+<blockquote>
+<tt>
+Hello charlie. You are authenticated from host "64.59.56.140"
+</tt>
+</blockquote>
+
+<p>
+Deze boodschap kan aangevuld worden met een aangepaste boodschap in
+<tt>/etc/authpf/authpf.message</tt>.
+De inhoud van dit bestand zal getoond worden na de standaard welkomboodschap.
+
+<a name="shell"></a>
+<h3>Authpf als shell van een gebruiker toekennen</h3>
+Opdat authpf zou werken, moet het toegekend worden als de login-shell van
+de gebruiker. Wanneer de gebruiker zich met succes authentiseert bij
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sshd&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>sshd(8)</a>, zal authpf uitgevoerd worden als de gebruiker-shell. Het zal
+dan controleren of de gebruiker toegelaten is om authpf te gebruiken, de
+regels uit het gepaste bestand laden, enz.
+
+<p>
+Er zijn enkele manieren om authpf als gebruiker-shell toe te kennen:
+<ol>
+<li>Manueel voor elke gebruiker met
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=chsh&amp;sektion=1&amp;manpath=OpenBSD+3.6"
+>chsh(1)</a>, 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vipw&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>vipw(8)</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=useradd&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>useradd(8)</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=usermod&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>usermod(8)</a>, enz.
+<li>Door gebruikers toe te kennen aan een loginklasse en de <tt>shell</tt>
+optie van de klasse te veranderen in
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=login.conf&amp;sektion=5&amp;manpath=OpenBSD+3.6"
+><tt>/etc/login.conf</tt></a>.
+</ol>
+
+<a name="loginclass"></a>
+<h2>Een authpf loginklasse aanmaken</h2>
+Bij gebruik van authpf op een systeem dat reguliere gebruikersaccounts en
+authpf gebruikersaccounts heeft, kan het voordelig zijn om een afzonderlijke
+loginklasse aan te maken voor de authpf-gebruikers.
+Dit laat toe dat veranderingen aan die accounts op globale basis kunnen
+gedaan worden en laat ook toe dat een verschillend beleid ingericht wordt
+op reguliere accounts en authpf accounts.
+Enkele voorbeelden van in te stellen beleid:
+
+<ul>
+<li><b>shell</b> - Specificeer de login-shell van een gebruiker.
+Dit kan gebruikt worden om de shell van een gebruiker te dwingen tot authpf,
+ongeacht de entry in de
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=passwd&amp;sektion=5"
+>passwd(5)</a> databank.
+<li><b>welcome</b> - Specificeer welk
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=motd&amp;sektion=5"
+>motd(5)</a> bestand te vertonen wanneer een gebruiker inlogt.
+Dit is nuttig om boodschappen te tonen die alleen relevant zijn voor
+authpf gebruikers.
+</ul>
+
+<p>
+Loginklassen worden aangemaakt in het
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=login.conf&amp;sektion=5"
+>login.conf(5)</a> bestand.
+Een voorbeeld-loginklasse voor authpf-gebruikers:
+
+<blockquote>
+<tt>
+authpf:\<br>
+&nbsp;&nbsp;&nbsp;&nbsp;:welcome=/etc/motd.authpf:\<br>
+&nbsp;&nbsp;&nbsp;&nbsp;:shell=/usr/sbin/authpf:\<br>
+&nbsp;&nbsp;&nbsp;&nbsp;:tc=default:
+</tt>
+</blockquote>
+
+<p>
+Gebruikers worden toegekend aan een loginklasse door het <tt>class</tt> veld
+van de passwd(5) databank entry van de gebruiker.
+Eén manier om dit te doen is met het
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=chsh&amp;sektion=1"
+>chsh(1)</a> commando.
+
+
+<a name="wholog"></a>
+<h2>Zien wie er ingelogd is</h2>
+Zodra een gebruiker met succes is ingelogd en authpf de PF regels heeft
+aangepast, verandert authpf de titel van zijn proces zodat het de
+gebruikersnaam en het IP adres van de ingelogde gebruiker aangeeft:
+<pre>
+    # ps -ax | grep authpf
+    23664 p0  Is+     0:00.11 -authpf: charlie@192.168.1.3 (authpf)
+</pre>
+
+<p>
+Hier is de gebruiker <tt>charlie</tt> ingelogd vanaf de machine
+192.168.1.3.  Door een SIGTERM signaal te sturen naar het authpf proces, kan
+de gebruiker gedwongen uitgelogd worden. Authpf zal ook regels verwijderen
+die voor de gebruiker geladen werden en gelijk welke "stateful" verbindingen
+sluiten die de gebruiker geopend had.
+<pre>
+    # kill -TERM 23664
+</pre>
+
+<a name="example"></a>
+<h2>Voorbeeld</h2>
+OpenBSD wordt hier gebruikt op een OpenBSD gateway om gebruikers te
+authentiseren op een draadloos netwerk dat onderdeel is van een groter
+campusnetwerk. Zodra een gebruiker zich geauthentiseerd heeft, in de
+veronderstelling dat ze niet op de "banned" lijst staan, zullen ze
+toegestaan worden om naar buiten te SSH'en en op het web te surfen
+(inclusief beveiligde websites) bovenop toegang tot gelijk welke van de
+campus DNS servers.
+
+<p>
+Het <tt>/etc/authpf/authpf.rules</tt> bestand bevat de volgende regels:<br>
+<br>
+
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+wifi_if = "wi0"
+
+pass in quick on $wifi_if proto tcp from $user_ip to port { ssh, http, \
+   https } flags S/SA keep state
+</pre>
+</td></tr>
+</table>
+
+<p>
+De beheerder-gebruiker <tt>charlie</tt> moet toegang kunnen krijgen tot
+de campus SMTP en POP3 servers bovenop het web surfen en SSH gebruiken.
+De volgende regels zijn ingesteld in
+<tt>/etc/authpf/users/charlie/authpf.rules</tt>:<br>
+<br>
+
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+wifi_if = "wi0"
+smtp_server = "10.0.1.50"
+pop3_server = "10.0.1.51"
+
+pass in quick on $wifi_if proto tcp from $user_ip to $smtp_server \
+   port smtp flags S/SA keep state
+pass in quick on $wifi_if proto tcp from $user_ip to $pop3_server \
+   port pop3 flags S/SA keep state
+pass in quick on $wifi_if proto tcp from $user_ip to port { ssh, http, \
+   https } flags S/SA keep state
+</pre>
+</td></tr>
+</table>
+
+<p>
+De hoofdregelset -- die in <tt>/etc/pf.conf</tt> staat -- is als volgt
+ingesteld:<br>
+<br>
+
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+# macros
+wifi_if = "wi0"
+ext_if  = "fxp0"
+dns_servers = "{ 10.0.1.56, 10.0.2.56 }"
+
+table &lt;authpf_users&gt; persist
+
+scrub in all
+
+# filter
+block drop all
+
+pass out quick on $ext_if inet proto tcp from \
+   { $wifi_if:network, $ext_if } flags S/SA modulate state
+pass out quick on $ext_if inet proto { udp, icmp } from \
+   { $wifi_if:network, $ext_if } keep state
+
+pass in quick on $wifi_if inet proto tcp from $wifi_if:network to $wifi_if \
+   port ssh flags S/SA keep state
+
+pass in quick on $wifi_if inet proto { tcp, udp } from &lt;authpf_users&gt; \
+   to $dns_servers port domain keep state
+anchor "authpf/*" in on $wifi_if
+</pre>
+</td></tr>
+</table>
+
+<p>
+De regelset is heel eenvoudig en doet het volgende:
+<ul>
+<li>Blokkeer alles (standaard weigeren).
+<li>Laat uitgaand TCP, UDP en ICMP verkeer toe op de externe interface vanaf
+het draadloze netwerk en vanaf de gateway zelf.
+<li>Laat binnenkomend SSH verkeer door vanaf het draadloze netwerk bestemd
+voor de gateway zelf. Deze regel is nodig om gebruikers toe te laten om in
+te loggen.
+<li>Laat binnenkomende DNS aanvragen door vanaf alle geauthentiseerde authpf
+gebruikers naar de campus DNS servers.
+<li>Maak het ankerpunt "authpf" aan voor binnenkomend verkeer op de draadloze
+interface. 
+</ul>
+
+<p>
+De idee achter de hoofdregelset is om alles te blokkeren en een zo klein
+mogelijke hoeveelheid verkeer door te laten. Verkeer kan vrij naar buiten
+stromen op de externe interface maar wordt door het "standaard weigeren"
+beleid geblokkeerd om de draadloze interface binnen te dringen.
+Zodra een gebruiker zich authentiseert, wordt zijn verkeer toegelaten om
+binnen te komen op de draadloze interface en om vervolgens doorheen de gateway
+buiten te stromen naar de rest van het netwerk. Het <tt>quick</tt>
+sleutelwoord wordt steeds gebruikt zodat PF niet elke benoemde regelset
+moet evalueren wanneer een nieuwe verbinding doorheen de gateway gelaten
+wordt.
+
+<p>
+[<a href="ftp.html">Vorige: Problemen met FTP</a>]
+[<a href="index.html">Inhoud</a>]
+[<a href="example1.html">Volgende: Voorbeeld: Firewall voor Thuis of
+Klein Kantoor</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[terug]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+<!--
+Originally [OpenBSD: authpf.html,v 1.14 ]<br>
+$Translation: authpf.html,v 1.2 2005/03/06 15:54:33 smestdag Exp $<br>
+-->
+$OpenBSD: authpf.html,v 1.1 2005/03/09 19:27:55 jufi Exp $
+</small>
+
+</body>
+</html> 
