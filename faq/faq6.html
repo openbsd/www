@@ -38,6 +38,7 @@
 <li><a href= "#PPTP"  >6.8 - Setting up a PPTP connection in OpenBSD</a>
 <li><a href= "#Bridge">6.9 - Setting up a bridge with OpenBSD</a>
 <li><a href= "#PXE"   >6.10 - How do I boot using PXE?</a>
+<li><a href= "#CARP">6.11 - The Common Address Redundancy Protocol</a>
 </ul>
 
 <hr>
@@ -1462,6 +1463,252 @@ The <a name="faq4.html#bsd.rd">bsd.rd install kernel</a> will now boot.
 Yes, although with the tools currently in OpenBSD 3.5, PXE booting is
 primarily intended for installing the OS.
 
+<a name="CARP"></a>
+<h2>6.11 - The Common Address Redundancy Protocol</h2>
+<h3>6.11.1 - What is CARP and how does it work?</h3>
+<!-- This article written by Sunny Raspet, slr@mordac.info, and
+released under the BSD license -->
+
+<p>
+CARP is a tool to help achieve system redundancy, by having multiple
+computers creating a single, virtual network interface between them,
+so that if any machine fails, another can respond instead, and/or
+allowing a degree of load sharing between systems.
+CARP is an improvement over the Virtual Router Redundancy Protocol
+(VRRP) standard.
+It was developed after VRRP was deemed to be not free enough because of
+a possibly-overlapping Cisco patent.
+For more information on CARP's origins and the legal issues surrounding
+VRRP, please visit <a href="../lyrics.html#35">this page</a>.
+
+<p>
+To avoid legal conflicts, Ryan McBride (with help from Michael
+Shalayeff, Marco Pfatschbacher and Markus Friedl) designed CARP to be
+fundamentally different.
+The inclusion of cryptography is the most prominent change, but still
+only one of many.
+
+<p>
+How it works: CARP is a multicast protocol.
+It groups several physical computers together under one or more virtual
+addresses.
+Of these, one system is the master and responds to all packets destined
+for the group, the other systems act as hot spares.
+No matter what the IP and MAC address of the local physical interface,
+packets sent to the CARP address are returned with the CARP information.
+
+<p>
+At configurable intervals, the master advertises its operation on IP
+protocol number 112.
+If the master goes offline, the other systems in the CARP group begin to
+advertise.
+The host that's able to advertise most frequently becomes the new
+master.
+When the main system comes back up, it becomes a back up host by
+default, although if it's more desirable for one host to be master
+whenever possible (e.g. one host is a fast Sun Fire V120 and the
+others are comparatively slow SPARCstation IPCs), you can so configure
+them.
+
+<p>
+While highly redundant and fault-tolerant hardware minimizes the need
+for CARP, it doesn't erase it.
+There's no hardware fault tolerance that's capable of helping if someone
+knocks out a power cord, or if your system administrator types
+<tt>reboot</tt> in the wrong window.
+CARP also makes it easier to make the patch and reboot cycle transparent
+to users, and easier to test a software or hardware upgrade--if it
+doesn't work, you can fall back to your spare until fixed.
+
+<p>There are, however, situations in which CARP won't help.
+CARP's design does require that the members of a group be on the same
+physical subnet, and each interface requires a real, static IP address,
+in addition to a static CARP IP address.
+Similarly, services that require a constant connection to the server
+(such as SSH or IRC) will not be transparently transferred to the other
+system--though in this case, CARP can help with minimizing downtime.
+CARP by itself does not synchronize data between applications, this has
+to be done through "alternative channels" such as 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfsync&amp;sektion=4">pfsync(4)</a>
+(for redundant filtering), manually duplicating data between boxes with
+<a href="http://rsync.samba.org/">rsync</a>, or whatever is appropriate
+for your application.
+
+ 
+
+<h3>6.11.2 - Configuration</h3>
+
+<p>
+CARP's controls are located in two places:
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=8">sysctl(8)</a>
+and
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8">ifconfig(8)</a>.
+Let's look at the sysctls first.
+
+<p>The first sysctl, <tt>net.inet.carp.allow</tt>, defines whether the
+host handles CARP packets at all.
+Clearly, this is necessary to use CARP.
+This sysctl is enabled by default.
+
+<p>
+The second, <tt>net.inet.carp.arpbalance</tt>, is used for load
+balancing.
+If this feature is enabled, CARP source-hashes the originating IP of a
+request.
+The hash is then used to select a virtual host from the available pool
+to handle the request.
+This is disabled by default.
+
+<p>The third, <tt>net.inet.carp.log</tt>, logs CARP errors.
+Disabled by default.
+
+<p>Fourth, <tt>net.inet.carp.preempt</tt> enables natural selection
+among CARP hosts.
+The most fit for the job (that is to say, able to advertise most
+frequently) will become master.
+Disabled by default, meaning a system that is not a master will
+not attempt to (re)gain master status.
+
+<p>
+All these sysctl variables are documented in
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=3">sysctl(3)</a>.
+
+<p>For the remainder of CARP's configuration, we rely on
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8">ifconfig(8)</a>.
+Two of the four CARP-specific commands, <tt>advbase</tt> and
+<tt>advskew</tt>, deal with the interval between CARP advertisements.
+The formula (in seconds) is <tt>advskew</tt> divided by 255, then added
+to <tt>advbase</tt>.
+<tt>advbase</tt> can be used to decrease network
+traffic or allow longer latency before a backup host takes over;
+<tt>advskew</tt> lets you control which host will be master without much
+delaying failover (should that be required).
+
+<p>Next, <tt>pass</tt> sets a password, and <tt>vhid</tt> sets the
+virtual host identifier number of the CARP group.
+You need to assign a unique number for each CARP group, even if (for
+load balancing purposes) they share the same IP address.
+CARP is limited to 255 groups.
+
+<p>Let's put all these settings together in a basic configuration.
+Let's say you're deploying two identically configured Web servers,
+<i>rachael</i> (192.168.0.5) and <i>pris</i> (192.168.0.6), to replace
+an older system that was at 192.168.0.7.  The commands:
+
+<blockquote><pre>
+rachael# <b>ifconfig carp0 create</b>
+rachael# <b>ifconfig carp0 vhid 1 pass tyrell 192.168.0.7</b>
+</pre></blockquote>
+
+<p>create the carp0 interface and give it a vhid of 1, a password of
+<i>tyrell</i>, and the IP address 192.168.0.7.
+To make it permanent across reboots, you can create an
+<tt>/etc/hostname.carp0</tt> file that looks like this:
+
+<blockquote><pre>
+inet 192.168.0.7 255.255.255.0 192.168.0.255 vhid 1 pass tyrell 
+</pre></blockquote>
+
+<p>
+Do the same on <i>pris</i>. Whichever system brings the CARP interface
+up first will be master.
+
+<p>
+Note that in a machine with multiple interfaces, the CARP interface is 
+on the same subnet as the physical interface.  
+
+<p>
+
+But let's say you're not deploying from scratch.
+<i>Rachael</i> was already in place at the address 192.168.0.7.
+How do you work around that?
+Fortunately, CARP has no problem with one system having an IP both as
+its physical interface address and in a CARP group, so there's no need
+to change the commands above.
+However, it tends to be cleaner to have an IP for each system--it makes
+individual monitoring and access much simpler.
+
+<p>Let's add another layer of complexity; we want <i>rachael</i> to stay
+master when possible.
+There are several reasons we might want this: hardware differences,
+simple prejudice, "if this system isn't master, there's a problem," or
+knowing the default master without doing scripting to parse and email
+the output of ifconfig.
+
+<p>On <i>rachael</i>, we'll use the sysctl we created above, then edit
+<tt>/etc/sysctl.conf</tt> to make it permanent.
+
+<blockquote><pre>
+rachael# <strong>sysctl net.inet.carp.preempt=1</strong>
+</pre></blockquote>
+
+<p>We'll do configuration on <i>pris</i>, too:
+
+<blockquote><pre>
+pris# <strong>ifconfig carp0 advskew 100</strong>
+</pre></blockquote>
+
+<p>This slightly delays <i>pris</i>'s advertisements, meaning
+<i>rachael</i> will be master when alive.
+
+<p>
+Note that if you are using PF on a CARP'd computer, you must pass 
+"proto carp" on all involved interfaces, with a line similar to:
+<blockquote><pre>
+pass on fxp0 proto carp keep state
+</pre></blockquote>
+
+<h3>6.11.3 - Load balancing</h3>
+
+<p>Flash forward a few months. Our company of the previous example has
+grown to the point where a single internal Web server is just barely
+managing the load. What to do?  CARP to the rescue.  It's time to try
+load balancing. Create a new CARP interface and group on <i>rachael</i>:
+
+<blockquote><pre>
+rachael# <strong>ifconfig carp1 create</strong>
+rachael# <strong>ifconfig carp1 vhid 2 advskew 100 pass bryant
+192.168.0.7</strong>
+</pre></blockquote>
+
+<p>On <i>pris</i>, we'll create the new group and interface as well, then set
+the "preempt" sysctl:
+
+<blockquote><pre>
+pris# <strong>ifconfig create carp1</strong>
+pris# <strong>ifconfig carp1 vhid 2 pass bryant 192.168.0.7</strong>
+pris# <strong>sysctl net.inet.carp.preempt=1</strong>
+</pre></blockquote>
+
+<p>Now we have two CARP groups with the same IP address.
+Each group is skewed toward a different host, which means <i>rachael</i>
+will stay master of the original group, but <i>pris</i> will take over
+the new one.
+
+<p>All we have to do now is enable the load balancing sysctl we
+discussed previously on both machines:
+
+<blockquote><pre>
+# <strong>sysctl net.inet.carp.arpbalance=1</strong>
+</pre></blockquote>
+
+<p>While these examples are for a two-machine cluster, the same
+principles apply to more systems.
+Please note, however, that it's not expected that you will achieve
+perfect 50/50 distribution between the two machines--CARP uses a hash of
+the originating IP address to determine which system handles the
+request, rather than by load.
+
+<h3>6.11.4 - More Information on CARP</h3>
+<ul>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=carp&amp;sektion=4">carp(4)</a>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8">ifconfig(8)</a>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=8">sysctl(8)</a>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=3">sysctl(3)</a>
+<li><a href="http://www.countersiege.com/doc/pfsync-carp/">Firewall
+Failover with pfsync and CARP</a> by Ryan McBride
+</ul>
+
 
 
 <p>
@@ -1476,7 +1723,7 @@ primarily intended for installing the OS.
 <a href="index.html"><img height="24" width="24" src="../images/back.gif" border="0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq6.html,v 1.196 2004/09/25 12:41:11 nick Exp $</small>
+<small>$OpenBSD: faq6.html,v 1.197 2004/09/28 20:27:50 nick Exp $</small>
 
 </body>
 </html>
