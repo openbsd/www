@@ -1,0 +1,178 @@
+# This is a shell archive.  Save it in a file, remove anything before
+# this line, and then unpack it by entering "sh file".  Note, it may
+# create directories; files and directories will be owned by you and
+# have default permissions.
+#
+# This archive contains:
+#
+#	README
+#	Makefile
+#	anoncvssh.c
+#
+echo x - README
+sed 's/^X//' >README << 'END-of-README'
+Xfind enough disk space.
+X    you need roughly 300MB.
+X    mount it on /open
+X    if you are not able to mount it as /open, substitute it's location
+X    throughout this description
+X    
+Xcompile the anoncvssh binary
+X    in the Makefile, change the variable CVSROOT
+X    anoncvs is installed setuid-root.
+X
+Xcreate an account:
+X    anoncvs:*:32766:32766:Anonymous CVS User:/open/anoncvs:/open/anoncvssh
+X
+Xinstall a crontab entry which runs as any user besides anoncvs (ie. run
+Xit as yourself, or as root). call that user $SUPUSER
+X    0 5,9,13,17,21,1 * * * /usr/local/bin/sup -v /open/sup/ss
+X
+Xthe file /open/sup/ss contains
+X    cvs host=cvs.openbsd.org hostbase=/ base=/open/anoncvs delete
+X
+Xmkdir /open/
+Xmkdir /open/anoncvs
+Xmkdir /open/anoncvs/cvs
+Xmkdir /open/sup
+Xchown -R $SUPUSER /open/anoncvs/cvs /open/sup
+X
+Xstart filling the account up with nice stuff
+X    cd /open/anoncvs
+X    touch .hushlogin
+X    touch .profile
+X
+Xput a message like the following in .plan:
+X    To use anonymous CVS install the latest version of CVS on your local machine.
+X    Then set your CVSROOT environment variable to the following value:
+X            anoncvs@anoncvs.openbsd.org:/cvs
+X
+X    chown root.wheel .hushlogin .profile .plan
+X
+X    mkdir bin dev tmp usr var etc
+X    cp /bin/{cat,pwd,rm,sh} bin/
+X
+Xusing mknod, make a dev/null that has the same major/minor numbers as
+X    your /dev/null, and make it mode 666.
+X
+Xsome shared library systems require a dev/zero created in the same way
+X
+Xfill etc space for the account
+X    cp /etc/{group,hosts,passwd,protocols} etc/
+X    cp /etc/{pwd.db,resolv.conf,services,ttys} etc/
+X    modify these files to suit your idea of system security
+X
+Xanoncvssh (by setting an extra environment variable) use an extension
+Xprovided in the openbsd cvs server code. therefore you want to compile
+Xthe openbsd version. luckily this is not a problem on a non-openbsd
+Xmachine since the cvs sources are imported verbatim into the openbsd
+Xtree. they are in gnu/usr.bin/cvs. (explanation: the extension allows
+Xa way to have read-only cvs repositories)
+X
+Xcreate tmp space for the account
+X    cd var; ln -s ../tmp tmp
+X    chmod a+rwx tmp
+X
+X    mkdir usr/{bin,lib}
+X    cp /usr/bin/{ci,co,cvs,diff,diff3,gzip,rcs,rcsclean} usr/bin/
+X    cp /usr/bin/{rcsdiff,rcsfreeze,rcsmerge,rlog,sdiff,zdiff} usr/bin/
+X
+Xif your system has ld.so in /usr/libexec,
+X    mkdir usr/libexec
+X    cp /usr/libexec/ld.so usr/libexec/
+X
+Xif using shared libraries, copy the shared libs you might need:
+X    cp /usr/lib/lib*.so.* usr/lib/
+X
+Xas a final pass, make sure that all the files you have just created are
+Xnot world writeable (except dev/null)
+X
+Xsend mail to deraadt@openbsd.org to have sup permissions granted.
+END-of-README
+echo x - Makefile
+sed 's/^X//' >Makefile << 'END-of-Makefile'
+X#CVSROOT=anoncvs@anoncvs1.usa.openbsd.org:/cvs
+XPROG=   anoncvssh
+XBINOWN= root
+XBINMODE=4111
+XBINDIR=/open
+XNOMAN=
+X
+X.include <bsd.prog.mk>
+X
+END-of-Makefile
+echo x - anoncvssh.c
+sed 's/^X//' >anoncvssh.c << 'END-of-anoncvssh.c'
+X/*
+X * anoncvssh
+X */
+X
+X#ifndef CVSROOT
+X#define CVSROOT "anoncvs@anoncvs1.usa.openbsd.org:/cvs"
+X#endif
+X
+X#include <stdio.h>
+X#include <unistd.h>
+X#include <pwd.h>
+X#include <sys/types.h>
+X
+Xint
+Xmain(argc, argv)
+Xint argc;
+Xchar *argv[];
+X{
+X	struct passwd *pw;
+X
+X	pw = getpwuid(getuid());
+X	if (pw == NULL) {
+X		fprintf(stderr, "no user for uid %d\n", getuid());
+X		exit(1);
+X	}
+X	if (pw->pw_dir == NULL) {
+X		fprintf(stderr, "no directory\n");
+X		exit(1);
+X	}
+X	seteuid(0);
+X	if (chroot(pw->pw_dir) == -1) {
+X		perror("chroot");
+X		exit (1);
+X	}
+X	chdir("/");
+X	seteuid(getuid());
+X
+X	/*
+X	 * program now "safe"
+X	 */
+X
+X	if (argc != 3 || 
+X		strcmp("anoncvssh",  argv[0]) != 0 ||
+X		strcmp("-c",         argv[1]) != 0 ||
+X		strcmp("cvs server", argv[2]) != 0) {
+X
+X		fprintf(stderr, "\nTo use anonymous CVS install the latest ");
+X		fprintf(stderr,"version of CVS on your local machine.\n");
+X		fprintf(stderr,"Then set your CVSROOT environment variable ");
+X		fprintf(stderr,"to the following value:\n");
+X		fprintf(stderr,"\t%s\n\n", CVSROOT);
+X		sleep(10);
+X		exit(0);
+X	}
+X
+X	/*                     
+X	 * since the only things in annocvs's bin entire chroot space will
+X	 * be "safe commands", this is not a big deal
+X	 */
+X	putenv("SHELL=/bin/sh");
+X	putenv("CVSROOT=/cvs");
+X	putenv("HOME=/");
+X	putenv("CVSREADONLYFS=");
+X
+X	execl("/usr/bin/cvs", "cvs", "server", NULL);
+X	perror("execl: cvs");
+X	fprintf(stderr, "unable to exec CVS server!\n");
+X	exit(1);
+X}
+X
+END-of-anoncvssh.c
+exit
+
