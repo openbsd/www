@@ -17,7 +17,7 @@
 
 <h1>OpenSSH FAQ (Frequently asked questions)</h1>
 
-<strong>Date: 2004/04/06</strong>
+<strong>Date: 2004/04/09</strong>
 
 <hr>
 
@@ -50,7 +50,7 @@
 <ul>
 <li><a href= "#3.1">3.1 - Spurious PAM authentication messages in logfiles.</a>
 <li><a href= "#3.2">3.2 - Empty passwords not allowed with PAM authentication.</a>
-<li><a href= "#3.3">3.3 - ssh(1) takes a long time to connect</a>
+<li><a href= "#3.3">3.3 - ssh(1) takes a long time to connect or log in</a>
 <li><a href= "#3.4">3.4 - "Can't locate module net-pf-10" messages in log under Linux.</a>
 <li><a href= "#3.5">3.5 - Password authentication doesn't work on Slackware 7.0</a>
 <li><a href= "#3.6">3.6 - Configure or sshd(8) complain about lack of RSA support</a>
@@ -614,11 +614,12 @@ do not add the <b>nullok</b> directive to your PAM configuration file
 unless you specifically wish to allow empty passwords.
 
 
-<h2><a name= "3.3">3.3 - ssh(1) takes a long time to connect</a></h2>
+<h2><a name= "3.3">3.3 - ssh(1) takes a long time to connect or log
+in</a></h2>
 
 <p>
-This is typically a problem with name resolution and can have several
-causes:
+Large delays (more that 10 seconds) are typically caused a problem with
+name resolution:
 <ul>
 <li>Some versions of glibc (notably glibc 2.1 shipped with Redhat 6.1)
 can take a long time to resolve "IPv6 or IPv4" addresses from domain
@@ -631,8 +632,80 @@ and server by looking up the other end's name and IP address.  In
 addition, on the server look up the name returned by the client's
 IP-name lookup.  You can disable most of the server-side lookups by
 setting <b>UseDNS no</b> in <i>sshd_config</i>.</li>
+</ul>
+
+<p>
+Delays less that 10 seconds can have other causes.
+
+<ul>
+
+<li>OpenSSH releases prior to 3.8 had an <b>moduli</b> file with
+moduli that were just smaller than what sshd would look for, and
+as a result, sshd would end up using moduli significantly larger
+than requested, which resulted in a speed penalty.  Replacing the
+<b>moduli</b> file will resolve this (note that in most cases, the
+moduli file will not be replaced during an upgrade and must be
+replaced manually.</li>
+
+<li>OpenSSH releases prior to 3.8 had a flaw in <code>ssh</code> that
+would cause it to request moduli larger than intended (which when
+combined with the above resulted in significant slowdowns).
+Upgrading the client to 3.8 or higher will resolve this issue.</li>
+
+<li>If either the client or server lack a kernel-based random number
+device (eg Solaris &lt; 9, AIX &lt; 5.2, HP-UX &lt; 11.11) and no
+substitute is available (eg <a href=
+"ftp://ftp.ayamura.org/pub/prngd/">prngd</a>) it's possible that
+one of the programs called by <code>ssh-rand-helper</code> to
+generate entropy is hanging.  This can be investigated by running
+it in debug mode:
+
+<blockquote>
+<table border=0 width="800">
+        <tr>
+                <td nowrap bgcolor="#EEEEEE">
+/usr/local/libexec/ssh-rand-helper -vvv
+                </td>
+        </tr>
+</table>
+</blockquote>
+
+Any significant delays should be investigated and rectified, or the
+corresponding commands should be removed from <b>ssh_prng_cmds</b>.
+</li>
 
 </ul>
+
+<h3>How slow is "slow"?</h3>
+Under normal conditions, the speed of SSH logins is dependant on
+CPU speed of client and server.  For comparison the following are
+typical connect times for <code>time ssh localhost true</code>
+with a 1024-bit RSA key on otherwise unloaded hosts.  OpenSSH and
+OpenSSL were compiled with gcc 3.3.x.
+
+<p>
+<table>
+<tr><th>CPU</th><th>Time (SSHv1)<a href="#3.3fn1">[1]</a></th>
+	<th>Time (SSHv2)</th></tr>
+<tr><td>170MHz SPARC/sun4m</td><td>0.74 sec</td><td>1.25 sec</td></tr>
+<tr><td>236MHz HPPA/8200<a href="#3.3fn2">[2]</a></td><td>0.44 sec</td>
+	<td>0.79 sec</td></tr>
+<tr><td>375MHz PowerPC/604e</td><td>0.38 sec</td><td>0.51 sec</td></tr>
+<tr><td>933MHz VIA Ezra</td><td>0.34 sec</td><td>0.44 sec</td></tr>
+<tr><td>2.1GHz Althon 2600</td><td>0.14 sec</td><td>0.22 sec</td></tr>
+</table>
+
+<br>
+
+<a name="3.3fn1">[1]</a> The SSHv1 protocol is faster but is
+cryptographically weaker than SSHv2.<br>
+
+<a name="3.3fn2">[2]</a> At the time of writing, gcc generates
+relatively slow code on HPPA for RSA and DSA authentications (see
+<a href= "http://gcc.gnu.org/bugzilla/show_bug.cgi?id=7625">gcc bug
+#7625</a> and <a
+href="http://marc.theaimsgroup.com/?l=openssh-unix-dev&m=102646106016694">
+discussion on openssh-unix-dev</a>).
 
 <h2><a name= "3.4">3.4 - "Can't locate module net-pf-10" messages in log under Linux.</a></h2>
 
@@ -846,7 +919,7 @@ recommended.
 <a href="index.html"><img height=24 width=24 src="back.gif" border=0 alt=OpenSSH></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq.html,v 1.71 2004/04/06 08:06:13 dtucker Exp $</small>
+<small>$OpenBSD: faq.html,v 1.72 2004/04/09 12:01:05 dtucker Exp $</small>
 
 </body>
 </html>
