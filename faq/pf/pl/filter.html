@@ -1,0 +1,693 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Filtrowanie pakietów</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-2">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 2002-2003 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
+<p>
+[<a href="rdr.html">Wstecz: Przekierowania ruchu</a>]
+[<a href="index.html">Spis treści</a>]
+[<a href="logging.html">Dalej: Logowanie</a>]
+
+<h1><font color="#e00000">PF: Filtrowanie pakietów</font></h1>
+
+<hr>
+
+<h3>Spis treści</h3>
+<ul>
+<li><a href="#intro">Wstęp</a>
+<li><a href="#syntax">Składnia reguł</a>
+<li><a href="#defdeny">Domyślne blokowanie</a>
+<li><a href="#pass">Przepuszczanie ruchu</a>
+<li><a href="#state">Śledzenie stanów</a>
+<li><a href="#udpstate">Śledzenie stanów dla UDP</a>
+<li><a href="#tcpflags">Flagi TCP</a>
+<li><a href="#quick">Słowo kluczowe <tt>quick</tt></a>
+<li><a href="#antispoof">Blokowanie zfałszowanych pakietów</a>
+<li><a href="#ipopts">Opcje IP</a>
+<li><a href="#example">Przykład zestawu reguł filtrujących</a>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Wstęp</h2>
+Filtrowanie pakietów to selektywne przepuszczanie lub blokowanie pakietów
+przechodzących przez interfejs sieciowy. Kryteria, którymi kieruje się 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+3.3"
+>pf(4)</a> podczas sprawdzania pakietów, są oparte o Warstwę 3
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ip&amp;sektion=4&amp;manpath=OpenBSD+3.3"
+>IPv4</a> i 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ip6&amp;sektion=4&amp;manpath=OpenBSD+3.3"
+>IPv6</a>) oraz Warstwę 4 nagłówków
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tcp&amp;sektion=4&amp;manpath=OpenBSD+3.3"
+>TCP</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=udp&amp;sektion=4&amp;manpath=OpenBSD+3.3"
+>UDP</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=icmp&amp;sektion=4&amp;manpath=OpenBSD+3.3"
+>ICMP</a>, i
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=icmp6&amp;sektion=4&amp;manpath=OpenBSD+3.3"
+>ICMPv6</a>). Najczęstrzym kryterium jest źródłowy i docelowy adres,
+źródłowy i docelowy port, oraz protokół.
+
+<p>
+Reguły filtrujące określają kryteria według których podejmowana jest
+konkretna akcja wobec pakietu: przepuść (ang. pass) lub blokuj
+(ang. block). Reguły filtrujące są porównywane sekwencyjnie, od
+pierwszej do ostatniej. Z wyjątkiem sytuacji, gdy pakiet pasuje
+do reguły ze słowem kluczowym <tt>quick</tt>, pakiety są porównywane
+z <i>wszystkimi</i> regułami filtrującymi zanim ostateczna akcja
+zostanie podjęta. Ostatnia pasująca reguła jest "zwycięzcą" i decyduje
+o podjętej akcji. Jeśli na końcu zestawu reguł znajduje się bezwarunkowe
+<tt>pass all</tt>, wówczas wszystkie pakiety, które nie pasowały do
+żadnej z reguł, będą przepuszczane.
+
+<a name="syntax"></a>
+<h2>Składnia reguł</h2>
+Ogólna, <i>bardzo uproszczona</i> składnia reguł filtrujących
+wygląda następująco:
+<blockquote>
+<tt>
+<i>action</i> <i>direction</i> [log] [quick] on <i>int</i> [<i>af</i>] 
+[proto <i>protocol</i>] \<br>
+&nbsp;&nbsp;&nbsp;from <i>src_addr</i> [port <i>src_port</i>] to 
+<i>dst_addr</i> [port <i>dst_port</i>] \<br>
+&nbsp;&nbsp;&nbsp;[<i>tcp_flags</i>] [<i>state</i>]
+</tt>
+</blockquote>
+
+<dl>
+<dt><tt><i>action</i></tt>
+<dd>Akcja, która ma być podejmowana wobec pasujących pakietów, albo
+<tt>pass</tt> albo <tt>block</tt>. Akcja <tt>pass</tt> przepuszcza
+pakiety z powrotem do jądra systemu do dalszego przetwarzania,
+podczas gdy akcja <tt>block</tt> podejmuje działanie zgodne z
+ustawieniem opcji domyślnej polityki blokowania 
+<a href="options.html#block-policy"><tt>block-policy</tt></a>. 
+Domyślna akcja może być jawnie zmieniona poprzez podanie słów
+kluczowych <tt>block drop</tt> lub <tt>block return</tt>.
+
+<dt><tt><i>direction</i></tt>
+<dd>Kierunek, w którym dany pakiet zmierza na interfejsie sieciowym, albo
+<tt>in</tt> (pol. wchodzi) albo <tt>out</tt> (pol. wychodzi).
+
+<dt><tt>log</tt>
+<dd>Określa, że dany pakiet powinien być zapisany w logach przez
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>pflogd(8)</a>. Jeśli reguła zawiera opcję <tt>keep state</tt> lub
+<tt>modulate state</tt>, wówczas jedynie pakiet, który rozpoczyna
+połączenie stanowe jest odnotowywany w logach. Aby bezwzględnie zapisywać
+w logach wszystkie pakiety, należy zastosować opcję <tt>log-all</tt>.
+
+<dt><tt>quick</tt>
+<dd>Jeśli pakiet pasuje do reguły ze słowem kluczowym <tt>quick</tt>,
+wówczas reguła ta jest uznawana za ostatnią pasującą i podejmowana jest
+odpowiednia akcja.
+
+<dt><tt><i>int</i></tt>
+<dd>Nazwa interfejsu sieciowego, przez który pakiet przechodzi.
+
+<dt><tt><i>af</i></tt>
+<dd>Rodzina adresów: <tt>inet</tt> dla IPv4 lub <tt>inet6</tt>
+dla IPv6. PF jest zwykle w stanie zidentyfikować ten parametr na podstawie
+adresu(ów) źródłowych/przeznaczenia.
+
+<dt><tt><i>protocol</i></tt>
+<dd>Protokół Warstwy 4 pakietu:
+<ul>
+<li><tt>tcp</tt>
+<li><tt>udp</tt>
+<li><tt>icmp</tt>
+<li><tt>icmp6</tt>
+<li>Poprawna nazwa protokołu z 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=protocols&amp;sektion=5&amp;manpath=OpenBSD+3.3"
+><tt>/etc/protocols</tt></a>
+<li>Numer protokołu z przedziału od 0 do 255
+<li>Zbiór protokołów zapisany w postaci <a href="macros.html#lists">listy</a>.
+</ul>
+
+<dt><tt><i>src_addr</i></tt>, <tt><i>dst_addr</i></tt> 
+<dd>Adres źródłowy/docelowy w nagłówku IP. Adres może być podany jako:
+<ul>
+<li>Pojedynczy adres IPv4 lub IPv6.
+<li>Blok sieci <a href="http://public.pacbell.net/dedicated/cidr.html">CIDR</a>.
+<li>W pełni określona domena, która będzie rozwijana przez DNS w czasie
+ładowania zestawu reguł. Wszystkie zwrócone adresy IP będą wstawione do reguły.
+<li>Nazwa interfejsu sieciowego. Wszystkie adresy IP przypisane do urządzenia
+będą wprowadzone podczas ładowania zestawu reguł.
+<li>Nazwa interfejsu sieciowego wraz z maską sieciową
+(np <tt>/24</tt>). Każdy adres IP danego interfejsu jest łączony
+z każdą maską sieciową aby utworzyć odpowiedni blok sieci CIDR,
+który będzie wprowadzony podczas ładowania zestawu reguł.
+<li>Nazwa interfejsu sieciowego w nawiasach <tt>( )</tt>. Mówi to PF,
+aby odświeżać regułę, jeśli adres(y) IP tego interfejsu ulegnie zmianie.
+Jest to bardzo przydatne gdy zewnętrzne urządzenie otrzymuje swój
+adres IP przez DHCP lub dial-up, ponieważ zestaw reguł
+nie musi być przeładowywany za każdym razem, gdy zmienia się IP.
+<li>Nazwa interfejsu sieciowego z dopisanym na końcu słowem kluczowym
+<tt>:network</tt> lub <tt>:broadcast</tt>. Odpowiedni blok sieci CIDR
+(np 192.168.0.0/24) lub adres rozgłoszeniowy (np 192.168.0.255) będzie
+wprowadzony podczas ładowania zestawu reguł.
+<li><a href="tables.html">Tabela</a>.
+<li>Którykolwiek z powyższych, lecz zanegowany przy pomocy modyfikatora
+<tt>!</tt> ("not").
+<li>Zestaw adresów w postaci <a href="macros.html#lists">listy</a>.
+<li>Słowo kluczowe <tt>any</tt> oznaczające wszystkie adresy.
+<li>Słowo kluczowe <tt>all</tt> stanowiące skrót <tt>from any to
+any</tt>.
+</ul>
+
+<dt><tt><i>src_port</i></tt>, <tt><i>dst_port</i></tt>
+<dd>Port źródłowy/docelowy w Warstwie 4 nagłówka pakietu. Porty mogą
+być podawane jako:
+<ul>
+<li>Liczba z zakresu od 1 do 65535
+<li>Poprawna nazwa usługi, zdefiniowana w
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=services&amp;sektion=5&amp;manpath=OpenBSD+3.3"
+><tt>/etc/services</tt></a>
+<li>Zestaw portów w postaci <a href="macros.html#lists">listy</a>
+<li>Przedział:
+	<ul>
+	<li><tt>!=</tt> (różny)
+	<li><tt>&lt;</tt> (mniejszy niż)
+	<li><tt>&gt;</tt> (większy niż)
+	<li><tt>&lt;=</tt> (mniejszy lub równy)
+	<li><tt>&gt;=</tt> (większy lub równy)
+	<li><tt>&gt;&lt;</tt> (przedział)
+	<li><tt>&lt;&gt;</tt> (poza przedziałem)
+	</ul>
+	<dl>
+	<dd>Ostatnie dwa są operatorami binarnymi (wymagają dwóch argumentów)
+	oraz nie mogą mieć parametrów w postaci przedziałów.
+	</dl>
+</ul>
+
+<dt><tt><i>tcp_flags</i></tt>
+<dd>Określa flagi, które muszą być ustawione w nagłówku TCP gdy używamy
+<tt>proto tcp</tt>. Są one podawane w postaci: 
+<tt>flags <i>check</i>/<i>mask</i></tt>. Na przykład: <tt>flags
+S/SA</tt> - PF bierze pod uwagę jedynie flagi S i A (SYN i ACK),
+a reguła jest dopasowana jeśli tylko flaga SYN jest ustawiona.
+<dt><tt><i>state</i></tt>
+<dd>Określa, czy informacje o stanie połączenia są przechowywane, gdy
+pakiety są dopasowywane do tej reguły.
+<ul>
+<li><tt>keep state</tt> - działa z TCP, UDP, i ICMP.
+<li><tt>modulate state</tt> - działa jedynie z TCP. PF wygeneruje
+trudny do przewidzenia Inicjujący Numer Sekwencyjny (ang. Initial Sequence
+Number - ISN) dla pakietów pasujących do tej reguły.
+</ul>
+</dl>
+
+<a name="defdeny"></a>
+<h2>Domyślne blokowanie</h2>
+Zaleca się przyjmować domyślną politykę blokowania wszystkiego, a
+jedynie selektywne przepuszczanie konkretnego ruchu. Takie podejście
+zalecane jest nie tylko ze względów bezpieczeństwa, ale sprawia, że
+pisanie zestawu reguł jest znacznie prostsze.
+
+<p>
+Aby wprowadzić domyślną politykę blokowania pierwsze dwie reguły
+powinny wyglądać tak:
+<blockquote>
+<tt>
+block in  all<br>
+block out all
+</tt>
+</blockquote>
+
+<p>
+Spowoduje to blokowanie całego ruchu na wszystkich interfejsach w
+obu kierunkach.
+
+<a name="pass"></a>
+<h2>Przepuszczanie ruchu</h2>
+Ruch musi być precyzyjnie przepuszczany przez firewall albo będzie
+zatrzymany przez domyślną politykę blokowania. W tym miejscu do akcji
+wchodzą kryteria takie jak port źródłowy/docelowy, adres źródłowy/docelowy
+oraz protokół. Jeśli jakiś ruch ma być przepuszczany przez firewall,
+to reguły powinny być napisane tak restrykcyjnie jak to tylko
+możliwe. Ma to zapewnić przepuszczanie pożądanego i tylko pożądanego ruchu.
+
+<p>
+Kilka przykładów:
+<blockquote>
+<tt>
+# Przepuść ruch na dc0 z sieci lokalnej, 192.168.0.0/24,<br>
+# zmierzający do 192.168.0.1. Przepuść także cały powracający<br>
+# do tej sieci ruch na dc0.<br>
+pass in &nbsp;on dc0 from 192.168.0.0/24 to 192.168.0.1<br>
+pass out on dc0 from 192.168.0.1 to 192.168.0.0/24<br>
+<br>
+<br>
+# Przepuść ruch TCP z zewnątrz na fxp0 zmierzający do serwera www.<br>
+# Nazwa interfejsu, fxp0, jest użyta jako adres docelowy, więc<br>
+# pakiety będą pasować do tej reguły jedynie jeśli są przeznaczone<br>
+# dla tej maszyny OpenBSD.<br>
+pass in on fxp0 proto tcp from any to fxp0 port www
+</tt>
+</blockquote>
+
+<a name="state"></a>
+<h2>Śledzenie stanów</h2>
+Jedną z ważnych możliwości Packet Filter jest śledzenie stanów
+(ang. keeping state) lub kontrolowanie stanów (ang. stateful
+inspection). Kontrolowanie stanów odnosi się do zdolności PF do
+śledzenia stanu, lub przebiegu, połączenia sieciowego. Poprzez
+przechowywanie informacji o każdym połączeniu w tabeli stanów,
+PF jest w stanie szybko określić, czy pakiet przechodzący przez
+firewall należy do już nawiązanego połączenia. Jeśli tak jest,
+pakiet jest przepuszczany bez przechodzenia zestawu reguł.
+
+<p>
+Śledzenie stanów ma wiele zalet, włączając uproszczenie zestawu
+reguł i lepszą wydajność filtrowania pakietów. PF jest w stanie
+dopasowywać pakiety poruszające się w <i>obu</i> kierunkach danego
+połączenia, co oznacza, że reguły przepuszczające powracający ruch
+nie są potrzebne. A ponieważ pakiety pasujące do połączenia stanowego
+nie przechodzą zestawu reguł, czas zużywany na przetwarzanie tych
+pakietów może być bardzo znacząco zmniejszony.
+
+<p>
+Gdy reguła posiada opcje <tt>keep state</tt>, pierwszy pakiet
+pasujący do niej tworzy "połączenie stanowe" pomiędzy nadawcą i
+odbiorcą. Wówczas, nie tylko pakiety pochodzące od nadawcy,
+zmierzające do odbiorcy, ale i pakiety odbiorcy, skierowane do
+nadawcy pasują do reguły i nie są sprawdzane przez zestaw reguł
+filtrujących. Na przykład:
+
+<blockquote>
+<tt>
+pass out on fxp0 proto tcp from any to any keep state
+</tt>
+</blockquote>
+
+<p>
+Zezwala to na wychodzenie ruchu TCP na interfejsie <tt>fxp0</tt>
+i przepuszcza ruch powrotny pakietów stanowiących odpowiedź.
+Śledzenie stanów poza swoją funkcjonalnością, zapewnia także
+znaczący wzrost wydajności firewalla, ponieważ wyszukania
+stanów są dużo szybsze niż porównywanie pakietu z zestawem reguł
+filtrujących.
+
+<p>
+Opcja <tt>modulate state</tt> działa podobnie do <tt>keep state</tt>
+z tą różnicą, że odnosi się jedynie do pakietów TCP. Przy użyciu 
+<tt>modulate state</tt>, Inicjujący Numer Sekwencyjny (ISN)
+wychodzącego połączenia jest losowy. Jest to przydatne do ochrony
+połączeń nawiązanych przez różne systemy operacyjne, które nie najlepiej
+radzą sobie z generowaniem numeru ISN.
+
+<p>
+Śledź stan wychodzących pakietów TCP, UDP i ICMP oraz generuj ISN dla TCP:
+<blockquote>
+<tt>
+pass out on fxp0 proto tcp from any to any modulate state<br>
+pass out on fxp0 proto { udp, icmp } from any to any keep state
+</tt>
+</blockquote>
+
+<p>
+Inną zaletą śledzenia stanów jest to, iż odpowiedni ruch ICMP będzie
+przepuszczany przez firewall. Na przykład, jeśli <tt>keep state</tt>
+jest zdefiniowane dla połączenia TCP i nadejdzie komunikat ICMP
+"gaszący źródło" (ang. source-quench) odwołujący się do tego połączenia,
+będzie on dopasowany do odpowiedniego wpisu stanowego i przepuszczony
+przez firewall.
+
+<p>
+Warto zwrócić uwagę, że połączenia stanowe są ograniczone do interfejsu
+na którym są tworzone. Jest to istotne w przypadku ruterów i firewalli
+korzystającymi z PF, zwłaszcza przy polityce "domyślnego blokowania"
+zaimplementowanej tak, jak wcześniej zostało to opisane. Jeśli firewall
+realizuje śledzenie stanów dla wszystkich wychodzących połączeń na zewnętrznym
+urządzeniu, pakiety te wciąż musza być formalnie przepuszczone na
+wewnętrznym interfejsie.
+
+<p>
+Proszę zwrócić uwagę, że reguły <a href="nat.html"><tt>nat</tt></a>, 
+<a href="nat.html#binat"><tt>binat</tt></a>, i
+<a href="rdr.html"><tt>rdr</tt></a> bezwarunkowo tworzą stan dla
+pasujących połączeń tak długo, jak dane połączenie jest
+przekierowywane przez daną regułę. 
+
+<a name="udpstate"></a>
+<h2>Śledzenie stanów dla UDP</h2>
+Każdy od czasu do czasu słyszy opinie, że "nie można utworzyć stanu
+z UDP, ponieważ UDP jest bezstanowym protokołem!". Mimo iż jest
+prawdą, że sesje komunikacyjne UDP nie mają żadnej formy stanu
+(formalnego rozpoczęcia i zakończenia komunikacji), nie ma to
+żadnego wpływu na zdolność PF do tworzenia stanowych sesji UDP.
+W tym przypadku protokołów bez pakietów "inicjujących" i "kończących"
+połączenie, PF po prostu śledzi ile czasu upłynęło odkąd pasujący
+pakiet został przepuszczony. Jeśli czas przekroczy ustaloną wartość,
+wpis stanu jest usuwany. Czas "przeterminowania" może być dostrojony
+w sekcji <a href="options.html">opcje</a> pliku <tt>/etc/pf.conf</tt>.
+
+<a name="tcpflags"></a>
+<h2>Flagi TCP</h2>
+Dopasowanie pakietów TCP na podstawie flag jest najczęściej
+wykorzystywane przy filtrowaniu pakietów, które otwierają
+nowe połączenie. Flagi TCP i ich nazwy są podane poniżej:
+
+<ul>
+<li><b>F</b> : FIN  - Finish; zakończenie sesji
+<li><b>S</b> : SYN  - Synchronize; sygnalizuje prośbę o rozpoczęcie sesji
+<li><b>R</b> : RST  - Reset; porzuć połączenie
+<li><b>P</b> : PUSH - Push; pakiet jest wysyłany bezzwłocznie
+<li><b>A</b> : ACK  - Acknowledgement; potwierdzenie 
+<li><b>U</b> : URG  - Urgent; ponaglenie
+<li><b>E</b> : ECE  - Explicit Congestion Notification Echo
+<li><b>W</b> : CWR  - Congestion Window Reduced
+</ul>
+
+<p>
+Aby PF sprawdzał flagi TCP podczas przetwarzania reguł filtrujących
+wykorzystywane jest słowo kluczowe <tt>flags</tt>. Jego składnia jest
+następująca:
+<blockquote>
+<tt>
+flags <i>check</i>/<i>mask</i>
+</tt>
+</blockquote>
+
+<p>
+Część <tt><i>mask</i></tt> mówi PF aby sprawdzać jedynie podane flagi, a
+część <tt><i>check</i></tt> określa która flaga(i) powinny być "ustawione"
+w nagłówku, aby dopasowanie miało miejsce.
+<blockquote>
+<tt>
+pass in on fxp0 proto tcp from any to any port ssh flags S/SA
+</tt>
+</blockquote>
+
+<p>
+Powyższa reguła przepuszcza ruch TCP z ustawioną jedynie flagą SYN,
+biorąc pod uwagę tylko flagi SYN i ACK. Pakiet z flagami SYN i ECE
+będzie pasował do powyższej reguły, jednak pakiet z SYN i ACK lub
+tylko ACK już nie.
+
+<p>
+Uwaga: we wcześniejszych wersjach OpenBSD, następująca zapis był
+poprawny:
+<blockquote>
+<tt>
+. . . flags S
+</tt>
+</blockquote>
+
+<p>
+Nie jest to już prawdziwe. Maska <i>zawsze</i> musi być podana.
+
+<p>
+Flagi często są stosowane w połączeniu z regułami <tt>keep state</tt>,
+aby wspomóc kontrolę tworzenia stanów: 
+<blockquote>
+<tt>
+pass out on fxp0 proto tcp all flags S/SA keep state
+</tt>
+</blockquote>
+
+<p>
+Reguła ta zezwala na tworzenie stanu dla wychodzących pakietów TCP
+z ustawioną jedynie flagą SYN i przy braniu pod uwagę SYN oraz ACK.
+
+<p>
+Przy korzystaniu z flag trzeba być bardzo ostrożnym - należy rozumieć
+co się robi i dlaczego, no i należy uważać na rady innych,
+ponieważ często są one błędne. Niektórzy np. sugerują tworzenie stanu
+"jedynie gdy flaga SYN jest ustawiona, i żadna inna". Taka reguł
+wyglądała by tak:
+<pre>
+     . . . flags S/FSRPAUEW  <i>to zły pomysł!!</i>
+</pre>
+
+<p>
+W teorii, tworzy się połączenie stanowe na początku sesji TCP, a sesja
+powinna rozpocząć się od flagi SYN, i żadnej innej. Problem polega
+na tym, że niektórzy użytkownicy rozpoczynają połączenia wraz z flagą
+ECN, i będą odrzuceni przez taką regułę. Dużo lepszą praktyką jest:
+<blockquote>
+<tt>
+. . . flags S/SAFR
+</tt>
+</blockquote>
+
+<p>
+Jest to praktyczne i bezpieczne. Jeśli ruch podlega normalizacji
+<a href="scrub.html">scrub</a>, wówczas można nie sprawdzać także
+flag FIN i RST. Normalizacja powoduje, że PF porzuca nadchodzące
+pakiety z nieprawidłową kombinacja flag (taką jak SYN i FIN lub
+SYN i RST). Zaleca się zawsze normalizować przychodzący ruch
+przy pomocy <tt>scrub</tt>:
+<blockquote>
+<tt>
+scrub in on fxp0<br>
+.<br>
+.<br>
+.<br>
+pass in on fxp0 proto tcp from any to any port ssh flags S/SA \<br>
+&nbsp;&nbsp;&nbsp;keep state
+</tt>
+</blockquote>
+
+<a name="quick"></a>
+<h2>Słowo kluczowe <tt>quick</tt></h2>
+Jak już zostało to wcześniej napisane, każdy pakiet jest porównywany
+z całym zestawem reguł od góry do dołu. Domyślnie, pakiet
+po porównaniu jest przekazywany do kolejnej reguły, i dlatego
+może być wielokrotnie zmieniany jego status, zanim osiągnie
+koniec zestawu reguł. <b>"Ostatnia pasująca reguła wygrywa".</b>
+Jest od tego wyjątek: opcja <tt>quick</tt> w regule filtrującej
+skutkuje przerwaniem dalszego porównania i powoduje
+podjęcie akcji z obecnej reguły. Oto kilka przykładów:
+
+<p>
+Źle:
+<blockquote>
+<tt>
+block in on fxp0 proto tcp from any to any port ssh<br>
+pass &nbsp;in all
+</tt>
+</blockquote>
+
+<p>
+W tym przypadku, linia <tt>block</tt> może być porównywana, ale nigdy
+nie będzie miała żadnego efektu, ponieważ po niej znajduje się linia,
+która wszystko przepuszcza.
+
+<p>
+Lepiej:
+<blockquote>
+<tt>
+block in quick on fxp0 proto tcp from any to any port ssh<br>
+pass &nbsp;in all
+</tt>
+</blockquote>
+
+<p>
+Te reguły są porównywane nieco inaczej. Jeśli linia <tt>block</tt>
+pasuje, dzięki opcji <tt>quick</tt>, pakiet będzie zablokowany,
+a reszta reguł tego zestawu będzie zignorowana.
+
+<a name="antispoof"></a>
+<h2>Blokowanie zfałszowanych pakietów</h2>
+Fałszowaniem (ang. spoof) określa się zmianę adresu źródłowego pakietu mające
+na celu albo ukrycie prawdziwego pochodzenia datagramu, albo podszycie się
+pod inny segment sieci. Gdy użytkownik pomyślnie podszyje się pod inny adres,
+może rozpocząć sieciowy atak bez ujawniania jego prawdziwego źródła lub
+spróbować uzyskać kontrolę nad usługami, które są dostępne dla wąskiej grupy
+konkretnych adresów IP. 
+
+<p>
+PF oferuje pewną ochronę przed podszywaniem się pod inne adresy
+poprzez słowo kluczowe <tt>antispoof</tt>:
+
+<blockquote>
+<tt>
+antispoof [log] [quick] for <i>interface</i> [<i>af</i>]
+</tt>
+</blockquote>
+
+<dl>
+<dt><tt>log</tt>
+<dd>Określa, że pasujące pakiety powinny być logowane przez
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>pflogd(8)</a>.
+
+<dt><tt>quick</tt>
+<dd>Jeśli pakiet pasuje do tej reguły, wówczas jest jest ona uznawana za
+regułę "zwycięską" i nie następuje dalsze porównywanie reguł z zestawu.
+
+<dt><tt><i>interface</i></tt>
+<dd>Nazwa interfejsu sieciowego na którym ma być aktywowana ochrona przed
+spoofing-iem. Może to być także <a href="macros.html#lists">lista</a>
+interfejsów sieciowych.
+
+<dt><tt><i>af</i></tt>
+<dd>Rodzina adresów dla której ma być aktywowana ochrona przed
+spoofing-iem. <tt>inet</tt> dla IPv4 lub <tt>inet6</tt> dla IPv6.
+</dl>
+
+<p>
+Przykład:
+<blockquote>
+<tt>
+antispoof for fxp0 inet
+</tt>
+</blockquote>
+
+<p>
+Gdy zestaw reguł jest ładowany, każde wystąpienie <tt>antispoof</tt>
+jest rozszerzane do dwóch reguł filtrujących. Zakładając, że interfejs
+fxp0 ma adres IP 10.0.0.1 i maskę podsieci 255.255.255.0 (np, /24),
+powyższa reguła <tt>antispoof</tt> byłaby przekształcona w:
+<blockquote>
+<tt>
+block in on ! fxp0 inet from 10.0.0.0/24 to any<br>
+block in inet from 10.0.0.1 to any
+</tt>
+</blockquote>
+
+<p>
+Reguły te realizują dwa zadania:
+<ul>
+<li>Blokują cały ruch przychodzący z sieci 10.0.0.0/24, który
+<i>nie</i> przechodzi przez fxp0. Ponieważ sieć 10.0.0.0/24 jest na
+interfejsie fxp0, pakiety z adresem źródłowym z tego bloku sieci
+nie powinny nigdy nadchodzić z żadnego innego interfejsu sieciowego.
+<li>Blokują cały ruch przychodzący z 10.0.0.1, adresu IP interfejsu
+fxp0. Host nigdy nie powinien wysyłać pakietów do samego siebie
+przez zewnętrzny interfejs, dlatego nadchodzące pakiety z adresem
+źródłowym należącym do tej maszyny mogą być uznane za podejrzane.
+</ul>
+
+<p>
+<b>UWAGA</b>: Reguły filtrujące, w które <tt>antispoof</tt> się
+przekształca będą blokować także pakiety wysyłane przez interfejs
+zwrotny (ang. loopback) na lokalny adres. Te adresy powinny być
+formalnie przepuszczane. Przykład:
+<blockquote>
+<tt>
+pass in quick on lo0 all<br>
+<br>
+antispoof for fxp0 inet
+</tt>
+</blockquote>
+
+<p>
+Korzystanie z <tt>antispoof</tt> powinno być ograniczone do interfejsów,
+które mają przypisany adres IP. Użycie <tt>antispoof</tt> na interfejsie
+bez adresu IP spowoduje powstanie następujących reguł filtrujących:
+<blockquote>
+<tt>
+block drop in on ! fxp0 inet all<br>
+block drop in inet all
+</tt>
+</blockquote>
+
+<p>
+Przy takich regułach istnieje ryzyko blokowania <i>całego</i> nadchodzącego
+ruchu na <i>wszystkich</i> interfejsach.
+
+<a name="ipopts"></a>
+<h2>Opcje IP</h2>
+Domyślnie PF blokuje wszystkie pakiety IP z ustawionymi opcjami.
+Może to utrudnić rozpoznanie systemu operacyjnego przez takie
+narzędzia jak nmap. Jeśli zachodzi konieczność uruchomienia aplikacji, która
+wymaga przepuszczania tych pakietów, jak np. wysyłanych do grupy odbiorców
+(ang. multicast) lub IGMP, można skorzystać z dyrektywy <tt>allow-opts</tt>:
+<blockquote>
+<tt>
+pass in quick on fxp0 all allow-opts
+</tt>
+</blockquote>
+
+<a name="example"></a>
+<h2>Przykład zestawu reguł filtrujących</h2>
+Poniżej znajduje się przykład zestawu reguł filtrujących.
+Maszyna z PF pełni rolę firewalla oddzielającego małą sieć
+wewnętrzną od Internetu. Poniżej przedstawiona jest tylko
+konfiguracj odpowiadająca za filtrowanie, regułki
+<a href="queueing.html">kolejkowanie</a>, 
+<a href="nat.html">NAT</a>, <a href="rdr.html">rdr</a> itp zostały pominięte.
+<br>
+<br>
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+ext_if  = "fxp0"
+int_if  = "dc0"
+lan_net = "192.168.0.0/24"
+
+# normalizacja przychodzących pakietów
+scrub in all
+
+# ustawienie polityki domyślnego blokowania
+block in  all
+block out all
+
+# przepuść ruch na interfejsie zwrotnym w obu kierunkach
+pass quick on lo0 all
+
+# aktywuj ochronę przed spoofing-iem dla interfejsu wewnętrznego.
+antispoof quick for $int_if inet
+
+# zezwalaj na połączenia ssh z sieci lokalnej jedynie z zaufanego
+# hosta - 192.168.0.15. korzystaj z "block return", aby TCP RST
+# od razu było wysyłane w odpowiedzi na blokowane połączenia
+# korzystaj z "quick", aby reguła nie była nadpisana przez
+# znajdujące się poniżej reguły "pass"
+block return in quick on $int_if proto tcp from ! 192.168.0.15 \
+   to $int_if port ssh flags S/SA
+
+# przepuszczaj cały ruch z i do lokalnej sieci przeznaczony dla 
+# maszyny będącej firewall-em
+pass in  on $int_if from $lan_net to $int_if 
+pass out on $int_if from $int_if to $lan_net
+
+# wypuszczaj tcp, udp i icmp na interfejsie zewnętrznym (Internet). 
+# śledź stan dla udp i icmp oraz moduluj stan dla tcp.
+pass out on $ext_if proto tcp all modulate state flags S/SA
+pass out on $ext_if proto { udp, icmp } all keep state
+
+# zezwalaj na połączenia ssh na interfejsie zewnętrznym pod warunkiem,
+# że NIE są one skierowane do firewall-a (np, nie są skierowane
+# do maszyny z sieci lokalnej). twórz logi dla pakietów inicjujących
+# połączenia, aby można było potem stwierdzić, kto próbował się
+# połączyć.
+pass in log on $ext_if proto tcp from any to { !$ext_if, !$int_if } \
+   port ssh flags S/SA keep state
+</pre>
+</td></tr>
+</table>
+
+<p>
+[<a href="rdr.html">Wstecz: Przekierowania ruchu</a>]
+[<a href="index.html">Spis treści</a>]
+[<a href="logging.html">Dalej: Logowanie</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[wstecz]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: filter.html,v 1.11 ]<br>
+$Translation: filter.html,v 1.1 2003/08/28 09:46:09 pl-team Exp $<br>
+$OpenBSD: filter.html,v 1.1 2003/09/02 14:37:19 jufi Exp $
+</small>
+</body>
+</html> 

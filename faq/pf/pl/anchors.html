@@ -1,0 +1,239 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Zakotwiczenia i nazwane zestawy (pod)reguł</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-2">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 2003 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
+<p>
+[<a href="logging.html">Wstecz: Logowanie</a>]
+[<a href="index.html">Spis treści</a>]
+[<a href="shortcuts.html">Dalej: Skracanie zestawów reguł</a>]
+
+<p>
+<h1><font color="#e00000">PF: Zakotwiczenia i nazwane zestawy (pod)reguł</font></h1>
+
+<hr>
+
+<h3>Spis treści</h3>
+<ul>
+<li><a href="#intro">Wprowadzenie</a>
+<li><a href="#named">Nazwane zestawy reguł</a>
+<li><a href="#options">Opcje zakotwiczeń</a>
+<li><a href="#manip">Manipulowanie nazwanymi zestawami reguł</a>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Wprowadzenie</h2>
+Poza głównym zestawem reguł, PF może przetwarzać także podzestawy.
+Ponieważ podzestawy mogą być modfikowane w trakcie działania przy pomocy
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+><tt>pfctl(8)</tt></a>, mogą stanowić wygodny sposób dynamicznego
+zarządzania aktywnym zestawem reguł. Podczas gdy
+<a href="tables.html">tabele</a> są wykorzystywane do
+przechowywania dynamicznych list adresów, podzestawy
+reguł mogą przechowywać dynamiczne zestawy reguł filtrujących,
+<tt>nat</tt>, <tt>rdr</tt>, i <tt>binat</tt>.
+
+<p>
+Podzestawy reguł są dołączane do głównego zestawu reguł przy pomocy
+zakotwiczeń (ang. anchors). Są cztery typy reguł zakotwiczeń <tt>anchor</tt>:
+<ul>
+<li><tt>anchor <i>name</i></tt> - przetwarza wszystkie reguły
+<a href="filter.html">filtrujące</a>
+w zakotwiczeniu <i><tt>name</tt></i>
+<li><tt>binat-anchor <i>name</i></tt> - przetwarza wszystkie
+reguły <a href="nat.html#binat"><tt>binat</tt></a>
+w zakotwiczeniu <i><tt>name</tt></i>
+<li><tt>nat-anchor <i>name</i></tt> - przetwarza wszystkie reguły
+<a href="nat.html"><tt>nat</tt></a>
+w zakotwiczeniu <i><tt>name</tt></i>
+<li><tt>rdr-anchor <i>name</i></tt> - przetwarza wszystkie reguły
+<a href="rdr.html"> <tt>rdr</tt></a>
+w zakotwiczeniu <i><tt>name</tt></i>
+</ul>
+
+Jedynie główny zestaw reguł może zawierać dyrektywy <tt>anchor</tt>.
+
+<a name="named"></a>
+<h2>Nazwane zestawy reguł</h2>
+Nazwany zestaw reguł, to grupa reguł filtrujących i/lub translacji,
+które mają przyporządkowaną nazwę. Punkty zakotwiczenia <tt>anchor</tt>
+w głównym zestawie reguł mogą zawierać wiele takich zestawów reguł.
+Gdy PF natrafi na jakąś regułę <tt>anchor</tt>, zostaną rozwinięte
+w kolejności alfabetycznej, zgodnie z ich nazwami, wszystkie
+dołączone do niego zestawy reguł. Porównywanie reguł będzie następnie
+kontynuowane, chyba że pakiet zostanie dopasowany do reguły
+korzystającej z opcji <tt>quick</tt> lub reguły translacyjnej w tym
+zakotwiczeniu, kiedy to dopasowanie będzie uznane za ostateczne
+i spowoduje zaniechanie dalszego porównywania reguł w samym,
+zakotwiczeniu jak i głównym zestawie reguł.
+
+<p>
+Na przykład:
+<blockquote>
+<tt>
+ext_if = "fxp0"<br>
+<br>
+block on $ext_if all<br>
+pass  out on $ext_if all keep state<br>
+anchor goodguys
+</tt>
+</blockquote>
+
+<p>
+Ten zestaw reguł sankcjonuje politykę domyślnego blokowania dla
+zarówno przychodzącego jak i wychodzącego ruchu. Ruch jest
+następnie przepuszczany na zewnątrz wraz z śledzeniem stanu połączenia,
+a także tworzone jest zakotwiczenie nazwane  <tt><i>goodguys</i></tt>.
+Aby dodać regułę do zakotwiczenia <tt><i>goodguys</i></tt> można
+użyć następujących komend:
+<blockquote>
+<tt>
+# echo "pass in proto tcp from 192.0.2.3 to any port 22" \<br>
+&nbsp;&nbsp;&nbsp;| pfctl -a goodguys:ssh -f -
+</tt>
+</blockquote>
+
+<p>
+Dodaje ona regułę <tt>pass</tt> do zestawu nazwanego <tt><i>ssh</i></tt>
+dołączonego do zakotwiczenia <tt><i>goodguys</i></tt>. PF dokona następnie
+porównania tej reguły (a także każdej kolejnej, dodanej reguły filtrującej)
+z chwilą, gdy dotrze do linii <tt>anchor goodguys</tt> w głównym
+zestawie reguł.
+
+<p>
+Reguły mogą być także zapisywane i odczytywane z pliku tekstowego:
+<blockquote>
+<tt>
+# cat &gt;&gt; /etc/anchor-goodguys-www<br>
+pass in proto tcp from 192.0.2.3 to any port 80<br>
+pass in proto tcp from 192.0.2.4 to any port { 80 443 }<br>
+<br>
+# pfctl -a goodguys:www -f /etc/anchor-goodguys-www<br>
+</tt>
+</blockquote>
+
+<p>
+Ostatnia komenda powoduje załadowanie reguł z pliku
+<tt>/etc/anchor-goodguys-www</tt> do nazwanego zestawu reguł
+<tt><i>www</i></tt> w zakotwiczeniu <tt><i>goodguys</i></tt>.
+
+<p>
+Reguły filtrujące i translacyjne mogą być załadowane z nazwanego
+zestawu reguł z wykorzystaniem tych samych opcji i składni, co
+przy ładowaniu z głównego zestawu reguł.
+Z zastrzeżeniem, iż wykorzystywane <a href="macros.html">makra</a> 
+muszą być zdefiniowane w danym zestawie, a makra głównego
+zestawu reguł <i>nie</i> będą widoczne w nazwanych zestawach reguł.
+
+<p>
+Każdy nazwany zestaw reguł, podobnie jak i główny zestaw reguł
+funkcjonuje niezależnie od innych zestawów. Operacje wykonywane
+na pojedynczym zestawie, takie jak wyczyszczenie (ang. flush),
+nie mają wpływu na pozostałe zestawy reguł. Ponad to, usunięcie
+zakotwiczenia z głównego zestawu reguł nie niszczy zakotwiczenia,
+ani żadnego nazwanego zestawu reguł, który jest do niego podpięty.
+Nazwany zestaw reguł nie jest niszczony aż do momentu wyczyszczenia
+wszystkich reguł przy pomocy
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>pfctl(8)</a>. Kiedy punkt zakotwiczenia nie posiada żadnego,
+podpiętego zestawu także jest niszczony.
+
+<a name="options"></a>
+<h2>Opcje zakotwiczeń</h2>
+Opcjonalnie, reguły <tt>anchor</tt> mogą precyzować interfejs sieciowy,
+protokół, adres źródłowy i docelowy itp przy pomocy tej samej składni co
+reguły filtrujące. Jeśli takie informacje są podawane, reguły
+<tt>anchor</tt> są przetwarzane jedynie gdy pakiet pasuje do definicji
+danej reguły <tt>anchor</tt>.
+Na przykład:
+<blockquote>
+<tt>
+ext_if = "fxp0"<br>
+<br>
+block on $ext_if all<br>
+pass  out on $ext_if all keep state<br>
+anchor ssh in on $ext_if proto tcp from any to any port 22<br>
+</tt>
+</blockquote>
+
+<p>
+Reguły zakotwiczenia <tt>anchor <i>ssh</i></tt> są przetwarzane jedynie
+dla pakietów TCP o docelowym porcie 22, i które nadchodzą przez fxp0.
+Reguły są następnie dodawane do zakotwiczenia <tt>anchor</tt>
+w następujący sposób:
+<blockquote>
+<tt>
+# echo "pass in from 192.0.2.10 to any" | pfctl -a ssh:allowed -f -
+</tt>
+</blockquote>
+
+<p>
+Mimo iż reguły filtrujące nie precyzują interfejsu, protokołu
+czy portu, jedynie host 192.0.2.10 będzie miał prawo łączyć się
+przy pomocy SSH ze względu na definicje zakotwiczenia <tt>anchor</tt>.
+
+<a name="manip"></a>
+<h2>Manipulowanie nazwanymi zestawami reguł</h2>
+Manipulowanie nazwanymi zestawami reguł odbywa się poprzez
+<tt>pfctl</tt>. Program ten może być wykorzystywany do dodawania
+i usuwania reguł z zestawu bez konieczności przeładowywania
+głównego zestawu reguł.
+
+<p>
+Aby wyświetlić wszystkie reguły zestawu <tt><i>allowed</i></tt>
+podpiętego do zakotwiczenia <tt><i>ssh</i></tt>:
+<blockquote>
+<tt>
+# pfctl -a ssh:allowed -s rules
+</tt>
+</blockquote>
+
+<p>
+Aby wyczyścić wszystkie reguły z tego samego zestawu:
+<blockquote>
+<tt>
+# pfctl -a ssh:allowed -F rules
+</tt>
+</blockquote>
+
+<p>
+Gdy nazwa zestawu jest pominięta, akcja odnosi się do wszystkich
+reguł w zakotwiczeniu.
+
+<p>
+Pełna lista komend znajduje się na stronach man
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+><tt>pfctl(8)</tt></a>.
+
+<p>
+[<a href="logging.html">Wstecz: Logowanie</a>]
+[<a href="index.html">Spis treści</a>]
+[<a href="shortcuts.html">Dalej: Skracanie zestawów reguł</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[wstecz]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: anchors.html,v 1.5 ]<br>
+$Translation: anchors.html,v 1.2 2003/08/31 02:05:47 pl-team Exp $<br>
+$OpenBSD: anchors.html,v 1.1 2003/09/02 14:37:19 jufi Exp $
+</small>
+</body>
+</html> 

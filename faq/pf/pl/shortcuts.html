@@ -1,0 +1,338 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Skracanie zestawów reguł</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-2">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 2003 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
+<p>
+[<a href="anchors.html">Wstecz: Zakotwiczenia i nazwane zestawy (pod)reguł</a>]
+[<a href="index.html">Spis treści</a>]
+[<a href="pools.html">Dalej: Pule adresów i kierowanie ruchem</a>]
+
+<p>
+<h1>
+<font color="#e00000">PF: Skracanie zestawów reguł</font>
+</h1>
+
+<hr>
+
+<h3>Spis treści</h3>
+<ul>
+<li><a href="#intro">Wstęp</a>
+<li><a href="#macros">Makra</a>
+<li><a href="#lists">Listy</a>
+<li><a href="#grammar">Składnia PF</a>
+	<ul>
+	<li><a href="#elim">Skracanie regułek</a>
+	<li><a href="#return">Uproszczenie regułki <tt>return</tt></a>
+	<li><a href="#order">Kolejność słów kluczowych</a>
+	</ul>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Wstęp</h2>
+PF oferuje kilka sposobów na uproszczenie zestawu reguł. Na początek warto
+obejrzeć parę dobrych przykładów użycia <a href="macros.html#macros">makr</a>
+i <a href="macros.html#lists">list</a>. Dodatkowo składnia PF umożliwia używanie
+skrótów pozwalających na dalsze uproszczenie pliku konfiguracyjnego. W praktyce
+prostszy zapis reguł jest łatwiejszy do zrozumienia i zarządzania nim. 
+
+<a name="macros"></a>
+<h2>Makra</h2>
+Podstawową zaletą makr jest możliwość zastąpienia występujących w pliku
+konfiguracyjnym adresów IP, numerów portów, nazw interfejsów itp., przez nazwy
+symboliczne. Jeśli zmieni się adres IP serwera, wystarczy tylko uaktualnić
+definicję makra, bez konieczności marnowania czasu i energii na znajdywanie 
+i modyfikowanie wszystkich wystąpień tego adresu w zestawie reguł.
+
+<p>
+Powszechnym zwyczajem w zestawie reguł PF jest definiowanie makra dla każdego
+interfejsu sieciowego. Za każdym razem gdy karta sieciowa będzie wymieniona na
+inną, korzystającą z innego sterownika, na przykład wymiana karty firmy 3Com na
+kartę firmy Intel, wystarczy uaktualnić makrodefinicję i filtr znów będzie
+pracował. Podobnie sprawa ma się gdy używa się ten sam zestaw reguł na różnych
+komputerach. Niektóre posiadają inne karty sieciowe, więc użycie makra do
+określenia interfejsów sieciowych pozwala na zastosowanie tego samego zestawu
+reguł bez wielkich zmian. Korzystanie z makrodefinicji w plikach
+konfiguracyjnych do określania adresów IP, nazw interfejsów czy numerów portów
+jest dobrym nawykiem.
+
+<blockquote>
+<tt>
+# makrodefinicja dla każdego interfejsu sieciowego<br>
+IntIF = "dc0"<br>
+ExtIF = "fxp0"<br>
+DmzIF = "fxp1"
+</tt>
+</blockquote>
+
+<p>
+Inną, szeroko stosowaną, praktyką jest używanie makr do definiowania adresów IP
+oraz bloków sieci. Takie podejście doskonale obniża ilość modyfikacji, które
+należy przeprowadzić na zestawie reguł, w przypadku zmiany adresu IP.
+
+<blockquote>
+<tt>
+# zdefiniowanie sieci<br>
+IntNet = "192.168.0.0/24"<br>
+ExtAdd = "24.65.13.4"<br>
+DmzNet = "10.0.0.0/24"
+</tt>
+</blockquote>
+
+<p>
+Za każdym razem gdy wewnętrzna sieć zostanie powiększona lub zmieni się jej
+adres, wystarczy tylko zaktualizować makro:
+<blockquote>
+<tt>
+IntNet = "{ 192.168.0.0/24, 192.168.1.0/24 }"
+</tt>
+</blockquote>
+
+<p>
+Gdy tylko zestaw reguł zostanie przeładowany, wszystko będzie działać jak
+poprzednio
+
+<a name="lists"></a>
+<h2>Listy</h2>
+Poniższy zestaw reguł, którego umieszczenie we własnym zestawie reguł jest
+bardzo dobrym rozwiązaniem, blokuje adresy opisane w 
+<a href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a>, z których
+ruch nigdy nie powinny znaleźć się w Internecie, a jeśli już tak się zdarzy
+najczęściej powoduje to problemy.
+<blockquote>
+<tt>
+block in quick on tl0 inet from 127.0.0.0/8 to any<br>
+block in quick on tl0 inet from 192.168.0.0/16 to any<br>
+block in quick on tl0 inet from 172.16.0.0/12 to any<br>
+block in quick on tl0 inet from 10.0.0.0/8 to any<br>
+block out quick on tl0 inet from any to 127.0.0.0/8<br>
+block out quick on tl0 inet from any to 192.168.0.0/16<br>
+block out quick on tl0 inet from any to 172.16.0.0/12<br>
+block out quick on tl0 inet from any to 10.0.0.0/8
+</tt>
+</blockquote>
+
+<p>
+A teraz sposób na uproszczenie powyższego zapisu:
+<blockquote>
+<tt>
+block in quick on tl0 inet from { 127.0.0.0/8, 192.168.0.0/16, \<br>
+&nbsp;&nbsp;&nbsp;172.16.0.0/12, 10.0.0.0/8 } to any<br>
+block out quick on tl0 inet from any to { 127.0.0.0/8, \<br>
+&nbsp;&nbsp;&nbsp;192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }
+</tt>
+</blockquote>
+
+<p>
+W bardzo prosty sposób zestaw reguł z ośmiu linii został zredukowany do dwóch.
+Jeszcze lepszym rozwiązaniem jest użycie makr w połączeniu z listą:
+<blockquote>
+<tt>
+NoRouteIPs = "{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, \<br>
+&nbsp;&nbsp;&nbsp;10.0.0.0/8 }"
+<br>
+ExtIF = "tl0"<br>
+block in quick on $ExtIF from $NoRouteIPs to any<br>
+block out quick on $ExtIF from any to $NoRouteIPs
+</tt>
+</blockquote>
+
+<p>
+Należy wziąć pod uwagę, że makrodefinicje i listy upraszczają plik
+<tt>/etc/pf.conf</tt>, ale jest on później rozwijany przez 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.3">
+pfctl(8)</a> w zestaw wielu reguł. Powyższy przykład po rozwinięciu przyjmie
+następującą postać:
+<blockquote>
+<tt>
+block in quick on tl0 inet from 10.0.0.0/8 to any<br>
+block in quick on tl0 inet from 172.16.0.0/12 to any<br>
+block in quick on tl0 inet from 192.168.0.0/16 to any<br>
+block in quick on tl0 inet from 127.0.0.0/8 to any<br>
+block out quick on tl0 inet from any to 10.0.0.0/8<br>
+block out quick on tl0 inet from any to 172.16.0.0/12<br>
+block out quick on tl0 inet from any to 192.168.0.0/16<br>
+block out quick on tl0 inet from any to 127.0.0.0/8
+</tt>
+</blockquote>
+
+<p>
+Jak można zobaczyć, rozszerzenia PF są udogodnieniem jedynie dla osoby piszącej i
+utrzymującej plik <tt>/etc/pf.conf</tt>, natomiast nie jest to uproszczenie
+reguł sprawdzanych przez
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+3.3">
+pf(4)</a>.
+
+<p>
+Makra mogą być nie tylko pomocą w przypadku adresów i portów, mogą być używane
+w dowolnym miejscu pliku <tt>/etc/pf.conf</tt>, np.:
+<blockquote>
+<tt>
+pre  = "pass in quick on ep0 inet proto tcp from "<br>
+post = "to any port { 80, 6667 } keep state"<br>
+<br>
+# klasa Davida<br>
+$pre 21.14.24.80 $post<br>
+<br>
+# dom Nicka<br>
+$pre 24.2.74.79 $post<br>
+$pre 24.2.74.178 $post
+</tt>
+</blockquote>
+
+<p>
+Powyższy zapis zostanie rozwinięty do następującej postaci:
+<blockquote>
+<tt>
+pass in quick on ep0 inet proto tcp from 21.14.24.80 to any \<br>
+&nbsp;&nbsp;&nbsp;port = 80 keep state<br>
+pass in quick on ep0 inet proto tcp from 21.14.24.80 to any \<br>
+&nbsp;&nbsp;&nbsp;port = 6667 keep state<br>
+pass in quick on ep0 inet proto tcp from 24.2.74.79 to any \<br>
+&nbsp;&nbsp;&nbsp;port = 80 keep state<br>
+pass in quick on ep0 inet proto tcp from 24.2.74.79 to any \<br>
+&nbsp;&nbsp;&nbsp;port = 6667 keep state<br>
+pass in quick on ep0 inet proto tcp from 24.2.74.178 to any \<br>
+&nbsp;&nbsp;&nbsp;port = 80 keep state<br>
+pass in quick on ep0 inet proto tcp from 24.2.74.178 to any \<br>
+&nbsp;&nbsp;&nbsp;port = 6667 keep state
+</tt>
+</blockquote>
+
+<a name="grammar"></a>
+<h2>Składnia PF</h2>
+Wraz z nadejściem OpenBSD 3.3, składnia PF została jeszcze bardziej dopracowana
+aby uzyskać większą elastyczność podczas definiowania reguł. PF posiada zdolność
+wywnioskowania właściwego słowa kluczowego, które nie zostało użyte w sposób
+bezpośredni podczas definiowania regułki. PF zezwala także na dużą swobodę jeśli
+chodzi o kolejność używania słów kluczowych.
+
+<a name="elim"></a>
+<h3>Skracanie regułek</h3>
+Aby określić politykę "domyślnego blokowania", należało użyć dwóch reguł:
+<blockquote>
+<tt>
+block in all<br>
+block out all
+</tt>
+</blockquote>
+
+<p>
+Obecnie można skrócić to do jednej:
+<blockquote>
+<tt>
+block all
+</tt>
+</blockquote>
+
+<p>
+Kiedy kierunek ruchu pakietów nie jest podany, PF przyjmuje, że chodzi zarówno o
+datagramy przychodzące jak i wychodzące.
+
+<p>Podobnie, klauzula "<tt>from any to any</tt> jak i "<tt>all</tt>" mogą zostać
+pominięte, np.:
+<blockquote>
+<tt>
+block in on rl0 all<br>
+pass &nbsp;in quick log on rl0 proto tcp from any to any port 22 keep state
+</tt>
+</blockquote>
+
+może zostać uproszczone do:
+<blockquote>
+<tt>
+block in on rl0<br>
+pass &nbsp;in quick log on rl0 proto tcp to port 22 keep state
+</tt>
+</blockquote>
+
+<p>
+Pierwsza regułka zablokuje ruch wszystkich pakietów przybywających z każdego
+kierunku i wychodzących w dowolnym kierunku na interfejsie rl0, natomiast
+druga przepuszcza ruch TCP na porcie 22 na interfejsie rl0.
+
+<a name="return"></a>
+<h3>Uproszczenie regułki <tt>return</tt></h3>
+Zestaw reguł, który zablokuje wszystkie porty, a na wywołanie któregoś z nich
+odpowie komunikatem TCP RST lub ICPM Unreachable, mógłby wyglądać tak:
+<blockquote>
+<tt>
+block in all<br>
+block return-rst in proto tcp all<br>
+block return-icmp in proto udp all<br>
+block out all<br>
+block return-rst out proto tcp all<br>
+block return-icmp out proto udp all
+</tt>
+</blockquote>
+
+<p>
+Ale może zostać uproszczony do:
+<blockquote>
+<tt>
+block return
+</tt>
+</blockquote>
+
+<p>
+Gdy PF natrafi na słowo <tt>return</tt>, ma już dość informacji aby wysłać
+właściwą odpowiedź (lub nie udzielić jej wcale), w zależności od protokołu,
+przy użyciu którego przesyłane były odrzucone pakiety.
+
+<a name="order"></a>
+<h3>Kolejność słów kluczowych</h3>
+<p>
+Kolejność, w jakiej wszystkie słowa kluczowe mogą zostać podane, jest w
+większości przypadków dość swobodna. Regułę można zapisać tak:
+<blockquote>
+<tt>
+pass in log quick on rl0 proto tcp port 22 \<br> 
+&nbsp;&nbsp;&nbsp;flags S/SA keep state queue ssh label ssh
+</tt>
+</blockquote>
+
+<p>
+Albo tak:
+<blockquote>
+<tt>
+pass in quick log on rl0 proto tcp port 22 \<br>
+&nbsp;&nbsp;&nbsp;queue ssh keep state label ssh flags S/SA
+</tt>
+</blockquote>
+
+<p>
+Inne, podobne kombinacje, będą także działać.
+
+<p>
+[<a href="anchors.html">Wstecz: Zakotwiczenia i nazwane zestawy (pod)reguł</a>]
+[<a href="index.html">Spis treści</a>]
+[<a href="pools.html">Dalej: Pule adresów i kierowanie ruchem</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[wstecz]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: shortcuts.html,v 1.5 ]<br>
+$Translation: shortcuts.html,v 1.1 2003/08/28 09:44:13 pl-team Exp $<br>
+$OpenBSD: shortcuts.html,v 1.1 2003/09/02 14:37:19 jufi Exp $
+</small>
+
+</body>
+</html> 

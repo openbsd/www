@@ -1,0 +1,407 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Translacje adresów (NAT)</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-2">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 2002-2003 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
+<p>
+[<a href="queueing.html">Wstecz: Kolejkowanie</a>]
+[<a href="index.html">Spis treści</a>]
+[<a href="rdr.html">Dalej: Przekierowania ruchu</a>]
+
+<p>
+<h1><font color="#e00000">PF: Translacje adresów (NAT)</font></h1>
+
+<hr>
+
+<h3>Spis treści</h3>
+<ul>
+<li><a href="#intro">Wprowadzenie</a>
+<li><a href="#works">Jak działa NAT</a>
+<li><a href="#enable">Włączanie NAT</a>
+<li><a href="#config">Konfiguracja NAT</a>
+<li><a href="#binat">Dwukierunkowe mapowanie adresów (mapowanie 1:1)</a>
+<li><a href="#except">Wyjątki w regułach translacji</a>
+<li><a href="#status">Sprawdzanie stanu NAT</a>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Wprowadzenie</h2>
+<p>
+Translacja adresów (ang. Network Address Translation - NAT) daje możliwość
+zmapowania całej sieci (lub wielu sieci) do pojedynczego adresu IP. NAT
+jest niezbędny, gdy liczba adresów IP przydzielonych przez
+Dostawcę Usług Internetowych (ISP) jest mniejsza niż całkowita liczba
+maszyn, który mają mieć dostęp do Internetu. NAT jest opisany w
+<a href="http://www.geektools.com/rfc/rfc1631.txt">RFC 1631</a>.
+
+<p>
+NAT pozwala korzystać z dobrodziejstw zarezerwowanych bloków adresów
+zdefiniowanych w
+<a href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a>.
+Zwykle, wewnętrzna sieć będzie skonfigurowana przy użyciu jednego lub
+więcej z tych bloków, a są to:
+
+<pre>
+	10.0.0.0/8       (10.0.0.0 - 10.255.255.255)
+	172.16.0.0/12    (172.16.0.0 - 172.31.255.255)
+	192.168.0.0/16   (192.168.0.0 - 192.168.255.255)
+</pre>
+
+<p>
+Maszyna z OpenBSD realizująca NAT będzie miała co najmniej dwa adaptery
+sieciowe, jeden do Internetu, drugi do sieci wewnętrznej. NAT będzie
+tłumaczył wywołania z sieci wewnętrznej tak, aby wydawało się, że pochodzą
+one z maszyny OpenBSD realizującej NAT.
+
+<a name="works"></a>
+<h2>Jak działa NAT</h2>
+<p>
+Gdy klient w sieci wewnętrznej łączy się z maszyną w Internecie,
+wysyła pakiety IP zaadresowane do tej maszyny. Pakiety te zawierają
+wszystkie informacje adresowe, niezbędne aby dotrzeć do celu.
+NAT zajmuje się następującymi danymi:
+<ul>
+<li>Źródłowy adres IP (na przykład, 192.168.1.35)
+<li>Źródłowy port TCP lub UDP (na przykład, 2132)
+</ul>
+
+<p>
+Gdy pakiety przechodzą przez bramkę NAT, są modyfikowane tak aby wydawały się
+pochodzić z samej bramki (ang. gateway) NAT. Bramka NAT zapamiętuje zmiany,
+wykonywane na pakietach, w swojej tabeli stanów, aby móc: a) odwrócić
+zmiany w powracających pakietach oraz b) zapewnić, że powracające pakiety
+są przepuszczane przez firewall i nie są blokowane. Na przykład, mogą
+wystąpić następujące zmiany:
+<ul>
+<li>Źródłowe IP: zamienione na zewnętrzny adres bramki
+(na przykład, 24.5.0.5)
+<li>Źródłowy port: zamieniony na losowo wybrany, nieużywany port na
+bramce (na przykład, 53136)
+</ul>
+
+<p>
+Ani wewnętrzna maszyna, ani host w Internecie nie obawiają się tych translacji.
+Dla komputera z sieci lokalnej, system realizujący NAT jest po prostu bramką.
+Dla hosta w Internecie, pakiety wydają się pochodzić wprost z systemu, na którym
+realizowany jest NAT; nawet nie zdaje sobie sprawy, że wewnętrzne stacje
+robocze w ogóle istnieją. 
+
+<p>
+Kiedy host w Internecie odpowiada na pakiety wewnętrznej maszyny, są one
+adresowane do zewnętrznego IP bramki realizującej NAT (24.5.0.5) i na
+przetłumaczony port (53136). Bramka NAT przeszuka wówczas tabelę stanów,
+aby sprawdzić, czy powracające pakiety pasują do jakiegoś już nawiązanego
+połączenia. Niepowtarzalne dopasowanie zostaje dokonane na podstawie
+kombinacji IP/port, która mówi PF, że datagarmy należą do połączenia
+zainicjowanego przez wewnętrzną maszynę 192.168.1.35. PF wykona wówczas
+odwrócone zmiany w stosunku do wychodzących pakietów i przekaże je
+do maszyny w sieci wewnętrznej.
+
+<p>
+Translacje pakietów ICMP odbywają się w podobny sposób, ale bez modyfikacji
+portu źródłowego.
+
+<a name="enable"></a>
+<h2>Włączanie NAT</h2>
+<p>
+Aby uruchomić NAT na bramce OpenBSD, poza
+<a href="config.html#activate">aktywacją PF</a>, trzeba także włączyć
+przekazywanie pakietów IP (ang. IP forwarding):
+<blockquote>
+<tt>
+# sysctl -w net.inet.ip.forwarding=1<br>
+# sysctl -w net.inet6.ip6.forwarding=1 <i>(jeśli używany jest IPv6)</i>
+</tt>
+</blockquote>
+
+<p>
+Aby zmienne ty były ustawiane podczas każdego startu systemu, następujące
+linie powinny zostać dodane do
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl.conf&amp;sektion=5&amp;manpath=OpenBSD+3.3"
+><tt>/etc/sysctl.conf</tt></a>:
+<blockquote>
+<tt>
+net.inet.ip.forwarding=1<br>
+net.inet6.ip6.forwarding=1
+</tt>
+</blockquote>
+
+<p>
+Linie te są tam już obecne w domyślnej instalacji, ale są tylko komentarzem
+(poprzedzone znakiem <tt>#</tt>). Wystarczy usunąć znak <tt>#</tt> i zapisać
+plik. Przekazywanie pakietów IP będzie włączone po kolejnym starcie systemu.
+
+<a name="config"></a>
+<h2>Konfiguracja NAT</h2>
+Ogólna składnia reguł NAT w <tt>/etc/pf.conf</tt> wygląda tak:
+<blockquote>
+<tt>
+nat on <i>extif</i> [<i>af</i>] from <i>src_addr</i> 
+[port <i>src_port</i>] to \<br>
+&nbsp;&nbsp;&nbsp;<i>dst_addr</i> [port <i>dst_port</i>] -&gt; 
+<i>ext_addr</i>
+</tt>
+</blockquote>
+
+<dl>
+<dt><tt><i>extif</i></tt>
+<dd>Nazwa zewnętrznego interfejsu sieciowego.
+
+<dt><tt><i>af</i></tt>
+<dd>Rodzina adresów: <tt>inet</tt> dla IPv4 lub <tt>inet6</tt>
+dla IPv6. PF jest zwykle w stanie zidentyfikować ten parametr na podstawie
+adresu(ów) źródłowych/przeznaczenia.
+
+<dt><tt><i>src_addr</i></tt>
+<dd>Źródłowy (wewnętrzny) adres pakietów, które będą podlegały translacji NAT.
+Adres źródłowy może być podany jako:
+<ul>
+<li>Pojedynczy adres IPv4 lub IPv6.
+<li>Blok sieci - <a href="http://public.pacbell.net/dedicated/cidr.html">CIDR</a>.
+<li>W pełni określona domena, która będzie rozwinięta przez DNS w czasie
+ładowania zestawu reguł. Wszystkie zwrócone adresy IP będą wstawione do reguły.
+<li>Nazwa interfejsu sieciowego. Wszystkie adresy IP przypisane do urządzenia
+będą wprowadzone podczas ładowania zestawu reguł.
+<li>Nazwa interfejsu sieciowego wraz z maską sieciową
+(np <tt>/24</tt>). Każdy adres IP danego interfejsu jest łączony
+z każdą maską sieciową aby utworzyć odpowiedni blok sieci CIDR,
+który będzie wprowadzony podczas ładowania zestawu reguł.
+<li>Nazwa interfejsu sieciowego z dopisanym na końcu słowem kluczowym
+<tt>:network</tt> lub <tt>:broadcast</tt>. Odpowiedni blok sieci CIDR
+(np 192.168.0.0/24) lub adres rozgłoszeniowy (np 192.168.0.255) będzie
+wprowadzony podczas ładowania zestawu reguł.
+<li>Którykolwiek z powyższych, lecz zanegowany przy pomocy modyfikatora
+<tt>!</tt> ("not"). <li>Zestaw adresów w postaci
+<a href="macros.html#lists">listy</a>. <li>Słowo kluczowe <tt>any</tt>
+oznaczające wszystkie adresy.
+</ul>
+
+<dt><tt><i>src_port</i></tt>
+<dd>Port źródłowy w Warstwie 4 nagłówka pakietu. Porty mogą być podawane jako:
+<ul>
+<li>Liczba z zakresu od 1 do 65535
+<li>Poprawna nazwa usługi, zdefiniowana w
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=services&amp;sektion=5&amp;manpath=OpenBSD+3.3"
+><tt>/etc/services</tt></a>
+<li>Zestaw portów w postaci <a href="macros.html#lists">listy</a>
+<li>Przedział:
+	<ul>
+	<li><tt>!=</tt> (różny)
+	<li><tt>&lt;</tt> (mniejszy niż)
+	<li><tt>&gt;</tt> (większy niż)
+	<li><tt>&lt;=</tt> (mniejszy lub równy)
+	<li><tt>&gt;=</tt> (większy lub równy)
+	<li><tt>&gt;&lt;</tt> (przedział)
+	<li><tt>&lt;&gt;</tt> (poza przedziałem)
+	</ul>
+	<dl>
+	<dd>Ostatnie dwa są operatorami binarnymi (wymagają dwóch argumentów) oraz
+	nie mogą mieć parametrów w postaci przedziałów.
+	</dl>
+</ul>
+Opcja <tt>port</tt> nie jest zwykle wykorzystywana w regułach <tt>nat</tt>,
+ponieważ celem jest zwykłe translacja NAT całego ruch bez względu na używane
+port(y).
+
+<dt><tt><i>dst_addr</i></tt>
+<dd>Adres docelowy pakietów, który ma ulegać translacji. Adres docelowy
+jest podawany w ten sam sposób, co adres źródłowy.
+
+<dt><tt><i>dst_port</i></tt>
+<dd>Port docelowy w Warstwie 4 nagłówka pakietu. Port ten jest podawany
+w ten sam sposób, co port źródłowy.
+
+<dt><tt><i>ext_addr</i></tt>
+<dd>Zewnętrzny adres w bramce NAT, na który pakiety będą tłumaczone.
+Zewnętrzny adres może być podany jako:
+<ul>
+<li>Pojedynczy adres IPv4 lub IPv6.
+<li>Blok sieci - <a href="http://public.pacbell.net/dedicated/cidr.html">CIDR</a>.
+<li>W pełni określona domena, która będzie rozwijana przez DNS w czasie
+ładowania zestawu reguł.
+<li>Nazwa zewnętrznego interfejsu sieciowego. Wszystkie adresy IP przypisane do
+urządzenia będą wprowadzone podczas ładowania zestawu reguł.
+<li>Nazwa zewnętrznego interfejsu sieciowego w nawiasach okrągłych 
+<tt>( )</tt>. Mówi to PF, aby odświeżać regułę, jeśli adres(y) IP tego
+urządzenia sieciowego ulegną zmianie. Jest to bardzo przydatne gdy zewnętrzne
+urządzenie otrzymuje swój adres IP przez DHCP lub dial-up, gdzyż zestaw reguł
+nie musi być przeładowywany za każdym razem, gdy zmienia się IP.
+<li>Nazwa interfejsu sieciowego z dopisanym na końcu słowem kluczowym
+<tt>:network</tt>. Odpowiedni blok sieci CIDR (np 192.168.0.0/24) będzie
+wprowadzony podczas ładowania zestawu reguł.
+<li>Zestaw adresów w postaci <a href="macros.html#lists">listy</a>.
+</ul>
+
+</dl>
+
+<p>
+Prowadzi to do najprostszej formy tej linii, podobnej do tej:
+<blockquote>
+<tt>
+nat on tl0 from 192.168.1.0/24 to any -&gt; 24.5.0.5
+</tt>
+</blockquote>
+
+<p>
+Reguła ta mówi, aby wykonywać translacje NAT na urządzeniu <tt>tl0</tt> dla
+wszystkich pakietów z bloku 192.168.1.0/24, oraz aby zastępować źródłowy
+adres IP przez 24.5.0.5.
+
+<p>
+Mimo, że powyższa reguła jest poprawna, nie jest ona polecaną formą.
+Jej konserwacja mogłaby być trudna, gdyż jakiekolwiek zmiany w numerach
+zewnętrznych lub wewnętrznych adresów będą wymagać modyfikacji tej linii.
+Porównaj ją z tą, łatwą w zarządzaniu, regułką (<tt>tl0</tt> zewnętrzny
+interfejs, <tt>dc0</tt> wewnętrzne interfejs):
+<blockquote>
+<tt>
+nat on tl0 from dc0/24 to any -&gt; tl0
+</tt>
+</blockquote>
+
+<p>
+Zalety powinny być wyraźnie widoczne: można zmieniać adresy IP któregokolwiek
+z interfejsów bez zmiany tej reguły.
+
+<p>
+Gdy podana zostaje nazwa interfejsu dla translacji adresów, jak w
+przykładzie powyżej, adres IP jest określony w pf.conf podczas
+<i>ładowania</i>, nie od ręki. Jeśli używane jest DHCP, do konfiguracji
+zewnętrznego interfejsu, można napotkać następujący problem: jeśli przypisany
+adres IP ulega zmianie, NAT nadal będzie tłumaczyć wychodzące pakiety
+używając starego adresu IP. Spowoduje to, że wychodzące połączenia przestaną
+funkcjonować. Aby to obejść, można nakazać PF automatycznie aktualizować adres
+translacji poprzez wstawienie nazwy danego interfejsu w nawiasy okrągłe:
+<blockquote>
+<tt>
+nat on tl0 from dc0/24 to any -&gt; (tl0)
+</tt>
+</blockquote>
+
+<p>
+Jest jedno znaczące ograniczenie tej metody: jedynie pierwszy alias IP
+na danym urządzeniu jest rozwijany gdy nazwa interfejsu jest w nawiasach
+okrągłych.
+
+<a name="binat"></a>
+<h2>Dwukierunkowe mapowanie adresów (mapowanie 1:1)</h2>
+Dwukierunkowe mapowanie może być realizowane przy pomocy reguły
+<tt>binat</tt>. Reguła <tt>binat</tt> realizuje mapowanie jeden do jednego
+pomiędzy zewnętrznym i wewnętrznym adresem IP. Może to być użyteczne, aby
+serwer web z sieci wewnętrznej był widoczny w Internecie jako serwer web 
+z własnym zewnętrznym adresem IP. Połączenia z Internetu na ten adres
+zewnętrzny będą tłumaczone na adres wewnętrzny , a połączenia z serwera web
+(jak na przykład zapytania DNS) będą tłumaczone na adres zewnętrzny. Porty
+TCP i UDP nie są nigdy modyfikowane przez reguły <tt>binat</tt>, co odróżnia
+tą regułę od <tt>nat</tt>.
+
+<p>
+Przykład:
+<blockquote>
+<tt>
+web_serv_int = "192.168.1.100"<br>
+web_serv_ext = "24.5.0.6"<br>
+<br>
+binat on tl0 from $web_serv_int to any -&gt; $web_serv_ext<br>
+</tt>
+</blockquote>
+
+<a name="except"></a>
+<h2>Wyjątki w regułach translacji</h2>
+Wyjątki w regułach translacji mogą być definiowane przy pomocy słowa kluczowego
+<tt>no</tt>. Jeśli wcześniejszy przykład NAT byłby zmodyfikowany
+w następujący sposób:
+<blockquote>
+<tt>
+no nat on tl0 from 192.168.1.10 to any<br>
+nat on tl0 from 192.168.1.0/24 to any -&gt; 24.2.74.79
+</tt>
+</blockquote>
+
+<p>
+Wówczas translacja NAT byłaby realizowana dla całego bloku sieci
+192.168.1.0/24, z wyjątkiem hosta 192.168.1.10.
+
+<p>
+Zwróć uwagę, że w przypadku translacji brana jest pierwsza pasująca reguła -
+jeśli jest to regułka <tt>no</tt>, wtedy pakiet nie będzie poddany translacji.
+Słowo kluczowe <tt>no</tt> może także być używane wraz z regułami
+<tt>binat</tt> i <a href="rdr.html"><tt>rdr</tt></a>.
+
+<a name="status"></a>
+<h2>Sprawdzanie stanu NAT</h2>
+Aby wyświetlić listę aktywnych translacji NAT, używa sie opcji
+<tt>-s state</tt> programu
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>pfctl(8)</a>. Opcja ta wyświetli wszystkie obecne sesje NAT:
+
+<pre>
+   # pfctl -s state
+   TCP 192.168.1.35:2132 -&gt; 24.5.0.5:53136 -&gt; 65.42.33.245:22 TIME_WAIT:TIME_WAIT
+   UDP 192.168.1.35:2491 -&gt; 24.5.0.5:60527 -&gt; 24.2.68.33:53   MULTIPLE:SINGLE
+</pre>
+
+<p>
+Wyjaśnienie (jedynie pierwsza linia):
+
+<dl>
+<dt>TCP
+<dd>Protokół wykorzystywany przez połączenie.
+</dl>
+
+<dl>
+<dt>192.168.1.35:2132
+<dd>Adres IP (192.168.1.35) maszyny w sieci wewnętrznej. Port źródłowy
+(2132) jest wyświetlany po adresie. Jest to adres, który jest zamieniany
+w nagłówku IP.
+</dl>
+
+<dl>
+<dt>24.5.0.5:53136
+<dd>Adres IP (24.5.0.5) i port (53136) na bramce, na który pakiety są
+tłumaczone.
+</dl>
+
+<dl>
+<dt>65.42.33.245:22
+<dd>Adres IP (65.42.33.245) i port (22), na który łączy się maszyna z
+sieci wewnętrznej.
+</dl>
+
+<dl>
+
+<dt>TIME_WAIT:TIME_WAIT
+<dd>Stan w jakim, według PF, znajduje się połączenie TCP.
+</dl>
+
+<p>
+[<a href="queueing.html">Wstecz: Kolejkowanie</a>]
+[<a href="index.html">Spis treści</a>]
+[<a href="rdr.html">Dalej: Przekierowania ruchu</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[wstecz]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>Originally [OpenBSD: nat.html,v 1.7 ]<br>
+$Translation: nat.html,v 1.1 2003/08/28 09:46:09 pl-team Exp $<br>
+$OpenBSD: nat.html,v 1.1 2003/09/02 14:37:19 jufi Exp $
+</small>
+</body>
+</html> 

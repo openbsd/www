@@ -1,0 +1,866 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Kolejkowanie</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-2">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 2003 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
+<p>
+[<a href="scrub.html">Wstecz: Scrub</a>]
+[<a href="index.html">Spis treści</a>]
+[<a href="nat.html">Dalej: NAT (Network Address Translation)</a>]
+
+<p>
+<h1><font color="#e00000">PF: Kolejkowanie</font></h1>
+
+
+<hr>
+
+<h3>Spis treści</h3>
+<ul>
+<li><a href="#queueing">Kolejkowanie</a>
+<li><a href="#sched">Algorytmy szeregowania</a>
+	<ul>
+	<li><a href="#cbq">Class Based Queueing</a>
+	<li><a href="#priq">Kolejkowanie priorytetowe</a>
+	<li><a href="#red">Mechanizm wczesnego wykrywania RED</a>
+	<li><a href="#ecn">Jawne powiadomienie o przeciążeniu (ECN)</a>
+	</ul>
+<li><a href="#altq">Konfiguracja kolejkowania</a>
+<li><a href="#assign">Przypisywanie ruchu do kolejki</a>
+<li><a href="#example1">Przykład 1: Mała sieć domowa</a>
+<li><a href="#example2">Przykład 2: Sieć w firmie</a>
+</ul>
+
+<hr>
+
+<a name="queueing"></a>
+<h2>Kolejkowanie</h2>
+<p>
+Terminem "kolejkowanie" określa się przechowywanie pewnej rzeczy w oczekiwaniu
+na dalszą jej obróbkę. W sieciach komputerowych, każde dane, zanim zostaną
+wysłane umieszczane są w kolejce, w której oczekują na przetworzenie. System
+operacyjny decyduje zaś, które pakiety i z jakiej kolejki zostaną w danym
+momencie wysłane. Kolejność w jakiej system operacyjny wybiera pakiety do
+przetworzenia może wpływać na wydajność sieci. Na przykład, użytkownik
+uruchomił dwa programy wykorzystujące sieć: SSH oraz FTP. Teoretycznie
+pakiety SSH powinny być obsłużone przed pakietami FTP ponieważ protokół SSH
+jest uzależniony czasowo; w trakcie wpisywania czegoś w kliencie SSH wymaga
+się natychmiastowej odpowiedzi, a opóźnienie transferu danych z FTP na kilka
+sekund nie powoduje właściwie żadnych problemów. A co się stanie, gdy router
+kierujący ruchem sieciowym przetwarza duże ilości pakietów FTP przed
+obsłużeniem połączeń SSH? Pakiety należące do sesji SSH zostaną umieszczone
+w kolejce (w przypadku nadmiernego wydłużenia kolejki, najprawdopodobniej
+będą porzucone), a połączenie SSH będzie miało tendencję do dużych opóźnień
+(ang. lag) lub wręcz bardzo spowolnią się odpowiedzi strony zdalnej.
+Modyfikując jednak bieżącą strategię kolejkowania dostępne pasmo sieci będzie
+sprawiedliwie podzielone pomiędzy aplikacje, użytkowników i komputery. 
+
+<p>
+Proszę zwrócić uwagę, że kolejkowanie jest tylko użyteczne w przypadku
+pakietów <i>wychodzących</i>. W momencie, gdy pakiet osiągnie kartę sieciową,
+właściwie już jest za późno na to, by go skolejkować - bowiem właśnie
+wykorzystał część pasma w celu dostania się do karty sieciowej,
+która go odebrała. Jedynym rozwiązaniem jest włączenie kolejkowania na
+routerze bądź maszynie, która pełni funkcję routera i odebrała pakiet.
+Kolejkowanie należy włączyć na wewnętrznym interface, tzn. tam gdzie pakiety
+opuszczają router. 
+
+<a name="sched"></a>
+<h2>Algorytmy szeregowania</h2>
+Algorytm szeregowania (ang. scheduler) jest tym, co decyduje którą kolejkę
+przetwarzać i w jakiej kolejności. Domyślnie OpenBSD używa algorytmu
+szeregowania FIFO (pierwszy wszedł, pierwszy wyjdzie). Kolejki FIFO 
+działają podobnie jak kolejka w supermarkecie lub w banku - pakiet
+znajdujący się na czele kolejki będzie przetworzony jako pierwszy.
+Kiedy nadchodzą nowe pakiety, dodawane są na koniec kolejki. Jeśli kolejka
+zapełni się, nowo przybyłe pakiety są odrzucane. Taka metoda zwana jest
+"odrzucaniem ogona".
+
+<p>
+W OpenBSD dostępne są dwa algorytmy szeregowania:
+<ul>
+<li>Kolejkowanie oparte o klasy (CBQ) - Class Based Queueing
+<li>Kolejkowanie oparte o priorytety (PRIQ) - Priority Queueing
+</ul>
+
+<a name="cbq"></a>
+<h3>Class Based Queueing</h3>
+Class Based Queueing (CBQ) jest algorytmem, który dzieli pasmo 
+połączenia sieciowego na wiele kolejek lub klas. Do każdej 
+kolejki przypisywane są pakiety zależnie od adresu źródłowego lub 
+docelowego, numeru portu, protokołu, itp. Kolejka może być skonfigurowana w
+sposób umożliwiający pożyczenie pasma od swojej kolejki nadrzędnej, gdy
+jej dostępna przepustowość nie jest całkowicie wykorzystywana. Kolejki mogą
+posiadać przypisany priorytet w taki sposób, że te zawierające dane wymagające
+dużej interaktywności, np. SSH, będą obsługiwane przed tymi, które zawierają 
+dane nie wymagające interakcji np. FTP. 
+
+<p>
+Kolejki CBQ tworzone są hierarchicznie. Na szczycie struktury znajduje się 
+kolejka-korzeń (ang. root), która definiuje maksymalną dostępną przepustowość 
+łącza. Kolejki podrzędne tworzone są pod kolejką główną. Do każdej
+z podrzędnych kolejek przypisana jest część pasma kolejki głównej.
+Na przykład, kolejki mogą być zdefiniowane jak poniżej:
+<dl>
+<dd>Root Queue (2Mbps)
+	<dl>
+	<dd>Queue A (1Mbps)
+	<dd>Queue B (500Kbps)
+	<dd>Queue C (500Kbps)
+	</dl>
+</dl>
+W tym przypadku, całe dostępne pasmo ustawione jest na wartość 2 megabity na
+sekundę (Mbps), a następnie dzielone jest na trzy kolejki podrzędne. 
+
+<p>
+Struktura może dalej być rozszerzana poprzez definiowanie nowych kolejek 
+z kolejek pierwszego poziomu. Aby podzielić pasmo pomiędzy różnych użytkowników
+oraz sklasyfikować ich ruch w taki sposób, aby niektóre protokoły nie obciążały 
+pasma innych, struktura kolejek może być zdefiniowana tak:
+<dl>
+<dd>Root Queue (2Mbps)
+	<dl>
+	<dd>UserA (1Mbps)
+		<dl>
+		<dd>ssh (50Kbps)
+		<dd>bulk (950Kbps)
+		</dl>
+	<dd>UserB (1Mbps)
+		<dl>
+		<dd>audio (250Kbps)
+		<dd>bulk (750Kbps)
+			<dl>
+			<dd>http (100Kbps)
+			<dd>other (650Kbps)
+			</dl>
+		</dl>
+	</dl>
+</dl>
+Należy zauważyć, iż na każdym poziomie suma przepustowości przypisanych 
+do poszczególnych kolejek nie przekracza przepustowości kolejki będącej 
+dla nich kolejką nadrzędną.  
+
+<p>
+Kolejka może być skonfigurowana w taki sposób, aby pożyczać (ang.
+borrow) pasmo od swojego rodzica, jeśli jest dostępna u niego
+nadwyżka, która powstaje gdy inne kolejki pochodne nie wykorzystują
+pasma. Rozważmy następującą konfiguracje:
+<dl>
+<dd>Root Queue (2Mbps)
+	<dl>
+	<dd>UserA (1Mbps)
+		<dl>
+		<dd>ssh (100Kbps)
+		<dd>ftp (900Kbps, borrow)
+		</dl>
+	<dd>UserB (1Mbps)
+	</dl>
+</dl>
+Jeśli ruch w kolejce ftp przekracza 900Kbps, a ruch w kolejce UserA
+jest mniejszy niż 1Mbps (ponieważ kolejka ssh wykorzystuje mniej
+niż 100Kbps pasma), wówczas kolejka ftp pożyczy nadmiar pasma od
+UserA. W ten sposób kolejka ftp jest w stanie korzystać z większego
+pasma, niż przydzielone jej, w sytuacji gdy jest przeładowana.
+Jeśli wzrośnie zapotrzebowanie na pasmo w kolejce ssh, wówczas
+udostępniane pasmo zostanie oddane.
+
+<p>
+CBQ przypisuje każdej kolejce poziom priorytetu. Kolejki o większym
+priorytecie są częściej wybierane podczas przeciążenia sieci niż kolejki
+o niższym priorytecie, pod warunkiem, że kolejki mają tego samego
+rodzica (innymi słowy, tak długo jak kolejki znajdują się w tej samej gałęzi
+hierarchii). Kolejki o tym samym priorytecie są przetwarzane w sposób
+rotacyjny (ang. round-robin). Na przykład:
+<dl>
+<dd>Root Queue (2Mbps)
+	<dl>
+	<dd>UserA (1Mbps, priority 1)
+		<dl>
+		<dd>ssh (100Kbps, priority 5)
+		<dd>ftp (900Kbps, priority 3)
+		</dl>
+	<dd>UserB (1Mbps, priority 1)
+	</dl>
+</dl>
+CBQ będzie przetwarzać kolejki UserA i UserB w sposób rotacyjny -
+żadna z kolejek nie będzie miała pierwszeństwa przed inną. W czasie
+gdy kolejka UserA będzie przetwarzana, CBQ będzie także obsługiwać
+jej kolejki pochodne. W tym przypadku kolejka ssh ma większy
+priorytet i będzie miała pierwszeństwo przed kolejką ftp, gdy
+sieć będzie przeciążona. Zauważ, że priorytety kolejek ssh i ftp 
+nie są porównywane w stosunku do kolejek UserA i UserB, ponieważ
+nie znajdują się one w tej samej gałęzi hierarchii.
+
+<p>
+Osoby zainteresowane szegółowymi informacjami na temat teorii stojącej
+za kolejkowaniem CBQ, mogą odwiedzić
+<a href="http://www.icir.org/floyd/cbq.html">tą stronę</a>.
+
+<a name="priq"></a>
+<h3>Kolejkowanie priorytetowe</h3>
+Kolejkowanie priorytetowe PRIQ (ang. priority queueing) pozwala nadać
+wielu kolejkom na interfejsie sieciowym unikalny poziom priorytetu.
+Kolejka o większym priorytecie jest <i>zawsze</i> przetwarzana
+przed kolejką o mniejszym priorytecie.
+
+<p>
+Struktura kolejek PRIQ jest zawsze płaska - nie można definiować
+kolejek w kolejkach. Kolejka-korzeń jest definiowana aby określić
+całkowitą dostępną przepustowość, po czym definiowane są podkolejki
+korzenia. Rozważmy następujący przykład:
+<dl>
+<dd>Root Queue (2Mbps)
+	<dl>
+	<dd>Queue A (priority 1)
+	<dd>Queue B (priority 2)
+	<dd>Queue C (priority 3)
+	</dl>
+</dl>
+Zadeklarowano, że kolejka-korzeń ma dostępną przepustowość 2Mbps
+oraz że posiada trzy kolejki podrzędne. Kolejka o najwyższym priorytecie
+(posiadająca największy numer priorytetu) jest obsługiwana jako pierwsza.
+Gdy wszystkie pakiety są przetworzone, lub gdy kolejka jest
+pusta, wówczas PRIQ przechodzi do przetwarzania następnej kolejki
+o kolejnym najwyższym priorytecie. W obrębie kolejki pakiety
+są przetwarzane na zasadzie First In First Out (FIFO).
+
+<p>
+Istotne jest, aby bardzo uważnie planować swoje kolejki korzystające
+z PRIQ ponieważ algorytm ten <i>zawsze</i> przetwarza kolejkę o
+wyższym priorytecie przed kolejką o niższym priorytecie. Jest
+możliwe, że kolejka o wysokim priorytecie spowoduje, że pakiety
+kolejki o niższym priorytecie będą opóźnione lub nawet porzucone
+(ang. drop) w sytuacji, gdy kolejka o wyższym priorytecie otrzymuje
+ciągły strumień pakietów.
+
+<a name="red"></a>
+<h3>Mechanizm wczesnego wykrywania RED</h3>
+Mechanizm wczesnego wykrywania RED (ang. Random Early Detection)
+jest algorytmem pozwalającym uniknąć przeciążenia łącza. Jest to
+realizowane poprzez zagwarantowanie, że dana kolejka nie zostanie
+zapełniona. Algorytm osiąga to poprzez nieustanne obliczanie średniej
+długości (wielkości) kolejki i porównywanie jej z dwoma progami:
+minimalnym i maksymalnym. Jeśli średnia wielkość kolejki jest poniżej
+minimalnego progu wówczas żaden przybywający pakiet nie będzie
+porzucony. Jeśli średnia wielkość kolejki jest powyżej maksymalnego
+progu, wtedy <i>wszystkie</i> nowo przybyłe pakiety są porzucane.
+Jeśli średnia jest pomiędzy wartościami progów wówczas pakiety są
+porzucane bazując na obliczeniach prawdopodobieństwa dokonywanych
+na podstawie średniej wielkości kolejki. Innymi słowy, czym bardziej
+wielkość kolejki zbliża się do wartości maksymalnego progu,
+tym więcej pakietów jest porzucanych.
+Gdy pakiety są porzucane, RED wybiera losowo połączenia, których
+pakiety mają być porzucane. Połączenia wykorzystujące większe pasmo
+są bardziej narażone na porzucanie ich pakietów.
+
+<p>
+RED jest użyteczny, ponieważ pozwala uniknąć scenariusza zwanego
+"globalną synchronizacją", a także jest w stanie obsłużyć "wybuchy"
+ruchu. Termin "globalna synchronizacja" odnosi się do utraty
+łącznej przepustowości z powodu porzucania pakietów wielu połączeń
+w tym samym czasie. Na przykład, jeśli przeciążenie pojawi się na
+routerze obsługującym ruch dla 10 połączeń FTP i pakiety z wszystkich
+(lub prawie) tych połączeń są porzucane (jak to ma miejsce w przypadku
+kolejkowania FIFO) wówczas ogólne wykorzystanie łącza dyrastycznie
+spadnie. Nie jest to idealna sytuacja, ponieważ powoduje to
+zmniejszenie prędkości wszystkich połączeń FTP i oznacza, że
+maksymalny potencjał sieci nie jest wykorzystany optymalnie.
+Algorytm RED pozwala tego uniknąć poprzez losowy wybór połączeń,
+których pakiety mają być porzucane, zamiast wybierać je wszystkie.
+Połączenia wykorzystujące dużą przepustowość są bardziej narażone
+na prawdopodobieństwo porzucenia ich pakietów. W ten sposób mocno
+obciążające sieć połączenia będą tłumione, przeciążenia unikane,
+a utrata maksymalnego wykorzystania przepustowości nie będzie mieć
+miejsca. Dodatkowo, RED jest w stanie poradzić sobie z "wybuchami"
+ruchu, ponieważ zaczyna porzucać pakiety <i>zanim</i> dana kolejka
+zostaje zapełniona. Gdy "wybuch" ruchu ma miejsce, jest wystarczająco
+dużo wolnego miejsca w kolejce, aby poradzić sobie z nowymi pakietami.
+
+<p>
+RED powinien być stosowany jedynie, gdy protokół transportujący jest
+zdolny do odpowiadania na wskaźniki przepełnienia z sieci.
+W większości przypadków oznacza to, iż RED powinien być używany
+przy kolejkowaniu ruchu TCP, a nie UDP czy ICMP.
+
+<p>
+Bardziej szczegółowe informacje o teorii stojącej za kolejowaniem RED,
+są dostępne na
+<a href="http://www.icir.org/floyd/red.html">tej stronę</a>.
+
+<a name="ecn"></a>
+<h3>Jawne powiadomienie o przeciążeniu (ECN)</h3>
+Jawne powiadomienie o przeciążeniu (ang. Explicit Congestion
+Notification - ECN) działa w połączeniu z RED, aby powiadomić
+dwa hosty komunikujące się za pośrednictwem sieci o jakimkolwiek
+przeciążeniu na trasie połączenia. Jest to osiągane poprzez
+umożliwienie RED ustawiania flagi w nagłówku pakietu zamiast jego
+porzucania. Zakładając, że wysyłający host obsługuje ECN, może on
+odczytać flagę i zdławić odpowiednio ilość wysyłanych pakietów.
+
+<p>
+Więcej informacji o ECN można znaleźć w 
+<a href="http://www.rfc-editor.org/rfc/rfc3168.txt">RFC 3168</a>.
+
+<a name="altq"></a>
+<h2>Konfiguracja kolejkowania</h2>
+Od wydania OpenBSD 3.0 implementacja kolejkowania 
+<a href="http://www.csl.sony.co.jp/person/kjc/kjc/software.html#ALTQ"
+>Alternate Queueing (ALTQ)</a> jest częścią podstawowego systemu.
+Począwszy od OpenBSD 3.3 ALTQ jest zintegrowane z PF. Implementacja
+ALTQ na OpenBSD wspiera algorytmy szeregowania Class Based Queueing
+(CBQ) i Priority Queueing (PRIQ). Poza tym obsługuje Random
+Early Detection (RED) i Explicit Congestion Notification (ECN).
+
+<p>
+Ponieważ ALTQ stało się częścią PF, dlatego PF musi być aktywne,
+aby kolejkowanie działało. Instrukcja, jak włączyć PF jest dostępna
+w sekcji <a href="config.html#activate">Konfiguracja</a>.
+
+<p>
+Kolejkowanie jest konfigurowane w pliku <tt>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+3.3"
+>/etc/pf.conf</a></tt>. Istnieją dwa typy dyrektyw, które służą
+do konfigurowania kolejkowania:
+<ul>
+<li><tt>altq on</tt> - włącza kolejkowanie na interfejsie, definiuje
+który algorytm szeregowanie ma być zastosowany i tworzy kolejkę-korzeń
+<li><tt>queue</tt> - definiuje własności kolejek pochodnych
+</ul>
+
+<p>
+Składnia dyrektywy <tt>altq on</tt> wygląda następująco:
+<blockquote>
+<tt>
+altq on <i>interface scheduler</i> bandwidth <i>bw</i> qlimit 
+<i>qlim</i> \<br>
+&nbsp;&nbsp;&nbsp;tbrsize <i>size</i> queue { <i>queue_list</i> }
+</tt>
+</blockquote>
+
+<ul>
+<li><tt><i>interface</i></tt> - interfejs na którym ma być aktywowane
+kolejkowanie.
+<li><tt><i>scheduler</i></tt> - jaki algorytm szeregowania ma być
+zastosowany. Możliwymi wartościami są <tt>cbq</tt> lub <tt>priq</tt>.
+Tylko jeden algorytm szeregowania może być aktywowany na pojedynczym
+interfejsie w tym samym czasie.
+<li><tt><i>bw</i></tt> - całkowita dostępna przepustowość dla algorytmu
+szeregowania. Może być ona podana w formie wartości absolutnej z
+wykorzystaniem przyrostków b, Kb, Mb i Gb oznaczających odpowiednio bity,
+kilobity, megabity i gigabity na sekundę, lub jako wartość procentowa
+przepustowości interfejsu <tt><i>interface</i></tt>.
+<li><tt><i>qlim</i></tt> - maksymalna liczba pakietów przechowywanych w
+kolejce. Jest to parametr opcjonalny. Domyślnie ma wartość 50.
+<li><tt><i>size</i></tt> - wielkość regulatora "wiadra z żetonami" (ang.
+token bucket) w bajtach. Jeśli nie zdefiniowana, wielkość jest ustalana
+na podstawie przepustowości interfejsu <tt><i>interface</i></tt>.
+<li><tt><i>queue_list</i></tt> - lista kolejek pochodnych tworzonych
+poniżej kolejki-korzenia.
+</ul>
+
+Na przykład:
+<blockquote>
+altq on fxp0 cbq bandwidth 2Mb queue { std, ssh, ftp }
+</blockquote>
+Linia ta uaktywnia CBQ na interfejsie fxp0. Całkowita dostępna
+przepustowość jest określona na 2Mbps. Zadeklarowane są trzy
+kolejki-dzieci: std, ssh i ftp.
+
+<p>
+Składnia dyrektywy <tt>queue</tt> jest następująca:
+<blockquote>
+<tt>
+queue <i>name</i> bandwidth <i>bw</i> priority <i>pri</i> qlimit
+<i>qlim</i> \<br>
+&nbsp;&nbsp;&nbsp;<i>scheduler</i> ( <i>sched_options</i> )
+{ <i>queue_list</i> }
+</tt>
+</blockquote>
+
+<ul>
+<li><tt><i>name</i></tt> - nazwa kolejki. Musi pasować do jednej z
+zadeklarowanych wcześniej nazw kolejek w <tt><i>queue_list</i></tt>
+dyrektywy <tt>altq on</tt>. W przypadku <tt>cbq</tt> może ona także
+pasować do nazwy kolejki zadeklarowanej w <tt><i>queue_list</i></tt>
+poprzedzającej dyrektywy <tt>queue</tt>. Nazwy kolejek nie mogą być
+dłuższe niż 15 znaków.
+<li><tt><i>bw</i></tt> - całkowita przepustowość dostępna dla algorytmu
+szeregowania (ang. scheduler). Może być podana w postaci wartość absolutnych
+przy pomocy przyrostków b, Kb, Mb i Gb, aby określić odpowiednio ilość bitów,
+kilobitów, megabitów i gigabitów na sekundę, lub jako wartość procentowa
+przepustowości interfejsu <tt><i>interface</i></tt>.
+<li><tt><i>pri</i></tt> - priorytet kolejki. Dla <tt>cbq</tt> zakres
+priorytetów wynosi od 0 do 7, a dla <tt>priq</tt> od 0 do 15.
+Priorytet 0 jest najniższy. Domyślnym priorytetem jest 1.
+<li><tt><i>qlim</i></tt> - maksymalna ilość pakietów w kolejce. Domyślnie 50. 
+<li><tt><i>scheduler</i></tt> - wykorzystywany algorytm szeregowania,
+<tt>cbq</tt> lub <tt>priq</tt>. Musi być taki sam jak w kolejce korzeniu.
+<li><tt><i>sched_options</i></tt> - dalsze opcje mogą być przekazane do
+algorytmu szeregowania, aby wpływać na jego zachowanie:
+	<ul>
+	<li><tt>default</tt> - określa domyślną kolejkę, do której przypisywane
+	będą wszystkie niepasujące do innych kolejek pakiety. Wymagana
+	jest dokładnie jedna domyślna kolejka.
+	<li><tt>red</tt> - uaktywnia Random Early Detection (RED) w danej
+	kolejce.
+	<li><tt>rio</tt> - uaktywnia RED z IN/OUT. W takim trybie pracy, RED
+	będzie utrzymywać wiele uśrednionych długości kolejek i wiele wartości
+	progów, jeden dla każdego poziomu IP Quality of Service.
+	<li><tt>ecn</tt> - uaktywnia Explicit Congestion Notification (ECN) w
+	danej kolejce. <tt>ecn</tt> implikuje <tt>red</tt>.
+	<li><tt>borrow</tt> - kolejka może pożyczać przepustowość od
+	kolejki-rodzica. Może być stosowane jedynie w przypadku algorytmu
+	szeregowania <tt>cbq</tt>.
+	</ul>
+<li><tt><i>queue_list</i></tt> - lista kolejek-dzieci, które mają być utworzone
+dla tej kolejki. <tt><i>queue_list</i></tt> może być stosowane jedynie w
+przypadku algorytmu szeregowania <tt>cbq</tt>.
+</ul>
+
+Kontynuując wcześniejszy przykład:
+<blockquote>
+<tt>
+queue std          bandwidth 50% cbq(default)<br>
+queue ssh          { ssh_login, ssh_bulk }<br>
+&nbsp;&nbsp;queue ssh_login  priority 4 cbq(ecn)<br>
+&nbsp;&nbsp;queue ssh_bulk   cbq(ecn)<br>
+queue ftp          bandwidth 500Kb priority 3 cbq(borrow red)<br>
+</tt>
+</blockquote>
+
+<p>
+Powyżej zdefiniowane są wcześniej zadeklarowane kolejki-dzieci.
+Kolejka std ma przydzielone 50% przepustowości kolejki korzenia
+(czyli 1Mbps) i jest zaznaczona jako kolejka domyślna. Kolejka ssh
+deklaruje dwie kolejki-dzieci: ssh_login i ssh_bulk. Ssh_login
+ma większy priorytet niż ssh_bulk, a obie mają uaktywnione ECN.
+Kolejka FTP ma przypisaną przepustowość 500Kbps i nadany priorytet 3.
+Może ona także pożyczać pasmo, jeśli są ku temu warunki,
+oraz ma uaktywnione RED.
+
+<a name="assign"></a>
+<h3>Przypisywanie ruchu do kolejki</h3>
+<p>
+Aby przypisać ruch do kolejki, słowo kluczowe <tt>queue</tt> jest
+wykorzystywane w połączeniu z <a href="filter.html">regułami
+filtrującymi</a> PF. Na przykład, rozważmy zestaw reguł zawierający
+taką linię:
+<blockquote>
+<tt>pass out on fxp0 from any to any port 22</tt>
+</blockquote>
+
+<p>
+Pakiety pasujące do tej reguły mogą być przypisane do konkretnej
+kolejki przy pomocy słowa kluczowego <tt>queue</tt>:
+<blockquote>
+<tt>pass out on fxp0 from any to any port 22 queue ssh</tt>
+</blockquote>
+
+<p>
+Gdy używane jest słowo kluczowe <tt>queue</tt> wraz z dyrektywami
+<tt>block</tt>, jakiekolwiek wygenerowane pakiety TCP RST lub ICMP
+unreachable są przypisywane do podanej kolejki.
+
+<p>
+Ważne jest, że przypisywanie do kolejki może mieć miejsce na
+innym interfejsie niż zadeklarowano w dyrektywie <tt>altq on</tt>:
+<blockquote>
+<tt> 
+altq on fxp0 cbq bandwidth 2Mb queue { std, ftp }<br>
+queue std cbq(default)<br>
+queue ftp bandwidth 1.5Mb<br>
+<br>
+pass in on dc0 from any to any port 21 queue ftp<br>
+</tt>
+</blockquote>
+
+<p>
+Kolejkowanie jest uaktywnione na fxp0, lecz przypisywanie pakietów ma miejsce
+na dc0. Gdy pakiety pasujące do reguły <tt>pass</tt> wychodzą z interfejsu
+fxp0, będą przypisane do kolejki <tt>ftp</tt>. Ten typ kolejkowania może być
+bardzo użyteczny na ruterach.
+
+<p>
+Zwykle jest podawana tylko jedna nazwa kolejki po słowie kluczowym
+<tt>queue</tt>, ale jeśli druga nazwa jest obecna, wówczas kolejka
+ta będzie wykorzystywana dla pakietów z 
+<a href="http://www.rfc-editor.org/rfc/rfc791.txt">Type of Service
+(ToS)</a> o małym opóźnieniu (ang. low-delay) i dla pakietów TCP ACK
+nie zawierających danych (ang. data payload). Dobrym przykładem wykorzystania
+tej funkcjonalności jest ruch SSH. Sesje logowania SSH będą mieć ustawione
+ToS na małe opóźnienie, podczas gdy sesje SCP i SFTP nie. PF może
+wykorzystać tą informacje do zakolejkowania pakietów należących do
+interaktywanej sesji do innej kolejki niż nieinteraktywne połączenia.
+Może to być użyteczne do nadawania priorytetu pakietom sesji interaktywnych
+przed pakietami transferu plików.
+<blockquote>
+<tt>pass out on fxp0 from any to any port 22 queue(ssh_bulk, ssh_login)</tt>
+</blockquote>
+
+<p>
+Reguła ta umieszcza pakiety należące do interaktywnych połączeń SSH
+w kolejce ssh_login, a pakiety należące do połączeń SCP i SFTP w
+kolejce ssh_bulk. Pakiety należące do połączeń interaktywnych SSH będą
+teraz przetwarzane przed pakietami połączeń SCP i SFTP ponieważ kolejka
+ssh_login ma większy priorytet.
+
+<p>
+Przydzielanie pakietów TCP ACK do kolejki o wyższym priorytecie jest
+przydatne w przypadku asymetrycznych połączeń, to znaczy połączeń,
+które mają inną przepustowość wysyłania i pobierania jak np linie ADSL.
+W przypadku linii ADSL, jeśli kanał wysyłający jest całkowicie zapełniony,
+a rozpoczynane jest pobieranie, wówczas pobieranie będzie utrudnione,
+ponieważ niezbędne pakiety TCP ACK, które powinny być wysłane będą
+próbować przebić się na przeciążonym kanale wysyłającym.
+Testy wykazały, iż aby uzyskać najlepsze rezultaty, przepustowość
+kolejki pobierania powinna mieć wartość mniejszą, niż wynosi maksymalna
+przepustowość. Dla przykładu, jeśli linia ADSL ma maksymalną prędkość
+wysyłania równą 640Kbps, ustawienie przepustowości <tt>bandwidth</tt>
+kolejki korzenia na wartość taką jak 600Kb powinno zaowocować lepszą
+wydajnością. Najlepszą wartość <tt>bandwidth</tt> można wyznaczyć
+metodą prób i błędów.
+
+<p>
+Gdy używane jest słowo kluczowe <tt>queue</tt> wraz z regułami <tt>keep
+state</tt> jak na przykład:
+<blockquote>
+<tt>
+pass in on fxp0 proto tcp from any to any port 22 flags S/SA \<br>
+&nbsp;&nbsp;&nbsp;keep state queue ssh
+</tt>
+</blockquote>
+
+<p>
+PF odnotuje kolejkę we wpisie w tabeli stanów, więc pakiety
+podróżujące z powrotem z fxp0, które pasują do połączenia stanowego
+będą przydzielane do kolejki ssh. Zwróć uwagę, że pomimo iż słowo
+kluczowe <tt>queue</tt> jest użyte z regułą filtrującą przychodzący
+ruch, celem jest określenie kolejki dla wynikłego wychodzącego
+ruchu, a powyższa reguła nie kolejkuje przychodzących pakietów.
+
+<a name="example1"></a>
+<h2>Przykład 1: Mała sieć domowa</h2>
+<pre>
+  
+    [ Alice ]    [ Charlie ]
+        |             |                              ADSL
+     ---+-----+-------+------ dc0 [ OpenBSD ] fxp0 -------- ( Internet )
+              |
+           [ Bob ]
+
+</pre>
+
+<p>
+W tym przykładzie, OpenBSD wykorzystywane jest jako bramka Internetowa
+dla małej sieci domowej z trzema stacjami roboczymi. Bramka realizuje
+filtrowanie pakietów i NAT. Połączenie internetowe stanowi linia ADSL
+pobierająca dane z prędkością 2Mbps i wysyłająca z prędkością 640Kbps.
+
+<p>
+Polityka kolejkowania dla tej sieci:
+<ul>
+<li>Zarezerwować 80Kbps pasma pobierania danych dla Boba, aby mógł grać
+w swoje gry online bez utrudnień spowodowanych pobieraniem danych przez
+Alicje lub Charliego. Oczywiście Bob będzie miał możliwość korzysta z
+większego pasma niż 80Kbps, jeśli obiciążenie linii na to pozwala.
+<li>Interaktywne sesje SSH i komunikatory mają większy priorytet niż
+zwykły ruch.
+<li>Zapytania i odpowiedzi DNS mają drugi w kolejności priorytet.
+<li>Wychodzące pakiety TCP ACK mają większy priorytet niż jakikolwiek
+inny ruch na kanale zwrotnym.
+</ul>
+
+<p>
+Poniżej znajduje się zestaw reguł, który spełnia te założenia.
+Warto zwrócić uwagę, że dyrektywy <tt>pf.conf</tt>, które odnoszą się
+bezpośrednio do powyższych założeń są obecne, podczas gdy dyrektywy
+<a href="nat.html">NAT</a>, <a href="rdr.html">RDR</a>,
+<a href="options.html">opcje</a>, itd nie są pokazane.
+
+<p>
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+# uaktywnienie kolejkowania na zewnętrznym interfejsie, aby kontrolować
+# ruch idący do Internetu. wykorzystanie algorytmu szeregowania priq
+# do kontrolowania jedynie priorytetów. ustawienie przepustowość
+# kanału zwrtnego na 610Kbps dla uzyskać lepszą wydajność w kolejce TCP ACK.
+
+altq on fxp0 priq bandwidth 610Kb queue { std_out, ssh_im_out, dns_out, \
+	tcp_ack_out }
+
+# definiowanie parametrów dla kolejek-dzieci.
+# std_out      - standardowa kolejka. każda reguła filtrująca poniżej,
+#                która nie jest wyraźnie powiązana z konkretną kolejką
+#                będzie domyślnie przypisywała do tej kolejki.
+# ssh_im_out   - interaktywne sesje SSH i różne komunikatory.
+# dns_out      - zapytania DNS.
+# tcp_ack_out  - pakiety TCP ACK nie zawierające danych.
+
+queue std_out     priq(default)
+queue ssh_im_out  priority 4 priq(red)
+queue dns_out     priority 5
+queue tcp_ack_out priority 6
+
+# uaktywnienie kolejkowania na wewnętrznym interfejsie, aby kontrolować
+# ruch nadchodzący z Internetu. wykorzystanie algorytmu szeregowania cbq
+# do kontrolowania przepustowości. maksymalna przepustowość to 2Mbps.
+
+altq on dc0 cbq bandwidth 2Mb queue { std_in, ssh_im_in, dns_in, bob_in }
+
+# zdefiniuj parametry dla kolejek-dzieci.
+# std_in      - standardowa kolejka. każda reguła filtrująca poniżej,
+#               która nie jest wyraźnie powiązana z konkretną kolejką
+#               będzie domyślnie przypisywała do tej kolejki.
+# ssh_im_in   - interaktywne sesje SSH i różne komunikatory.
+# dns_in      - odpowiedzi DNS.
+# bob_in      - pasmo zarezerwowane dla stacji roboczej Boba. zezwalamy
+#               mu na pożyczanie wolnego pasma.
+
+queue std_in    cbq(default)
+queue ssh_im_in priority 4
+queue dns_in    priority 5
+queue bob_in    bandwidth 80Kb cbq(borrow)
+
+
+# ... w sekcji reguł filtrujących pf.conf ...
+
+alice         = "192.168.0.2"
+bob           = "192.168.0.3"
+charlie       = "192.168.0.4"
+local_net     = "192.168.0.0/24"
+ssh_ports     = "{ 22 2022 }"
+im_ports      = "{ 1863 5190 5222 }"
+
+# reguły filtrujące dla przychodzącego ruchu na fxp0
+block in on fxp0 all
+
+# reguły filtrujące dla wychodzącego ruchu na fxp0
+block out on fxp0 all
+pass  out on fxp0 inet proto tcp from (fxp0) to any flags S/SA \
+	keep state queue(std_out, tcp_ack_out)
+pass  out on fxp0 inet proto { udp icmp } from (fxp0) to any keep state
+pass  out on fxp0 inet proto { tcp udp } from (fxp0) to any port domain \
+	keep state queue dns_out
+pass  out on fxp0 inet proto tcp from (fxp0) to any port $ssh_ports \
+	flags S/SA keep state queue(std_out, ssh_im_out)
+pass  out on fxp0 inet proto tcp from (fxp0) to any port $im_ports \
+	flags S/SA keep state queue(ssh_im_out, tcp_ack_out)
+
+# reguły filtrujące dla przychodzącego ruchu na dc0
+block in on dc0 all
+pass  in on dc0 from $local_net
+
+# reguły filtrujące dla wychodzącego ruchu na dc0
+block out on dc0 all
+pass  out on dc0 from any to $local_net
+pass  out on dc0 proto { tcp udp } from any port domain to $local_net \
+	queue dns_in
+pass  out on dc0 proto tcp from any port $ssh_ports to $local_net \
+	queue(std_in, ssh_im_in)
+pass  out on dc0 proto tcp from any port $im_ports to $local_net \
+	queue ssh_im_in
+pass  out on dc0 from any to $bob queue bob_in
+</pre>
+</td></tr>
+</table>
+
+<a name="example2"></a>
+<h2>Przykład 2: Sieć w firmie</h2>
+<pre>
+
+  ( IT Dept )  [ Boss's PC ]
+       |          |                                   T1
+     --+----+-----+---------- dc0 [ OpenBSD ] fxp0 -------- ( Internet )
+            |                         fxp1
+         [ COMP1 ]    [ WWW ]         /
+                         |           / 
+                       --+----------' 
+
+</pre>
+
+<p>
+W tym przykładzie, maszyna OpenBSD odgrywa rolę firewalla dla sieci
+firmy. Firma posiada serwer WWW w "części zdemilitaryzowanej" DMZ
+swojej sieci, gdzie klienci umieszczają swoje strony web poprzez
+FTP. Dział IT ma własną podsieć podłączoną do głównej sieci,
+a szef posiada osobisty komputer na biurku, który wykorzystuje do
+sprawdzania poczty elektronicznej i surfowania po sieci. Połączenie
+z Internetem zapewnia linia T1 o przepustowości 1.5Mbps w obu
+kierunkach. Wszystkie pozostałe segmenty sieci wykorzystują 
+Fast Ethernet (100Mbps).
+
+<p>
+Administrator sieci zdecydował o następującej polityce kolejkowania:
+<ul>
+<li>Ograniczyć ruch pomiędzy serwerem WWW, a Internetem do 500Kbps w
+obu kierunkach.
+<li>Brak ograniczeń ruchu pomiędzy serwerem WWW, a siecią wewnętrzną.
+<li>Nadaj ruchowi HTTP pomiędzy serwerem WWW, a Internetem większy
+priorytet niż innemu ruchowi pomiędzy serwerem WWW, a Internetem
+(jak np. pobieraniu przez FTP).
+<li>Zarezerwowanie 500Kbps dla działu IT, aby mogli pobierać najnowsze
+uaktualnienia oprogramowania w wygodny i szybki sposób. Powinni być w stanie
+korzystać z większego pasma niż 500Kbps jeśli przepustowość nie jest
+w pełni wykorzystywana.
+<li>Nadać ruchowi pomiędzy komputerem szefa i Internetem większy
+priorytet niż innemu ruchowi do/z Internetu.
+</ul>
+
+<p>
+Poniżej znajduje się zestaw reguł, który spełnia te założenia.
+Warto zwrócić uwagę, że dyrektywy <tt>pf.conf</tt>, które odnoszą się
+bezpośrednio do powyższych założeń są obecne, podczas gdy dyrektywy
+<a href="nat.html">NAT</a>, <a href="rdr.html">RDR</a>,
+<a href="options.html">opcje</a>, itd nie są pokazane.
+
+<p>
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+# uaktywnienie kolejkowania na wewnętrznym interfejsie, aby kontrolować
+# ruch nadchodzący z Internetu. wykorzystanie algorytmu szeregowania cbq
+# tak, aby przepustowość każdej kolejki mogła być łatwo regulowana.
+# maksymalna przepustowość wychodzącego ruchu to 1.5Mbps.
+
+altq on fxp0 cbq bandwidth 1.5Mb queue { std_ext, www_ext, boss_ext }
+
+# zdefiniowanie parametrów dla kolejek-dzieci.
+# std_ext        - standardowa kolejka. także domyślna kolejka dla
+#                  wychodzącego ruchu na fxp0.
+# www_ext        - kolejka zbiorcza dla kolejek serwera WWW. limit
+#                  500Kbps.
+#   www_ext_http - ruch http z serwera WWW
+#   www_ext_misc - cały ruch nie-http z serwera WWW
+# boss_ext       - ruch z komputera szefa
+
+queue std_ext        cbq(default)
+queue www_ext        bandwidth 500Kb { www_ext_http, www_ext_misc }
+  queue www_ext_http priority 3 cbq(red)
+  queue www_ext_misc priority 1
+queue boss_ext       priority 3
+
+# uaktywnienie kolejkowania na wewnętrznym interfejsie, tak aby kontrolować
+# ruch nadchodzący z Internetu lub DMZ. wykorzystanie algorytmu
+# szeregowania cbq, do regulowania przepustowość dla każdej kolejki.
+# przepustowość na tym urządzeniu jest ustawiona na maksimum.
+# ruch nadchodzący z DMZ jest w stanie korzystać z całego dostępnego
+# pasma, podczas gdy ruch nadchodzący z Internetu będzie ograniczony
+# do 1.0Mbps (ponieważ 0.5Mbps (500Kbps) jest zaalokowane dla fxp1).
+
+altq on dc0 cbq bandwidth 100% queue { net_int, www_int }
+
+# zdefiniowanie parametrów dla kolejek-dzieci.
+# net_int    - zbiorcza kolejka dla ruchu z Internetu. przepustowość
+#              wynosi 1.0Mbps.
+#   std_int  - standardowa kolejka. także domyślna kolejka dla
+#              wychodzącego ruchu na dc0.
+#   it_int   - ruch do sieci działu IT.
+#   boss_int - ruch do komputera szefa.
+# www_int    - ruch z serwera WWW w strefie DMZ.
+
+queue net_int    bandwidth 1.0Mb { std_int, it_int, boss_int }
+  queue std_int  cbq(default)
+  queue it_int   bandwidth 500Kb cbq(borrow)
+  queue boss_int priority 3
+queue www_int    cbq(red)
+
+# uaktywninie kolejkowania na interfejsie DMZ, aby kontrolować ruch
+# skierowany do serwera WWW. cbq jest zastosowane dla tego
+# interfejsu ponieważ szczegółowa kontrola pasma jest niezbędna.
+# przepustowość na tym urządzeniu jest ustawiona na maksimum.
+# ruch z sieci wewnętrznej będzie mógł korzystać z całej
+# przepustowości, podczas gdy ruch z Internetu będzie ograniczony
+# do 500Kbps.
+
+altq on fxp1 cbq bandwidth 100% queue { internal_dmz, net_dmz }
+
+# zdefiniowanie parametrów dla kolejek-dzieci.
+# internal_dmz   - ruch z sieci wewnętrznej.
+# net_dmz        - zbiorcza kolejka dla ruchu z Internetu.
+#   net_dmz_http - ruch http.
+#   net_dmz_misc - cały ruch nie-http. jest to także domyślna kolejka.
+
+queue internal_dmz      # nie są potrzebne żadne dodatkowe ustawienia
+queue net_dmz        bandwidth 500Kb { net_dmz_http, net_dmz_misc }
+  queue net_dmz_http priority 3 cbq(red)
+  queue net_dmz_misc priority 1 cbq(default)
+
+
+# ... w sekcji reguł filtrujących pf.conf ...
+
+main_net  = "192.168.0.0/24"
+it_net    = "192.168.1.0/24"
+int_nets  = "{ 192.168.0.0/24, 192.168.1.0/24 }"
+dmz_net   = "10.0.0.0/24"
+
+boss      = "192.168.0.200"
+wwwserv   = "10.0.0.100"
+
+# domyślne blokowanie
+block on { fxp0, fxp1, dc0 } all
+
+# reguły filtrujące dla przychodzącego ruchu na fxp0
+pass in on fxp0 proto tcp from any to $wwwserv port { 21, \
+	&gt; 49151 } flags S/SA keep state queue www_ext_misc
+pass in on fxp0 proto tcp from any to $wwwserv port 80 \
+	flags S/SA keep state queue www_ext_http
+
+# reguły filtrujące dla wychodzącego ruchu na fxp0
+pass out on fxp0 from $int_nets to any keep state
+pass out on fxp0 from $boss to any keep state queue boss_ext
+
+# reguły filtrujące dla przychodzącego ruchu na dc0
+pass in on dc0 from $int_nets to any keep state
+pass in on dc0 from $it_net to any queue it_int
+pass in on dc0 from $boss to any queue boss_int
+pass in on dc0 proto tcp from $int_nets to $wwwserv port { 21, 80, \
+	&gt; 49151 } flags S/SA keep state queue www_int
+
+# reguły filtrujące dla wychodzącego ruchu na dc0
+pass out on dc0 from dc0 to $int_nets
+
+# reguły filtrujące dla przychodzącego ruchu na fxp1
+pass in on fxp1 proto { tcp, udp } from $wwwserv to any port 53 \
+	keep state
+
+# reguły filtrujące dla wychodzącego ruchu na fxp1
+pass out on fxp1 proto tcp from any to $wwwserv port { 21, \
+	&gt; 49151 } flags S/SA keep state queue net_dmz_misc
+pass out on fxp1 proto tcp from any to $wwwserv port 80 \
+	flags S/SA keep state queue net_dmz_http
+pass out on fxp1 proto tcp from $int_nets to $wwwserv port { 80, \
+	21, &gt; 49151 } flags S/SA keep state queue internal_dmz
+</pre>
+</td></tr>
+</table>
+
+<p>
+[<a href="scrub.html">Wstecz: Scrub</a>]
+[<a href="index.html">Spis treści</a>]
+[<a href="nat.html">Dalej: NAT (Network Address Translation)</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[wstecz]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: queueing.html,v 1.10 ]<br>
+$Translation: queueing.html,v 1.1 2003/08/28 09:41:34 pl-team Exp $<br>
+$OpenBSD: queueing.html,v 1.1 2003/09/02 14:37:19 jufi Exp $
+</small>
+</body>
+</html>

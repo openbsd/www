@@ -1,0 +1,208 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Tabele</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-2">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 2003 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
+<p>
+[<a href="macros.html">Wstecz: Listy i makra</a>]
+[<a href="index.html">Spis treści</a>]
+[<a href="options.html">Dalej: Opcje</a>]
+
+<p>
+<h1><font color="#e00000">PF: Tabele</font></h1>
+
+<hr>
+
+<h3>Spis treści</h3>
+<ul>
+<li><a href="#intro">Wprowadzenie</a>
+<li><a href="#config">Konfiguracja</a>
+<li><a href="#manip">Manipulacje za pomocą <tt>pfctl</tt></a>
+<li><a href="#addr">Specyfikowanie adresów</a>
+<li><a href="#match">Dopasowywanie adresu</a>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Wprowadzenie</h2>
+Tabele są wykorzystywane do przechowywania grup adresów IPv4 i/lub IPv6.
+Wyszukiwania w tabelach są bardzo szybkie oraz zużywają mniej pamięci i czasu
+procesora niż <a href="macros.html#lists">listy</a>. Z tego powodu, tabela
+jest idealna do przechowywania dużej grupy adresów, albowiem czas wyszukiwania
+w tabeli z 50,000 adresów jest tylko nieznacznie większy niż w tabeli z 50
+adresami. Tabele mogą być używane dla pul adresów źródłowych i docelowych
+w regułach <a href="filter.html">filtrujących</a>, 
+<a href="scrub.html"><tt>scrub</tt></a>,
+<a href="nat.html"><tt>nat</tt></a>, 
+i <a href="rdr.html">przekierowujących</a>,
+lecz nie mogą być stosowane przy przekierowywaniu adresów w regułach
+<tt>nat</tt> oraz przy opcjach wyznaczania tras (<tt>route-to</tt>, <tt>reply-to</tt>,
+<tt>dup-to</tt>) reguł filtrowania. Tabele są tworzone albo w
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+3.3"
+><tt>/etc/pf.conf</tt></a> albo przy pomocy
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+><tt>pfctl(8)</tt></a>.
+
+<a name="config"></a>
+<h2>Konfiguracja</h2>
+W <tt>pf.conf</tt> tabele są tworzone przy pomocy dyrektywy <tt>table</tt>.
+Następujące atrybuty mogą być podawane dla każdej tabeli:
+<ul>
+<li><tt>const</tt> - zawartość tabeli nie może być zmieniona po jej utworzeniu.
+Jeśli ten atrybut nie jest podany, narzędzie
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+><tt>pfctl(8)</tt></a> może być wykorzystane do dodania lub usunięcia adresów
+z tabeli w dowolnym momencie, nawet podczas pracy w
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=securelevel&amp;sektion=7&amp;manpath=OpenBSD+3.3">
+securelevel(7)</a> równym dwa lub wyższym.
+<li><tt>persist</tt> - zmusza jądro do przechowywania tabeli nawet, jeśli
+żadne reguły nie odnoszą się do niej. Bez tego atrybutu, jądro automatycznie
+usunie tabelę wraz z opróżnieniem ostatniej reguły odnoszącej się do tej tabeli.
+</ul>
+
+<p>
+Przykład:
+<blockquote>
+<tt>
+table &lt;goodguys&gt; { 192.0.2.0/24 }<br>
+table &lt;rfc1918&gt; const { 192.168.0.0/16, 172.16.0.0/12, \<br>
+&nbsp;&nbsp;&nbsp;10.0.0.0/8 }<br>
+table &lt;spammers&gt; persist<br>
+<br>
+block in on fxp0 from { &lt;rfc1918&gt;, &lt;spammers&gt; } to any<br>
+pass&nbsp; in on fxp0 from &lt;goodguys&gt; to any<br>
+</tt>
+</blockquote>
+
+<p>
+Adresy mogą być także podawane z użyciem modyfikatora negacji (lub "not")
+jak np:
+<blockquote>
+<tt>
+table &lt;goodguys&gt; { 192.0.2.0/24, !192.0.2.5 }
+</tt>
+</blockquote>
+
+<p>
+Tabela <tt>goodguys</tt> będzie teraz pasowała do wszystkich adresów w sieci
+192.0.2.0/24 poza adresem 192.0.2.5.
+
+<p>
+Zwróć uwagę, że nazwy tabel zawsze otoczone są nawiasami trójkątnymi
+(<tt>&lt; &gt;</tt>). 
+
+<p>
+Tabele mogą być także zainicjowane na podstawie plików tekstowych zawierających
+listy adresów IP i sieci:
+<blockquote>
+<tt>
+table &lt;spammers&gt; persist file "/etc/spammers"<br>
+<br>
+block in on fxp0 from &lt;spammers&gt; to any<br>
+</tt>
+</blockquote>
+
+<p>
+Plik <tt>/etc/spammers</tt> zwiera listę adresów IP -
+jeden adres w jednej linii. Każda linia zaczynająca się od <tt>#</tt> jest
+traktowana jako komentarz i ignorowana.
+
+<a name="manip"></a>
+<h2>Manipulacje za pomocą <tt>pfctl</tt></h2>
+Tabelami można manipulować ręcznie poprzez program
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+><tt>pfctl(8)</tt></a>. Dla przykładu, aby dodać wpisy do utworzonej wyżej
+tabeli &lt;spammers&gt; można użyć:
+<blockquote>
+<tt># pfctl -t spammers -Tadd 218.70.0.0/16</tt>
+</blockquote>
+
+<p>
+Komenda ta utworzy tabelę &lt;spammers&gt;, jeśli jeszcze nie istnieje.
+Aby wyświetlić adresy z tabeli stosuje się:
+<blockquote>
+<tt># pfctl -t spammers -Tshow</tt>
+</blockquote>
+Argument <tt>-v</tt> może także być użyty wraz z <tt>-Tshow</tt>, aby
+wyświetlić statystyki dla każdego z wpisów. Aby usunąć adres z tabeli
+korzysta się z:
+<blockquote>
+<tt>
+# pfctl -t spammers -Tdelete 218.70.0.0/16
+</tt>
+</blockquote>
+
+<p>
+Więcej informacji o manipulowaniu tabelami przy pomocy <tt>pfctl</tt>
+dostępnych jest w manualu
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+><tt>pfctl(8)</tt></a>.
+
+<a name="addr"></a>
+<h2>Specyfikowanie adresów</h2>
+Host może być zdefiniowany nie tylko przy pomocy adresu IP ale także przez
+podanie jego nazwy. Kiedy nazwa hosta rozwijana jest do adresu IP, wszystkie
+otrzymywane w ten sposób adresy IPv4 i IPv6 są wstawiane do tabeli.
+Adresy IP mogą być także wprowadzane do tabeli poprzez podanie odpowiedniej
+nazwy interfejsu sieciowego lub słowa kluczowego <tt>self</tt>. W takim
+wypadku, wszystkie adresy przypisane do tego interfejsu(ów) będą dodane do
+tabeli.
+
+<a name="match"></a>
+<h2>Dopasowywanie adresu</h2>
+Wyszukanie adresu w tabeli zwróci najlepiej pasujący wpis.
+Pozwala to na tworzenie takich tabel jak ta:
+<blockquote>
+<tt>
+table &lt;goodguys&gt; { 172.16.0.0/16, !172.16.1.0/24, 172.16.1.100 }<br>
+<br>
+block in on dc0 all<br>
+pass  in on dc0 from &lt;goodguys&gt; to any<br>
+</tt>
+</blockquote>
+
+<p>
+Adres każdego pakietu przychodzącego na interfejsie dc0 będzie porównywany z
+tabelą 
+<tt>&lt;goodguys&gt;</tt>:
+<ul>
+<li>172.16.50.5 - najbardziej trafny jest 172.16.0.0/16; pakiet pasuje do
+tabeli i zostanie przepuszczony
+<li>172.16.1.25 - najbardziej trafny jest !172.16.1.0/24; pakiet pasuje do
+wpisu w tabeli, ale wpis ten jest zanegowany (używa modyfikatora "!");
+pakiet nie pasuje do tabeli i będzie zablokowany
+<li>172.16.1.100 - jest to dokładnie 172.16.1.100; pakiet pasuje do
+tabeli i zostanie przepuszczony
+<li>10.1.4.55 - pakiet nie pasuje do tabeli i będzie zablokowany
+</ul>
+
+<p>
+[<a href="macros.html">Wstecz: Listy i makra</a>]
+[<a href="index.html">Spis treści</a>]
+[<a href="options.html">Dalej: Opcje</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[wstecz]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>Originally [OpenBSD: tables.html,v 1.4 ]<br>
+$Translation: tables.html,v 1.1 2003/08/28 09:46:09 pl-team Exp $<br>
+$OpenBSD: tables.html,v 1.1 2003/09/02 14:37:19 jufi Exp $
+</small>
+</body>
+</html> 

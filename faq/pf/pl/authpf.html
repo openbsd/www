@@ -1,0 +1,379 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Authpf: powłoka dla bramek autentykacyjnych</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-2">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 2003 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
+<p>
+[<a href="ftp.html">Wstecz: Problemy z FTP</a>]
+[<a href="index.html">Spis treści</a>]
+[<a href="example1.html">Dalej: Firewall dla sieci domowej lub małego biura</a>]
+
+<h1><font color="#e00000">PF: Authpf: powłoka dla bramek
+autentykacyjnych</font></h1>
+
+<hr>
+
+<h3>Spis treści</h3>
+<ul>
+<li><a href="#intro">Wstęp</a>
+<li><a href="#config">Konfiguracja</a>
+	<ul>
+	<li><a href="#linkmain">Włączanie authpf do głównego zestawu reguł</a>
+	<li><a href="#loadrules">Konfigurowanie ładowanych reguł</a>
+	<li><a href="#acl">Listy kontroli dostępu</a>
+	<li><a href="#shell">Ustawianie authpf jako powłokę użytkownika</a>
+	</ul>
+<li><a href="#wholog">Przeglądanie, kto jest zalogowany</a>
+<li><a href="#moreinfo">Więcej informacji</a>
+<li><a href="#example">Przykład</a>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Wstęp</h2>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=authpf&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>Authpf(8)</a> jest powłoką użytkownika służącą do autentykacji
+w bramkach sieciowych. Bramka autentykacyjna nie różni się od zwykłej
+bramki sieciowej (aka router) z tym wyjątkiem, że użytkownicy muszą
+potwierdzić swoją tożsamość na bramce, zanim ich ruch będzie mógł
+zostać przepuszczony przez nią. Gdy domyślną powłoką użytkownika jest
+<tt>/usr/sbin/authpf</tt> (np zamiast normalnie stosowanych powłok:
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ksh&amp;sektion=1&amp;manpath=OpenBSD+3.3"
+>ksh(1)</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=csh&amp;sektion=1&amp;manpath=OpenBSD+3.3"
+>csh(1)</a>, itp), a użytkownik zaloguje się przez SSH, authpf zajmie się
+wykonaniem odpowiednich operacji, aby aktywować zestaw reguł
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+3.3"
+>pf(4)</a> i spowodować, że działa obsługa ruchu związanego z danym
+użytkownikiem jak np reguły filtrujące i/lub translacje NAT czy
+przekierowania. Gdy użytkownik wylogowuje się lub następuje
+zamknięcie jego sesji, authpf usuwa wszystkie reguły załadowane dla
+tego użytkownika i zamyka wszystkie otwarte przez niego połączenia
+stanowe. Dzięki temu, użytkownik może przesyłać pakiety przez bramkę
+jedynie w czasie, gdy utrzymuje otwartą sesję SSH.
+
+<p>
+Authpf wpływa na zestaw reguł
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+3.3"
+>pf(4)</a> poprzez dodawanie reguł do
+<a href="anchors.html#named">nazwanych zestawów reguł</a> dowiązanych 
+w <a href="anchors.html">punktach zakotwiczenia</a>. Za każdym razem,
+gdy użytkownik pomyślnie potwierdza swoją tożsamość,
+authpf tworzy nowy nazwany zestaw reguł i ładuje do niego wcześniej
+przygotowane reguły 
+<a href="filter.html">filtrujące</a>, <a href="nat.html"><tt>nat</tt></a>,
+<a href="nat.html#binat"><tt>binat</tt></a> i 
+<a href="rdr.html"><tt>rdr</tt></a>. Reguły, które ładuje authpf
+mogą być przygotowane globalnie lub dla poszczególnych użytkowników.
+
+<p>
+Przykładowe zastosowania authpf to:
+<ul>
+<li>Wymaganie od użytkowników autentykacji przed uzyskaniem dostępu do
+Internetu.
+<li>Nadawanie pewnym użytkownikom -- na przykład administratorom --
+dostępu do chronionych części sieci.
+<li>Zezwalanie na dostęp do reszty sieci lub Internetu jedynie
+zidentyfikowanym użytkownikom z segmentu sieci bezprzewodowej. 
+<li>Zezwalanie na dostęp do zasobów sieci firmy dla pracowników w domach,
+podróżujących itd. Użytkownicy z zewnątrz nie tylko mogą mieć dostęp
+do sieci firmy, ale mogą być także ograniczeni do pewnych zasobów
+(np ich stacji roboczej) bazując na nazwie użytkownika, której
+autentyczność potwierdzają.
+<li>W miejscu takim jak biblioteka czy inne miejsce z publicznym
+dostępem do Internetu, PF może być skonfigurowany, aby umożliwiać
+ograniczony dostęp dla użytkowników-gości. Authpf może być wykorzystanie
+do zapewnienia zarejestrowanym użytkownikom pełnego dostępu. 
+</ul>
+
+<p>
+Authpf zapewnia logi z nazwami użytkowników i ich adresami IP dla każdego
+użytkownika, który pomyślnie przechodzi autentykację, podobnie dzieje się
+z dokładnym czasem rozpoczęcia i zakończenia sesji odnotowywanymi przez 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=syslogd&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>syslogd(8)</a>. Wykorzystując te informacje, administrator może określić
+kto i kiedy był zalogowany oraz czyni użytkowników odpowiedzialnymi za
+swój ruch sieciowy.
+
+<a name="config"></a>
+<h2>Konfiguracja</h2>
+Podstawowe kroki, niezbędne do konfiguracji authpf są wymienione poniżej.
+Bardziej szczegółowe informacje o konfiguracji można znaleźć na
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=authpf&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>stronie podręcznika man authpf</a>.
+
+<a name="linkmain"></a>
+<h3>Włączanie authpf do głównego zestawu reguł</h3>
+Authpf jest włączane do (ang. linked into) głównego zestawu reguł
+przy pomocy reguł <tt>anchor</tt>:
+<blockquote>
+<tt>
+nat-anchor authpf<br>
+rdr-anchor authpf<br>
+binat-anchor authpf<br>
+anchor authpf<br>
+</tt>
+</blockquote>
+
+<p>
+Niezależnie od tego, gdzie w głównym zestawie reguł znajdzie się
+reguła <tt>anchor</tt>, PF rozgałęzi się, aby przetworzyć reguły
+authpf. Nie jest wymagana obecność wszystkich czterech reguł
+<tt>anchor</tt>, na przykład jeśli authpf nie jest skonfigurowane
+do ładowania reguł <tt>nat</tt>, reguła <tt>nat-anchor</tt> może
+zostać pominięta.
+
+<a name="loadrules"></a>
+<h3>Konfigurowanie ładowanych reguł</h3>
+Authpf ładuje swoje reguły z jednego z dwóch plików:
+<ul>
+<li><tt>/etc/authpf/users/$USER/authpf.rules</tt>
+<li><tt>/etc/authpf/authpf.rules</tt>
+</ul>
+
+<p>
+Pierwszy plik zawiera reguły, które są ładowane jedynie gdy
+<tt>$USER</tt> (które jest zastępowane przez nazwę użytkownika)
+zaloguje się. Konfiguracja reguł według użytkowników ma miejsce,
+gdy konkretny użytkownik -- jak np administrator -- wymaga
+zestawu reguł innego, niż domyślnie ustawiony. Drugi plik
+zawiera domyślne reguły, które są ładowane, gdy dowolny użytkownik
+nie posiada swojego własnego pliku <tt>authpf.rules</tt>.
+Jeśli plik ten dla konkretnego użytkownika istnieje, zastępuje
+domyślny plik. Przynajmniej jeden z plików musi istnieć, w
+przeciwnym razie authpf nie będzie działać.
+
+<p>
+Reguły filtrujące i translacyjne mają taką samą składnię, jak
+dowolny inny zestaw reguł PF, z jednym wyjątkiem: authpf daje
+możliwość korzystania z predefiniowanych makr:
+<ul>
+<li><tt>$user_ip</tt> - adres IP zalogowanego użytkownika
+<li><tt>$user_id</tt> - nazwa zalogowanego użytkownika
+</ul>
+
+<p>
+Jest zalecaną praktyką, aby wykorzystywać makro <tt>$user_ip</tt>
+jedynie do zezwalania na ruch pakietów z komputera użytkownika,
+który potwierdził swoją tożsamość.
+
+<a name="acl"></a>
+<h3>Listy kontroli dostępu</h3>
+Można uniemożliwić dostęp użytkownika przez authpf poprzez utworzenie
+pliku o nazwie użytkownika, który ma być zablokowany, w katalogu
+<tt>/etc/authpf/banned/</tt>. Zawartość pliku będzie wyświetlona
+użytkownikowi zanim authpf zerwie z nim połączenie. Dzięki temu,
+można w poręczny sposób powiadomić użytkownika dlaczego nie ma on
+prawa do połączenia się i z kim należy się skontaktować, aby odzyskać
+dostęp.
+
+<p>
+Można także umożliwiać dostęp odwrotnie, czyli jedynie poszczególnym
+użytkownikom poprzez umieszczanie nazw użytkowników w pliku
+<tt>/etc/authpf/authpf.allow</tt>. Jeśli plik ten nie istnieje, lub
+zawiera tylko "<tt>*</tt>", wówczas authpf zezwoli na dostęp
+wszystkim, których logowanie przez SSH zakończyło się sukcesem,
+pod warunkiem, że nie są zbanowani.
+
+<p>
+Jeśli authpf nie jest w stanie określić, czy użytkownik ma prawo
+dostępu, czy nie, wówczas wyświetla krótką wiadomość i rozłącza
+użytkownika. Wpis w <tt>/etc/authpf/banned/</tt> zawsze
+nadpisuje wpis w <tt>/etc/authpf/authpf.allow</tt>.
+
+<a name="shell"></a>
+<h3>Ustawianie authpf jako powłokę użytkownika</h3>
+Aby authpf działało, musi być ustawione jako powłoka domyślna
+użytkownika. Gdy użytkownik pomyślnie potwierdza swoją tożsamość
+wobec
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sshd&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>sshd(8)</a>, authpf będzie uruchomione, jako powłoka użytkownika.
+Nastąpi wówczas sprawdzenie, czy użytkownik ma prawo dostępu
+do authpf, załadowanie reguł z odpowiedniego pliku itd.
+
+<p>
+Jest kilka sposobów na ustawienie authpf jako powłokę użytkownika:
+<ol>
+<li>Ręcznie dla każdego użytkownika, przy pomocy
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=chsh&amp;sektion=1&amp;manpath=OpenBSD+3.3"
+>chsh(1)</a>, 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vipw&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>vipw(8)</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=useradd&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>useradd(8)</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=usermod&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>usermod(8)</a>, itd.
+<li>Poprzez ustawienie opcji 
+<tt>shell</tt> w klasie zdefiniowanej w pliku
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=login.conf&amp;sektion=5&amp;manpath=OpenBSD+3.3"
+><tt>/etc/login.conf</tt></a>, do której należy użytkownik lub też
+do której go przydzielimy.
+</ol>
+
+<a name="wholog"></a>
+<h2>Przeglądanie, kto jest zalogowany</h2>
+Kiedy już użytkownik pomyślnie zaloguje się, a PF dostroi reguły PF,
+authpf zmienia znacznik procesu (ang. process title), aby wskazywać na
+nazwę zalogowanego użytkownika i jego adres IP:
+<pre>
+    # ps -ax | grep authpf
+    23664 p0  Is+     0:00.11 -authpf: charlie@192.168.1.3 (authpf)
+</pre>
+
+<p>
+Tutaj użytkownik <tt>charlie</tt> jest zalogowany z maszyny
+192.168.1.3. Poprzez wysłanie sygnału SIGTERM do procesu authpf,
+użytkownik może zostać rozłączony siłą. Authpf usunie także
+wszystkie załadowane reguły i połączenia stanowe
+utworzone przez użytkownika.
+<pre>
+    # kill -TERM 23664
+</pre>
+
+<a name="moreinfo"></a>
+<h2>Więcej informacji</h2>
+Pełen opis działania authpf znajdziesz na stronie podręcznika 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=authpf&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>man authpf</a>.
+
+<a name="example"></a>
+<h2>Przykład</h2>
+Authpf jest wykorzystywane w bramce sieciowej OpenBSD do autentykacji
+użytkowników sieci bezprzewodowej, która jest częścią większej
+struktury sieciowej. Gdy użytkownik potwierdzi swoją tożsamość,
+zakładając, że nie jest na liście banów, będzie mógł łączyć się
+ze światem zewnętrznym przez SSH, przeglądać strony www (także
+bezpieczne połączenia www), a dodatkowo będzie miał prawo
+korzystać z dowolnego serwera DNS sieci w której się znajduje.
+
+<p>
+Plik <tt>/etc/authpf/authpf.rules</tt> zawiera następujące reguły:<br>
+<br>
+
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+wifi_if = "wi0"
+dns_servers = "{ 10.0.1.56, 10.0.2.56 }"
+
+pass in quick on $wifi_if proto udp from $user_ip to $dns_servers \
+   port domain keep state
+pass in quick on $wifi_if proto tcp from $user_ip to port { ssh, http, \
+   https } flags S/SA keep state
+</pre>
+</td></tr>
+</table>
+
+<p>
+Użytkownik administrujący <tt>charlie</tt> musi mieć dostęp do
+serwerów SMTP i POP3 kampusu, a dodatkowo do serfowania po sieci
+i korzystania z SSH. Następujące reguły są ustawione w
+<tt>/etc/authpf/users/charlie/authpf.rules</tt>:<br>
+<br>
+
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+wifi_if = "wi0"
+smtp_server = "10.0.1.50"
+pop3_server = "10.0.1.51"
+dns_servers = "{ 10.0.1.56, 10.0.2.56 }"
+
+pass in quick on $wifi_if proto udp from $user_ip to $dns_servers \
+   port domain keep state
+pass in quick on $wifi_if proto tcp from $user_ip to $smtp_server \
+   port smtp flags S/SA keep state
+pass in quick on $wifi_if proto tcp from $user_ip to $pop3_server \
+   port pop3 flags S/SA keep state
+pass in quick on $wifi_if proto tcp from $user_ip to port { ssh, http, \
+   https } flags S/SA keep state
+</pre>
+</td></tr>
+</table>
+
+<p>
+Główny zestaw reguł -- umieszczony w <tt>/etc/pf.conf</tt> -- jest
+sjonfigurowany w następujący sposób:<br>
+<br>
+
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+# makra
+wifi_if = "wi0"
+ext_if  = "fxp0"
+
+scrub in all
+
+# reguły filtrujące
+block drop all
+
+pass out quick on $ext_if proto tcp from $wifi_if:network flags S/SA \
+   modulate state
+pass out quick on $ext_if proto { udp, icmp } from $wifi_if:network \
+   keep state
+
+pass in quick on $wifi_if proto tcp from $wifi_if:network to $wifi_if \
+   port ssh flags S/SA keep state
+
+anchor authpf in on $wifi_if
+</pre>
+</td></tr>
+</table>
+
+<p>
+Zestaw reguł jest bardzo prosty, oto jak działa:
+<ul>
+<li>Blokuje wszystko (domyślna polityka blokowania).
+<li>Przepuszcza wychodzący ruch TCP, UDP i ICMP na zewnętrznym
+interfejsie pochodzący z sieci bezprzewodowej.
+<li>Przepuszcza nadchodzący ruch SSH z sieci bezprzewodowej skierowany
+do samej bramki. Reguła ta jest niezbędna, aby umożliwić użytkownikom
+logowanie się.
+<li>Tworzy punk zakotwiczenia (ang. anchor point) "authpf" dla
+nadchodzącego ruchu na interfejsie sieci bezprzewodowej.
+</ul>
+
+<p>
+Myślą przewodnią głównego zestawu reguł jest: blokowanie wszystkiego
+i przepuszczanie minimalnej ilości jasno sprecyzowanego ruchu.
+Ruch może wychodzić na zewnętrznym interfejsie, ale jest blokowany,
+gdy nadchodzi na interfejsie sieci bezprzewodowej dzięki polityce
+domyślnego blokowania. Gdy użytkownik potwierdzi swoją tożsamość,
+jego ruch jest przepuszczany na interfejsie sieci bezprzewodowej
+i może dotrzeć przez bramkę do pozostałych
+ części sieci.
+Słowo kluczowe <tt>quick</tt> jest zastosowane, aby PF nie musiał
+przetwarzać za każdym razem wszystkich nazwanych zestawów reguł,
+gdy nowe połączenie przechodzi przez bramkę.
+
+<p>
+[<a href="ftp.html">Wstecz: Problemy z FTP</a>]
+[<a href="index.html">Spis treści</a>]
+[<a href="example1.html">Dalej: Firewall dla sieci domowej lub małego
+biura</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[back]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>Originally [OpenBSD: authpf.html,v 1.1 ]<br>
+$Translation: authpf.html,v 1.1 2003/08/28 09:46:09 pl-team Exp $<br>
+$OpenBSD: authpf.html,v 1.1 2003/09/02 14:37:19 jufi Exp $
+</small>
+
+</body>
+</html> 

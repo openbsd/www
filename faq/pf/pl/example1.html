@@ -1,0 +1,415 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Przykład 1: Firewall dla sieci domowej lub małego biura </title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-2">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 2003 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
+<p>
+[<a href="authpf.html">Wstecz: Authpf: powłoka dla bramek autentykacyjnych</a>]
+[<a href="index.html">Spis treści</a>]
+
+<p>
+<h1><font color="#e00000">PF: Przykład 1: Firewall dla sieci domowej lub
+małego biura</font></h1>
+<hr>
+
+<h3>Spis treści</h3>
+<ul>
+<li><a href="#scenario">Wstęp</a>
+	<ul>
+	<li><a href="#network">Sieć</a>
+	<li><a href="#objective">Założenia</a>
+	<li><a href="#prep">Wymagania</a>
+	</ul>
+<li><a href="#ruleset">Budowanie zestawu reguł</a>
+	<ul>
+	<li><a href="#macros">Makra</a>
+	<li><a href="#options">Opcje</a>
+	<li><a href="#scrub">Normalizacja pakietów</a>
+	<li><a href="#nat">Translacja adresów</a>
+	<li><a href="#rdr">Przekierowania</a>
+	<li><a href="#filter">Regułki filtra pakietów</a>
+	</ul>
+<li><a href="#allrules">Kompletny zestaw reguł</a>
+</ul>
+
+<hr>
+
+<a name="scenario"></a>
+<h2>Wstęp</h2>
+W tym FAQ zostanie omówiony przykład wykorzystania maszyny z OpenBSD i
+działającym PF do zbudowania firewalla i bramki NAT dla niewielkiej sieci w
+domu lub biurze. Głównym celem jest udostępnienie połączenia z Internetem
+komputerom w sieci wewnętrznej, a także umożliwienie ograniczonego dostępu z
+Internetu do maszyny spełniającej rolę ściany ogniowej. Kompletny przykład
+będzie można znaleźć na końcu tego dokumentu.
+
+<a name="network"></a>
+<h3>Sieć</h3>
+Topologia sieci wygląda następująco:
+
+<pre>
+    
+  [ KOMP1 ]    [ KOMP3 ]
+      |            |                               ADSL
+   ---+------+-----+------- fxp0 [ OpenBSD ] ep0 -------- ( Internet )
+             |
+         [ KOMP2 ]
+
+</pre>
+
+<p>
+Do sieci wewnętrznej przyłączonych jest kilka maszyn, co prawda na schemacie
+zaznaczone są trzy, ale w tym przypadku ich ilość nie ma żadnego znaczenia.
+Komputery te wykorzystywane są do codziennych zadań takich jak: przeglądanie
+stron www, wysyłanie poczty elektronicznej, rozmów, itd. Przestrzeń adresowa
+sieci wewnętrznej zawiera się w bloku 192.168.0.0 / 255.255.255.0.
+
+<p>
+Router zbudowany na bazie OpenBSD to komputer z procesorem Pentium 100 i dwiema
+kartami sieciowymi: 3Com 3c509B (ep0) i Intel EtherExpress Pro/100 (fxp0).
+Połączony jest on z Internetem łączem ADSL, a do udostępniania połączenia innym
+komputerom wykorzystywany jest NAT. Adres IP dla zewnętrzenego interfejsu
+uzyskiwany jest dynamicznie od Dostawcy Usług Internetowych.
+
+<a name="objective"></a>
+<h3>Założenia</h3>
+Założenia, którymi należy kierować się przy budowie regułek filtrowania:
+<ul>
+<li>Umożliwienie niczym nieograniczonego dostępu do Internetu komputerom z sieci
+wewnętrznej
+<li>Zastosowanie regułek filtra zapewniających "domyślne blokowanie" ruchu
+przychodzącego
+<li>Przepuszczanie ruchu z Internetu skierowanego do następujących portów:
+	<ul>
+	<li>SSH (TCP port 22): używany do zdalnej administracji ściany ogniowej
+	<li>Auth/Ident (TCP port 113): używany przez niektóre usługi, takie jak
+	SMTP czy IRC
+	<li>ICMP Echo Requests: ten typ pakietów ICMP jest używany przez program
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ping&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>ping(8)</a>
+	</ul>
+<li>Logowanie statystyk filtra pakietów dla zewnetrznego interfejsu sieciowego
+<li>Wysyłanie domyślnej odpowiedzi TCP RST lub ICMP Unreachable na zablokowane
+pakiety
+<li>Stworzenie zestawu reguł, który będzie prosty i zrozumiały
+</ul>
+
+<a name="prep"></a>
+<h3>Wymagania</h3>
+Podczas pisania tego FAQ przyjęto, że OpenBSD został poprawnie skonfigurowany
+do przyszłej pracy jako router, włączając w to właściwe przygotowanie sieci,
+połączenia z Internetem, oraz ustawienia zmiennej sysctl
+<tt>net.inet.ip.forwarding</tt> na "<tt>1</tt>".
+
+<a name="ruleset"></a>
+<h2>Budowanie zestawu reguł</h2>
+Wykonanie poleceń zawartych w następujących podrozdziałach zaowocuje otrzymaniem
+kompletnego zestawu reguł spełniającego wszystkie warunki podane powyżej.
+
+<a name="macros"></a>
+<h3>Makra</h3>
+Poniższe makra mają na celu ułatwienie zrozumienia oraz usprawnienie zarządzania
+zestawem reguł:
+<blockquote>
+<tt>
+int_if = "fxp0"<br>
+ext_if = "ep0"<br>
+<br>
+tcp_services = "{ 22, 113 }"<br>
+icmp_types = "echoreq"<br>
+<br>
+priv_nets = "{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"
+</tt>
+</blockquote>
+
+<p>
+Pierwsze dwie linie określają na jakich interfejsach będzie odbywać się
+filtrowanie. Trzecia linia zawiera liste portów TCP (SSH i ident/auth), do
+których ruch z Internetu ma być przepuszczany. W czwartej linii określone są
+typy komunikatów ICMP, które nie będą blokowane. W ostatniej linii
+wyszczególnione są adresy pęlti zwrotnej oraz zarezerwowane bloki sieci opisane
+w <a href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a>.
+
+<p>
+<b>Uwaga</b>: Jeśli połączenie ADSL odbywa się poprzez
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pppoe&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>PPPoE</a>, wtedy filtrowanie oraz translacja pakietów odbywać się będzie na
+interfejsie <tt>tun0</tt> a <i>nie</i> na <tt>ep0</tt>.
+
+<a name="options"></a>
+<h3>Opcje</h3>
+Dwie poniższe opcje włączają domyślne odpowiedzi na zablokowane pakiety dla
+reguły <tt>block</tt>, a także zbieranie różnego rodzaju statystyk dla
+zewnętrznego interfejsu sieciowego.
+<blockquote>
+<tt>
+set block-policy return<br>
+set loginterface $ext_if
+</tt>
+</blockquote>
+
+<a name="scrub"></a>
+<h3>Normalizacja pakietów</h3>
+Nie istnieje żaden ważny powód dla którego nadchodzące pakiety nie miały by
+zostać poddane normalizacji. Włączenie normalizowania pakietów odbywa się przez
+dodanie jednej, prostej linii:
+<blockquote>
+<tt>
+scrub in all
+</tt>
+</blockquote>
+
+<a name="nat"></a>
+<h3>Translacja adresów</h3>
+Włączenie translacji adresów (NAT) dla hostów w sieci wewnętrznej uzyskuje się
+przez dodanie regułki <tt>nat</tt>:
+<blockquote>
+<tt>
+nat on $ext_if from $int_if:network to any -&gt; ($ext_if)
+</tt>
+</blockquote>
+
+<p>
+Jako że adres IP dla zewnętrznego interfejsu sieciowego jest uzyskiwany
+dynamicznie, nazwa interfejsu na którym odbywa się mapowanie adresów została
+wzięty w nawiasy, dzięki temu PF zostanie powiadomione o każdej zmianie adresu.
+
+<a name="rdr"></a>
+<h3>Przekierowanie</h3>
+Jedyne przekierowanie konieczne w tym zestawie reguł jest dla
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>ftp-proxy(8)</a>, aby klient FTP w sieci lokalnej mógł bez problemów połączyć
+się z serwerami FTP w Internecie.
+<blockquote>
+<tt>
+rdr on $int_if proto tcp from any to any port 21 -&gt; 127.0.0.1 port 8021
+</tt>
+</blockquote>
+
+<p>
+Proszę zauważyć, że regułka ta obsługuje jedynie połączenia FTP na porcie 21.
+Jeśli zajdzie potrzeba umożliwienia korzystania z innych numerów portów,
+konieczne będzie podanie ich w postaci listy, na przykład:
+<tt>from any to any port { 21, 2121}</tt>
+
+<a name="filter"></a>
+<h3>Regułki filtra pakietów</h3>
+Po ustawieniu NAT i przekierowań można przystąpić do konfiguracji filtra
+pakietów. Filtr będzie pracował zgodnie z zasadą "domyślnego blokowania":
+<blockquote>
+<tt>
+block all<br>
+</tt>
+</blockquote>
+
+<p>
+W tym miescu żaden ruch nie jest przepuszczany przez scianę ogniową, nawet ten
+pochodzący z sieci wewnętrznej. Kolejne regułki będą umożliwiały przejście
+datagramów zgodnie z wytycznymi podanymi wcześniej.
+
+<p>
+Każdy system UNIX posiada intefejs pętli zwrotnej nazywany "loopback". Jest to
+wirtualny interfejs sieciowy używany przez procesy do komunikacji z innymi
+aplikacjami uruchomionymi w lokalnym systemie. Cały ruch na tym interfejsie
+powinnien być przepuszczany bez żadnych ograniczeń. W OpenBSD interfejs
+"loopback" nazywa się:
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=lo&amp;sektion=4&amp;manpath=OpenBSD+3.3"
+>lo(4)</a>.
+<blockquote>
+<tt>
+pass quick on lo0 all
+</tt>
+</blockquote>
+
+<p>
+Pakiety posiadające jako adres docelowy lub źródłowy, jeden z adresów opisanych
+w <a href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a>, przechodzące
+w dowolnym kierunku przez interfejs zewnętrzny zostaną zablokowane - te adresy
+nigdy nie powinny pojawić się w Internecie. Wprowadzenie tych regułek daje
+gwarancje, że żaden z zarezerwowanych adresów nie przedostanie się do
+Internetu, a także zapobiega przyjmowaniu pakietów ze świata posiadających jako
+adres źródłowy jeden z adresów z RFC 1918.
+
+<blockquote>
+<tt>
+block drop in &nbsp;quick on $ext_if from $priv_nets to any<br>
+block drop out quick on $ext_if from any to $priv_nets
+</tt>
+</blockquote>
+
+<p>
+Należy zwrócić uwagę, że <tt>block drop</tt> określa, że filtr PF nie ma
+wysyłać TCP RST lub ICMP Unreachable w odpowiedzi na zablokowane pakiety.
+Adresy z RFC 1918 nie istnieją w Internecie, żaden pakiet wysłany pod ten
+adres nie dotrze do miejsca przeznaczenia. Opcja <tt>quick</tt> mówi, że PF ma
+przerwać sprawdzanie dalszej części zestawu jeśli pakiet pasował do tej
+regułki. Pakiety pochodzące lub skierowane do sieci <tt>$priv_nets</tt> będą
+natychmiast odrzucone.
+
+<p>
+Następna regułka otwiera porty dla usług, które mają być udostępnione w
+Internecie:
+<blockquote>
+<tt>
+pass in on $ext_if inet proto tcp from any to ($ext_if) \<br>
+&nbsp;&nbsp;&nbsp;port $tcp_services flags S/SA keep state
+</tt>
+</blockquote>
+
+<p>
+Podanie portów w postaci makra <tt>$tcp_services</tt> sprawia, że łatwo dodać
+kolejne usługi, które mają zostać udostępnione. Wystarczy wyedytować makro i
+ponownie załadować zestaw reguł. Podobnie sprawa ma się z usługami bazującymi
+na protokole UDP, potrzeba tylko utworzyć makro <tt>$udp_services</tt> i dodać
+bardzo podobną regułkę, jak ta pokazana powyżej, z opcją <tt>proto udp</tt>.
+
+<p>
+Przepuszczenie pakietów ICMP:
+<blockquote>
+<tt>
+pass in inet proto icmp all icmp-type $icmp_types keep state
+</tt>
+</blockquote>
+
+<p>
+Podobnie jak makro <tt>$tcp_services</tt>, makro <tt>$icmp_types</tt> może
+być w łatwy sposób zmienione by umożliwić przepuszczanie innych typów pakietów
+ICMP przez firewall. Proszę zwrócić uwagę, że regułka ta odnosi się do
+wszystkich interfejsów sieciowych.
+
+<p>
+Kolejne regułki przepuszczają ruch z lub do sieci wewnętrznej. Przykład zakłada,
+że użytkownicy na wewnętrznym interfejsie dokładnie wiedzą co robią i nie będą
+powodować problemów. To niekoniecznie prawidłowe założenie, mniejsza swoboda
+może być bardziej odpowiednia w niektórych przypadkach.
+
+<blockquote>
+<tt>
+pass in on $int_if from $int_if:network to any keep state
+</tt>
+</blockquote>
+
+<p>
+Powyższa regułka zezwala hostom z sieci lokalnej na wysyłanie pakietów przez
+scianę ogniową, <i>nie</i> umożliwia natomiast na nawiązanie połączenia
+routera z komputerem z sieci wewnętrznej. Czy to dobre rozwiązanie? Odpowiedź
+uzależniona jest od kilku elementów konfiguracji sieci. Jeśli firewall jest
+jednocześnie serwerem DHCP, przed przydzieleniem adresu konieczne może być
+sprawdzenie czy nie jest on już przypisany do innego hosta. Jeśli firewall ma
+możliwość nawiązania połączenia z maszyną w sieci lokalnej, każdy kto zaloguje
+się do routera będzie miał dostęp do komputrów wewnątrz sieci lokalnej.
+Należy jednak pamiętać, że nie jest to właściwie żadna znacząca poprawa
+bezpieczeństwa - jeśli ktoś niepowołany uzyska dostęp do bramki, będzie też
+najprawdopodobniej mógł zmienić reguły filtra pakietów. Dodanie następnej
+regułki sprawi, że firewall będzie mógł bez przeszkód komunikować się z
+maszynami w sieci wewnętrznej:
+
+<blockquote>
+<tt>
+pass out on $int_if from any to $int_if:network keep state
+</tt>
+</blockquote>
+
+<p>
+Ważne jest to, że jeśli obie powyższe linie będą umieszczone w pliku
+konfiguracyjnym, dyrektywa <tt>keep state</tt> nie jest konieczna - wszystkie
+pakiety będą mogły wyjść poprzez zewnętrzny interfejs bez konieczności
+śledzenia stanów. Jednakże, jeśli linia zaczynająca się od <tt>pass out</tt> nie
+będzie dodana, konieczne jest umieszczenie w linii rozpoczynającej się od
+<tt>pass in</tt> opcji <tt>keep state</tt>. Dzięki zastosowaniu śledzenia stanów
+można osiągnąć pewną poprawę wydajności - tablice stanów są sprawdzane zanim
+datagram zostanie sprawdzony poprzez reguły, ale poprawa wydajności dotyczyć
+będzie w głównej mierze bardzo obciążonych filtrów, a że ten przykładowy
+system jest bardzo prosty, raczej mało prawdopodobne aby można było zauważyć
+różnice.
+
+<p>
+Ostatnie regułki zezwalają na przepuszczenie ruchu wychodzącego przez
+zewnętrzny interfejs sieciowy.
+<blockquote>
+<tt>
+pass out on $ext_if proto tcp all modulate state flags S/SA<br>
+pass out on $ext_if proto { udp, icmp } all keep state
+</tt>
+</blockquote>
+
+<p>
+Ruch na protokołach TCP, UDP i ICMP jest przepuszczany do Internetu, a śledzenie
+stanów pozwala przepuścić pakiety, które są odpowiedzią na wysłane datagramy.
+
+<a name="allrules"></a>
+<h2>Kompletny zestaw reguł</h2>
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+# makra
+int_if = "fxp0"
+ext_if = "ep0"
+
+tcp_services = "{ 22, 113 }"
+icmp_types = "echoreq"
+
+priv_nets = "{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"
+	  
+# opcje
+set block-policy return
+set loginterface $ext_if
+
+# normalizacja datagramów 
+scrub in all
+
+# nat/rdr
+nat on $ext_if from $int_if:network to any -&gt; ($ext_if)
+rdr on $int_if proto tcp from any to any port 21 -&gt; 127.0.0.1 \
+   port 8021
+
+# regułki filtra pakietów
+block all
+
+pass quick on lo0 all
+
+block drop in  quick on $ext_if from $priv_nets to any
+block drop out quick on $ext_if from any to $priv_nets
+
+pass in on $ext_if inet proto tcp from any to ($ext_if) \
+   port $tcp_services flags S/SA keep state
+
+pass in inet proto icmp all icmp-type $icmp_types keep state
+
+pass in  on $int_if from $int_if:network to any keep state
+pass out on $int_if from any to $int_if:network keep state
+
+pass out on $ext_if proto tcp all modulate state flags S/SA
+pass out on $ext_if proto { udp, icmp } all keep state
+</pre>
+</td></tr>
+</table>
+
+<p>
+[<a href="authpf.html">Wstecz: Authpf: powłoka dla bramek autentykacyjnych</a>]
+[<a href="index.html">Spis treści</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[wstecz]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: example1.html,v 1.7 ]<br>
+$Translation: example1.html,v 1.2 2003/08/28 23:00:18 pl-team Exp $<br>
+$OpenBSD: example1.html,v 1.1 2003/09/02 14:37:19 jufi Exp $
+</small>
+
+</body>
+</html> 

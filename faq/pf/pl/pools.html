@@ -1,0 +1,297 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Pule adresów i kierowanie ruchem</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-2">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 2003 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
+<p>
+[<a href="shortcuts.html">Wstecz: Skracanie zestawów reguł</a>]
+[<a href="index.html">Spis treści</a>]
+[<a href="perf.html">Dalej: Wydajność</a>]
+
+<p>
+<h1>
+<font color="#e00000">PF: Pule adresów i kierowanie ruchem</font>
+</h1>
+
+<hr>
+
+<h3>Spis treści</h3>
+<ul>
+<li><a href="#intro">Wstęp</a>
+<li><a href="#nat">Pula adresowa dla NAT</a>
+<li><a href="#incoming">Równoważenie obciążenia dla połączeń przychodzących</a>
+<li><a href="#outgoing">Równoważenie obciążenia ruchu wychodzącego</a>
+	<ul>
+	<li><a href="#outexample">Przykładowy zestaw reguł</a>
+	</ul>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Wstęp</h2>
+Pula adresów jest zbiorem dwóch lub więcej adresów, które, w razie
+konieczności, są dzielone pomiędzy użytkowników. Znajdują one zastosowanie jako
+zestawy adresów dla przekierowań w regułach <a href="rdr.html"><tt>rdr</tt></a>,
+jako adresy użyte przy translacji adresów w regułkach
+<a href="nat.html"><tt>nat</tt></a>, lub też jako adresy docelowe przy opcjach
+<a href="filter.html">filtra pakietów</a>: <tt>route-to</tt>, <tt>reply-to</tt>
+oraz <tt>dup-to</tt>.
+
+<p>
+Istnieją cztery metody używania pul adresów:
+<ul>
+<li><tt>bitmask</tt> - w tej metodzie część adresu IP wskazująca na sieć
+pobierana jest z puli adresowej i umieszczana w adresie, który ma zostać
+zmodyfikowany (adres źródłowy dla reguł <tt>nat</tt>, docelowy dla reguł
+<tt>rdr</tt>). Na przykład: jeśli pula adresowa zawiera w sobie sieć
+192.0.2.1/24, a modyfikowany adres to 10.0.0.50, więc wynikiem będzie adres
+192.0.2.50. Jeśli pulą adresową będzie sieć 192.0.2.1/25, modyfikowyany adres
+to 10.0.0.130, otrzymany adres będzie wyglądał następująco: 192.0.2.2.
+<li><tt>random</tt> - adresy z puli adresowej wybierane są w sposób losowy.
+<li><tt>source-hash</tt> - użycie funkcji mieszającej na adresie źródłowym do
+określenia, który adres z puli ma zostać wykorzystany. Ta metoda daje gwarancje,
+że dla tego samego adresu źródłowego będzie przypisany zawsze ten sam adres z
+puli adresowej. Klucz używany przez algorytm mieszający, może być opcjonalnie
+podany po słowie kluczowym <tt>source-hash</tt> w formacie szesnastkowym lub
+jako tekst. Domyślnie
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>pfctl(8)</a> generuje nowy klucz za każdym razem gdy zestaw reguł jest ładowany.
+<li><tt>round-robin</tt> - wykorzystanie wszystkich adresów kolejno. Jest to
+domyślna metoda.
+</ul>
+
+<p>
+Dla większości z wyżej wymienionych sposobów, pule adresów muszą być podane jako
+bloki sieci w formacie 
+<a href="http://public.pacbell.net/dedicated/cidr.html">CIDR</a> (Classless
+Inter-Domain Routing), jedynie metoda <tt>round-robin</tt> akceptuje wiele
+pojedyńczych adresów wyszczególnionych jako
+<a href="macros.html#lists">lista</a>.
+
+<p>
+Dodatkowo, użycie opcji <tt>static-port</tt>, wraz z jedną z powyższych metod
+zapobiega modyfikowaniu portu źródłowego pakietów TCP i UDP przez regułki
+<tt>nat</tt>.
+
+<a name="nat"></a>
+<h2>Pula adresowa dla NAT</h2>
+Pula adresowa może być używana jako adres do mapowania w regułach
+<a href="nat.html"><tt>nat</tt></a>. Połączenia obsługiwane przez NAT będą miały
+adres źródłowy zamieniony, przy użyciu jednej z wcześniej opisanych metod, na
+adres z puli adresowej. Takie wykorzystanie puli adresowej jest niezwykle
+użyteczna w sytuacjach gdy PF jest używany do mapowania adresów w bardzo dużej
+sieci. Ponieważ ilość mapowanych połączeń dla jednego adresu zewnętrznego jest
+ograniczona, dodanie kilku adresów wykorzystywanych do obsługi NAT pozwala
+zwiększyć ilość obsługiwanych użytkowników.
+
+<p>
+Poniższy przykład przedstawia wykorzystanie puli składającej się z dwóch adresów
+do translacji wychodzących pakietów. Dla każdego połączenia PF będzie
+przypisywał, na zmianę, jeden z adresów wchodzących w skład puli, zgodnie z
+metodą round-robin.
+
+<blockquote>
+<tt>
+nat on $ext_if inet from any to any -&gt; { 192.0.2.5, 192.0.2.10 }
+</tt>
+</blockquote>
+
+<p>
+Jedną z wad tej metody jest fakt, że kolejne połączenia z tego samego adresu z
+sieci wewnętrznej nie zawsze będą mapowane na ten sam adres zewnętrzny. Może to
+powodować problemy, na przykład, podczas przeglądania stron, które śledzą
+użytkowników na podstawie adresu IP. Alternatywnym rozwiązaniem problemu może
+być wykorzystanie metody <tt>source-hash</tt>, w której dla danego adresu
+wewnętrznego przypisywany jest dokładnie ten sam adres zewnętrzny. Aby
+wykorzystać tą metodę niezbędne jest zdefiniowanie puli adresowej jako bloku
+sieci w formacie
+<a href="http://public.pacbell.net/dedicated/cidr.html">CIDR</a>.
+
+<blockquote>
+<tt>
+nat on $ext_if inet from any to any -&gt; 192.0.2.4/31 source-hash
+</tt>
+</blockquote>
+
+<p>
+Ta przykładowa reguła <tt>nat</tt> używa puli adresowej 192.0.2.4/31 (192.0.2.4
+- 192.0.2.5) do translacji adresów dla wychodzących pakietów. Dany wewnętrzny
+adres będzie zawsze przetłumaczony na ten sam adres zewnętrzny ponieważ zostało
+użyte słowo kluczowe <tt>source-hash</tt>.
+
+<a name="incoming"></a>
+<h2>Równoważenie obciążenia dla połączeń przychodzących</h2>
+Pule adresowe znajdują także zastosowanie przy równoważeniu obciążenia serwerów
+obsługujących nadchodzące wywołania. Na przykład żądania dla serwera stron
+www mogą być rozłożone na różne serwery posiadające te same zasoby: 
+<blockquote>
+<tt>
+web_servers = "{ 10.0.0.10, 10.0.0.11, 10.0.0.13 }"<br>
+<br>
+rdr on $ext_if proto tcp from any to any port 80 -&gt; $web_servers
+</tt>
+</blockquote>
+
+<p>
+Nadchdzące połączenia będą przekierowywane do kolejnych serwerów zgodnie z
+metodą round-robin.
+
+<p>
+Tak samo jak w przypadku przykładu dla NAT, jeśli serwery www będą znajdować się
+w jednym bloku CIDR, opcja <tt>source-hash</tt> może być użyta do zapewnienia,
+że wywołania z danego adresu IP będą zawsze przekierowane do tego samego
+serwera. Takie zachowanie może być wymagane do utrzymania sesji podczas
+przeglądania strony www.
+
+<a name="outgoing"></a>
+<h2>Równoważenie obciążenia ruchu wychodzącego</h2>
+Pule adresowe, w połączeniu z opcja <tt>route-to</tt> filtra pakietów, doskonale
+nadają się do równoważenia ruchu wychodzącego pomiędzy dwa (lub więcej)
+interfejsy zapewniające połączenia z Internetem, kiedy żaden z odpowiednich
+protokołów wyznaczania tras (jak np.:
+<a href="http://www.rfc-editor.org/rfc/rfc1771.txt">BGP4</a>) jest niedostępny.
+Użycie opcji <tt>route-to</tt> wraz z pulą adresową obsługiwaną metodą
+<tt>round-robin</tt> sprawia, że połączenia wychodzące mogą być równomiernie
+rozłożone pomiędzy różne zewnętrzne interfejsy sieciowe.
+
+<p>
+Informacją niezbędną do wykonania równoważenia ruchu wychodzącego jest adres IP
+granicznego routera dla każdego połączenia z Internetem. Jest to niezbędne dla
+opcji <tt>route-to</tt> do określenia miejsca przeznaczenia dla wychodzących
+pakietów.
+
+<p>
+Poniższy przykład prezentuje równoważanie ruchu wychodzącego do Internetu
+poprzez dwa interfejsy sieciowe:
+<blockquote>
+<tt>
+lan_net = "192.168.0.0/24"<br>
+int_if &nbsp;= "dc0"<br>
+ext_if1 = "fxp0"<br>
+ext_if2 = "fxp1"<br>
+ext_gw1 = "68.146.224.1"<br>
+ext_gw2 = "142.59.76.1"<br>
+<br>
+pass in on $int_if route-to \<br>
+&nbsp;&nbsp;&nbsp;{ ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) } round-robin \<br>
+&nbsp;&nbsp;&nbsp;from $lan_net to any keep state
+</tt>
+</blockquote>
+
+<p>
+Opcja <tt>route-to</tt> jest używana dla ruchu <i>przychodzącego</i> na 
+<i>wewnętrznym</i> interfejsie do określenia zewnętrznego interfejsu sieciowego,
+poprzez który mają zostać skierowane pakiety, których adres źródłowy zostanie
+podmieniony na adres określonej bramki. Proszę zauważyć, że opcja
+<tt>route-to</tt> musi zostać określona dla <i>każdej</i> regułki, która
+definiuje równoważenie obciążenia. Powracające pakiety będą skierowane do tego
+samego interfejsu zewnętrznego, przez który wyszły na świat (realizuje to
+dostawca usług internetowych), a następnie do wewnętrznego interfejsu
+sieciowego.
+
+<p>
+Aby zapewnić, że pakiety z adresem źródłowym należącym do interfejsu
+<tt>$ext_if1</tt> były przekazywane do interfejsu <tt>$ext_gw1</tt> (oraz
+odpowiednio dla <tt>$ext_if2</tt> i <tt>$ext_gw2</tt>), dwie poniższe linie
+powinny zostać włączone do zestawu reguł:
+
+<blockquote>
+<tt>
+pass out on $ext_if1 route-to ($ext_if2 $ext_gw2) from $ext_if2 \<br>
+&nbsp;&nbsp;&nbsp;to any<br>
+pass out on $ext_if2 route-to ($ext_if1 $ext_gw1) from $ext_if1 \<br>
+&nbsp;&nbsp;&nbsp;to any 
+</tt>
+</blockquote>
+
+<p>
+I na końcu, NAT powinien zostać włączony na każdym wychodzącym interfejsie:
+<blockquote>
+<tt>
+nat on $ext_if1 from $lan_net to any -&gt; ($ext_if1)<br>
+nat on $ext_if2 from $lan_net to any -&gt; ($ext_if2)
+</tt>
+</blockquote>
+
+<a name="outexample"></a>
+<p>
+Kompletny, przykładowy zestaw reguł, który będzie równoważyć obciążenie
+ruchu wychodzącego może wyglądać mniej więcej tak:
+
+<p>
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+lan_net = "192.168.0.0/24"
+int_if  = "dc0"
+ext_if1 = "fxp0"
+ext_if2 = "fxp1"
+ext_gw1 = "68.146.224.1"
+ext_gw2 = "142.59.76.1"
+
+# włączenie NAT dla każdego wychodzącego interfejsu
+nat on $ext_if1 from $lan_net to any -&gt; ($ext_if1)
+nat on $ext_if2 from $lan_net to any -&gt; ($ext_if2)
+
+# domyślne blokowanie 
+block in  from any to any
+block out from any to any
+
+# przepuszczenie wszystkich wychodzących pakietów na interfejsie wewnętrznym
+pass out on $int_if from any to $lan_net
+# natychmiastowe przepuszczenie wszystkich pakietów skierowanych do routera
+pass in quick on $int_if from $lan_net to $int_if
+# równoważenie wychodzącego ruchu na protokole TCP z sieci wewnętrznej
+pass in on $int_if route-to \
+    { ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) } round-robin \
+    proto tcp from $lan_net to any flags S/SA modulate state
+# równoważenie wychodzącego ruchu na protokołach ICMP i UDP z sieci wewnętrznej
+pass in on $int_if route-to \
+    { ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) } round-robin \
+    proto { udp, icmp } from $lan_net to any keep state
+
+# przepuszczenie wychodzących pakietów na interfejsach zewnętrznych
+pass out on $ext_if1 proto tcp from any to any flags S/SA modulate state
+pass out on $ext_if1 proto { udp, icmp } from any to any keep state
+pass out on $ext_if2 proto tcp from any to any flags S/SA modulate state
+pass out on $ext_if2 proto { udp, icmp } from any to any keep state
+
+# skierowanie pakietów z dowolnego IP na interfejsie $ext_if1 do $ext_gw1 i
+# tak samo dla $ext_if2 i $ext_gw2
+pass out on $ext_if1 route-to ($ext_if2 $ext_gw2) from $ext_if2 to any 
+pass out on $ext_if2 route-to ($ext_if1 $ext_gw1) from $ext_if1 to any 
+</pre>
+</td></tr>
+</table>
+
+<p>
+[<a href="shortcuts.html">Wstecz: Skracanie zestawów reguł</a>]
+[<a href="index.html">Spis treści</a>]
+[<a href="perf.html">Dalej: Wydajność</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[wstecz]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: pools.html,v 1.5 ]<br>
+$Translation: pools.html,v 1.1 2003/08/28 09:44:13 pl-team Exp $<br>
+$OpenBSD: pools.html,v 1.1 2003/09/02 14:37:19 jufi Exp $
+</small>
+</body>
+</html> 

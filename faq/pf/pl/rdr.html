@@ -1,0 +1,326 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Przekierowania ruchu</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-2">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 2002-2003 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
+<p>
+[<a href="nat.html">Wstecz: Translacje adresów (NAT)</a>]
+[<a href="index.html">Spis treści</a>]
+[<a href="filter.html">Dalej: Filtrowanie pakietów</a>]
+
+<h1><font color="#e00000">PF: Przekierowania ruchu</font></h1>
+
+<hr>
+
+<h3>Spis treści</h3>
+<ul>
+<li><a href="#intro">Wstęp</a>
+<li><a href="#filter">Przekierowania, a filtrowanie pakietów</a>
+<li><a href="#security">Bezpieczeństwo</a>
+<li><a href="#reflect">Przekierowania i odbicia</a>
+	<ul>
+	<li><a href="#splitdns">Konfiguracja serwera DNS</a>
+	<li><a href="#sepnet">Przeniesienie serwera do odseparowanej sieci
+	lokalnej</a>
+	<li><a href="#tcpproxy">TCP proxy</a>
+	<li><a href="#rdrnat">RDR and NAT Combination</a>
+	</ul>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Wstęp</h2>
+Korzystając w biurze z dobrodziejstw NAT, można mieć pełny dostęp do Internetu
+na każdej maszynie. Co jednak zrobić, gdy zachodzi koniecznoć, by maszyna
+znajdująca się w sieci lokalnej była dostępna z Internetu? Taka sytuacja zdarza
+się często, i teraz nadchodzi właściwa chwila, by napisać kilka słów o
+przekierowaniach. Dzięki regułom <tt>rdr</tt> możliwe jest przesłanie
+pakietów inicjalizujących połączenie do maszyny znajdującej się za bramką NAT.
+
+<p>
+Oto bardzo prosty przykład:
+<blockquote>
+<tt>
+rdr on tl0 proto tcp from any to any port 80 -&gt; 192.168.1.20
+</tt>
+</blockquote>
+
+<p>
+Powyższa linijka przekierowuje ruch przeznaczony do portu 80 TCP (serwer www)
+do maszyny o adresie 192.168.1.20 wewnątrz sieci lokalnej. Pomimo tego, że
+adres 192.168.1.20 jest adresem wewnętrznym, można uzyskać do niego dostęp
+z Internetu.
+
+<p>
+Fragment <tt>from any to any</tt> w regułce <tt>rdr</tt> można
+dodatkowo zmodyfikować - jeśli wiadome jest które sieci powinny mieć dostęp
+do komputera wewnątrz sieci lokalnej na porcie 80, można to zastrzec w tej
+regułce:
+<blockquote>
+<tt>
+rdr on tl0 proto tcp from 27.146.49.0/24 to any port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;192.168.1.20
+</tt>
+</blockquote>
+
+<p>
+Pozwoli to na korzystanie z przekierowań tylko wyselekcjonowanym podsieciom.
+Jak można się domyśleć, można przekierowywać ruch do różnych miejsc
+docelowych w zależności od jego źródła. W niektórych przypadkach może to być
+naprawdę użyteczne. Dla przykładu, można mieć użytkowników, którzy posiadać
+będą dostęp do innej maszyny w sieci w zależności od adresu z pod którego się
+łączą:
+<blockquote>
+<tt>
+rdr on tl0 proto tcp from 27.146.49.14 to any port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;192.168.1.20<br>
+rdr on tl0 proto tcp from 16.114.4.89 to any port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;192.168.1.22<br>
+rdr on tl0 proto tcp from 24.2.74.178 to any port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;192.168.1.23
+</tt>
+</blockquote>
+
+<a name="filter"></a>
+<h2>Przekierowania, a filtrowanie pakietów</h2>
+Należy pamiętać o tym, że pakiety dopasowane do regułki <tt>rdr</tt> muszą
+nadal zostać zaakceptowane przez regułki filtrujące pakiety, które mogą je
+przepuścić bądź zablokować. Ważne jest, że pakiety dopasowane do regułki
+<tt>rdr</tt> po przejściu przez nią będą posiadać adres IP docelowy
+i/lub port docelowy zmienione tak, aby dotarł do właściwego odbiorcy.
+Aby lepiej to zrozumieć proszę przyjżeć się temu przykładowi:
+<ul>
+<li>192.0.2.1 - host w Internecie
+<li>24.65.1.13 - zewnętrzny adres routera OpenBSD
+<li>192.168.1.5 - adres serwera położonego  w sieci lokalnej
+</ul>
+
+<p>
+Regułka przekierowania:
+<blockquote>
+<tt>
+rdr on tl0 proto tcp from 192.0.2.1 to 24.65.1.13 port 80 \<br>
+&nbsp;&nbsp;&nbsp;-&gt; 192.168.1.5 8000
+</tt>
+</blockquote>
+
+<p>
+Pakiet przed przejściem przez regułkę <tt>rdr</tt>:
+<ul>
+<li>Źródłowy adres: 192.0.2.1
+<li>Źródłowy port: 4028 (wybrany niezależnie przez system operacyjny)
+<li>Docelowy adres: 24.65.1.13
+<li>Docelowy port: 80
+</ul>
+
+<p>
+Pakiet po przejściu przez regułkę <tt>rdr</tt>:
+<ul>
+<li>Źródłowy adres: 192.0.2.1
+<li>Źródłowy port: 4028
+<li>Docelowy adres: 192.168.1.5
+<li>Docelowy port: 8000
+</ul>
+
+<p>
+Zanim datagramy trafią do filtra pakietów, będą już miały zmieniony
+adres docelowy przez regułkę <tt>rdr</tt>.
+
+<a name="security"></a>
+<h2>Bezpieczeństwo</h2>
+Przekierowania należy stosować ostrożnie. Zezwolenie na dostęp do lokalnej
+maszyny z zewnątrz otwiera do niej drogę dla potencjalnych intruzów.
+Przykładowo: gdy ruch jest przekierowany do wewnętrznego serwera www,
+nowo odkryta luka w oprogramowaniu serwera bądź skrypcie CGI uruchomionym
+na tym serwerze, może dać intruzowi dostęp do systemu wewnętrz sieci
+lokalnej. Z tego punktu, atakujący ma otwartą drogę, aby dokonać penetracji
+wewnętrznej sieci.
+
+<p>
+Takie ryzyko może zostać zmniejszone poprzez wydzielenie systemów dostępnych
+z zewnątrz i umieszczenie ich w wydzielonej sieci. Często tego typu sieć
+nazywa się Strefą Zdemilitaryzowaną (Demilitarized Zone - DMZ) lub
+siecią prywatną (Private Service Network - PSN). W tej sytuacji, jeśli
+zabezpiecznia serwera www zostaną przełamane, konsekwencje z tym związane
+ograniczą się jedynie do sieci DMZ/PSN, oczywiście jeśli będziemy ostrożnie
+filtrować ruch wchodzący i wychodzący sieci DMZ/PSN.
+
+<a name="reflect"></a>
+<h2>Przekierowania i odbicia</h2>
+Często przekierowania wykorzystywane są do udostępnienia z poziomu Internetu
+lokalnego serwera mającego prywatny adres w naszej sieci, jak np:
+<blockquote>
+<tt>
+server = 192.168.1.40<br>
+<br>
+rdr on $ext_if proto tcp from any to $ext_if port 80 -&gt; $server \<br>
+&nbsp;&nbsp;&nbsp;port 80
+</tt>
+</blockquote>
+
+<p>
+Sprawdzając poprawność działania takiej regułki z komputera umieszczonego
+w sieci lokalnej okaże się, że wydaje się ona nie działać. Przyczyną jest to,
+że regułka przekierowująca określa interfejs wejściowy dla pakietów
+($ext_if - zewnętrzny interfejs). Połączenie z zewnętrznym adresem komputera
+z firewallem z komputera w sieci lokalnej wcale nie oznacza, że pakiety muszą
+wędrować przez zewnętrzny interfejs. Stos TCP/IP firewalla porównuje adres
+przeznaczenia przychodzących pakietów z własnymi adresami oraz ich aliasami,
+wykrywając w ten sposób połączenia do siebie samego w momencie, gdy przeszły
+tylko przez wewnętrzny interfejs. Takie pakiety fizycznie
+nie wędrują przez zewnętrzny interfejs, a stos TCP/IP nie symuluje w żaden
+sposób takiej sytuacji. PF nigdy nie widział tych pakietów na zewnętrznym
+interfejsie i dlatego właśnie regułka przekierowująca, wyłapująca pakiety
+wędrujące do zewnętrznego interfejsu nie akceptuje połączeń pochodzących
+z sieci LAN.
+
+<p>
+Dodanie drugiej regułki przekierowującej nie rozwiąże w tym przypadku
+problemu. Gdy klient z sieci lokalnej łączy się z zewnętrznym adresem IP
+firewalla pakiet inicjujący połączenie TCP dochodzi do maszyny z firewallem
+przez wewnętrzny interfejs.
+Nowa regułka przekierowująca akceptuje ten pakiet i adres docelowy zostaje
+zastąpiony adresem lokalnego serwera.
+Pakiet zostaje przekierowany ponownie na wewnętrzny interfejs i dociera
+do serwera. Jednak nie został przetłumaczony adres źródłowy i zawiera
+on adres klienta, więc serwer odeśle odpowiedź bezpośrednio do niego.
+Firewall nigdy nie dostanie odpowiedzi od serwera, którą mógłby poprawnie
+przesłać z powrotem do klienta, co spowoduje, że klient otrzyma pakiet TCP
+ze źródła, którego się nie spodziewał i go odrzuci, nawiązywanie połączenia
+nie powiedzie się.
+
+
+<p>
+Często wymaga się, aby hosty w sieci LAN mogły łączyć się z tym samym
+serwerem lokalnym tak jak hosty z zewnątrz, transparentnie (bez dodatkowej
+wiedzy o faktycznym adresie oraz położeniu serwera).
+Oto kilka pomysłów, które mogą pomóc w rozwiązaniu problemu:
+
+<a name="splitdns"></a>
+<h3>Konfiguracja serwera DNS</h3>
+Możliwe jest skonfigurowanie serwera DNS tak, aby odpowiadał na zapytania
+z sieci lokalnej inaczej niż na zapytania z zewnątrz, tak więc klient
+w sieci lokalnej może otrzymać od serwera nazw adres lokalny serwera.
+Połączy się wtedy z nim bezpośrednio, bez zaangażowania w tę operację
+firewalla. Zredukuje to ruch, ponieważ pakiety nie będą niepotrzebnie
+wędrowały przez firewall.
+
+<a name="sepnet"></a>
+<h3>Przeniesienie serwera do odseparowanej sieci lokalnej</h3>
+Dołączenie dodatkowego interfejsu sieciowego do komputera z firewallem
+i przeniesienie serwera do takiej sieci dedykowanej (DMZ) pozwoli na
+przekierowywanie połączeń od lokalnych klientów w taki sam sposób
+jak klientom z zewnątrz. Wykorzystanie odseparowanej sieci ma kilka
+innych zalet, włączając zwiększenie bezpieczeństwa poprzez odseparowanie
+serwera także od klientów lokalnych. Jednakże należy pamiętać o tym,
+że w takim przypadku nasz serwer nie będzie miał bezpośredniego dostępu
+do hostów lokalnych - wszystkie połączenia będą musiały przejść przez
+firewall.
+
+<a name="tcpproxy"></a>
+<h3>TCP proxy</h3>
+TCP proxy może być skonfigurowany na hoście, na którym pracuje firewall,
+nasłuchując na porcie który ma zostać przekierowany oraz przechwytując
+połączenia z interfejsu lokalnego i przekierowywać je do portu, na którym
+nasłuchuje. Gdy lokalny klient łączy się z firewallem, proxy akceptuje
+połączenie otwierając drugie połączenie z serwerem i przekierowując
+ruch pomiędzy ustanowionymi połączeniami.
+
+<p>
+Proste proxy można zrobić korzystając z 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=inetd&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>inetd(8)</a> oraz
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=nc&amp;sektion=1&amp;manpath=OpenBSD+3.3"
+>nc(1)</a>. Poniższy wpis w <tt>/etc/inetd.conf</tt> tworzy gniazdo nasłuchujące
+przypisane do adresu loopback (127.0.0.1) oraz portu 5000.
+Połączenia przekierowywane są do portu 80 serwera o adresie
+192.168.1.10.
+<blockquote>
+<tt>
+127.0.0.1:5000 stream tcp nowait nobody /usr/bin/nc nc -w \<br>
+&nbsp;&nbsp;&nbsp;20 192.168.1.10 80
+</tt>
+</blockquote>
+
+<p>
+Poniższa regułka PF przekierowuje ruch portu 80 na wewnętrznym interfejsie
+do proxy:
+<blockquote>
+<tt>
+rdr on $int_if proto tcp from $int_net to $ext_if port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;127.0.0.1 port 5000
+</tt>
+</blockquote>
+
+<a name="rdrnat"></a>
+<h3>Współpraca RDR (przekierowania) i NAT</h3>
+Można również uzyskać translację adresu źródłowego poprzez wprowadzenie
+dodatkowej regułki NAT dotyczącej wewnętrznego interfejsu.
+<blockquote>
+<tt>
+rdr on $int_if proto tcp from $int_net to $ext_if port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;$server
+<br>
+no nat on $int_if proto tcp from $int_if to $int_net<br>
+nat on $int_if proto tcp from $int_net to $server port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;$int_if
+</tt>
+</blockquote>
+
+<p>
+Spowoduje to, że inicjalizujący połączenie pakiet pochodzący od klienta,
+zostanie ponownie poddany NAT w chwili, gdy zostanie przekierowany na
+zewnętrzny interfejs, adres źródłowy klienta zostanie zamieniony na adres
+inetrfejsu wewnętrznego serwera. Serwer prześle swoją odpowiedź do firewalla,
+który potrafi zamienić regułkę RDR na NAT gdy klientem jest host w sieci
+loaklnej. Taka konstrukcja jest dość złożona dzięki temu, że tworzy
+dwa oddzielne stany dla każdego połączenia.
+Trzeba zwrócić uwagę na odpowiednią konfigurację NAT w taki sposób, aby
+regułki nie akceptowały innych pakietów niż te, które dopuszczasz, dla
+przykładu, połączenia pochodzące od hostów z poza naszej sieci lub samego
+firewalla. Zauważ, że regułka rdr powyżej, spowoduje, że stos TCP/IP będzie
+widział pakiety przychodzące do wewnętrznego interfejsu z adresem docelowym
+naszej sieci lokalnej. Aby zapobiec generowaniu informacji o przekierowaniach
+ICMP przez stos (mówiących klientowi, że serwer jest dostępny lokalnie)
+należy włączyć przekierowania na bramce:
+
+<blockquote>
+<tt>
+# sysctl -w net.inet.ip.redirect=0<br>
+# sysctl -w net.inet6.ip6.redirect=0 <i>(w przypadku wykorzystywania IPv6)</i>
+</tt>
+</blockquote>
+
+<p>
+Dla większości przypadków, rozwiązania omawiane powyżej są w zupełności
+wystarczające.
+
+<p>
+[<a href="nat.html">Wstecz: Translacja adresów (NAT)</a>]
+[<a href="index.html">Spis treści</a>]
+[<a href="filter.html">Dalej: Filtrowanie pakietów</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[wstecz]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: rdr.html,v 1.7 ]<br>
+$Translation: rdr.html,v 1.1 2003/08/28 09:42:45 pl-team Exp $<br>
+$OpenBSD: rdr.html,v 1.1 2003/09/02 14:37:19 jufi Exp $
+</small>
+</body>
+</html> 
