@@ -1,0 +1,213 @@
+<!DOCTYPE HTML PUBLIC  "-//IETF//DTD HTML Strict//EN">
+<html>
+<head>
+<title>OpenSSH Portable Release for Linux/Solaris/etc</title>
+<link rev=made href=mailto:www@openbsd.org>
+<meta name="resource-type" content="document">
+<meta name="description" content="the OpenSSH project portable version upgrading issues page">
+<meta name="keywords" content="openbsd,portable version,upgrading">
+<meta name="distribution" content="global">
+<meta name="copyright" content="This document copyright 1999 by OpenBSD.">
+</head>
+
+<BODY BGCOLOR="#FFFFFF" TEXT="#000000" LINK="#23238E">
+
+<img alt="[OpenSSH]" height=30 width=141 SRC="../images/smalltitle.gif">
+<p>
+<h2><font color=#e00000>Portabibilität von OpenSSH - Upgrading Hinweis</font><hr></h2>
+
+<P>
+	OpenSSH is fast komplett kompatibel mit dem kommerziellenl SSH 1.2.x.
+	Es gibt aber trotzdem ein paar Ausnahmen, die du im Kopf behalten musst, wenn
+	du ein Upgrade machst.
+	
+</P>
+
+<OL>
+	<LI>
+		OpenSSH unterstützt keinerlei patentierten Transport Algorithmen.
+		<P>
+			Nur 3DES und Blowfish können ausgewählt werden. Dieser Unterschied
+			kann sich darin manifestieren ,dass sich das ssh Kommando weigert, sein
+			Config-File zu lesen.
+		</P>
+		</P>
+			<B><I>Lösung:</B></I>
+			Editiere <I>/etc/ssh/ssh_config</I> und wähle eine andere 
+			<B>Cipher</B> Option ("3des" oder "blowfish").
+		</P>
+	</LI>
+	<LI>
+		Alte Versionen des kommerziellen SSH verschlüsseln Host keys mit IDEA
+		<P>
+			Die alten Versionen von SSH benutzen einen patientierten Algorithmus um ihren
+			<I>/etc/ssh/ssh_host_key</I> zu verschlüsseln.
+		</P>
+		<P>
+			Dieses Problem wird sich darin manifestieren, dass sshd nicht in der Lage ist, 
+			seinen eigenen host-key zu lesen.
+		</P>
+		<P>
+			<B><I>Lösung:</B></I>
+			 Du wirst die <U>kommerzielle</U> Version von 
+			ssh-keygen für den privaten key des Host's anwenden müssen:
+		</P>
+		<P>
+			<PRE>ssh-keygen -u -f /etc/ssh/ssh_host_key</PRE>
+		</P>
+	</LI>
+
+	<LI>
+		Inkompatible Änderungen am <I>sshd_config</I> Format.
+		<P>
+			OpenSSH erweitert das <I>sshd_config</I> Dateiformat in einer ganzen Reihe von 
+			Dingen. Es gibt momentan eine Änderung die inkompatibel mit der alten Form ist.
+		</P>
+		<P>
+			Kommerzielles SSH kontrollierte Logging mit Hilfe der <B>QuietMode</B> und
+			<B>FascistLogging</B> Direktiven. OpenSSH führt ein
+			allgemeines Set von Loggingoptionen ein, nämlich <B>SyslogFacility</B> und 
+			<B>LogLevel</B>. Siehe sshd Manual Page.
+		</P>
+	</LI>
+	<LI>
+		Warnhinweise wegen Schlüssellängen
+		<P>
+			Das ssh-keygen Programm des kommerziellen SSH beinhaltet einen Bug, der dazu führt, 
+			dass ab und zu ein RSA Schlüssel generiert wird, bei dem das
+			Most Significant Bit (MSB) nicht gesetzt ist.
+			Solche Schlüssel werden als solche mit voller Länge ausgegeben, sind tatsächlich
+			aber nur halb so sicher.
+		</P>
+		<P>
+			OpenSSH wird Warnhinweise ausgeben, wenn es solche Schlüssel bemerkt.
+			Um diese Hinweise loszuwerden editiere deine known_hosts Datei und ersetze
+			die unkorrekte Schlüssellänge (für gewöhlich"1024") mit der korrekten Schlüssellänge
+			(für gewöhnlich "1023").
+		</P>
+	</LI>
+	<LI>
+		Unechte PAM Authentifikationsmeldungen in den logfiles
+		<P>
+			OpenSSH generiert unechte Authentifikationsfehlschläge bei jedem login, 
+			etwa so:
+
+			<PRE>"authentication failure; (uid=0) -> root for sshd service"</PRE>
+
+			Diese werden generiert, da OpenSSH zuerst prüft, ob ein User Authentifikation
+			zum Login benötigt (z.B. leeres Passwort).
+			Unglücklicherweise logt PAM alle Authenfikationsvorkommnisse, inklusive dieses.
+		</P>
+		<P>
+			Wenn dich das zu sehr stört, setze <B>PermitEmptyPasswords</B> in 
+			<I>sshd_config</I> auf "no". Das wird zwar die Warnmeldung abschalten, verhindert
+			aber auch das Einloggen ohne gesetztes Passwort. Das ist übrigens die Standardeinstellung
+			wenn du mit dem mitgelieferten <I>sshd_config</I> File arbeitest.
+		</P>
+	</LI>
+	<LI>
+		Leere Passwörter sind bei der PAM Authentifikation nicht erlaubt.
+		<P>
+			Um leere Passwörter bei einer Version von OpenSSH zu gestatten, die mit PAM
+			erzeugt wurde, musst du das Flag <B>nullok</B> am Ende des Password Checking 
+			Moduls in der <I>/etc/pam.d/sshd</I> Datei setzen. Zum Beispiel:
+
+			<PRE>auth required/lib/security/pam_unix.so shadow nodelay nullok</PRE>
+
+			Das muss zusätzlich zum Setzen von <B>PermitEmptyPasswords</B> 
+			"yes" in der <I>sshd_config</I> Datei geschehen.
+		</P>
+		<P>
+			Es gibt ein Problem mit dem Benutzen von leeren Passwörtern mit PAM
+			Authentifikation: PAM erlaubt <U>jegliches</U> Passwort beim Authentifizieren
+			eines Accounts mit leerem Passwort. Das setzt den Check ausser Kraft, den sshd
+			benutzt, um festzustellen ob ein Account kein Passwort gesetzt hat und gibt den Zugang
+			zum Account frei, unabhängig davon, wie die Policy in
+			<B>PermitEmptyPasswords</B> ist. Aus diesem Grund wird empfohlen
+			die <B>nullok</B> Direktive nicht in deine PAM Konfigurationsdatei 
+			aufzunehmen, es sei denn du willst unbedingt leere Passwörter erlauben.
+		</P>
+	</LI>
+	<LI>
+		X11 und/oder agent forwarding funktioniert nicht
+		<P>
+			Checke deine <I>ssh_config</I> und <I>sshd_config</I>. Die Standard-
+			Konfigurationsdatei schaltet die Authentifikation für agent und X11 forwarding ab.
+		</P>
+	</LI>
+	<LI>
+		ssh braucht eine lange Zeit, um sich mit einem Linux/glibc 2.1 zu verbinden
+		<P>
+			Die mit Redhat 6.1 ausgeliferte glibc2.1 scheint eine lange Zeit zu benötigen
+			um "IPv6 oder IPv4" Addressen von Domainnamen aufzulösen. Das kann umgangen werden,
+			indem man die <B>--with-ipv4-default</B> Konfigurations-Option benutzt. 
+			Die weist OpenSSH an, nur IPv4 Adressauflösung zu benutzen. (IPv6
+			lookups können trotzdem mit Hilfe der -6 Option gemacht werden).
+		</P>
+	</LI>
+	<LI>
+		Logins vom kommerziellen ssh erzeugt diesen Fehler:
+		<PRE>Selected cipher type idea not supported by server</PRE>
+		<P>
+			Dieser Fehler wird erzeugt, wenn ein kommerzielles ssh, das mit der
+			Option 'idea' Chiffre konfiguriert wurde, versucht einen OpenSSH Server
+			zu kontaktieren. Um das geradezubiegen, wähle eine andere Chiffre in den
+			<I>ssh_config</I> oder <I>~/.ssh/config</I> Dateien (3des für Sicherheit oder
+			blowfish für Geschwindigkeit).
+		</P>
+	</LI>
+	<LI>
+		can't locate module net-pf-10" Meldungen im log unter Linux
+		<P>
+			Der Linux kernel prüft (via modprobe) ob die Protokollfamilie 10 
+			(IPv6) da ist. Lade entweder das entsprechende Kernelmodul, trag den entsprechenden 				
+			Alias in <I>/etc/modules.conf</I> ein oder schalte IPv6 in 
+			<I>/etc/modules.conf</I> ab.
+		</P>
+		<P>
+			Aus einem blödsinnigen Grund kann <I>/etc/modules.conf</I> auch als
+			<I>/etc/conf.modules</I> benannt sein.
+		</P>
+	</LI>
+	<LI>
+		Password Authentifikation klappt nicht auf Slackware 7.0
+		<P>
+			Linke OpenSSH mit libcrypt:
+
+			<PRE>LIBS=-lcrypt ./configure [options]</PRE>
+		</P>
+	</LI>
+	<LI>
+		configure oder sshd beschweren sich über fehlenden RSA Support
+		<P>
+			Stelle sicher, dass deine OpenSSL libraries mit eingebauter RSA
+			Unterstützung entweder intern oder mit Hilfe von RSAref erzeugt wurden.
+		</P>
+	</LI>
+	<LI>
+		"scp: command not found" Fehler
+		<P>
+			scp muss im Standard-Pfad (PATH) sowohl im Server als auch im Client sein.
+			Möglicherweise musst du auch die <B>--with-default-path</B> Option setzen, um 
+			einen gewünschten Pfad auf dem Server anzugeben, in dem gesucht werden soll. Diese Option ersetzt den
+			Standardpfad, so dass du alle momentan enthaltenen Verzeichnisse angeben musst, und ausserdem
+			muss scp installiert sein.
+			Zum Beispiel:
+			<PRE>./configure --with-default-path=/bin:/usr/bin:/usr/local/bin:/path/to/scp</PRE>
+		</P>
+	</LI>
+</UL>
+<p>
+<hr>
+<a href=index.html><img height=24 width=24 src=../back.gif border=0 alt=OpenSSH></a>
+<a href=mailto:www@openbsd.org>www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: portable-upgrading.html,v 1.1 ]
+<br>
+$Translation: portable-upgrading.html,v 1.1 2000/05/07 16:46:24 jufi Exp $
+<br>
+$OpenBSD: portable-upgrading.html,v 1.1 2000/05/07 19:12:55 wvdputte Exp $</small>
+
+</body>
+</html>
