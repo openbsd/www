@@ -28,6 +28,7 @@
 <li> <a href="#NFS"	>6.7 - NFS benutzen</a></li>
 <li> <a href="#DNS"	>6.8 - DNS - Domain Name Service  - DNS, BIND und named</a>
 <li> <a href="#PPTP"	>6.9 - Eine PPTP Verbindung mit OpenBSD aufbauen</a>
+<li><a href="#Bridge"   >6.10 - Aufsetzen einer Bridge mit OpenBSD</a>
 </ul>
 </p>
 
@@ -778,16 +779,19 @@ pass in quick on fxp0 inet proto udp from any to any port 53
 <b>Packet Normalization</b>
 </p>
 <p> 
-Da einige Anwendungen und auch ganze Betriebssysteme Probleme mit abnormen oder 
-fragmentierten Paketen haben, ist es manchmal vorteilhaft, die Pakete erst zu 
-normaliseren, bevor sie zu ihrem endg&uuml;ltigen Bestimmungsort weiterreisen.
+Packet Normalization bedeutet das erneute Zusammenf&uuml;gen von 
+fragmentierten Paketen und das Leeren der IP Options.
+Einige BSs und Applikationen haben Schwierigkeiten mit anormalen und
+fragmentierten Paketen, und daher ist es im allgemeinen richtig und gut
+Pakete von den Filter-Regeln normalisieren zu lassen.
 Das macht man mit Hilfe der <b>scrub</b> Direktive, die man wie folgt benutzt:
 <ul><pre>
 scrub in all
 </pre></ul>
-Das das zus&auml;tzliche Last auf dem System erzeugt, gibt es keinen Grund, diese
-Anweisung zu benutzen, es sei denn, das System sch&uuml;tzt ein Ger&auml;lt mit einer
-schlechten Implementierung von TCP/IP.
+Das f&uuml;gt dem System eine minimale zus&auml;tzliche Last hinzu, 
+und verlangt ein wenig Speicher, um die Paket-Fragmente zu cachen. 
+Die Vorteile von Packet Normalization wiegen diesen kleinen Nachteil
+jedoch fast jedesmal aus.
 </p>
 
 <p>
@@ -1528,7 +1532,7 @@ F&uuml;r manche Anweungen ist es notwendig, ein- oder ausgehenden
 Verkehr umzuleiten f&uuml;r ein bestimmtes Protokoll und/oder einen 
 bestimmten Port zu einer bestimmten Maschine hinter dem Filtersystem 
 umzuleiten.
-Ein Beispiel daf&uulm;r ist ein Rechner im LAN, der einen Webserver
+Ein Beispiel daf&uuml;r ist ein Rechner im LAN, der einen Webserver
 beinhaltet, der von aussen erreichbar sein muss. Ein Beispiel w&auml;re 
 ein Webserver in deinem interne Netzwerk, der von aussen erreichbar 
 sein muss, (oder nat&uuml;rlich der bereits erw&auml;hnte FTP-Proxy(8)).
@@ -2858,6 +2862,187 @@ Wir schlagen vor, die Startsequenz in <i>/etc/rc.local</i> unterzubringen, so da
 aufgebaut wird.
 </p>
 
+
+
+<a name= "Bridge"></a>
+<h2>6.10 - Aufsetzen einer Bridge mit OpenBSD</h2>
+
+Eine <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridge&sektion=4">Bridge</a>
+ist ein Link zwischen zwei oder mehr separaten Netzwerken. Anders als 
+ein Router reisen Pakete durch die Bridge "unsichtbar" -- logisch 
+erscheinen die beiden Netzwerksegmente als eines f&uuml;r Rechner auf 
+beiden Seiten der Bridge. Die Bridge wird nur Pakete weiterleiten, die 
+auch von einem Segment in das andere m&uuml;ssen, sie bieten also
+auch einen einfachen Weg den Traffic in einem komplexen Netzwerk zu 
+reduzieren  und erlauben trotzdem den Zugriff jedes Rechners zu jedem
+anderen, falls n&ouml;tig.
+
+<p>
+Denk daran, dass aufgrund dieser "unsichtbaren" Natur ein Interface in 
+einer Bridge eine IP-Adresse haben kann, aber nicht muss. Wenn sie eine
+hat, hat die Karte effektiv zwei Betriebsmodi, n&auml;mlich eine
+als Teil der Bridge, die andere als normale, stand-alone Netzwerk-Karte.
+Wenn keine der Karten eine IP-Adresse hat, wird die Bridge einfach
+Netz-Daten verschieben, aber nicht von extern administrierbar 
+oder wartbar sein (was auch ein Feature sein kann).
+
+<h3>Ein Beispiel einer Bridge Anwendung</h3>
+Eines meiner Computer Racks hat eine Anzahl alter Systeme, von denen keines
+eine eingebaute 10BASE-TX Netzwerk-Karte hat. W&auml;hrend sie alle einen 
+AUI oder AAUI Stecker haben, sind die Transceiver auf Koax beschr&auml;nkt.
+Eine der Maschinen in diesem Rack ist ein OpenBSD-basierender 
+Terminal-Server, der dauerhaft eingeschaltet und auch immer mit einem
+High-Speed-Netzwerk verbunden ist. Das Hinzuf&uuml;gen  einer zweiten 
+Netzwerk-Karte mit einem Koax-Port erlaubt mir, diese Maschine als Bridge 
+in das Koax-Netzwerk zu benutzen.
+
+<p>
+Dieses System hat jetzt zwei Netzwerk-Karten (NICs), eine Intel EtherExpress/100
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fxp&sektion=4"><tt>fxp0</tt></a>)
+und eine 3c590-Combo Karte 
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ep&sektion=4"><tt>ep0</tt></a>)
+f&uuml;r den Koax Port. <tt>fxp0</tt> ist der Link in mein restliches 
+Netzwerk und wird daher eine IP-Adresse haben, <tt>ep0</tt> macht nur
+Bridging und hat daher keine.
+Maschinen, die an das Koax-Segment angeschlossen sind, sollen genauso
+kommunizieren, als wenn sie im Rest meines Netzwerkes w&auml;ren.
+Wie also bewerkstelligen wir das ?
+
+<p>
+Die Datei <tt>hostname.fxp0</tt> enth&auml;lt die Konfigurationsdaten 
+f&uuml;r die <tt>fxp0</tt> Karte.  Diese Maschine soll DHCP machen,
+also sieht die Datei etwa so aus:
+
+<blockquote>
+<pre>
+$ <b>cat /etc/hostname.fxp0</b>
+dhcp NONE NONE NONE NONE
+</pre>
+</blockquote>
+
+Noch keinerlei &Uuml;berraschungen
+
+<p>
+Die <tt>ep0</tt> Karte ist ein wenig anders, wie du dir denken kannst:
+<blockquote>
+<pre>
+$ <b>cat /etc/hostname.ep0</b>
+up media 10base2
+</pre>
+</blockquote>
+
+Hier sagen wir dem System, es m&ouml;ge das Interface mittels 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&sektion=8">ifconfig(8)</a>
+aktivieren und auf 10BASE-2 (Koax) setzen. Keine IP Addresse oder &auml;hnliche 
+Information muss f&uuml;r dieses Interface spezifiziert werden. Die 
+Optionen, die von der <tt>ep</tt> Karte akzeptiert werden, sind
+detailliert in der
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ep&sektion=4">man
+page</a> aufgef&uuml;hrt.
+
+<p>
+Jetzt m&uuml;sen wir die Bridge aufsetzen. Bridges werden durch die Existenz einer Datei
+namens
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridgename.if&sektion=5"><tt>bridgename.bridge0</tt></a>. 
+initialisiert. Hier ist zum Beispiel ein Datei f&uuml;r meine Situation:
+
+<blockquote>
+<pre>
+$ <b>cat /etc/bridgename.bridge0</b>
+add fxp0
+add ep0
+up
+</pre>
+</blockquote>
+
+Das sagt aus, es soll eine Bridge aus zwei NICs aufgesetzt und aktiviert 
+werden, fxp0 und ep0.
+Es ist egal, in welche Reihenfolge die Karten aufgef&uuml;hrt werden.
+Denke daran, die Bridge ist symmetrisch -- Pakete fliessen ja in beide
+Richtungen.
+
+<p>
+Das war es!  Reboote, und du wirst eine funktionierende Bridge haben.
+
+<h3>Filtern auf der Bridge</h3>
+W&auml;hrend es sicher auch eine Menge Anwendungen f&uuml;r eine 
+solch einfache Bridge gibt, ist es doch wahrscheinlich, dass du
+etwas mit den ganzen Paketen TUN willst, w&auml;hrend sie durch deine Bridge
+laufen. Wie zu erwarten, kann man
+<a href="#PF">Packet Filter</a> dazu benutzen, den Traffic einzuschr&auml;nken,
+ der durch deine Bridge fliesst.
+
+<p>
+Denke daran, dass wegen der Natur der Bridge die gleichen Daten
+&uuml;ber beide Interfaces fliessen, aber du nur auf einem Interface 
+zu filtern brauchst. Deine "Pass all" Statements w&uuml;rden dann
+wie folgt aussehen:
+
+<blockquote>
+<pre>
+pass in  on ep0  any
+pass out on ep0  any
+pass in  on fxp0 any
+pass out on fxp0 any
+</pre>
+</blockquote>
+
+Sagen wir nun, ich wollte den Traffic filtern, der diesen alten Maschinen
+trifft. Ich m&ouml;chte, dass nur Web und SSH-Traffic zu Ihnen durchkommt.
+In diesem Fall lassen wir jeglichen Traffic nach draussen zu, filtern aber
+auf dem fxp0 Interface, indem wir keep state f&uuml;r die Antwort-Daten
+benutzen:
+
+<blockquote>
+<pre>
+# Pass all traffic through ep0
+pass in quick on ep0 all
+pass out quick on ep0 all
+
+# Block fxp0 traffic
+block in  on fxp0 all
+block out on fxp0 all
+
+pass in quick on fxp0 proto tcp from any to any port {22, 80} \
+     flags S/SA keep state
+</pre>
+</blockquote>
+
+Denke daran, dass diese Regelwerk jeglichen Netzwerk-Verkehr
+mit Ausnahme von hereinkommendem HTTP und SSH-Traffic zur Bridge selbst und
+den Maschinen "dahinter" verhindert. Andere Resultate werden erzielt,
+wenn man auf dem anderen Interface filtert.
+
+<p>
+Um die Bridge zu &uuml;berwachen und zu kontrollieren, benutze das 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=brconfig&sektion=8">brconfig(8)</a>
+Kommando, mit dem man eine Bridge auch nach dem Booten erzeugen kann.
+
+<h3>Tips zum Bridging</h3>
+<ul>
+<li>Es wird W&Auml;RMSTENS empfohlen, nur auf einem Interface zu filtern.
+Wenn es auch m&ouml;glich ist, auf beiden zu filtern, muss man das vorher 
+jedoch sehr gut verstanden haben.
+
+<li>Durch die Benutzung der <i>blocknonip</i> Option von
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=brconfig&sektion=8">brconfig(8)</a>
+oder in 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridgename.if&sektion=5">bridgename.bridge0</a>,
+kannst du jeglichen nicht-IP Traffic (wie etwa IPX oder NETBEUI) davon 
+abhalten, sich um deine Filter herumzustehlen. Das kann in einigen Situationen
+sehr wichtig sein, aber du solltest wissen, dass Bridges f&uuml;r jeglichen
+Traffic funktionieren, nicht nur f&uuml;r IP.
+
+<li>F&uuml;r Bridging m&uuml;ssen die NICs im "Promiscuous mode" sein -- sie
+lauschen einfach am GESAMTEN Netzwerk-Verkehr, nicht nur an dem, der
+an das Interface gerichtet ist. Das hat einen h&ouml;heren Load f&uuml;r 
+CPU und Bus zur Folge, als man denkt. Einige NICs funktionieren leider
+nicht sauber in diesem Modus, der TI ThunderLAN Chip
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tl&sektion=4">tl(4)</a>)
+ist leider so ein Beispiel, der nicht als Teil einer Bridge funktioniert.
+</ul>
+
+
 <p>
 <font color= "#0000e0">
 <a href= "index.html">[Zur&uuml;ck zum Hauptindex]</a>
@@ -2873,12 +3058,12 @@ aufgebaut wird.
 <br>
 <small>
 <br>
-Originally [OpenBSD: faq6.html,v 1.141 ]
+Originally [OpenBSD: faq6.html,v 1.144 ]
 <br>
-$Translation: faq6.html,v 1.59 2002/07/14 14:46:54 jufi Exp $
+$Translation: faq6.html,v 1.61 2002/08/06 20:59:15 jufi Exp $
 </small>
 <br>
-<small>$OpenBSD: faq6.html,v 1.46 2002/07/14 15:50:18 jufi Exp $</small>
+<small>$OpenBSD: faq6.html,v 1.47 2002/08/06 21:10:04 jufi Exp $</small>
 </p>
 </body>
 </html>
