@@ -27,6 +27,7 @@
 "Using partition 3 id 0".</a></li>
 <li><a href="#14.7">14.7 - How do I get a dmesg from a boot floppy?</a></li>
 <li><a href="#14.8">14.8 - Installing Bootblocks - i386 specific</a></li>
+<li><a href="#14.9">14.9 - Preparing for disaster: Backing up and Restoring from tape.</a></li>
 </ul>
 </p> 
 <hr>
@@ -824,6 +825,323 @@ If a newer version of bootblocks are required, you will need to compile these yo
 </pre></ul>
 
 <p>
+<a name="14.9"></a>
+<h2>14.9 - Preparing for disaster: Backing up and Restoring from tape</h2>
+</p>
+
+<h3>Introduction:</h3>
+
+<p>
+If you plan on running what might be called a production server, it is advisable to have some form of backup in the event one of your fixed disk drives fails.
+</p>
+
+<p>
+This information will assist you in using the standard <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dump&sektion=8&format=html">dump(8)</a>/<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=restore&sektion=8&format=html">restore(8)</a> utilities provided with OpenBSD. A more advanced backup utility called "Amanda" is also available for backing up multiple servers to one tape drive. In most environments <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dump&sektion=8&sektion=html">dump(8)</a>/<a href=http://www.openbsd.org/cgi-bin/man.cgi?query=restore&sektion=8&format=html">restore(8)</a> is enough. However if you have a need to backup multiple machines to one tape, Amanda might be worth investigating in the future.
+</p>
+
+<p>
+The device examples in this document are for a configuration that uses both SCSI disks and tape. In a production environment, SCSI disks are recommended over IDE due to the way in which they handle bad blocks. That is not to say this information is useless if you are using an IDE disk or other type of tape drive, your device names will simply differ slightly. For example sd0a would be wd0a in an IDE based system.
+</p>
+
+<h3>Backing up to tape:</h3>
+
+<p>
+Backing up to tape requires knowledge of where your file systems are mounted. You can determine how your filesystems are mounted using the "mount" command at your shell prompt. You should get output similar to this:
+</p>
+
+<ul><pre>
+shell# <b>mount</b>
+/dev/sd0a on / type ffs (local)
+/dev/sd0h on /usr type ffs (local)  
+</ul></pre>
+
+<p>
+In this example, the root (/) filesystem resides physically on sd0a which indicates SCSI fixed disk 0, partition a. The /usr filesystem resides on sd0h, which indicates SCSI fixed disk 0, partition h.
+</p>
+
+<p>
+Another example of a more advanced mount table might be:
+</p>
+
+<ul><pre>
+shell# <b>mount</b>
+/dev/sd0a on / type ffs (local)
+/dev/sd0d on /var type ffs (local)
+/dev/sd0e on /home type ffs (local)
+/dev/sd0h on /usr type ffs (local)  
+</ul></pre>
+
+<p>
+In this more advanced example, the root (/) filesystem resides physically on sd0a. The /var filesystem resides on sd0d, the /home filesystem on sd0e and finally /usr on sd0h.
+</p>
+
+<p>
+To backup your machine you will need to feed dump the name of each fixed disk partition. Here is an example of the commands needed to backup the simpler mount table listed above:
+</p>
+
+<ul><pre>
+# <b>/sbin/dump -0au -f /dev/nrst0 /dev/rsd0a</b>
+# <b>/sbin/dump -0au -f /dev/nrst0 /dev/rsd0h</b>
+# <b>mt -f /dev/rst0 rewind  </b>
+</ul></pre>
+
+<p>
+For the more advanced mount table example, you would use something similar to:
+</p>
+
+<ul><pre>
+# <b>/sbin/dump -0au -f /dev/nrst0 /dev/rsd0a</b>
+# <b>/sbin/dump -0au -f /dev/nrst0 /dev/rsd0d</b>
+# <b>/sbin/dump -0au -f /dev/nrst0 /dev/rsd0e</b>
+# <b>/sbin/dump -0au -f /dev/nrst0 /dev/rsd0h  </b>
+# <b>mt -f /dev/rst0 rewind  </b>
+</ul></pre>
+
+<p>
+You can review the dump man page to learn exactly what each command line switch does. Here is a brief description of the parameters used above:
+</p>
+
+<ul>
+<li><b>0</b> - Perform a level 0 dump, get everything
+<li><b>a</b> - Attempt to automatically determine tape media length
+<li><b>u</b> - Update the file /etc/dumpdates to indicate when backup was last performed
+<li><b>f</b> - Which tape device to use (/dev/nrst0 in this case)
+</ul>
+
+<p>
+Finally which partition to backup (/dev/rsd0a, etc)
+</p>
+
+<p>
+The mt command is used at the end to rewind the drive. Review the mt man page for more options (such as eject).
+</p>
+
+<p>
+If you are unsure of your tape device name, use dmesg to locate it. An example tape drive entry in dmesg might appear similar to:
+</p>
+
+<ul><pre>
+st0 at scsibus0 targ 5 lun 0: <ARCHIVE, Python 28388-XXX, 5.28>
+</ul></pre>
+
+<p>
+You may have noticed that when backing up, the tape drive is accessed as device name "nrst0" instead of the "st0" name that is seen in dmesg. When you access st0 as nrst0 you are accessing the same physical tape drive but telling the drive to not rewind at the end of the job and access the device in raw mode. To back up multiple file systems to a single tape, be sure you use the non-rewind device, if you use a rewind device (rst0) to back up multiple file systems, you'll end up overwriting the prior filesystem with the next one dump tries to write to tape. You can find a more elaborate decription of various tape drive devices in the dump man page.
+</p>
+
+<p>
+If you wanted to write a small script called "backup", it might look something like this:
+</p>
+
+<ul><pre>
+echo "  Starting Full Backup..."
+/sbin/dump -0au -f /dev/nrst0 /dev/rsd0a
+/sbin/dump -0au -f /dev/nrst0 /dev/rsd0d
+/sbin/dump -0au -f /dev/nrst0 /dev/rsd0e
+/sbin/dump -0au -f /dev/nrst0 /dev/rsd0h
+echo
+echo -n "  Rewinding Drive, Please wait..."
+mt -f /dev/rst0 rewind
+echo "Done."
+echo                      
+</ul></pre>
+
+<p>
+If scheduled nightly backups are desired, <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=cron&sektion=8&format=html">cron(8)</a> could be used to launch your backup script automatically.
+</p>
+
+<p>
+It will also be helpful to document (on a scrap of paper) how large each file system needs to be. You can use df -h to determine how much space each partition is currently using. This will be handy when the drive fails and you need to recreate your partition table on the new drive.
+</p>
+
+<p>
+Restoring your data will also help reduce fragmentation. To ensure you get all files, the best way of backing up is rebooting your system in single user mode. File systems do not need to be mounted to be backed up. Don't forget to mount root (/) r/w after rebooting in single user mode or your dump will fail when trying to write out dumpdates. Enter bsd -s at the boot> prompt for single user mode.
+</p>
+
+<h3>Viewing the contents of a dump tape:</h3>
+
+
+<p>
+After you've backed up your file systems for the first time, it would be a good idea to briefly test your tape and be sure the data on it is as you expect it should be.
+</p>
+
+<p>
+You can use the following example to review a catalog of files on a dump tape:
+</p>
+
+<ul><pre>
+# <b>/sbin/restore -tvsf 1 /dev/rst0</b>
+</ul></pre>
+
+<p>
+This will cause a list of files that exist on the 1st partition of the dump tape to be listed. Following along from the above examples, 1 would be your root (/) file system.
+</p>
+
+<p>
+To see what resides on the 2nd tape partition and send the output to a file, you would use a command similar to:
+</p>
+
+<ul><pre>
+# <b>/sbin/restore -tvsf 2 /dev/rst0 > /home/me/list.txt</b>
+</ul></pre>
+
+<p>
+If you have a mount table like the simple one, 2 would be /usr, if yours is a more advanced mount table 2 might be /var or another fs. The sequence number matches the order in which the file systems are written to tape.
+</p>
+
+
+<h3>Restoring from tape:</h3>
+
+<p>
+The example scenario listed below would be useful if your fixed drive has failed completely. In the event you want to restore a single file from tape, review the restore man page and pay attention to the interactive mode instructions.
+</p>
+
+<p>
+If you have prepared properly, replacing a disk and restoring your data from tape can be a very quick process. The standard OpenBSD install/boot floppy already contains the required restore utility as well as the binaries required to partition and make your new drive bootable. In most cases, this floppy and your most recent dump tape is all you'll need to get back up and running. 
+</p>
+
+<p>
+After physically replacing the failed disk drive, the basic steps to restore your data are as follows:
+</p>
+
+<ul>
+<li>
+<p>
+Boot from the OpenBSD install/boot floppy. At the menu selection, choose Shell. Write protect and insert your most recent back up tape into the drive.
+<br>
+</p>
+
+<li>
+<p>
+Using the <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fdisk&sektion=8&format=html">fdisk(8)</a> command, create a primary OpenBSD partition on this newly intalled drive. Example:
+</p>
+
+<ul><pre>
+shell# <b>fdisk -e sd0</b>
+</ul></pre>
+
+<p>
+See <a href="#14.2">fdisk FAQ</a> for more info.
+</p>
+
+<li>
+<p>  
+Using the disklabel command, recreate your OpenBSD partition table inside that primary OpenBSD partition you just created with fdisk. Example:
+</p>
+
+<ul><pre>
+shell# <b>disklabel -E sd0</b>
+</ul></pre>
+
+<p>
+Don't forget swap, see <a href="#14.1">disklabel FAQ</a> for more info)
+</p>
+
+<li>
+<p>
+Use the newfs command to build a clean file system on each partition you created in the above step. Example:
+</p>
+
+<ul><pre>
+shell# <b>newfs /dev/rsd0a</b>
+shell# <b>newfs /dev/rsd0h</b>
+</ul></pre>
+
+<li>
+<p>
+Mount your newly prepared root (/) file system on /mnt. Example:
+</p>
+
+<ul><pre>
+shell# <b>mount /dev/sd0a /mnt</b>
+</ul></pre>
+
+<li>
+<p>
+Change into that mounted root file system and start the restore process. Example: 
+</p>
+
+<ul><pre>
+shell# <b>cd /mnt</b>
+shell# <b>restore rsf 1 /dev/rst0</b>
+</ul></pre>
+
+<li>
+<p>
+You'll want this new disk to be bootable, use the following to write a new MBR to your drive. Example:
+</p>
+
+<ul><pre>
+shell# <b>fdisk -i sd0</b>
+</ul></pre>
+
+<li>
+<p>
+In addition to writing a new MBR to the drive, you will need to install boot blocks to boot from it. The following is a brief example:
+</p>
+
+<ul><pre>
+shell# <b>cp /usr/mdec/boot /mnt/boot</b>
+shell# <b>/usr/mdec/installboot -v /mnt/boot /usr/mdec/biosboot sd0</b>
+</ul></pre>
+
+<li>
+<p>
+Your new root file system on the fixed disk should be ready enough so you can boot it and continue restoring the rest of your file systems. Since your operating system is not complete yet, be sure you boot back up with single user mode. At the shell prompt, issue the following commands to unmount and halt the system:
+</p>
+
+<ul><pre>
+shell# <b>umount /mnt</b>
+shell# <b>halt</b>
+</ul></pre>
+
+<li>
+<p>
+Remove the install/boot floppy from the drive and reboot your system. At the OpenBSD boot> prompt, issue the following command:
+</p>
+
+<ul><pre>
+boot> <b>bsd -s</b>
+</ul></pre>
+
+<p>
+The bsd -s will cause the kernel to be started in single user mode which will only require a root (/) file system.
+</p>
+
+<li>
+<p>
+Assuming you performed the above steps correctly and nothing has gone wrong you should end up at a prompt asking you for a shell path or press return. Press return to use sh. Next, you'll want to remount root in r/w mode as opposed to read only. Issue the following command:
+</p>
+
+<ul><pre>
+shell# <b>mount -u -w /</b>
+</ul></pre>
+
+<li>
+<p>
+Once you have remounted in r/w mode you can continue restoring your other file systems. Example:
+</p>
+
+<ul><pre>
+(simple mount table)
+shell# <b>mount /dev/sd0h /usr; cd /usr; restore rsf 2 /dev/rst0</b>
+
+(more advanced mount table)
+shell#	<b>mount /dev/sd0d /var; cd /var; restore rsf 2 /dev/rst0</b>
+shell#	<b>mount /dev/sd0e /home; cd /home; restore rsf 3 /dev/rst0</b>
+shell#	<b>mount /dev/sd0h /usr; cd /usr; restore rsf 4 /dev/rst0</b>
+</ul></pre>
+
+<p>
+You could use "<b>restore rvsf</b>" instead of just rsf to view names of objects as they are extracted from the dump set.
+</p>
+
+<li>
+<p>
+Finally after you finish restoring all your other file systems to disk, reboot into multiuser mode. If everything went as planned your system will be back to the state it was in as of your most recent back up tape and ready to use again.
+</p>
+</ul>
+
+<p>
 <font color= "#0000e0">
 <a href= "index.html">[Back to Main Index]</a>
 <a href= "faq13.html">[To Section 13.0 - IPsec]</a>
@@ -835,7 +1153,7 @@ If a newer version of bootblocks are required, you will need to compile these yo
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq14.html,v 1.17 2000/03/03 00:54:56 chris Exp $</small>
+<small>$OpenBSD: faq14.html,v 1.18 2000/03/05 03:33:05 ericj Exp $</small>
 </p>
 </body>
 </html>
