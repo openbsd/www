@@ -1,0 +1,336 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Logging</title><link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description" content="the OpenBSD FAQ page">
+<meta name="keywords" content="openbsd,faq,pf">
+<meta name="distribution" content="global">
+</head>
+
+<!--
+Copyright (c) 2003, Nick Holland <nick@openbsd.org>
+Copyright (c) 2003, 2004, Joel Knight <enabled@myrealbox.com>
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<a href="../../../pt/index.html">
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif" border="0">
+</a>
+<p>
+[<a href="tagging.html">Anterior: Marca&ccedil;&atilde;o de Pacotes</a>]
+[<a href="index.html">Conte&uacute;do</a>]
+[<a href="perf.html">Pr&oacute;ximo: Performance</a>]
+
+<p>
+<h1><font color="#e00000">PF: Logging</font></h1>
+
+<hr>
+
+<h3>Conte&uacute;do</h3>
+<ul>
+<li><a href="#intro">Introdu&ccedil;ao</a>
+<li><a href="#logfile">Lendo um Arquivo de Log</a>
+<li><a href="#filter">Filtrando Sa&iacute;das de Log</a>
+<li><a href="#syslog">Logando Pacotes Atrav&eacute;s do Syslog</a>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Introdu&ccedil;&atilde;o</h2>
+O log de pacotes no PF &eacute; feito pelo 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>pflogd(8)</a> que ouve na interface 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflog&amp;sektion=4&amp;manpath=OpenBSD+3.6"
+><tt>pflog0</tt></a> e escreve logs em arquivo (normalmente /var/log/pflog) 
+em formato bin&aacute;rio 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tcpdump&amp;sektion=8&amp;manpath=OpenBSD+3.6">tcpdump(8)</a>. Regras de <a href="filter.html">Filtragem</a> que especificam <tt>log</tt> 
+ou <tt>log-all</tt> s&atilde;o logadas desta maneira.
+
+<a name="logfile"></a>
+<h2>Lendo um Arquivo de Log</h2>
+O arquivo de log escrito pelo pflogd &eacute; em formato bin&aacute;rio e n&atilde;o pode ser 
+lido utilizando um editor de textos. O tcpdump deve ser utilizado para 
+ver os logs.
+
+<p>
+Para ver o arquivo de log:
+<blockquote>
+<tt>
+# tcpdump -n -e -ttt -r /var/log/pflog
+</tt>
+</blockquote>
+
+<p>
+Perceba que usando tcpdump(8) para ver um arquivo de log <i>n&atilde;o</i> 
+mostra a atividade em tempo real. Um monitoramento em tempo real dos 
+pacotes logados &eacute; conseguido usando a interface <tt>pflog0</tt>:
+<blockquote>
+<tt>
+# tcpdump -n -e -ttt -i pflog0
+</tt>
+</blockquote>
+
+<p>
+<font color="#e00000">NOTA: </font>
+Quando examinando logs, cuidado especial deve ser tomado 
+com a op&ccedil;&atilde;o verbose do decodificador de protocolos do tcpdump 
+(ativada pela op&ccedil;&atilde;o <tt>-v</tt>). Os decodificadores de 
+protocolos do tcpdump n&atilde;o possuem um perfeito hist&oacute;rico de 
+seguran&ccedil;a.  Pelo menos em teoria, um ataque muito lento 
+pode ser poss&iacute;vel utilizando-se de partes do payload dos 
+pacotes que s&atilde;o logados pelo dispositivo de log. &Eacute; 
+pr&aacute;tica recomendada mover os arquivos de log fora da 
+m&aacute;quina do firewall antes de examin&aacute;-los desta maneira.
+
+<p>
+Cuidado adicional deve existir com a seguran&ccedil;a no acesso aos 
+logs. Por padr&atilde;o, pflogd ir&aacute; registrar 96 bytes do pacote no 
+arquivo de log.  Acesso aos logs pode prover acesso parcial a 
+payloads de pacotes com informa&ccedil;&otilde;es sens&iacute;veis  
+(como nomes de usu&aacute;rio e senhas 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=telnet&amp;sektion=1&amp;manpath=OpenBSD+3.6"
+>telnet(1)</a> ou
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp&amp;sektion=1&amp;manpath=OpenBSD+3.6"
+>ftp(1)</a>).
+
+<a name="filter"></a>
+<h2>Filtrando a Sa&iacute;da de Log</h2>
+Como pflogd loga em formato tcpdump bin&aacute;rio, toda a gama de atributos 
+do tcpdump pode ser utilizada quando estiver examinando os logs. Por 
+exemplo, para ver apenas pacotes que combinem com certa porta:
+<blockquote>
+<tt>
+# tcpdump -n -e -ttt -r /var/log/pflog port 80
+</tt>
+</blockquote>
+
+<p>
+Isso pode ser filtrado ainda mais limitando a exibi&ccedil;&atilde;o de pacotes 
+com certa combina&ccedil;&atilde;o de host e porta:
+<blockquote>
+<tt>
+# tcpdump -n -e -ttt -r /var/log/pflog port 80 and host 192.168.1.3
+</tt>
+</blockquote>
+
+<p>
+A mesma id&eacute;ia pode ser aplicada quando lendo atrav&eacute;s da interface 
+<tt>pflog0</tt>
+<blockquote>
+<tt>
+# tcpdump -n -e -ttt -i pflog0 host 192.168.4.2
+</tt>
+</blockquote>
+
+<p>
+Note que isso n&atilde;o tem nenhum impacto sobre pacotes que s&atilde;o logados
+no arquivos do pflogd; o comando acima mostra apenas pacotes 
+conforme eles s&atilde;o logados.
+
+<p>
+Al&eacute;m de usar as regras de filtragem padr&atilde;o do 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tcpdump&amp;sektion=8&amp;manpath=OpenBSD+3.6">tcpdump(8)</a>, a linguagem do tcpdump do OpenBSD's 
+foi extendida para ler a sa&iacute;da do pflogd:
+<ul>
+<li><tt>ip</tt> - fam&iacute;lia do endere&ccedil;o &eacute; IPv4.
+<li><tt>ip6</tt> - fam&iacute;lia do endere&ccedil;o &eacute; IPv6.
+<li><tt>on <i>int</i></tt> - pacote passou pela interface
+<i>int</i>.
+<li><tt>ifname <i>int</i></tt> - o mesmo que <tt>on <i>int</i></tt>.
+<li><tt>rulenum <i>num</i></tt> - n&uacute;mero da regra que combinou com o pacote.
+<li><tt>action <i>act</i></tt> - a a&ccedil;&atilde;o empregada no pacote.
+A&ccedil;&otilde;es poss&iacute;veis s&atilde;o <tt>pass</tt> e <tt>block</tt>.
+<li><tt>reason <i>res</i></tt> - a raz&atilde;o pela qual a <tt>a&ccedil;&atilde;o</tt> foi  
+tomada. Raz&otilde;es poss&iacute;veis s&atilde;o <tt>match</tt>, <tt>bad-offset</tt>,
+<tt>fragment</tt>, <tt>short</tt>, <tt>normalize</tt> e 
+<tt>memory</tt>.
+<li><tt>inbound</tt> - pacote estava entrando.
+<li><tt>outbound</tt> - pacote estava saindo.
+</ul>
+
+<p>
+Exemplo:
+<blockquote>
+<tt>
+# tcpdump -n -e -ttt -i pflog0 inbound and action block and on wi0
+</tt>
+</blockquote>
+
+<p>
+Isso mostra o log, em tempo real, de pacotes entrantes que foram 
+bloquados na interface wi0.
+
+<a name="syslog"></a>
+<h2>Logando Pacotes Atrav&eacute;s do Syslog</h2>
+Em muitas situa&ccedil;&otilde;es &eacute; desej&aacute;vel possuir logs do firewall 
+dispon&iacute;veis em formato texto ASCII e/ou envi&accute;-los a um servidor de logs remoto. 
+Tudo isso pode ser obtido com o uso de dois pequenos shell scripts, algumas 
+pequenas altera&ccedil;&otilde;es em arquivos de configura&ccedil;&atilde;o do OpenBSD, e o 
+daemon de log 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=syslogd&amp;sektion=8&amp;manpath=OpenBSD+3.6">syslogd(8)</a>. O syslogd loga em formato ASCII e tamb&eacute;m &eacute; capaz de logar 
+em servidor remoto.
+
+<p>
+Primeiro devemos criar um usu&aacute;rio, <tt>pflogger</tt>, com shell 
+<tt>/sbin/nologin</tt>. A forma mais f&aacute;cil de cria-lo &eacute; com 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=adduser&amp;sektion=8&amp;manpath=OpenBSD+3.6">adduser(8)</a>.
+
+<p>
+Ap&oacute;s criar o usu&aacute;rio <tt>pflogger</tt>, crie os dois scripts:
+
+<p>
+<tt>/etc/pflogrotate</tt>
+<pre>
+        FILE=/home/pflogger/pflog5min.$(date "+%Y%m%d%H%M")
+        kill -ALRM $(cat /var/run/pflogd.pid)
+        if [ $(ls -l /var/log/pflog | cut -d " " -f 8) -gt 24 ]; then
+           mv /var/log/pflog $FILE
+           chown pflogger $FILE
+           kill -HUP $(cat /var/run/pflogd.pid)
+        fi
+</pre>
+
+<p>
+<tt>/home/pflogger/pfl2sysl</tt>
+<pre>
+        for logfile in /home/pflogger/pflog5min* ; do
+           if [ -s "$logfile" ]; then
+              tcpdump -n -e -ttt -r $logfile | logger -t pf -p local0.info
+              rm $logfile
+           fi
+        done
+</pre>
+
+<p>
+Edite o cron do root:
+<blockquote>
+<tt>
+# crontab -u root -e
+</tt>
+</blockquote>
+
+<p>
+Adicione as duas linhas seguintes:
+<blockquote>
+<tt>
+# rotate pf log file every 5 minutes<br>
+0-59/5 *       *       *       *       /bin/sh /etc/pflogrotate
+</tt>
+</blockquote>
+
+<p>
+Crie uma entrada no cron para o usu&aacute;rio <tt>pflogger</tt>:
+<blockquote>
+<tt>
+# crontab -u pflogger -e
+</tt>
+</blockquote>
+
+<p>
+Adicione as duas linhas seguintes:
+<blockquote>
+<tt>
+# feed rotated pflog file(s) to syslog<br>
+0-59/5 *       *       *       *       /bin/sh /home/pflogger/pfl2sysl
+</tt>
+</blockquote>
+
+<p>
+Adicione a linha a seguir em <tt>/etc/syslog.conf</tt>:
+<blockquote>
+<tt>
+local0.info &nbsp;&nbsp;&nbsp;&nbsp;/var/log/pflog.txt
+</tt>
+</blockquote>
+
+<p>
+Se voc&ecirc; tamb&eacute;m quiser logar num servidor remoto, insira a linha:
+<blockquote>
+<tt>
+local0.info &nbsp;&nbsp;&nbsp;&nbsp;@syslogger
+</tt>
+</blockquote>
+
+<p>
+Certifique-se de que <i>syslogger</i> esteja definido no arquivo 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hosts&amp;sektion=5&amp;manpath=OpenBSD+3.6"
+>hosts(5)</a>.
+
+<p>
+Crie o arquivo <tt>/var/log/pflog.txt</tt> para que o syslog 
+possa logar nele.
+<blockquote>
+<tt>
+# touch /var/log/pflog.txt
+</tt>
+</blockquote>
+
+<p>
+Avise o syslogd sobre a altera&ccedil;&atilde;o, reinciando-o:
+<blockquote>
+<tt>
+# kill -HUP $(cat /var/run/syslog.pid)
+</tt>
+</blockquote>
+
+<p>
+Todos pacotes logados agora s&atilde;o enviados para <tt>/var/log/pflog.txt</tt>.
+Caso a segunda linha tenha sido adicionada eles tamb&eacute;m s&atilde;o enviados para 
+o host remoto <i>syslogger</i>.
+
+<p>
+O script <tt>/etc/pflogrotate</tt> agora processa e deleta 
+<tt>/var/log/pflog</tt> assim, a rota&ccedil;&atilde;o do <tt>pflog</tt> por 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=newsyslog&amp;sektion=8&amp;manpath=OpenBSD+3.6">newsyslog(8)</a> n&atilde;o &eacute; mais necess&aacute;ria, e deve 
+ser desabilitada. Contudo, <tt>/var/log/pflog.txt</tt> subistitui
+<tt>/var/log/pflog</tt> e sua rota&ccedil;&atilde;o deve ser ativada.
+Altere <tt>/etc/newsyslog.conf</tt> da seguinte forma:
+<pre>    
+    #/var/log/pflog       600    3    250    *    ZB /var/run/pflogd.pid
+    /var/log/pflog.txt    600    7    *      24
+</pre>
+
+<p>
+Agora o PF loga em <tt>/var/log/pflog.txt</tt> no formato ASCII. 
+Se estiver configurado em <tt>/etc/syslog.conf</tt>, tamb&eacute;m 
+logar&aacute; num servidor remoto.  O log n&atilde;o &eacute; imediato podendo ser 
+necess&aacute;rio no m&aacute;ximo 5-6 minutos (o intervalo da tarefa no cron) para que 
+eles apace&ccedil;am no arquivo.
+
+<p>
+[<a href="tagging.html">Anterior: Marca&ccedil;&atilde;o de Pacotes</a>]
+[<a href="index.html">Conte&uacute;do</a>]
+[<a href="perf.html">Pr&oacute;ximo: Performance</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[voltar]"></a>
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: index.html,v 1.18 ]<br>                                                      
+$Translation: logging.html,v 1.1 2005/01/04 17:09:07 dsantos Exp $<br>                 
+$OpenBSD: logging.html,v 1.1 2005/01/06 20:03:30 jufi Exp $ 
+</small>
+
+</body>
+</html>

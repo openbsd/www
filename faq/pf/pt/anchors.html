@@ -1,0 +1,276 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Anterior: &Acirc;ncoras e Subconjuntos de Regras Nomeadas</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description" content="the OpenBSD FAQ page">
+<meta name="keywords" content="openbsd,faq,pf">
+<meta name="distribution" content="global">
+</head>
+
+<!--
+Copyright (c) 2003, 2004 Joel Knight <enabled@myrealbox.com>
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<a href="../../../pt/index.html">
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif" border="0">
+</a>
+<p>
+[<a href="scrub.html">Anterior: Scrub (Normaliza&ccedil;&atilde;o de Pacotes)</a>]
+[<a href="index.html">Conte&uacute;do</a>]
+[<a href="queueing.html">Pr&oacute;ximo: Fila de Pacotes e Prioriza&ccedil;&atilde;o</a>]
+
+</p><p>
+</p><h1><font color="#e00000">PF: &Acirc;ncoras e Subconjuntos de Regras Nomeadas</font></h1>
+
+<hr>
+
+<h3>Conte&uacute;do</h3>
+<ul>
+<li><a href="#intro">Introdu&ccedil;&atilde;o</a>
+<li><a href="#named">Subconjuntos de Regras Nomeadas</a>
+<li><a href="#options">Op&ccedil;&otilde;es de &Acirc;ncoras</a>
+<li><a href="#manip">Manipulando &Acirc;ncoras</a>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Introdu&ccedil;&atilde;o</h2>
+Al&eacute;m das regras padr&atilde;o, o PF pode ainda avaliar subconjuntos de regras.
+Subconjuntos podem ser manipudados em tempo real atrav&eacute;s do uso do 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>pfctl(8)</a>, provendo um modo conveniente de alterar um conjunto de 
+regras de forma din&acirc;mica.
+Assim como <a href="tables.html">tabelas</a> 
+s&atilde;o udadas para guardar listas din&acirc;micas de endere&ccedil;o, um subconjunto de regras 
+&eacute; usado para guardar conjuntos din&acirc;micos de regras de filtragem
+<tt>nat</tt>, <tt>rdr</tt> e
+<tt>binat</tt>.
+
+<p>
+Subconjuntos de regras s&atilde;o vinculados ao conjunto principal utilizando-se de 
+&acirc;ncoras. Existem quatro tipos de regras <tt>anchor</tt>:
+<ul>
+<li><tt>anchor <i>nome</i></tt> - avalia todas as regras de <a href="filter.html">
+filtragem</a> na &acirc;ncora <i><tt>nome</tt></i>
+<li><tt>binat-anchor <i>nome</i></tt> - avalia todas regras 
+<a href="nat.html#binat"><tt>binat</tt></a> 
+na &acirc;ncora <i><tt>nome</tt></i>
+<li><tt>nat-anchor <i>nome</i></tt> - avalia todas regras <a href="nat.html">
+<tt>nat</tt></a> na &acirc;ncora <i><tt>nome</tt></i>
+<li><tt>rdr-anchor <i>nome</i></tt> - avalia todas regras <a href="rdr.html">
+<tt>rdr</tt></a> na &acirc;ncora <i><tt>nome</tt></i>
+</ul>
+
+Regras <tt>anchor</tt> ser&atilde;o avaliadas de forma relativa &agrave; &acirc;ncora que 
+as carregou. Por exemplo regras <tt>anchor</tt> no conjunto de regras 
+principal criar&atilde;o pontos de refer&ecirc;ncia tendo o conjunto de regras 
+principal como pai, e regras <tt>anchor</tt> carregadas de arquivos 
+chamados atrav&eacute;s da diretiva <tt>load anchor</tt> criar&atilde;o pontos de 
+ancoramento tendo esta &acirc;ncora como pai.
+
+<a name="named"></a>
+<h2>&Acirc;ncoras</h2>
+Uma &acirc;ncora &eacute; uma cole&ccedil;&atilde;o de regras de filtragem e/ou 
+tradu&ccedil;&atilde;o, tabelas, e outras &acirc;ncoras que possuam nomes definidos.
+Quando o PF encontra uma regra <tt>anchor</tt> no arquivo principal, 
+ele avalia as regras contidas no ponto de ancoramento como se 
+estivesse avaliando regras no arquivo principal.
+O processamento ent&atilde;o continuar&aacute; no conjunto principal a n&atilde;o ser que 
+o pacote case uma regra de filtragem que utilize a op&ccedil;&atilde;o <tt>quick</tt> 
+ou uma regra de tradu&ccedil;&atilde;o na &acirc;ncora, que nesse caso ser&aacute; a 
+&uacute;ltima regra para o pacote, abortando a avalia&ccedil;&atilde;o das demais regras tanto 
+no arquivo principal quanto na &acirc;ncora.
+
+<p>
+Por exemplo:
+<blockquote>
+<tt>
+ext_if = "fxp0"<br>
+<br>
+block on $ext_if all<br>
+pass &nbsp;out on $ext_if all keep state<br>
+anchor goodguys
+</tt>
+</blockquote>
+
+<p>
+Estas regras definem uma pol&iacute;tica "negar por padr&atilde;o" na interface <tt>fxp0</tt> 
+para tr&aacute;fego entrando e saindo. O tr&aacute;fego &eacute; ent&atilde;o aceito e uma regra 
+anchor &eacute; criada com nome <tt>goodguys</tt>. Regras podem ser inseridas na 
+&acirc;ncora de duas maneiras:
+<ul>
+<li>usando uma regra <tt>load</tt>
+<li>usando 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>pfctl(8)</a>
+</ul>
+
+<p>
+<tt>load</tt> instrui <tt>pfctl</tt> a inserir no subconjunto de 
+regras e na &acirc;ncora especificada regras carregadas de um arquivo texto.
+Exemplo:
+<blockquote>
+<tt>
+load anchor goodguys:ssh from "/etc/anchor-goodguys-ssh"
+</tt>
+</blockquote>
+
+<p>
+Quando o arquivo de regras principal &eacute; carregado, regras listadas 
+no arquivo <tt>/etc/anchor-goodguys-ssh</tt> ser&atilde;o carregadas no 
+subconjunto de regras nomeado <tt>ssh</tt> e v&iacute;nculado &agrave; &acirc;ncora 
+<tt>goodguys</tt>.
+
+<p>
+Para adicionar regras a uma &acirc;ncora usando <tt>pfctl</tt>, o seguinte tipo
+de comando pode ser usado: 
+<blockquote>
+<tt>
+# echo "pass in proto tcp from 192.0.2.3 to any port 22" \<br>
+&nbsp;&nbsp;&nbsp;| pfctl -a goodguys/ssh -f -
+</tt>
+</blockquote>
+
+<p>
+Isto adiciona uma regra <tt>pass</tt> na &acirc;ncora de nome
+<tt>ssh</tt> vinculada &agrave; &acirc;ncora <tt>goodguys</tt>. O PF 
+ent&atilde;o avaliar&aacute; esta regra (e quaisquer outras regras que forem 
+inseridas) quando encontrar a linha <tt>anchor "goodguys/*"</tt>
+no arquivo principal.
+
+<p>
+Regras podem ser salvas e carregadas de arquivos texto:
+<blockquote>
+<tt>
+# cat &gt;&gt; /etc/anchor-goodguys-www<br>
+pass in proto tcp from 192.0.2.3 to any port 80<br>
+pass in proto tcp from 192.0.2.4 to any port { 80 443 }<br>
+<br>
+# pfctl -a goodguys:www -f /etc/anchor-goodguys-www<br>
+</tt>
+</blockquote>
+
+<p>
+Isso carregar&aacute; regras do arquivo <tt>/etc/anchor-goodguys-www</tt>
+no conjunto de regras nomeado <tt>www</tt> na &acirc;ncora <tt>goodguys</tt>.
+
+<p>
+Regras de filtragem e tradu&ccedil;&atilde;o podem ser carregadas no conjunto principal 
+usando-se a mesma sintaxe e op&ccedil;&otilde;es que as regras do arquivo principal.
+Uma diferen&ccedil;a por&eacute;m, &eacute; que as 
+<a href="macros.html">macros</a> usadas tamb&eacute;m devem estar definidas neste 
+subconjunto, macros definidas no arquivo principal <i>n&atilde;o</i> s&atilde;o 
+vis&iacute;veis nos subconjuntos de regras.
+
+<p>
+Cada subconjunto nomeado, bem como o arquivo principal, existem separados 
+dos outros subconjuntos de regras. Opera&ccedil;&otilde;es executadas num grupo de 
+regras, como remover as regras, n&atilde;o afetam regras agrupadas em outros 
+subconjuntos.  Al&eacute;m disso, remover um ponto de &acirc;ncoramento do conjunto 
+principal de regras n&atilde;o causa destrui&ccedil;&atilde;o da &acirc;ncora ou qualquer 
+subconjunto v&igrave;nculado a ela. Um subconjunto nomeado n&atilde;o &eacute; 
+destru&iacute;do at&eacute; que seja removido usando 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>pfctl(8)</a>. No caso de um ponto de ancoramento n&atilde;o possuir 
+v&iacute;nculos a subconjuntos nomeados, ele tamb&eacute;m &eacute; destru&iacute;do.
+
+<a name="options"></a>
+<h2>Op&ccedil;&otilde;es de &Acirc;ncoras</h2>
+Regras <tt>anchor</tt> podem opcionalmente especificar interface, 
+protocolo, endere&ccedil;o de origem e destino, marca&ccedil;&otilde;es, etc., usando 
+a mesma sintaxe das regras de filtragem. Quando estas op&ccedil;&otilde;es forem usadas,
+regras <tt>anchor</tt> somente s&atilde;o processadas caso o pacote case 
+com a defini&ccedil;&atilde;o da regra.
+Por exemplo:
+<blockquote>
+<tt>
+ext_if = "fxp0"<br>
+<br>
+block on $ext_if all<br>
+pass &nbsp;out on $ext_if all keep state<br>
+anchor ssh in on $ext_if proto tcp from any to any port 22<br>
+</tt>
+</blockquote>
+
+<p>
+Regras na &acirc;ncora <tt>ssh</tt> somente s&atilde;o avaliadas para pacotes 
+TCP com destino a porta 22 vindos da interface <tt>fxp0</tt>. 
+Regras s&atilde;o ent&atilde;o adicionadas &agrave; <tt>anchor</tt> assim:
+<blockquote>
+<tt>
+# echo "pass in from 192.0.2.10 to any" | pfctl -a ssh/allowed -f -
+</tt>
+</blockquote>
+
+<p>
+Portando, mesmo que a regra de filtragem n&atilde;o especifique interface, 
+protocolo ou porta, o host 192.0.2.10 s&oacute; poder&aacute; se conectar com SSH 
+por causa da defini&ccedil;&atilde;o na regra <tt>anchor</tt>.
+
+<a name="manip"></a>
+<h2>Manipulando &Acirc;ncoras</h2>
+A manipula&ccedil;ao de &acirc;ncoras &eacute; feita via <tt>pfctl</tt>. Ele pode ser 
+usado para adicionar ou remover regras numa &atilde;ncora sem precisar 
+recarregar o arquivo principal.
+
+<p>
+Para listar todas regras na &acirc;ncora nomeada <tt>allowed</tt> v&iacute;nculada 
+&agrave; &acirc;ncora <tt>ssh</tt>:
+<blockquote>
+<tt>
+# pfctl -a ssh/allowed -s rules
+</tt>
+</blockquote>
+
+<p>
+Para remover todas regras de filtragem da mesma &acirc;ncora:
+<blockquote>
+<tt>
+# pfctl -a ssh/allowed -F rules
+</tt>
+</blockquote>
+
+<p>
+Para uma listagem completa de comandos, por favor consulte
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>pfctl(8)</a>.
+
+<p>
+[<a href="scrub.html">Anterior: Scrub (Normaliza&ccedil;&atilde;o de Pacotes)</a>]
+[<a href="index.html">Conte&uacute;do</a>]
+[<a href="queueing.html">Pr&oacute;ximo: Fila de Pacotes e Prioriza&ccedil;&atilde;o</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[voltar]"></a>
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: anchors.html,v 1.15 ]<br>                                               
+$Translation: anchors.html,v 1.1 2005/01/04 17:09:07 dsantos Exp $<br>                 
+$OpenBSD: anchors.html,v 1.1 2005/01/06 20:03:30 jufi Exp $ 
+</small>
+
+</body>
+</html>

@@ -1,0 +1,310 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Grupos de Endere&ccedil;os e Balanceamento de Carga</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description" content="the OpenBSD FAQ page">
+<meta name="keywords" content="openbsd,faq,pf">
+<meta name="distribution" content="global">
+</head>
+
+<!--
+Copyright (c) 2003, 2004 Joel Knight <enabled@myrealbox.com>
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<a href="../../../pt/index.html">
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif" border="0">
+</a>
+<p>
+[<a href="queueing.html">Anterior: Fila de Pacotes e Prioriza&ccedil;&atilde;o</a>]
+[<a href="index.html">Conte&uacute;do</a>]
+[<a href="tagging.html">Pr&oacute;ximo: Marca&ccedil;&atilde;o de Pacotes</a>]
+
+<p>
+<h1>
+<font color="#e00000">PF: Grupos de Endere&ccedil;os e Balanceamento de Carga</font>
+</h1>
+
+<hr>
+
+<h3>Conte&uacute;do</h3>
+<ul>
+<li><a href="#intro">Introdu&ccedil;&atilde;o</a>
+<li><a href="#nat">Grupos de Endere&ccedil;os NAT</a>
+<li><a href="#incoming">Balanceamento de Conex&otilde;es Entrantes</a>
+<li><a href="#outgoing">Balanceando Tr&aacute;fego de Sa&iacute;da</a>
+	<ul>
+	<li><a href="#outexample">Exemplo de Regras</a>
+	</ul>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Introdu&ccedil;&atilde;o</h2>
+Um grupo de endere&ccedil;os &eacute; como um estoque de dois ou mais endere&ccedil;os 
+que tem seu uso compartilhado entre os usu&aacute;rios. Pode ser usado como endere&ccedil;o 
+de redirecionamento em regras <a href="rdr.html"><tt>rdr</tt></a>, em tradu&ccedil;&otilde;es 
+de endere&ccedil;amento em regras <a href="nat.html"><tt>nat</tt></a> e como alvo de regras de 
+<a href="filter.html">filtragem</a> com op&ccedil;&otilde;es <tt>route-to</tt>, <tt>reply-to</tt> 
+e <tt>dup-to</tt> 
+
+<p>
+Existem quatro m&eacute;todos de uso de grupos de endere&ccedil;amento:
+<ul>
+<li><tt>bitmask</tt> - monta a por&ccedil;&atilde;o de rede do endere&ccedil;o do grupo 
+no endere&ccedil;o sendo modificado (endere&ccedil;o de origem para regras <tt>nat</tt>, 
+endere&ccedil;o de destino para regras <tt>rdr</tt>). Exemplo: se o grupo de 
+endere&ccedil;amento &eacute; 192.0.2.1/24 e o endere&ccedil;o sendo modificado &eacute; 10.0.0.50, 
+o endere&ccedil;o resultante ser&aacute; 192.0.2.50. Se o grupo de endere&ccedil;amento for
+192.0.2.1/25 e o endere&ccedil;o sendo modificado 10.0.0.130, o endere&ccedil;o 
+resultante ser&aacute; 192.0.2.2.
+<li><tt>random</tt> - escolhe um endere&ccedil;o do grupo aleat&oacute;riamente.
+<li><tt>source-hash</tt> - usa um hash do endere&ccedil;o de origem para
+determinar qual endere&ccedil;o do grupo utilizar. Este m&eacute;todo garente que um 
+endere&ccedil;o de origem seja sempre mapeado para o mesmo endere&ccedil;o no grupo.
+A chave usada pelo algor&iacute;tmo de hash pode ser opcionalmente espeficada 
+ap&oacute;s a palavra-chave <tt>source-hash</tt> em formato hexadecimal ou 
+como uma string. Por padr&atilde;o o 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>pfctl(8)</a> gera uma chave aleat&oacute;ria toda vez que as
+regras forem carregadas.
+<li><tt>round-robin</tt> - usa o grupo de endere&ccedil;os em sequ&ecirc;ncia. 
+Este &eacute; o m&eacute;todo padr&atilde;o e tamb&eacute;m o &uacute;nico permitido caso o 
+grupo seja especificado usando-se uma <a href="tables.html">tabela</a>.
+</ul>
+
+<p>
+Exceto para o m&eacute;todo <tt>round-robin</tt>, o grupo de endere&ccedil;amento 
+deve ser especificado em nota&ccedil;&atilde;o 
+<a href="http://public.pacbell.net/dedicated/cidr.html">CIDR</a>
+(Classless Inter-Domain Routing). O m&eacute;todo <tt>round-robin</tt>
+aceitar&aacute; m&uacute;ltiplos endere&ccedil;os individuais usando uma 
+<a href="macros.html#lists">lista</a> ou <a href="tables.html">tabela</a>.
+
+<p>
+A op&ccedil;&atilde;o <tt>sticky-address</tt> pode ser usada com os tipos de agrupamento 
+<tt>random</tt> e <tt>round-robin</tt> para se certificar de que um 
+endere&ccedil;o de origem em particular seja sempre redirecionado para o mesmo 
+endere&ccedil;o.
+
+<a name="nat"></a>
+<h2>Grupos de Endere&ccedil;os NAT</h2>
+Um grupo de endere&ccedil;os pode ser usado como endere&ccedil;os de tradu&ccedil;&atilde;o
+em regras <a href="nat.html"><tt>nat</tt></a>. As conex&otilde;es ter&atilde;o seus 
+endere&ccedil;os de origem traduzidos para um endere&ccedil;o no grupo baseado no 
+m&eacute;todo escolhido. Isto pode ser &uacute;til em situa&ccedil;&otilde;es onde o PF 
+faz NAT para uma rede muito grande. Como o n&uacute;mero de conex&otilde;es NATeadas por 
+endere&ccedil;o v&aacute;lido &eacute; limitado, adicionando mais endere&ccedil;os 
+v&aacute;lidos para tradu&ccedil;&atilde;o fornece ao gateway NAT poder de escalabilidade 
+para servir a um grande n&uacute;mero de usu&aacute;rios.
+
+<p>
+Neste exemplo um grupo de dois endere&ccedil;os est&aacute; sendo usado para 
+traduzir pacotes que saem da rede. Para cada conex&atilde;o o PF 
+alterna entre os endere&ccedil;os utilizando o m&eacute;todo round-robin.
+<blockquote>
+<tt>
+nat on $ext_if inet from any to any -&gt; { 192.0.2.5, 192.0.2.10 }
+</tt>
+</blockquote>
+
+<p>
+Uma desvantagem com este m&eacute;todo &eacute; que conex&otilde;es sucessivas vindas do 
+mesmo endere&ccedil;o interno n&atilde;o ser&atilde;o sempre traduzidas para o mesmo 
+endere&ccedil;o. Isto pode causar interfer&ecirc;ncia, por exemplo, ao navegar 
+sites web que registram logins de usu&aacute;rio baseado no endere&ccedil;o IP. 
+Um m&eacute;todo alternativo &eacute; usar <tt>source-hash</tt> para que cada 
+endere&ccedil;o interno seja sempre traduzido no mesmo endere&ccedil;o. Para que 
+isso seja poss&iacute;vel o grupo de endere&ccedil;os deve estar em nota&ccedil;&atilde;o
+<a href="http://public.pacbell.net/dedicated/cidr.html">CIDR</a>.
+<blockquote>
+<tt>
+nat on $ext_if inet from any to any -&gt; 192.0.2.4/31 source-hash
+</tt>
+</blockquote>
+
+<p>
+Esta regra <tt>nat</tt> usa a faixa de endere&ccedil;amento 192.0.2.4/31 (192.0.2.4 - 
+192.0.2.5) como seus endere&ccedil;os de tradu&ccedil;&atilde;o 
+para pacotes saindo da rede. Cada endere&ccedil;o interno ser&aacute; sempre 
+traduzido para o mesmo endere&ccedil;o, conseguimos isso fazendo uso da 
+palavra-chave <tt>source-hash</tt>.
+
+<a name="incoming"></a>
+<h2>Balanceamento de Conex&otilde;es Entrantes</h2>
+Grupos de endere&ccedil;oes tamb&eacute;m podem ser usados para balancear conex&otilde;es 
+entrantes. Por exemplo, pedidos de conex&otilde;es para um servidor web 
+podem ser distribu&iacute;dos entre v&aacute;rios servidores.
+<blockquote>
+<tt>
+web_servers = "{ 10.0.0.10, 10.0.0.11, 10.0.0.13 }"<br>
+<br>
+rdr on $ext_if proto tcp from any to any port 80 -&gt; $web_servers \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;round-robin sticky-address
+</tt>
+</blockquote>
+
+<p>
+Conex&otilde;es sucessivas ser&atilde;o redirecionadas para os servidores web 
+alternadamente usando m&eacute;todo round-robin com conex&otilde;es com mesmo 
+endere&ccedil;o de origem sendo redirecionadas ao mesmo servidor web.
+Esta "conex&atilde;o fixa" (sticky) existir&aacute; enquanto existirem estados na tabela 
+que referenciem esta conex&atilde;o.
+Uma vez expirado o estado, expirar&aacute; tamb&eacute;m a "conex&atilde;o fixa".
+As demais conex&otilde;es originadas deste host ser&atilde;o redirecionadas 
+para o pr&oacute;ximo servidor web na sequ&ecirc;ncia round robin.
+
+<a name="outgoing"></a>
+<h2>Balanceando Tr&aacute;fego de Sa&iacute;da</h2>
+Grupos de endere&ccedil;os podem ser usados em combina&ccedil;&atilde;o com a 
+op&ccedil;&atilde;o de filtragem <tt>route-to</tt> para balancear tr&aacute;fego entre duas 
+ou mais conex&otilde;es Internet quando um protocolo de multi-path apropriado (como 
+<a href="http://www.rfc-editor.org/rfc/rfc1771.txt">BGP4</a>) n&atilde;o
+est&aacute; dispon&iacute;vel. Usando <tt>route-to</tt> com o m&eacute;todo <tt>round-robin</tt>, 
+conex&otilde;es com destino externo podem ser distribu&iacute;das at&eacute; mesmo 
+entre m&uacute;ltiplos caminhos de sa&iacute;da.
+
+<p>
+Outra informa&ccedil;&atilde;o necess&aacute;ria &eacute; o endere&ccedil;o IP do roteador 
+adjacente em cada conex&atilde;o com a Internet. Esse endere&ccedil;o &eacute; informado 
+na op&ccedil;&atilde;o <tt>route-to</tt> para controlar o destino de sa&iacute;da do pacote.
+
+<p>
+O exemplo a seguir balanceia o tr&aacute;fego de sa&iacute;da entre duas conex&otilde;es 
+com a Internet:
+<blockquote>
+<tt>
+lan_net = "192.168.0.0/24"<br>
+int_if &nbsp;= "dc0"<br>
+ext_if1 = "fxp0"<br>
+ext_if2 = "fxp1"<br>
+ext_gw1 = "68.146.224.1"<br>
+ext_gw2 = "142.59.76.1"<br>
+<br>
+pass in on $int_if route-to \<br>
+&nbsp;&nbsp;&nbsp;{ ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) } round-robin \<br>
+&nbsp;&nbsp;&nbsp;from $lan_net to any keep state
+</tt>
+</blockquote>
+
+<p>
+A o&ccedil;&atilde;o <tt>route-to</tt> &eacute; utilizada no tr&aacute;fego entrando (<i>in</i>) 
+na interface <i>interna</i> para especificar as interfaces de sa&iacute;da 
+entre as quais ser&aacute; balanceado o tr&aacute;fego bem como seus respectivos 
+gateways. Note que a op&ccedil;&atilde;o <tt>route-to</tt> deve estar presente em 
+<i>cada</i> regra de filtragem que o tr&aacute;fego deva ser balanceado.
+Pacotes de retorno ser&atilde;o roteados de volta na mesma interface 
+externa em que eles sa&iacute;ram (isto &eacute; feito pelos ISPs) e 
+retornar&aacute; para a rede interna normalmente.
+
+<p>
+Para ter certeza de que pacotes com endere&ccedil;o de origem pertencentes 
+a <tt>$ext_if1</tt> s&atilde;o sempre roteados para <tt>$ext_gw1</tt> 
+(e da mesma forma para <tt>$ext_if2</tt> e <tt>$ext_gw2</tt>), 
+as duas regras a seguir devem ser inseridas:
+<blockquote>
+<tt>
+pass out on $ext_if1 route-to ($ext_if2 $ext_gw2) from $ext_if2 \<br>
+&nbsp;&nbsp;&nbsp;to any<br>
+pass out on $ext_if2 route-to ($ext_if1 $ext_gw1) from $ext_if1 \<br>
+&nbsp;&nbsp;&nbsp;to any 
+</tt>
+</blockquote>
+
+<p>
+Finalmente, NAT pode ser usado em cada interface de sa&iacute;da:
+<blockquote>
+<tt>
+nat on $ext_if1 from $lan_net to any -&gt; ($ext_if1)<br>
+nat on $ext_if2 from $lan_net to any -&gt; ($ext_if2)
+</tt>
+</blockquote>
+
+<a name="outexample"></a>
+<p>
+Um exemplo completo que balanceia tr&aacute;fego de sa&iacute;da deve ficar assim:
+
+</p><p>
+<table border="0" width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+lan_net = "192.168.0.0/24"
+int_if  = "dc0"
+ext_if1 = "fxp0"
+ext_if2 = "fxp1"
+ext_gw1 = "68.146.224.1"
+ext_gw2 = "142.59.76.1"
+
+#  faz nat em ambas as interfaces da internet
+nat on $ext_if1 from $lan_net to any -&gt; ($ext_if1)
+nat on $ext_if2 from $lan_net to any -&gt; ($ext_if2)
+
+#  default deny
+block in  from any to any
+block out from any to any
+
+#  passa todo tr&aacute;fego de sa&iacute;da na interface interna
+pass out on $int_if from any to $lan_net
+#  aceita (quick) quaisquer pacotes destinados ao pr&oacute;prio gateway
+pass in quick on $int_if from $lan_net to $int_if
+#  faz balanceamento de carga no tr&aacute;fego da rede interna.
+pass in on $int_if route-to \
+    { ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) } round-robin \
+    proto tcp from $lan_net to any flags S/SA modulate state
+#  balanceamento de carga em pacotes udp e icmp vindos da rede interna
+pass in on $int_if route-to \
+    { ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) } round-robin \
+    proto { udp, icmp } from $lan_net to any keep state
+
+#  regras gerais "pass out" para as interfaces externas
+pass out on $ext_if1 proto tcp from any to any flags S/SA modulate state
+pass out on $ext_if1 proto { udp, icmp } from any to any keep state
+pass out on $ext_if2 proto tcp from any to any flags S/SA modulate state
+pass out on $ext_if2 proto { udp, icmp } from any to any keep state
+
+#  roteia pacotes de qualquer IP na $ext_if1 para $ext_gw1 e o mesmo para
+#  $ext_if2 e $ext_gw2
+pass out on $ext_if1 route-to ($ext_if2 $ext_gw2) from $ext_if2 to any 
+pass out on $ext_if2 route-to ($ext_if1 $ext_gw1) from $ext_if1 to any 
+</pre>
+</td></tr>
+</table>
+
+<p>
+[<a href="queueing.html">Anterior: Fila de Pacotes e Prioriza&ccedil;&atilde;o</a>]
+[<a href="index.html">Conte&uacute;do</a>]
+[<a href="tagging.html">Pr&oacute;ximo: Marca&ccedil;&atilde;o de Pacotes</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[voltar]"></a>
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: pool.html,v 1.14 ]<br>
+$Translation: pools.html,v 1.1 2005/01/04 17:09:07 dsantos Exp $<br>
+$OpenBSD: pools.html,v 1.1 2005/01/06 20:03:30 jufi Exp $
+</small>
+
+</body>
+</html>

@@ -1,0 +1,358 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Redirecionamento de Tr&aacute;fego (Port Forwarding)</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description" content="the OpenBSD FAQ page">
+<meta name="keywords" content="openbsd,faq,pf">
+<meta name="distribution" content="global">
+</head>
+
+<!--
+Copyright (c) 2003, Nick Holland <nick@openbsd.org>
+Copyright (c) 2003, 2004, Joel Knight <enabled@myrealbox.com>
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<a href="../../../pt/index.html">
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif" border="0">
+</a>
+<p>
+[<a href="nat.html">Anterior: Tradu&ccedil;&atilde;o do Endere&ccedil;o de Rede (NAT)</a>]
+[<a href="index.html">Conte&uacute;do</a>]
+[<a href="shortcuts.html">Pr&oacute;ximo: Atalhos na Cria&ccedil;&atilde;o de Regras</a>]
+
+<h1><font color="#e00000">PF: Redirecionamento (Port Forwarding)</font></h1>
+
+<hr>
+
+<h3>Conte&uacute;do</h3>
+<ul>
+<li><a href="#intro">Introdu&ccedil;&atilde;o</a>
+<li><a href="#filter">Redirecionamento e Filtragem de Pacotes</a>
+<li><a href="#security">Implica&ccedil;&otilde;es de Seguran&ccedil;a</a>
+<li><a href="#reflect">Redirecionamento e Reflex&atilde;o</a>
+	<ul>
+	<li><a href="#splitdns">Split-Horizon DNS</a>
+	<li><a href="#sepnet">Movendo o Servidor Para uma Rede Local Separada</a>
+	<li><a href="#tcpproxy">TCP Proxying</a>
+	<li><a href="#rdrnat">Combina&ccedil;&atilde;o de RDR e NAT</a>
+	</ul>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Introdu&ccedil;&atilde;o</h2>
+Quando voc&ecirc; utiliza NAT no seu escrit&oacute;rio, voc&ecirc; tem a Internet
+inteira dispon&iacute;vel para todas as suas m&aacute;quinas.
+Mas e se voc&ecirc; tiver uma m&aacute;quina atr&aacute;s do gateway 
+NAT que precisa ser acessada de fora?  &Eacute; aqui que entra o redirecionamento.
+Redirecionamento permite enviar tr&aacute;fego para uma m&aacute;quina atr&aacute;s do gateway
+NAT.
+
+<p>
+Vejamos um exemplo:
+<blockquote>
+<tt>
+rdr on tl0 proto tcp from any to any port 80 -&gt; 192.168.1.20
+</tt>
+</blockquote>
+
+<p>
+Esta linha redireciona o tr&aacute;fego TCP na porta 80 (servidor web) para uma 
+m&aacute;quina na rede com endere&ccedil;o 192.168.1.20.  Portanto, mesmo que 192.168.1.20
+esteja atr&aacute;s do gateway dentro da rede, ela se torna acess&iacute;vel ao mundo externo.
+
+<p>
+A parte <tt>from any to any</tt> da linha <tt>rdr</tt> acima pode ser
+muito bem utilizada. Se voc&ecirc; souber quais endere&ccedil;os ou subredes devem ter acesso
+ao servidor na porta 80, pode restringi-los assim:
+<blockquote>
+<tt>
+rdr on tl0 proto tcp from 27.146.49.0/24 to any port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;192.168.1.20
+</tt>
+</blockquote>
+
+<p>
+Isto ir&aacute; redirecionar somente a subrede especificada.  Perceba que isso 
+implica que voc&ecirc; pode redirecionar diferentes hosts para m&aacute;quinas 
+diferentes atr&aacute;s do gateway. O que pode ser muito &uacute;til. Por exemplo, 
+voc&ecirc; pode fazer com que usu&aacute;rios em lugares remotos acessem seus 
+pr&oacute;prios computadores desktop usando a mesma porta e endere&ccedil;o IP no gateway 
+desde que voc&ecirc; saiba de que endere&ccedil;o IP eles se conectar&atilde;o.
+
+<blockquote>
+<tt>
+rdr on tl0 proto tcp from 27.146.49.14 to any port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;192.168.1.20<br>
+rdr on tl0 proto tcp from 16.114.4.89 to any port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;192.168.1.22<br>
+rdr on tl0 proto tcp from 24.2.74.178 to any port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;192.168.1.23
+</tt>
+</blockquote>
+
+<a name="filter"></a>
+<h2>Redirecionamento e Filtragem de Pacotes</h2>
+<font color="#ff0000">NOTA:</font> Pacotes traduzidos ainda devem passar 
+pelo sistema de filtragem e ser&atilde;o bloqueados ou permitidos, com base 
+nas regras de filtragem definidas.
+
+<p>
+A <i>&uacute;nica</i> exce&ccedil;&atilde;o a regra &eacute; quando a palavra-chave <tt>pass</tt> 
+&eacute; usada na regra <tt>rdr</tt>. Neste caso, os pacotes redirecionados 
+passar&atilde;o direto pelo sistema de filtragem: as regras de filtragem n&atilde;o 
+ser&atilde;o avalidas para estes pacotes.
+&Eacute; um atalho para evitar a adi&ccedil;&atilde;o de regras de filtragem <tt>pass</tt> para
+cada regra de redirecionamento.
+Pense nisso como uma regra <tt>rdr</tt> normal (sem a palavra-chave <tt>pass</tt>)
+associada a uma regra de filtragem <tt>pass</tt> com a palavra-chave <tt>keep state</tt>.
+Contudo, caso queira habilitar op&ccedil;&otilde;es de filtragem mais espec&iacute;ficas, como
+<tt>synproxy</tt>, <tt>modulate state</tt>, etc, voc&ecirc; ainda precisar&aacute; usar 
+regras <tt>pass</tt> dedicadas, j&aacute; que estas op&ccedil;&otilde;es n&atilde;o se encaixam 
+em regras de redirecionamento.
+
+<p>
+Tamb&eacute;m fique ciente de que, como a tradu&ccedil;&atilde;o ocorre <i>antes</i> da filtragem,
+o sistema de filtragem ver&aacute; os pacotes <i>traduzidos</i> como eles ficam 
+ap&oacute;s a altera&ccedil;&atilde;o de seu endere&ccedil;o IP e/ou porta de destino terem sido 
+alterados pela regra <tt>rdr</tt>.
+Considere o cen&aacute;rio:
+
+<ul>
+<li>192.0.2.1 - host na Internet
+<li>24.65.1.13 - endere&ccedil;o externo do roteador OpenBSD
+<li>192.168.1.5 - endere&ccedil;o IP interno do servidor WEB
+</ul>
+
+<p>
+Regra de Redirecionamento:
+<blockquote>
+<tt>
+rdr on tl0 proto tcp from 192.0.2.1 to 24.65.1.13 port 80 \<br>
+&nbsp;&nbsp;&nbsp;-&gt; 192.168.1.5 port 8000
+</tt>
+</blockquote>
+
+<p>
+Pacote antes da regra <tt>rdr</tt> ser processada:
+<ul>
+<li>Endere&ccedil;o de origem: 192.0.2.1
+<li>Porta de origem: 4028 (escolhida aleat&oacute;riamente pelo sistema operacional)
+<li>Endere&ccedil;o de destino: 24.65.1.13
+<li>Porta de destino: 80
+</ul>
+
+<p>
+Pacote ap&oacute;s a regra <tt>rdr</tt> ter sido processada:
+<ul>
+<li>Endere&ccedil;o de origem: 192.0.2.1
+<li>Porta de origem: 4028
+<li>Endere&ccedil;o de destino: 192.168.1.5
+<li>Porta de destino: 8000
+</ul>
+
+<p>
+O sistema de filtragem v&ecirc; o pacote IP como ele se encontra ap&oacute;s ter 
+sido feita a tradu&ccedil;&atilde;o.
+
+<a name="security"></a>
+<h2>Implica&ccedil;&otilde;es de Seguran&ccedil;a</h2>
+Redirecionamento possui implica&ccedil;&otilde;es de seguran&ccedil;a. Fazer um furo no firewall
+para permitir tr&aacute;fego para a rede interna protegida, cria um risco de
+comprometimento da m&aacute;quina. Caso o tr&aacute;fego seja transmitido para um 
+servidor web interno por exemplo, e uma vulnerabilidade seja descoberta 
+no daemon do servidor ou num script CGI rodando no servidor web, a m&aacute;quina 
+pode ser comprometida por um intruso na Internet. De l&aacute;, o intruso tem 
+uma porta aberta para a rede interna, numa m&aacute;quina que tem permiss&atilde;o 
+de passar pelo firewall.
+
+<p>
+Estes riscos podem ser minimizados mantendo-se os sistemas acessados 
+externamente confinados numa rede separada. Essa rede &eacute; geralmente 
+chamada de Zona Desmilitarizada (DMZ) ou Rede de Servi&ccedil;os Privada (PSN). 
+Dessa forma, caso o servidor web seja comprometido, os efeitos podem ser
+limitados &agrave; rede DMZ/PSN pela filtragem cuidadosa do tr&aacute;fego que 
+ter&aacute; permiss&atilde;o de entrar e sair da DMZ/PSN.
+
+<a name="reflect"></a>
+<h2>Redirecionamento e Reflex&atilde;o</h2>
+Geralmente, regras de redirecionamento s&atilde;o usadas para transferir pedidos 
+de conex&atilde;o da Internet para um servidor local com endere&ccedil;o IP privado na 
+rede interna, ou LAN como:
+<blockquote>
+<tt>
+server = 192.168.1.40<br>
+<br>
+rdr on $ext_if proto tcp from any to $ext_if port 80 -&gt; $server \<br>
+&nbsp;&nbsp;&nbsp;port 80
+</tt>
+</blockquote>
+
+<p>
+Mas quando a regra de redirecionamento &eacute; testada por um cliente na LAN, 
+ela n&atilde;o funciona. O motivo &eacute; que as regras de redirecionamento se aplicam 
+apenas a pacotes que passam pela interface especificada (no exemplo a
+interface <tt>$ext_if</tt>).
+Conectar-se ao endere&ccedil;o externo do firewall de um host na LAN, contudo, 
+n&atilde;o significa que os pacotes passar&atilde;o por sua interface externa. A pilha 
+TCP/IP no firewall compara o endere&ccedil;o de destino do pacote chegando com 
+seus pr&oacute;prios endere&ccedil;os e aliases e detecta conex&otilde;es para ela mesma
+t&atilde;o logo tenham passado pela interface interna. Estes pacotes n&atilde;o passam
+fisicamente pela interface externa, e a pilha TCP/IP n&atilde;o simula essa 
+passagem de forma alguma. Portanto, o PF nunca ver&aacute; estes pacotes na 
+interface externa, e a regra de redirecionamento, especificando a 
+interface externa, n&atilde;o se aplicar&aacute;.
+
+<p>
+Adicionar uma segunda regra de redirecionamento para a interface interna 
+tamb&eacute;m n&atilde;o produz o efeito desejado. Quando um cliente local se conecta 
+ao endere&ccedil;o externo do firewall, o pacote inicial do handshake TCP 
+atinge o firewall pela interface interna. A regra de redirecionamento 
+&eacute; aplicada e o endere&ccedil;o de destino &eacute; substitu&iacute;do pelo do 
+servidor interno. O pacote &eacute; transferido de volta pela interface interna e chega ao servidor 
+interno. Mas o endere&ccedil;o de origem no pacote n&atilde;o foi alterado, contendo ainda
+o endere&ccedil;o local do cliente, portanto o servidor envia suas respostas
+diretamente ao cliente. O firewall nunca v&ecirc; as respostas, ficando sem
+chance de reverter a tradu&ccedil;&atilde;o apropriadamente. O cliente ent&atilde;o recebe 
+respostas de um endere&ccedil;o IP de onde ele nunca esperava, e por isso
+descarta os pacotes. O handshake TCP falha e a conex&atilde;o n&atilde;o pode ser
+estabelecida.
+
+<p>
+Mas ainda assim, geralmente &eacute; necess&aacute;rio que os clientes na LAN se 
+conectem ao servidor interno da mesma forma que os 
+clientes externos, e que o fa&ccedil;am de maneira transparente.
+Existem v&aacute;rias solu&ccedil;&otilde;es para este problema:
+
+<a name="splitdns"></a>
+<h3>Split-Horizon DNS</h3>
+
+<p>
+&Eacute; poss&iacute;vel configurar servidores DNS para responder a pesquisas 
+de clientes locais de maneira diferente das pesquisas externas, de forma 
+que clientes locais receber&atilde;o o endere&ccedil;o interno do servidor durante 
+a resolu&ccedil;&atilde;o de nomes. Eles ir&atilde;o, portanto, se conectar diretamente 
+ao servidor local, e o firewall n&atilde;o tem envolvimento. Isso reduz o tr&aacute;fego 
+local, j&aacute; que os pacotes n&atilde;o precisar&atilde;o passar pelo firewall.
+
+<a name="sepnet"></a>
+<h3>Movendo o Servidor Para uma Rede Local Separada</h3>
+
+<p>
+Acrescenteando mais uma interface de rede ao firewall e movendo 
+o servidor local da rede cliente para uma rede dedicada (DMZ) permite 
+o redirecionamento de conex&otilde;es de clientes locais da mesma maneira 
+que o redirecionamento de conex&otilde;es externas. O uso de redes separadas 
+tr&aacute;z diversas vantagens, incluindo melhora na seguran&ccedil;a devido ao 
+isolamento do servidor e dos clientes locais. Caso o servidor (que 
+em nosso caso &eacute; acess&iacute;vel pela Internet) seja comprometido, ele n&atilde;o 
+ter&aacute; acesso direto aos hosts locais, porque todas as conex&otilde;es 
+devem agora passar pelo firewall.
+
+<a name="tcpproxy"></a>
+<h3>Proxy TCP</h3>
+
+<p>
+Um proxy TCP gen&eacute;rico pode ser configurado no firewall, escutando na 
+porta para ser transferido ou recebendo conex&otilde;es redirecionadas na interface interna 
+para a porta onde ele esteja ouvindo. Quando um cliente local se conecta 
+ao firewall, o proxy aceita a conex&atilde;o, estabelece uma segunda conex&atilde;o com 
+o servidor interno e transfere dados entre as duas conex&otilde;es.
+
+<p>
+Proxies simples podem ser criados usando-se
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=inetd&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>inetd(8)</a> e
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=nc&amp;sektion=1&amp;manpath=OpenBSD+3.6"
+>nc(1)</a>. A entrada <tt>/etc/inetd.conf</tt> a seguir cria um socket
+escutando no endere&ccedil;o de loopback (127.0.0.1) na porta 5000.
+As conex&otilde;es s&atilde;o encaminhadas ao servidor 192.168.1.10 na porta 80.
+<blockquote>
+<tt>
+127.0.0.1:5000 stream tcp nowait nobody /usr/bin/nc nc -w \<br>
+&nbsp;&nbsp;&nbsp;20 192.168.1.10 80
+</tt>
+</blockquote>
+
+<p>
+A regra de redirecionamento a seguir transfere conex&otilde;es na porta 80 
+na interface interna para o proxy
+<blockquote>
+<tt>
+rdr on $int_if proto tcp from $int_net to $ext_if port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;127.0.0.1 port 5000
+</tt>
+</blockquote>
+
+<a name="rdrnat"></a>
+<h3>Combina&ccedil;&atilde;o de RDR e NAT</h3>
+
+<p>
+Com uma regra NAT adicional na interface interna, a tradu&ccedil;&atilde;o de 
+endere&ccedil;o que estava faltando no cen&aacute;rio acima pode ser remediada.
+<blockquote>
+<tt>
+rdr on $int_if proto tcp from $int_net to $ext_if port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;$server
+<br>
+no nat on $int_if proto tcp from $int_if to $int_net<br>
+nat on $int_if proto tcp from $int_net to $server port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;$int_if
+</tt>
+</blockquote>
+
+<p>
+Isso far&aacute; com que o pacote inicial do cliente seja traduzido novamente
+quando retornar atrav&eacute;s da interface interna, substituindo o endere&ccedil;o de 
+origem do cliente pelo endere&ccedil;o interno do firewall. O servidor interno 
+ir&aacute; responder para o firewall, que pode ent&atilde;o reverter ambas as regras de
+tradu&ccedil;&atilde;o NAT e RDR ao transferir o pacote para o cliente. Esta 
+constru&ccedil;&atilde;o &eacute; um tanto complexa, pois cria dois estados separados para 
+cada conex&atilde;o refletida. Deve-se tomar muito cuidado para evitar que a regra NAT 
+atinja outro tr&aacute;fego, por exemplo conex&otilde;es originadas de hosts externos 
+(atrav&eacute;s de outros redirecionamentos) ou o pr&oacute;prio firewall. Perceba que 
+a regra <tt>rdr</tt> acima far&aacute; com que a pilha TCP/IP receba pacotes 
+na interface interna com endere&ccedil;o de destino dentro da rede interna.
+
+<p>
+De prefer&ecirc;ncia, deve-se utilizar uma das solu&ccedil;&otilde;es apresentadas anteriormente. 
+
+<p>
+[<a href="nat.html">Anterior: Tradu&ccedil;&atilde;o do Endere&ccedil;o de Rede (NAT)</a>]
+[<a href="index.html">Conte&uacute;do</a>]
+[<a href="shortcuts.html">Pr&oacute;ximo: Atalhos na Cria&ccedil;&atilde;o de Regras</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[voltar]"></a>
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: rdr.html,v 1.21 ]<br>                                                      
+$Translation: rdr.html,v 1.1 2005/01/04 17:09:07 dsantos Exp $<br>                 
+$OpenBSD: rdr.html,v 1.1 2005/01/06 20:03:30 jufi Exp $ 
+</small>
+
+</body>
+</html>

@@ -1,0 +1,488 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Exemplo: Firewall para Casa ou Pequeno Escrit&oacute;rio</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description" content="the OpenBSD FAQ page">
+<meta name="keywords" content="openbsd,faq,pf">
+<meta name="distribution" content="global">
+</head>
+
+<!--
+Copyright (c) 2003, 2004 Joel Knight <enabled@myrealbox.com>
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<a href="../../../pt/index.html">
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif" border="0">
+</a>
+
+<p>
+[<a href="authpf.html">Anterior: Authpf: Shell de Usu&aacute;rio para Autentica&ccedil;&atilde;o em Gateways</a>]
+[<a href="index.html">Conte&uacute;do</a>]
+
+<p>
+<h1><font color="#e00000">PF: Exemplo: Firewall para Casa ou Pequeno Escrit&oacute;rio</font></h1>
+<hr>
+
+<h3>Conte&uacute;do</h3>
+<ul>
+<li><a href="#scenario">O Cen&aacute;rio</a>
+	<ul>
+	<li><a href="#network">A Rede</a>
+	<li><a href="#objective">O Objetivo</a>
+	<li><a href="#prep">Prepara&ccedil;&atilde;o</a>
+	</ul>
+<li><a href="#ruleset">As Regras</a>
+	<ul>
+	<li><a href="#macros">Macros</a>
+	<li><a href="#options">Op&ccedil;&otilde;es</a>
+	<li><a href="#scrub">Scrub</a>
+	<li><a href="#nat">Tradu&ccedil;&atilde;o do Endere&ccedil;o de Rede (NAT)</a>
+	<li><a href="#rdr">Redirecionamento</a>
+	<li><a href="#filter">Regras de Filtragem</a>
+	</ul>
+<li><a href="#allrules">O Arquivo Completo</a>
+</ul>
+
+<hr>
+
+<a name="scenario"></a>
+<h2>O Cen&aacute;rio</h2>
+Neste exemplo, PF est&aacute; rodando numa m&aacute;quina OpenBSD agindo como firewall
+e gateway NAT para uma pequena rede em casa ou escrit&oacute;rio. O objetivo
+geral &eacute; prover acesso &agrave; Internet para a rede interna e acesso limitado
+ao firewall pela Internet. Este documento ir&aacute; guia-lo na cria&ccedil;&atilde;o de
+um conjunto de regras para esse fim.
+
+<a name="network"></a>
+<h3>A Rede</h3>
+A rede est&aacute; configurada da seguinte forma:
+
+<pre>   
+ 
+  [ COMP1 ]    [ COMP3 ]
+      |            |                               ADSL
+   ---+------+-----+------- fxp0 [ OpenBSD ] ep0 -------- ( Internet )
+             |
+         [ COMP2 ]
+
+</pre>
+
+<p>
+Existem v&aacute;rios computadores na rede interna; o diagrama mostra apenas
+tr&ecirc;s, mas o n&uacute;mero real &eacute; irrelevante.  Estes computadores s&atilde;o 
+esta&ccedil;&otilde;es de trabalho usadas para navegar na Internet, ler email, chat, etc., 
+exceto COMP3 que tamb&eacute;m roda um pequeno servidor web.
+A rede interna usa a faixa de ips 192.168.0.0 / 255.255.255.0.
+
+<p>
+O roteador OpenBSD &eacute; um Pentium 100 com duas placas de rede: uma 3com 
+3c509B (<tt>ep0</tt>) e uma Intel EtherExpress Pro/100 (<tt>fxp0</tt>).
+O roteador possui uma conex&atilde;o ADSL para a Internet e faz NAT para 
+compartilhar sua conex&atilde;o com a rede interna. O endere&ccedil;o IP na interface
+externa &eacute; atribu&iacute;do dinamicamente pelo Provedor de Acesso Internet.
+
+<a name="objective"></a>
+<h3>O Objetivo</h3>
+Os Objetivos s&atilde;o:
+<ul>
+<li>Prover acesso irrestrito &agrave; Internet para a rede interna.
+<li>Usar "negar por padr&atilde;o" como pol&iacute;tica padr&atilde;o de regras.
+<li>Permitir o seguinte tr&aacute;fego vindo da Internet para o firewall:
+	<ul>
+	<li>SSH (porta TCP 22): ser&aacute; utilizado para manuten&ccedil;&atilde;o remota 
+	do firewall.
+	<li>Auth/Ident (porta TCP 113): utilizado por alguns servi&ccedil;os como SMTP
+	e IRC.
+	<li>ICMP Echo Requests: o tipo de pacote ICMP usado pelo comando 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ping&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>ping(8)</a>.
+	</ul>
+<li>Redirecionar tentativas de conex&atilde;o na porta 80 TCP (que &eacute; uma 
+tentativa de conex&atilde;o a um servidor web) para o computador COMP3.
+Tamb&eacute;m permitir trafego TCP porta 80 destinado a COMP3 atrav&eacute;s do firewall.
+<li>Logar estat&iacute;sticas de filtragem na interface externa.
+<li>Por padr&atilde;o, responder com um TCP RST ou ICMP Unreachable para 
+pacotes bloqueados.
+<li>Tornar as regras simples, para que sua manuten&ccedil;ao seja o mais 
+f&aacute;cil poss&iacute;vel.
+</ul>
+
+<a name="prep"></a>
+<h3>Prepara&ccedil;&atilde;o</h3>
+Este documento assume que o host OpenBSD tenha sido corretamente configurado
+para funcionar como roteador, incluindo configura&ccedil;&atilde;o de endere&ccedil;os IP, 
+conectividade com a Internet e defini&ccedil;&atilde;o de 
+<tt>net.inet.ip.forwarding</tt> para "<tt>1</tt>".
+
+<a name="ruleset"></a>
+<h2>As regras</h2>
+A seguir um passo a passo atrav&eacute;s das regras que realizar&atilde;o os 
+objetivos acima descritos.
+
+<a name="macros"></a>
+<h3>Macros</h3>
+As seguintes macros s&atilde;o definidas para facilitar a leitura e manuten&ccedil;ao
+das regras:
+<blockquote>
+<tt>
+int_if = "fxp0"<br>
+ext_if = "ep0"<br>
+<br>
+tcp_services = "{ 22, 113 }"<br>
+icmp_types = "echoreq"<br>
+<br>
+priv_nets = "{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"
+<br>
+<br>
+comp3 = "192.168.0.3"
+</tt>
+</blockquote>
+
+<p>
+As primeiras duas linhas definem a interface de rede onde a filtragem 
+acontecer&aacute;. A terceira e quarta linhas listam os n&uacute;meros de portas
+TCP dos servi&ccedil;os que ser&atilde;o abertos para a internet (SSH e ident/auth) 
+e os tipos de pacotes ICMP que ter&atilde;o permiss&atilde;o de alcan&ccedil;ar a m&aacute;quina 
+do firewall. A quinta linha define os endere&ccedil;os de loopback e blocos
+de endere&ccedil;amento descritos na 
+<a href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a>.
+Finalmente, a &uacute;ltima linha define o endere&ccedil;o IP de COMP3.
+
+<p>
+<b>Nota</b>: Caso a conex&atilde;o ADSL com a Internet necessite
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pppoe&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>PPPoE</a>, ent&atilde;o, filtragem e NAT devem acontecer na interface 
+<tt>tun0</tt> <i>n&atilde;o</i> em <tt>ep0</tt>.
+
+<a name="options"></a>
+<h3>Op&ccedil;&otilde;es</h3>
+As duas op&ccedil;&otilde;es seguintes definem a resposta padr&atilde;o
+<tt>block</tt> para regras de filtragem, e fazem com que sejam logadas
+estat&iacute;sticas de filtragem (statistics logging "on") para a interface
+externa:
+<blockquote>
+<tt>
+set block-policy return<br>
+set loginterface $ext_if
+</tt>
+</blockquote>
+
+<a name="scrub"></a>
+<h3>Scrub</h3>
+N&atilde;o h&aacute; raz&atilde;o para n&atilde;o utilizar scrubbing, recomendado para 
+todo tr&aacute;fego entrante, portanto a regra &eacute; simples como uma linha:
+<blockquote>
+<tt>
+scrub in all
+</tt>
+</blockquote>
+
+<a name="nat"></a>
+<h3>Tradu&ccedil;&atilde;o do Endere&ccedil;o de Rede (NAT)</h3>
+Para fazer NAT para toda a rede interna a seguinte regra
+<tt>nat</tt> ser&aacute; usada:
+<blockquote>
+<tt>
+nat on $ext_if from $int_if:network to any -&gt; ($ext_if)
+</tt>
+</blockquote>
+
+<p>
+J&aacute; que o endere&ccedil;o IP da interface externa &eacute; atribu&iacute;do dinamicamente, 
+par&ecirc;nteses devem ser colocados em volta da interface, assim o PF 
+notar&aacute; qualquer altera&ccedil;&atilde;o no endere&ccedil;o.
+
+<a name="rdr"></a>
+<h3>Redirecionamento</h3>
+A primeira regra de redirecionamento necess&aacute;ria &eacute; 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+3.6">ftp-proxy(8)</a> assim, clientes FTP na rede interna local, poder&atilde;o se conectar 
+a servidores FTP na Internet.
+<blockquote>
+<tt>
+rdr on $int_if proto tcp from any to any port 21 -&gt; 127.0.0.1 port 8021
+</tt>
+</blockquote>
+
+<p>
+Note que esta regra funcionar&aacute; apenas com conex&otilde;es destinadas &agrave; porta 21.
+Caso usu&aacute;rios se conectem a servidores FTP em outras portas, ent&atilde;o uma 
+lista deve ser utilizada para especificar as portas de destino, por 
+exemplo: <tt>from any to any port { 21, 2121 }</tt>.
+
+<p>
+A segunda regra de redirecionamento pega qualquer tentativa de conex&atilde;o
+vinda da Internet em dire&ccedil;&atilde;o &agrave; porta 80 TCP no firewall.
+Tentativas de conex&otilde;es leg&iacute;timas nesta porta ser&atilde;o de usu&aacute;rios 
+tentando acessar o servidor web da rede.
+Estas conex&otilde;es devem ser redirecionadas para COMP3:
+
+<blockquote>
+<tt>
+rdr on $ext_if proto tcp from any to any port 80 -&gt; $comp3
+</tt>
+</blockquote>
+
+<a name="filter"></a>
+<h3>Regras de Filtragem</h3>
+Agora as regras de filtragem. Come&ccedil;ando com negar por padr&atilde;o:
+<blockquote>
+<tt>
+block all<br>
+</tt>
+</blockquote>
+
+<p>
+Neste ponto nada passar&aacute; atrav&eacute;s do firewall, nem mesmo da rede interna.
+As regras seguintes abrem o firewall de acordo com os objetivos acima descritos,
+bem como quaisquer interfaces virtuais que se fa&ccedil;am necess&aacute;rias.
+
+<p>
+Todo sistema Unix possui uma interface de "loopback". &Eacute; uma interface de 
+rede virtual utilizada por aplica&ccedil;&otilde;es para se comunicarem entre si dentro
+do sistema. Em geral, todo tr&aacute;fego na interface loopback deve ser aceito.
+No OpenBSD a interface de loopback &eacute; 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=lo&amp;sektion=4&amp;manpath=OpenBSD+3.6"
+>lo(4)</a>.
+<blockquote>
+<tt>
+pass quick on lo0 all
+</tt>
+</blockquote>
+
+<p>
+Depois, os endere&ccedil;os
+<a href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a>
+ser&atilde;o bloqueados, tanto para entrada quanto sa&iacute;da na interface
+externa. Estes endere&ccedil;os nunca devem aparecer na Internet, 
+portanto, filtra-los nos certificar&aacute; de que o roteador n&atilde;o 
+deixar&aacute; "escapar" estes endere&ccedil;os para fora da rede interna 
+e tamb&eacute;m bloquear&aacute; qualquer pacote vindo da Internet com 
+qualquer desses endere&ccedil;os de origem.
+<blockquote>
+<tt>
+block drop in &nbsp;quick on $ext_if from $priv_nets to any<br>
+block drop out quick on $ext_if from any to $priv_nets
+</tt>
+</blockquote>
+
+<p>
+Note que <tt>block drop</tt> &eacute; usado, dizendo ao PF para n&atilde;o responder
+com um pacote TCP RST ou ICMP Unreachable. J&aacute; que endere&ccedil;os da RFC 1918
+n&atilde;o existem na Internet, quaisquer pacotes enviados para estes endere&ccedil;os 
+nunca alcan&ccedil;ar&atilde;o seu destino. A op&ccedil;ao <tt>quick</tt> &eacute; utilizada, 
+informando ao PF para n&atilde;o se preocupar em avaliar o restante das regras
+de filtragem caso uma das regras acima case com o pacote; pacotes de ou
+para as redes <tt>$priv_nets</tt> ser&atilde;o descartados imediatamente.
+
+<p>
+Agora abrimos as portas usadas pelos servi&ccedil;os que estar&atilde;o dispon&iacute;veis 
+para a Internet:
+<blockquote>
+<tt>
+pass in on $ext_if inet proto tcp from any to ($ext_if) \<br>
+&nbsp;&nbsp;&nbsp;port $tcp_services flags S/SA keep state
+</tt>
+</blockquote>
+
+<p>
+Especificando as portas na macro <tt>$tcp_services</tt> torna-se 
+simples abrir mais portas para a Internet caso necess&aacute;rio, editando simplesmente 
+a macro e recarregando as regras. Servi&ccedil;os UDP tamb&eacute;m podem ser abertos 
+criando-se uma macro <tt>$udp_services</tt> e adicionando uma regra
+de filtragem similar &agrave; regra acima, que especifique <tt>proto udp</tt>.
+
+<p>
+Al&eacute;m de ter uma regra <tt>rdr</tt> que redireciona o tr&aacute;fego para COMP3,
+DEVEMOS tamb&eacute;m autorizar esse tr&aacute;fego atrav&eacute;s do firewall:
+<blockquote>
+<tt>
+pass in on $ext_if proto tcp from any to $comp3 port 80 \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;flags S/SA synproxy state
+</tt>
+</blockquote>
+
+<p>
+Para aumentar um pouco a seguran&ccedil;a, faremos uso de 
+<a href="filter.html#synproxy">TCP SYN Proxy</a> para proteger ainda mais o servidor web.
+
+<p>
+Para que conex&otilde;es FTP ativas funcionem fora da LAN, a seguinte regra 
+deve existir, passando a conex&atilde;o ftp-data iniciada pelo servidor FTP 
+de volta para o cliente.
+Como as conex&otilde;es FTP est&atilde;o utilizando ftp-proxy, ele mesmo ter&aacute; o trabalho 
+de aceitar as conex&otilde;es ftp-data e repassa-las para o cliente na LAN.
+<blockquote>
+<tt>
+pass in on $ext_if inet proto tcp from port 20 to ($ext_if) \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;user proxy flags S/SA keep state
+</tt>
+</blockquote>
+
+<p>
+Agora tr&aacute;fego ICMP deve ser permitido:
+<blockquote>
+<tt>
+pass in inet proto icmp all icmp-type $icmp_types keep state
+</tt>
+</blockquote>
+
+<p>
+Similar &agrave; macro <tt>$tcp_services</tt>, a macro <tt>$icmp_types</tt>
+pode ser facilmente editada para alterar os tipos de pacotes ICMP que 
+ter&atilde;o permiss&atilde;o de alcan&ccedil;ar o firewall. Note que esta regra se aplica a 
+todas interfaces de rede.
+
+<p>
+Tr&aacute;fego de e para a rede interna deve ser permitido.
+Assumiremos que usu&aacute;rios da rede interna sabem o que est&atilde;o 
+fazendo e n&atilde;o nos causar&atilde;o problemas.  Esta n&atilde;o &eacute; necessariamente 
+uma suposi&ccedil;&atilde;o v&aacute;lida; um conjunto de regras bem mais restritivas 
+&eacute; apropriado para a maioria dos ambientes computacionais.
+<blockquote>
+<tt>
+pass in on $int_if from $int_if:network to any keep state
+</tt>
+</blockquote>
+
+<p>
+As regras acima permitem a qualquer m&aacute;quina interna enviar pacotes 
+atrav&eacute;s do firewall, contudo, <i>n&atilde;o</i> permite que o pr&oacute;prio firewall
+inicie qualquer conex&atilde;o com uma m&aacute;quina da rede interna. Isso &eacute; uma 
+boa id&eacute;ia? Depende dos detalhes precisos de configura&ccedil;&atilde;o da rede.
+Caso o firewall seja tamb&eacute;m um servidor DHCP, ele precisa "pingar" um
+endere&ccedil;o para verificar sua disponibilidade antes de atribu&iacute;-lo a uma
+m&aacute;quina. Permitir ao firewall se conectar &agrave; rede interna tamb&eacute;m d&aacute; 
+permiss&atilde;o a algu&eacute;m com uma conex&atilde;o ssh no firewall pela Internet para acessar 
+m&aacute;quinas da rede interna. Tenha em mente que <i>n&atilde;o</i> permitir ao 
+firewall se comunicar com a rede interna n&atilde;o traz um grande benef&iacute;cio 
+em seguran&ccedil;a; de qualquer modo, caso algu&eacute;m consiga acesso ao firewall, 
+essa pessoa provavelmente pode alterar as regras de filtragem.
+Adicionando a regra a seguir, o firewall poder&aacute; iniciar conex&otilde;es com
+a rede interna.
+<blockquote>
+<tt>
+pass out on $int_if from any to $int_if:network keep state
+</tt>
+</blockquote>
+
+<p>
+Note que se ambas as linhas estiverem presentes, a op&ccedil;&atilde;o <tt>keep state</tt>
+n&atilde;o se faz necess&aacute;ria; todos pacotes passar&atilde;o pela interface interna,
+isso porqu&ecirc; existem regras para passar os pacotes em ambas as dire&ccedil;&otilde;es.
+Contudo caso a linha <tt>pass out</tt> <i>n&atilde;o</i> exista a linha 
+<tt>pass in</tt> <i>deve</i> incluir <tt>keep state</tt>.  Existe 
+al&eacute;m disso um ganho de performance mantendo-se o estado da conex&atilde;o:
+as tabelas de estado (State tables) s&atilde;o verificadas antes das regras
+serem avaliadas, e caso um pacote combine com alguma entrada na
+tabela, o mesmo passa pelo firewall sem ser avalidado pelas regras.
+Isso oferece ganho de performance num firewall muito carregado, 
+mas num sistema simples como este n&atilde;o trar&aacute; benef&iacute;cios vis&iacute;veis.
+
+<p>
+Finalmente, permitimos tr&aacute;fego na interface externa:
+<blockquote>
+<tt>
+pass out on $ext_if proto tcp all modulate state flags S/SA<br>
+pass out on $ext_if proto { udp, icmp } all keep state
+</tt>
+</blockquote>
+
+<p>
+Tr&aacute;fego TCP, UDP e ICMP &eacute; permitido sair do firewall em dire&ccedil;&atilde;o 
+&agrave; Internet. Informa&ccedil;&atilde;o de estado das conex&otilde;es &eacute; mantido 
+para que os pacotes de retorno passem direto pelo firewall.
+
+<a name="allrules"></a>
+<h2>O Conjunto Completo de Regras</h2>
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+# macros
+int_if = "fxp0"
+ext_if = "ep0"
+
+tcp_services = "{ 22, 113 }"
+icmp_types = "echoreq"
+
+priv_nets = "{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"
+	  
+comp3 = "192.168.0.3"
+
+# op&ccedil;&otilde;es
+set block-policy return
+set loginterface $ext_if
+
+# scrub
+scrub in all
+
+# nat/rdr
+nat on $ext_if from $int_if:network to any -&gt; ($ext_if)
+rdr on $int_if proto tcp from any to any port 21 -&gt; 127.0.0.1 \
+   port 8021
+rdr on $ext_if proto tcp from any to any port 80 -&gt; $comp3
+
+# regras de filtragem
+block all
+
+pass quick on lo0 all
+
+block drop in  quick on $ext_if from $priv_nets to any
+block drop out quick on $ext_if from any to $priv_nets
+
+pass in on $ext_if inet proto tcp from any to ($ext_if) \
+   port $tcp_services flags S/SA keep state
+
+pass in on $ext_if proto tcp from any to $comp3 port 80 \
+   flags S/SA synproxy state
+
+pass in on $ext_if inet proto tcp from port 20 to ($ext_if) \
+   user proxy flags S/SA keep state
+
+pass in inet proto icmp all icmp-type $icmp_types keep state
+
+pass in  on $int_if from $int_if:network to any keep state
+pass out on $int_if from any to $int_if:network keep state
+
+pass out on $ext_if proto tcp all modulate state flags S/SA
+pass out on $ext_if proto { udp, icmp } all keep state
+</pre>
+</td></tr>
+</table>
+
+<p>
+[<a href="authpf.html">Anterior: Authpf: Shell de Usu&aacute;rio para Autentica&ccedil;&atilde;o em Gateways</a>]
+[<a href="index.html">Conte&uacute;do</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[voltar]"></a>
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: example1.html,v 1.18 ]<br>
+$Translation: example1.html,v 1.1 2005/01/04 17:09:07 dsantos Exp $<br>                
+$OpenBSD: example1.html,v 1.1 2005/01/06 20:03:30 jufi Exp $ 
+</small>
+
+</body>
+</html>
