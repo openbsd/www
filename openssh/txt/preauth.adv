@@ -1,0 +1,92 @@
+Subject: OpenSSH Security Advisory (adv.iss)
+
+1. Versions affected:
+
+        All versions of OpenSSH's sshd between 2.9.9 and 3.3
+        contain an input validation error that can result in
+        an integer overflow and privilege escalation.
+
+        OpenSSH 3.4 and later are not affected.
+
+        OpenSSH 3.2 and later prevent privilege escalation
+        if UsePrivilegeSeparation is enabled in sshd_config.
+        OpenSSH 3.3 enables UsePrivilegeSeparation by
+        default.
+
+        Although OpenSSH 2.9 and earlier are not affected
+        upgrading to OpenSSH 3.4 is recommended, because
+        OpenSSH 3.4 adds checks for a class of potential bugs.
+
+2. Impact:
+
+        This bug can be exploited remotely if
+        ChallengeResponseAuthentication is enabled in sshd_config.
+
+	Affected are at least systems supporting
+	s/key over SSH protocol version 2 (OpenBSD, FreeBSD
+	and NetBSD as well as other systems supporting
+	s/key with SSH).  Exploitablitly of systems
+	using PAM in combination has not been verified.
+
+3. Short-Term Solution:
+	
+        Disable ChallengeResponseAuthentication in sshd_config.
+
+	or
+
+        Enable UsePrivilegeSeparation in sshd_config.
+
+4. Solution:
+
+	Upgrade to OpenSSH 3.4 or apply the following patches.
+
+5. Credits:
+
+	ISS.
+
+Appendix:
+
+A:
+
+Index: auth2-chall.c
+===================================================================
+RCS file: /cvs/src/usr.bin/ssh/auth2-chall.c,v
+retrieving revision 1.18
+diff -u -r1.18 auth2-chall.c
+--- auth2-chall.c	19 Jun 2002 00:27:55 -0000	1.18
++++ auth2-chall.c	26 Jun 2002 09:37:03 -0000
+@@ -256,6 +256,8 @@
+ 
+ 	authctxt->postponed = 0;	/* reset */
+ 	nresp = packet_get_int();
++	if (nresp > 100)
++		fatal("input_userauth_info_response: nresp too big %u", nresp);
+ 	if (nresp > 0) {
+ 		response = xmalloc(nresp * sizeof(char*));
+ 		for (i = 0; i < nresp; i++)
+
+B:
+
+Index: auth2-pam.c
+===================================================================
+RCS file: /var/cvs/openssh/auth2-pam.c,v
+retrieving revision 1.12
+diff -u -r1.12 auth2-pam.c
+--- auth2-pam.c	22 Jan 2002 12:43:13 -0000	1.12
++++ auth2-pam.c	26 Jun 2002 10:12:31 -0000
+@@ -140,6 +140,15 @@
+ 	nresp = packet_get_int();	/* Number of responses. */
+ 	debug("got %d responses", nresp);
+ 
++
++	if (nresp != context_pam2.num_expected)
++		fatal("%s: Received incorrect number of responses "
++		    "(expected %u, received %u)", __func__, nresp,
++		    context_pam2.num_expected);
++
++	if (nresp > 100)
++		fatal("%s: too many replies", __func__);
++
+ 	for (i = 0; i < nresp; i++) {
+ 		int j = context_pam2.prompts[i];
+ 
