@@ -1,0 +1,236 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="resource-type" content="document">
+<meta http-equiv="Content-Language" content="de">
+<meta name="description" content="Portierungsanleitung: autoconf">
+<meta name="keywords" content="openbsd,ports,autoconf">
+<meta name="distribution" content="global">
+<meta name="copyright" content="This document copyright 2004 by OpenBSD.">
+<title>Portiererhandbuch: autoconf</title>
+</head>
+<body>
+<img height="30" width="141" src="../../images/smalltitle.gif" alt="[OpenBSD]"> 
+<h1>Portiererhandbuch: autoconf</h1>
+
+Autoconf ist ein GNU-Tool, das beim Schreiben von portablen Programmen
+helfen soll. Es wird oft zusammen mit automake (portable Makefiles)
+und libtool (portable ,shared libraries') verwendet.
+</p>
+Diese Tools funktioniert nicht ganz so gut und stellen oft bestimmte
+Hürden beim Portieren von Software auf OpenBSD dar.
+</p>
+<h2>Die Verwendung von autoconf in einer Software entdecken</h2>
+Recht viele Softwareprojekte haben configure-Skripte, und in den
+meisten Fällen wurden diese durch autoconf erzeugt. Solche Skripte
+haben eine Zeile in der Nähe vom Anfang, die
+<pre>
+# Generated automatically using autoconf version 2.13 
+</pre>
+oder etwas ähnliches sagt.
+Die Generierungsprozedur wird in einer folgenden Sektion abgedeckt.
+Meistens werden autoconf-Ports mit den generierten Skripten und den
+Quellskripten, mit denen diese erstellt worden sind, bereitgestellt.
+Das nächste Kapitel deckt den einfachen Fall ab, in dem du einfach
+das generierte Skript aufrufst und es nicht modifizierst.
+Stelle sicher, dass du die Sektion über trojanische Pferde ebenfalls
+gelesen hast.
+<h2>Ein autoconf-configure-Skript ausführen</h2>
+Dieses Skript wird normalerweise während der Konfigurierungsphase der
+Porterzeugung ausgeführt. Um das Configure-Skript aufzurufen, muss man
+nur
+<code>CONFIGURE_STYLE=	gnu</code>
+setzen, was automatisch ${WRKSRC}/configure aufruft.
+</p>
+Wenn dein Konfigurationsskript irgendwo anders liegt, setze einfach
+CONFIGURE_SCRIPT auf den richtigen Wert.
+</p>
+configure-Skripte nehmen häufig eine große Anzahl an Argumenten. Das
+standardmäßige Verarbeiten des Ports-Trees wird nur --prefix und
+--sysconfdir an diese übergeben. Sehr alte Configure-Skripte verstehen
+--sysconfdir nicht; du kannst <code>CONFIGURE_STYLE=gnu old</code> in
+solchen Fällen setzen.
+</p>
+Auf ähnliche Weise verstehen einige Ports DESTDIR nicht. Diese Ports
+werden häufig das Setzen von
+<code>prefix=${DESTDIR}/usr/local</code> ohne Meckern akzeptieren,
+was mit <code>CONFIGURE_STYLE=gnu dest</code> gemacht werden kann.
+</p>
+Ports, die autoconf und automake verwenden, werden Makefiles mit einem
+bestimmten Format haben, das mit ein paar standardmäßigen Pfadangaben
+beginnt.
+<ul>
+<li>bindir: Pfad für Binaries
+<li>sysconfdir: Pfad für Konfiguration
+<li>includedir: Pfad für include-Verzeichnisse
+</ul>
+Falls das configure-Skript dir nicht erlaubt, diese zu überschreiben,
+kannst du eventuell immernoch in der Lage sein, das später während der
+,build'- oder ,fake'-Phase zu machen. Dies nimmt natürlich an, dass die
+einzige Referenz zu diesen Verzeichnissen innerhalb der generierten
+Makefile ist.
+</p>
+Zum Beispiel beinhaltet ein eleganter Trick, sysconfdir während der
+,fake'-Phase auf ${LOCALBASE}/share/example/pkgname zu setzen, um
+standardmäßige Konfigurationsdateien in das Package einbinden zu
+können (da Packages normalerweise nichts unter /etc ablegen).
+</p>
+Ports, die vollständig autoconf und automake verwenden, können
+eventuell das Erzeugen unter einem anderen Verzeichnis unterstützen:
+versuche,
+<code>SEPARATE_BUILD=flavored</code>
+zu setzen und sieh nach, ob es funktioniert. Dies würde dir
+ermöglichen, den ,build'-Tree zu leeren, ohne dass der Source-Tree
+davon betroffen wäre, indem du separate ${WRKSRC}- und
+${WRKBUILD}-Pfade angibst. In wenigen Fällen benötigen separate
+,build's gmake, während der Rest des Ports glücklich mit bsd-make
+funktioniert, in welchem Fall es das nicht wert wäre.
+</p>
+automake wird ein paar Regeln generieren, um alle generierten Skripte
+neuzubauen, wenn sich irgendetwas ändert. Dies gerät oft den
+OpenBSD-spezifischen Patches in die Quere. Aus diesem Grund wird
+post-patch, sobald CONFIGURE_STYLE auf die Verwendung von autoconf
+verweist, verschiedene Dateien in einer bestimmten Reihenfolge erstellen
+(touch), so dass keine automake-Abhängigkeiten später ausgelöst werden.
+Diese Liste von Abhängigkeiten ist in tsort(1)-Reihenfolge in einer
+Datei angegeben, die in REORDER_DEPENDENCIES angegeben wird (diese ist
+standardmäßig
+${PORTSDIR}/infrastructure/mk/automake.dep).
+<h2>Die Mechanismen von configure-Überprüfungen</h2>
+Das configure-Skript führt zuerst ein feststehendes Skript namens
+config.guess aus, das ermitteln wird, auf welchem System configure
+läuft. config.guess variiert nicht von Port zu Port und ist ein
+feststehendes Skript, so dass der OpenBSD-Ports-Tree es mit einer
+feststehenden Version ersetzt, das über bestimmte OpenBSD-Architekturen
+bescheit weiß. Da die meisten Softwarepakete mit beiliegender
+config.guess vorliegen, und da einige von ihnen recht als sind, ist
+dies ein notwendiger Schritt.
+Wenn ein Softwarepaket mehr als nur eine config.guess enthält, kannst
+du sie alle überschreiben, indem du MODGNU_CONFIG_GUESS_DIRS mit einer
+vollständigen Liste an Verzeichnissen angibst, die bearbeitet werden
+müssen.
+</p>
+Das configure-Skript, das von autoconf erstellt wurde, überprüft dann
+einfach alle Funktionalitäten auf dem existierenden System, indem es
+nach einem Compiler sucht und einfache Testprogramme durch in durchlaufen
+lässt. Da einige dieser Tests recht lang sind, bereitet der Ports-Tree
+configure mit einer CONFIG_SITE=config.site-Datei vor.
+configure wird den Inhalt der Datei begutachten, bevor die Tests
+durchgeführt werden. Ein paar configure-Skripte können Fehler
+beinhalten, der sie davon abhält, die Anwesenheit der config.site
+richtig zu erkennen. Das Setzen von CONFIG_SITE ohne Inhalt wird diese
+Art von Problemen entfernen.
+</p>
+Die meisten configure-Skripte werden automatisch einige Bedingungen
+erkennen. Es ist sehr wichtig auf die Optionen, die Ausgabe und auf
+die generierte config.log-Datei von configure zu achten: diese werden
+dir mitteilen, welche Optionen gefunden und welche nicht gefunden
+worden sind. Dies erlaubt dir zu erkennen, wenn configure ein Package
+nicht gefunden hat, das installiert wurde.
+</p>
+Dies wird dich ebenfalls darüber informieren, welche optionalen Packages
+configure finden würde. In dem Ports-Tree werden diese ,hidden
+dependencies' (versteckte Abhängigkeiten) genannten. Das ist schlecht:
+eine versteckte Abhängigkeit ist ein zusätzliches Package, das
+configure mit aufnehmen wird, wenn es installiert wurde. Dann wird es
+anfangen, ein abgeändertes Package zu erzeugen. In einigen Fällen wird
+die Erzeugung wegen OpenBSDs Eigenarten fehlschlagen. In einigen
+anderen Fällen wird die Erzeugung des Packages fehlschlagen, weil
+einige Dateien unterschiedliche Namen haben werden. Eine weitere
+Möglichkeit ist, dass das resultierende Package nicht korrekt ist,
+da es nicht in der Lage sein wird, irgendwelche Abhängigkeiten der
+optionalen Packages aufzulösen. Somit ist das Achten auf die Ausgabe
+von configure eine der wichtigsten Aufgaben eines Port-Maintainers.
+Achte auf mehrstufige Tests: eine entdeckte Funktionalität könnte
+dazu führen, dass ein configure-Skript versucht, davon abhängige
+Funktionalitäten auszuprobieren und zu finden, so dass du die
+zweite Funktionalität in der Ausgabe von configure nicht sehen wirst,
+bis die erste Funktionalität ausgelöst wird.
+</p>
+Falls einige versteckte Abhängigkeiten entdeckt worden sind, sollten
+einige Maßnahmen durchgeführt werden. Die einfachste Handlung ist, das
+optionale Package zu installieren und zu gucken, was configure machen
+wird. Wenn es das Package entdeckt, kann man entweder die Überprüfung
+deaktivieren (unter Verwendung von configure-Optionen,
+Umgebungsvariablen oder durch das Patchen des configure-Skripts) oder
+sicherstellen, dass die Erzeugung erfolgreich durchgeführt wird und die
+Abhängigkeit in die Liste der abhängigen Pakete einfügt.
+<h2>Neuerzeugen von configure-Skripten</h2>
+Configure-Skripte werden normalerweise von einer configure.in-Datei
+erzeugt (aktuelle Versionen von autoconf verwenden stattdessen eine
+configure.ac-Datei). Eine standardmäßige Bibliothek an Definitionen
+ist häufig in einer aclocal.m4 vorhanden.
+</p>
+In den meisten Fällen ist das direkte Patchen von configure eine
+schlechte Idee. Es ist besser, configure.in zu patchen und den
+Ports-Tree zu veranlassen, autoconf aufzurufen. Gute Portierer werden
+sich darum bemühen, Änderungen für die configure.in zu schreiben, die
+sie an die Software-Autoren weiterleiten können.
+</p>
+Unterschiedliche Versionen von autoconf werden auch unterschiedliche
+configure-Skripte erzeugen. autoconf-2.13 ist besonders: es wurde über
+einen langen Zeitraum verwendet und es hat abgeänderte Versionen von
+autoconf-2.13 gegeben (genau genommen Betas von einem neueren
+autoconf), die weit verbreitet waren. Daher wird autoconf-2.13 nicht
+immer exakt das gleiche configure-Skript erzeugen.
+</p>
+Da es nützlich ist, mehrere autoconf-Versionen zur gleichen Zeit um
+sich herum zu haben, ist das autoconf-Skript tatsächlich im Ports-Tree
+als Teil eines Ports verfügbar, der metaauto genannt wird. Welches
+autoconf-Skript nun tatsächlich aufgerufen wird, wird über die
+Umgebungsvariable AUTOCONF_VERSION geregelt.
+Der Aufruf von autoconf findet statt, wenn du CONFIGURE_STYLE=autoconf
+setzt, zusammen mit dem Setzen von AUTOCONF_VERSION. Versionen, die zur
+Zeit verfügbar sind, sind 2.13, 2.52, 2.54, 2.56, 2.57, 2.58 und 2.59.
+Diese decken 99% der configure-Skripte ab, die im Umlauf sind.
+</p>
+autoconf baut auf dem standard-unix-preprocessor m4(1) auf.
+Normalerweise basiert autoconf auf einigen Funktionalitäten der
+GNU-Version von m4, gm4. Zum Glück hat OpenBSDs m4 geung
+Funktionalitäten, um autoconf gut auszuführen, es muss lediglich mit
+-g aufgerufen werden, um autoconf zu handhaben. Sehr selten wird
+autoconf, das mit OpenBSDs m4 läuft, falsche configure-Skripte
+erzeugen. Die OpenBSD-Entwickler werden ein solches Problem beheben.
+<h2>Trojanische Pferde</h2>
+Configure-Skripte sind große generierte Dateien. Sie sind ein idealer
+Versteckplatz für Trojanische Pferde und das ist in der Tat in der
+Vergangheit passiert. Dies ist ein Hauptgrund dafür, die meisten
+Versionen von autoconf im Tree zu haben: von einem guten Portierer wird
+erwartet, dass er überprüft, dass ein generiertes configure-Skript mit
+denen übereinstimmt, das mit dem autoconf aus dem Ports-Tree erzeugt
+wurde.
+<h2>Interaktion mit anderen Programmen</h2>
+autoheader ist ein weiteres Programm, das mit autoconf zusammenhängt,
+das normalerweise ausgeführt wird, um eine config.h.in-Datei zu
+erzeugen. Durch das Setzen von CONFIGURE_STYLE=autoconf wird autoconf
+ebenfalls aufgerufen. Einige wenige Ports verwenden nicht autoheader.
+Das Setzen von CONFIGURE_STYLE=autoconf autoheader wird das Problem
+beheben.
+</p>
+Mit libtool gibt es ein paar spezifische Haken in configure.in. Es
+gibt meistens ein libtool.m4-Skript, das damit ausgeführt wird.
+libtool dahin zu bringen, richtig zu arbeiten, würde den Rahmen
+dieser Dokumentation sprengen.
+</p>
+KDE verwendet eine weitere Schicht über autoconf. Diese weitere
+Schicht erzeugt eine configure.in-Datei aus einem Satz an
+configure.in.in-Dateien und ist ebenfalls in der Lage, beide,
+configure.in für passenderere Ergebnisse und Makefile.in zum
+Zulassen von ergänzenden Optionen während des Erzeugens zu optimieren
+und automatisch DESTDIR an den richtigen Stellen einzusetzen.
+Die AUTOCONF-Variable kann verwendet werden, um das tatsächliche
+autoconf-Skript, das ausgeführt wird, zu optimieren, und KDE erwartet,
+dass /bin/sh ${WRKDIST}/admin/cvs.sh ordnungsgemäß funktioniert.
+  <hr>
+  <a href="../../de/index.html"><img height=24 width=24 src=../../back.gif border=0 alt=OpenBSD></a> 
+  <a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br><small>
+<!--
+Originally [OpenBSD: autoconf.html,v 1.3 ]
+$Translation: autoconf.html,v 1.1 2005/01/18 14:33:48 paldium Exp $
+-->
+$OpenBSD: autoconf.html,v 1.1 2005/01/18 17:18:27 jufi Exp $
+</small>
+ </body>
+</html>
