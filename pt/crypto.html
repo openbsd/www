@@ -1,0 +1,531 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description" content="OpenBSD cryptography">
+<meta name="keywords" content="openbsd,cryptography,openssh,openssl,kerberos">
+<meta name="keywords" content="ipsec,isakmp,ike,blowfish,des,rsa,dsa">
+<meta name="distribution" content="global">
+<meta name="copyright" content="This document copyright 1997-2002 by OpenBSD.">
+<title>Criptografia no OpenBSD</title>
+</head>
+
+<body bgcolor="#ffffff" text="#000000" link="#23238e">
+<img align="left" alt="[OpenBSD]" height="166" width="197" SRC="../images/blowfish-notext.jpg">
+<br>
+<br>
+<br>
+"O mantra de qualquer bom engenheiro de seguran&ccedil;a &eacute;: "Seguran&ccedil;a
+n&atilde;o &eacute; um produto, mas um processo." É mais do que desenvolver
+uma criptografia forte em um sistema; &eacute; desenvolver um sistema
+inteiro em que todos os itens de seguran&ccedil;a, incluindo a criptografia,
+trabalhem juntos."<br>
+<br>
+-- Bruce Schneier, autor de "Criptografia Aplicada".
+<br clear="all">
+<h2><font color="#e00000">Criptografia</font></h2>
+<hr>
+
+<strong>Índice</strong><br>
+<a href="#why">Por que n&oacute;s embutimos criptografia?</a>.<br> 
+<a href="#ssh">OpenSSH</a>.<br> 
+<a href="#prng">Pseudo Gerador de N&uacute;meros Aleat&oacute;rios</a> (PRNG): ARC4, ...<br>
+<a href="#hash">Fun&ccedil;&otilde;es Criptogr&aacute;ficas de Hash</a>: MD5, SHA1, ...<br>
+<a href="#trans">Criptografadores</a>: DES, Blowfish, ...<br>
+<a href="#hardware">Suporte a Hardware Criptogr&aacute;fico</a><br>
+<a href="#people">Criptografadores Internacionais requeridos</a><br>
+<a href="#papers">Leitura adicional</a><br>
+<p>
+<hr>
+
+<a name="why"></a>
+<h3><font color="#e00000">Por que n&oacute;s embutimos criptografia<font></h3><p>
+
+Em tr&ecirc;s palavras:  <strong>porque n&oacute;s podemos</strong>.<p>
+
+O projeto OpenBSD &eacute; concentrado no Canad&aacute;.<p>
+
+A <a href="../ECL.html">Lista de Controle de Exporta&ccedil;&atilde;o
+do Canad&aacute;</a> n&atilde;o imp&otilde;e nenhuma restri&ccedil;&atilde;o 
+significante quanto a exporta&ccedil;&atilde;o de software criptogr&aacute;fico,
+e &eacute; ainda mais expl&iacute;cita quanto a livre exporta&ccedil;&atilde;o 
+de softwares criptogr&aacute;ficos. Marc Plumb realizou
+<a href="http://www.efc.ca/pages/doc/crypto-export.html">
+algumas pesquisas quanto &agrave;s leis criptogr&aacute;ficas</a>.
+<p>
+
+Por esse fato, o projeto OpenBSD embutiu criptografia em
+numerosos lugares do sistema operacional. Temos a necessidade de que
+os softwares criptogr&aacute;ficos que utilizamos sejam
+<a href="../policy.html">dispon&iacute;veis livremente e com uma boa
+licen&ccedil;a</a>. N&oacute;s n&atilde;o utilizamos criptografia com 
+patentes indecentes. N&oacute;s tamb&eacute;m exigimos que tal software seja 
+proveniente de pa&iacute;ses que possuam leis de exporta&ccedil;&atilde;o 
+compat&iacute;veis pois n&atilde;o queremos infringir lei alguma. Os 
+componentes criptogr&aacute;ficos que utilizamos atualmente foram 
+escritos na Argentina, Austr&aacute;lia, Canad&aacute;, Alemanha, 
+Gr&eacute;cia, Noruega e Su&eacute;cia.
+<p>
+
+Quando criamos vers&otilde;es ou snapshots do OpenBSD, n&oacute;s 
+compilamos nossos arquivos em pa&iacute;ses livres para nos assegurarmos 
+de que os c&oacute;digos fonte e bin&aacute;rios que disponibilizamos 
+est&atilde;o livres de qualquer corrup&ccedil;&atilde;o. No passado 
+nossas compila&ccedil;&otilde;es eram realizadas no Canad&aacute;, 
+Su&eacute;cia e Alemanha.<p>
+
+O OpenBSD &eacute; lan&ccedil;ado com Kerberos IV e Kerberos V 
+inclu&iacute;dos. As duas bases de c&oacute;digos s&atilde;o baseadas 
+na base KTH da Su&eacute;cia. Nosso c&oacute;digo fonte
+do X11 foi extendido para utilizar o Kerberos.<p>
+
+<img align="right" src="../images/vpnc-test-partner.gif" alt="VPNC TEST PARTNER">
+O OpenBSD foi o primeiro sistema operacional a incorporar a pilha IPsec.
+Temos inclu&iacute;do o IPsec desde a vers&atilde;o do OpenBSD 2.1 de 1997.
+Nossa pilha IPsec, totalmente integrada ao kernel, com 
+acelera&ccedil;&atilde;o por hardware suportando uma grande quantidade 
+de placas, e nosso pr&oacute;prio daemon ISAKMP, &eacute; utilizada em uma 
+das m&aacute;quinas padronizadoras do projeto 
+<a href="http://www.vpnc.org">VPNC</a>.
+<br clear="all">
+<p>
+
+Hoje a criptografia &eacute; um importante meio de se melhorar
+a <a href="../security.html">seguran&ccedil;a</a> de um sistema 
+operacional. A criptografia usada no OpenBSD pode ser classificada em 
+v&aacute;rios aspectos descritos baixo:<p>
+
+<a name="ssh"></a>
+<h3><font color="#e00000">OpenSSH</font></h3><p>
+
+Qual &eacute; a primeira coisa que a maioria das pessoas fazem ap&oacute;s
+instalar o OpenBSD? Elas instalam o Shell Seguro 
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ssh&amp;sektion=1">ssh(1)</a>)
+da &aacute;rvore de ports ou pacotes dispon&iacute;veis em 
+servidores FTP.<p>
+
+Com o lan&ccedil;amento da vers&atilde;o 2.6, o OpenBSD incorporou 
+em sua &aacute;rvore de c&oacute;digos fonte o
+<a href="http://www.openssh.com/">OpenSSH</a>, uma vers&atilde;o do ssh 
+absolutamente livre de patentes. Ap&oacute;s o lan&ccedil;amento 
+da vers&atilde;o 2.6, o 
+<a href="http://www.openssh.com/">OpenSSH</a>, utilizando a 
+vers&atilde;o 1 do protocolo, sofreu v&aacute;rias 
+modifica&ccedil;&otilde;es e melhorias:
+
+<ul>
+<li>
+todos os componentes de natureza restritiva (ex.: patentes, veja	
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ssl&amp;sektion=8">ssl(8)</a>)
+foram removidos do c&oacute;digo fonte; qualquer componente 
+licenciado ou patenteado utiliza bibliotecas externas.
+<li>
+foi atualizado para suportar o protocolo ssh 1.5.
+<li>
+adicionado suporte a autentica&ccedil;&atilde;o via 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=kerberos&amp;sektion=1">kerberos(1)</a>
+e passagem de ticket.
+<li>
+suportada autentica&ccedil;&atilde;o one-time com 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=skey&amp;sektion=1">skey(1)</a>.
+</ul>
+<p>
+
+A grosso modo, n&oacute;s pegamos uma vers&atilde;o livre do ssh 
+e convertemos para o estilo OpenBSD. Ap&oacute;s um ano, extendemos 
+o OpenSSH para suportar o protocolo 2. O resultado foi o suporte aos 
+3 maiores protocolos SSH: 1.3, 1.5 e 2.0.
+
+<a name="prng"></a>
+<h3><font color="#e00000">Pseudo Gerador de N&uacute;meros Aleat&oacute;rios</font></h3><p>
+
+O Pseudo Gerador de N&uacute;meros Aleat&oacute;rios (PRNG) 
+disponibiliza &agrave;s aplica&ccedil;&otilde;es que possuem certa 
+importância para a seguran&ccedil;a do sistema uma seq&uuml;&ecirc;ncia
+de n&uacute;meros aleat&oacute;rios:<p>
+
+<ul>
+<li>Deve ser imposs&iacute;vel adivinhar a sa&iacute;da do 
+	gerador de n&uacute;meros aleat&oacute;rios mesmo tendo 
+	conhecimento de sua sa&iacute;da anterior.
+<li>Os n&uacute;meros gerados n&atilde;o devem possuir padr&otilde;es 
+	repetitivos, o que significa que o PRNG deve ter um ciclo muito longo.
+</ul>
+<p>
+
+O PRNG &eacute; normalmente um algoritmo aonde os mesmo valores iniciais
+ir&atilde;o produzir a mesma seq&uuml;&ecirc;ncia de sa&iacute;da. 
+Em um sistema operacional multi-usu&aacute;rio existem muitas fontes 
+que permitir&atilde;o alimentar o PRNG com dados aleat&oacute;rios. 
+O kernel do OpenBSD utiliza as informa&ccedil;&otilde;es de 
+temporiza&ccedil;&atilde;o de interrupa&ccedil;&atilde;o do mouse, 
+a lant&ecirc;ncia de dados de interrup&ccedil;&atilde;o da rede, 
+temporiza&ccedil;&atilde;o do pressionamento de teclas e I/O de disco 
+para preencher a lista de entropia. N&uacute;meros aleat&oacute;rios
+est&atilde;o dispon&iacute;veis para as rotinas do kernel e s&atilde;o 
+exportados atrav&eacute;z de dispositivos para programas no ambiente 
+de usu&aacute;rio. Os n&uacute;meros aleat&oacute;rios s&atilde;o 
+utilizados nos seguintes lugares:<p>
+
+<ul>
+<li>Aloca&ccedil;&atilde;o dinâmica sin_port no bind(2).
+<li>PIDs de processos.
+<li>IDs de datagramas IP.
+<li>IDs de transa&ccedil;&atilde;o RPC (XID).
+<li>IDs de transa&ccedil;&atilde;o NFS RPC (XID).
+<li>IDs de requisi&ccedil;&otilde;es DNS.
+<li>N&uacute;meros de gera&ccedil;&atilde;o de Inode, 
+	veja getfh(2) e fsirand(8).
+<li>Perturba&ccedil;&atilde;o temporal no traceroute(8).
+<li>Melhores nomes tempor&aacute;rios para mktemp(3) e mkstem(3)
+<li>Randomiza&ccedil;&atilde;o adicionada ao valor do 
+	TCP ISS para prote&ccedil;&atilde;o contra ataques de spoof.
+<li>Preenchimento aleat&oacute;rio nos pacotes IPsec esp_old.
+<li>Gerar salts para v&aacute;rios algoritmos de senha.
+<li>Gerar disputas S/Key falsas.
+<li>Verifica&ccedil;&atilde;o autom&aacute;tica de trocas 
+	de chaves no 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd&amp;sektion=8">
+	isakmpd(8)</a>.
+</ul>
+
+<p>
+<a name="hash"></a>
+<h3><font color="#e00000">Fun&ccedil;&otilde;es Criptogr&aacute;ficas de Hash</font></h3><p>
+
+Uma fun&ccedil;&atilde;o de hash comprime os dados recebidos 
+para uma string de tamanho constante. Em uma 
+fun&ccedil;&atilde;o criptogr&aacute;fica de hash &eacute; 
+imposs&iacute;vel encontrar:
+
+<ul>
+<li>duas entradas que possuam a mesma sa&iacute;da 
+	(imune &agrave; colis&otilde;es),	
+<li>uma entrada diferente para uma entrada j&aacute; 
+	dispon&iacute;vel com a mesma sa&iacute;da 
+	(resist&ecirc;ncia secund&aacute;ria de colis&otilde;es).
+</ul>
+<p>
+
+No OpenBSD, MD5, SHA1 e RIPEMD-160 s&atilde;o utilizados como
+fun&ccedil;&otilde;es criptogr&aacute;ficas de hash:<p>
+<ul> 
+<li>No <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=skey&amp;sektion=1">S/Key(1)</a>
+    para gerar senhas one-time.
+<li>No <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ipsec&amp;sektion=4">IPsec(4)</a>
+    e no
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd&amp;sektion=8">isakmpd(8)</a>
+    para autenticar a origem de dados dos pacotes e para garantir 
+    sua integridade.
+<li>Para senhas MD5 estilo FreeBSD (n&atilde;o ativadas por 
+    padr&atilde;o), veja o
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=passwd.conf&amp;sektion=5">
+    passwd.conf(5)</a>
+<li>No libssl para assinatura digital de mensagens.
+</ul>
+<p>
+
+<p>
+<a name="trans"></a>
+<h3><font color="#e00000">Criptografadores</font></h3><p>
+
+Os criptografadores s&atilde;o usados para encriptar de desencriptar
+dados. Eles s&atilde;o normalmente usados com chaves de 
+encripta&ccedil;&atilde;o e de desencripta&ccedil;&atilde;o. A 
+seguran&ccedil;a de um criptografador deve se basear
+somente no material relacionado &agrave;s chaves.<p>
+
+O OpenBSD possui mecanismos como DES, 3DES, Blowfish e Cast 
+dispon&iacute;veis para o kernel e programas do ambiente de 
+usu&aacute;rio, que s&atilde;o utilizados em diversos locais:<p>
+<ul>
+<li>Na libc para criar senhas no formato 
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=blf_key&amp;sektion=3">Blowfish</a>.
+    Veja tamb&eacute;m o <a href="papers/bcrypt-paper.ps">documento da USENIX</a> neste t&oacute;pico.
+<li>No
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ipsec&amp;sektion=4">IPsec(4)</a>
+    para disponibilizar confidencialidade para a camada de rede.
+<li>No Kerberos e v&aacute;rias aplica&ccedil;&otilde;es "kerberizadas", como o
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=telnet&amp;sektion=1">telnet(1)</a>,
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=cvs&amp;sektion=1">cvs(1)</a>,
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rsh&amp;sektion=1">rsh(1)</a>,
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rcp&amp;sektion=1">rcp(1)</a>,
+    e 
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rlogin&amp;sektion=1&amp;manpath=OpenBSD+3.1">rlogin(1)</a>.
+<li>No <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd&amp;sektion=8">isakmpd(8)</a>
+    para proteger as transa&ccedil;&otilde;es e negocia&ccedil;&otilde;es 
+    do IPsec.
+<li>No AFS para proteger as mensagem que passam pela rede, 
+    fornecendo confidencialidade para sistemas de arquivos remotos.
+<li>Na libssl para fornecer &agrave;s aplica&ccedil;&otilde;es 
+    comunica&ccedil;&atilde;o sobre o protocolo SSL. 
+</ul>
+
+<p>
+<a name="hardware"></a>
+<h3><font color="#e00000">Suporte a Hardware Criptogr&aacute;fico</font></h3><p>
+
+O OpenBSD a partir da vers&atilde;o 2.7, come&ccedil;ou a 
+suportar alguns hardwares aceleradores criptogr&aacute;ficos e 
+geradores de n&uacute;meros aleat&oacute;rios.
+<ul>
+<li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=crypto&amp;sektion=9">
+    Desenfileiramento criptogr&aacute;fico do IPsec</a></b><br>
+    Nossa pilha IPsec foi modificada para que fun&ccedil;&otilde;es 
+    criptogr&aacute;ficas sejam feitas fora de linha. A maioria das 
+    pilhas IPsec precisam realizar criptografia no processamento de cada 
+    pacote resultando em uma performance s&iacute;ncrona. Para utilizar o 
+    hardware de forma correta e acelerar a opera&ccedil;&atilde;o era 
+    preciso separar estes dois componentes, assim como fizemos. Por sinal, 
+    esta opera&ccedil;&atilde;o resultou em um ganho de performance 
+    at&eacute; no caso do software.
+<p>
+<li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hifn&amp;sektion=4">
+    Hifn 7751</a></b><br>
+    Placas Hifn 7751 pode ser utilizadas como aceleradores criptogr&aacute;ficos
+    sim&eacute;tricos, ex.:, o 
+    <a href="http://www.soekris.com/vpn1201.htm">Soekris VPN1201 ou VPN1211</a>
+    (<a href="http://www.soekris.com/how_to_buy.htm">como comprar</a>)
+    ou
+    <a href="http://www.powercrypt.com">PowerCrypt</a>.
+    A performance atual usando uma &uacute;nica placa Hifn 7751 em 
+    cada ponta do t&uacute;nel &eacute; de 64Mbit/sec para 3DES/SHA1/ESP, 
+    aproximadamente 600% de aumento comparando-se a um CPU P3/550. 
+    Desenvolvimentos a parte est&atilde;o corrigindo alguns problemas, 
+    por&eacute;m o c&oacute;digo &eacute; considerado est&aacute;vel
+    desde 13 de Abril de 2000. N&oacute;s escrevemos nosso pr&oacute;prio 
+    driver ao inv&eacute;z de usar o driver da
+    <a href="http://www.powercrypt.com">PowerCrypt</a> (escrito nos EUA), 
+    este hoje interagindo perfeitamente com a pilha IPsec.
+
+    A 7751 &eacute; considerada lenta para os padr&otilde;es da 
+    ind&uacute;stria de hoje e muitos fornecedores j&aacute; possuem chips 
+    mais r&aacute;pidos (at&eacute; a Hifn possui hoje um chip mais veloz 
+    por&eacute;m mais caro). A m&aacute;xima performance 
+    utilizando-se 3DES SHA1 ESP &eacute; de aproximadamente 64Mbit/seg.
+    <p>
+    Ap&oacute;s o lan&ccedil;amento do 2.9, foi adicionado o suporte ao chip
+    Hifn 7951, uma vers&atilde;o simplicadada do 7751 que adiciona um
+    acelerador de chaves p&uacute;blicas (n&atilde;o suportado) e um gerador
+    de n&uacute;meros aleat&oacute;rios (suportado). As placas foram doadas
+    pela <a href="http://www.soekris.com/">Soekris Engineering</a>.
+    <p>
+    Ap&oacute;s o lan&ccedil;amento do 3.0, foi adicionado o suporte ao chip
+    Hifh 7811, uma vers&atilde;o mais r&aacute;pida da 7751 (em torno de 130Mbit/s)
+    com um gerador de n&uacute;meros aleat&oacute;rios. A placa foi doada pela
+    <a href="http://www.gtgi.com/">GTGI</a>.
+    <p>
+    Ap&oacute;s o lan&ccedil;amento do 3.2, foi adicionado suporte ao algoritmo
+    de compress&atilde;o LZS, utilizado pelo
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ipcomp&amp;sektion=4">ipcomp(4)</a>.
+    <p>
+    A Hifn foi no in&iacute;cio uma empresa dif&iacute;cil de se lidar 
+    (eles tentaram nos convencer a mudar de id&eacute;ia sobre o nosso 
+    algoritmo de destravamento criptogr&aacute;fico de engenharia reversa 
+    n&atilde;o-EUA), por&eacute;m recentemente eles t&ecirc;m sido muito 
+    prestativos disponibilizando placas e suporte.
+    <p>
+
+<li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=lofn&amp;sektion=4">
+    Hifn 6500</a></b><br>
+    Este dispositivo &eacute; uma unidade de criptografia assim&eacute;trica.
+    Ele possui suporte aos algoritmos RSA, DSA e DH, al&eacute;m de 
+    outras fun&ccedil;&otilde;es relacionadas a grandes n&uacute;meros. 
+    Ele tamb&eacute;m cont&eacute;m um gerador de n&uacute;meros 
+    aleat&oacute;rios de alta performance. Possu&iacute;mos um desses, 
+    documenta&ccedil;&atilde;o completa e c&oacute;digos de exemplo. 
+    A partir da vers&atilde;o do OpenBSD 3.1, ambos gerador de 
+    n&uacute;meros aleat&oacute;rios e unidade de grandes n&uacute;meros 
+    tiveram seu suporte inclu&iacute;do no sistema.
+    <p>
+
+<li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=nofn&amp;sektion=4">
+    Hifn 7814/7851/7854</a></b><br>
+    Este dispositivo &eacute; uma unidade de criptografia assim&eacute;trica
+    e um processador de pacotes. Ele possui suporte aos algoritmos RSA, 
+    DSA e DH, al&eacute;m de outras fun&ccedil;&otilde;es relacionadas a 
+    grandes n&uacute;meros e tamb&eacute;m possui um gerador de n&uacute;meros 
+    aleat&oacute;rios. Atualmente, somente o mecanismo de grandes 
+    n&uacute;meros e o gerador de n&uacute;meros aleat&oacute;rios 
+    s&atilde;o suportados.
+    <p>
+
+<li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ubsec&amp;sektion=4">
+    Broadcom BCM5801/BCM5802/BCM5805/BCM5820/BCM5821/BCM5822
+    (ou chip beta Bluesteelnet 5501/5601)</a></b><br>
+    Logo ap&oacute;s o lan&ccedil;amento do OpenBSD 2.7, n&oacute;s 
+    conseguimos adicionar suporte preliminar a estas placas 
+    disponibilizadas a n&oacute;s diretamente pelo distribuidor, 
+    especificamente com o chip de teste 5501. Estes dispositivos fornecem 
+    a melhor performance em criptografia assim&eacute;trica que 
+    n&oacute;s j&aacute; vimos.
+    <p>
+    A Bluesteelnet foi adquirida pela Broadcom.
+    O seu novo chip BCM5805 &eacute; similar ao Bluesteelnet, exceto pelo
+    fato da placa tamb&eacute;m suportar um mecanismo assim&eacute;trico para 
+    DSA, RSA e outros algoritmos. Com uma performance quase 
+    quatro vezes mais r&aacute;pida que as Hifn, esperamos que esse chip 
+    se torne mais comum em breve.
+    <p>
+    O pessoal da Broadcom/Bluesteelnet foram &oacute;timas pessoas de se 
+    lidar. Eles nos forneceram a documenta&ccedil;&atilde;o completa, 
+    c&oacute;digos de exemplo para seus chips e um n&uacute;mero 
+    suficiente de placas para podermos testar.
+    <p>
+    Na vers&atilde;o 2.8, este driver era modificado para gerar 
+    n&uacute;meros aleat&oacute;rios no BCM5805 e vers&otilde;es 
+    similares, e alimentar a fila de entropia do kernel com estes dados.
+    <p>
+    Na vers&atilde;o 2.9, foi adicionado suporte ao chip BCM5820, que &eacute;
+    basicamente uma vers&atilde;o mais r&aacute;pida (64bit, velocidade de 
+    clock maior) do modelo BCM5805. Suporte ao modelo BCM5821 tamb&eacute;m
+    foi adicionado na vers&atilde;o 3.0.
+    <p>
+    Na vers&atilde;o 3.1, o mecanismo de grandes n&uacute;meros foi suportado,
+    e as opera&ccedil;&otilde;es de RSA/DH/DSA puderam ser aceleradas.
+    <p>
+    O suporte aos chips BCM5801, BCM5802, BCM5821 e BCM5822 foi
+    adicionado na vers&atilde;o 3.2.
+    <p>
+
+<li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ises&amp;sektion=4">
+    Securealink PCC-ISES</a></b><br>
+    O <a href="http://www.safenet-inc.com/technology/chips/safexcel_ises.asp">
+    PCC-ISES</a> &eacute; um novo chipset da Holanda. N&oacute;s recebemos 
+    hardware de exemplo e documenta&ccedil;&atilde;o, e o driver 
+    j&aacute; est&aacute; sendo desenvolvido. No momento, o driver j&aacute;
+    &eacute; capaz de alimentar a fila de entropia do kernel com 
+    n&uacute;meros aleat&oacute;rios.
+    <p>
+	
+<li><b>SafeNet SafeXcel 2141</b><br>
+    N&oacute;s recebemos documenta&ccedil;&atilde;o e hardware de exemplo 
+    para as placas de criptografia
+    <a href="http://www.safenet-inc.com/technology/chips/safexcel_2141.asp">SafeNet</a>.
+    O trabalho para suportar pelo menos a criptografia 
+    assim&eacute;trica destes dispositivos j&aacute; foi iniciado.
+    <p>
+
+<li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=txp&amp;sektion=4">
+    3com 3cr990</a></b><br>
+    A 3Com nos forneceu um driver para suportar o componente ethernet deste
+    chipset e baseando-nos nisso n&oacute;s escrevemos nosso pr&oacute;prio driver.
+    Este driver foi agora integrado uma vez que conseguimos uma licen&ccedil;a
+    livre para o microcode. Pelo fato da pouca documenta&ccedil;&atilde;o e falta de
+    coopera&ccedil;&atilde;o (parcialmente por causa das reviravoltas da 3Com), as
+    fun&ccedil;&otilde;es de IPsec do chip n&atilde;o s&atilde;o 
+    suportadas... por conseq&uuml;&ecirc;ncia, isso se tornou um exerc&iacute;cio 
+    in&uacute;til.
+    <p>
+
+<li><b>IPsec Intel</b><br>
+    Assim como a divis&atilde;o de componentes de rede da Intel sempre faz,
+    ela simplismente se recusa a fornecer-nos documenta&ccedil;&atilde;o 
+    adequada. N&oacute;s conversamos com cinco pessoas da Intel 
+    t&eacute;cnicamente envolvidas com o desenvolvimento destes produtos. 
+    Todos eles gostariam que n&oacute;s tiv&eacute;ssemos documenta&ccedil;&atilde;o.
+    Eles nos apoiaram pelo que n&oacute;s tinhamos feito. Por&eacute;m suas 
+    m&atilde;os estavam atadas a uma administra&ccedil;&atilde;o que n&atilde;o 
+    percebia o benef&iacute;cio a eles mesmos disponibilizando a 
+    documenta&ccedil;&atilde;o. Esque&ccedil;a a Intel. (Se voc&ecirc; 
+    quiser comprar hardware ethernet gigabit, n&oacute;s recomendamos qualquer 
+    outra coisa... pela mesma raz&atilde;o: a maioria dos drivers da Intel 
+    que temos suporte foram escritos sem documenta&ccedil;&atilde;o).
+    <p>
+
+<li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pchb&amp;sektion=4">
+    Intel 82802AB/82802AC Firmware Hub RNG</a></b><br>
+    O chip 82802 FWH (encontrado nas placas-m&atilde;e i810, i820, i840, 
+    i850, e i860) cont&eacute;m um gerador de n&uacute;meros 
+    aleat&oacute;rios (RNG). IPsec de alta performance requer um entropia de 
+    n&uacute;meros mais aleat&oacute;ria. A partir de 10 de Abril de 2000,
+    n&oacute;s passamos a suportar o RNG. Iremos adicionar suporte a 
+    outros RNGs encontrados em outros chipsets.
+    <p>
+
+<li><b>VIA C3 RNG</b><br>
+    O novo CPU VIA C3 cont&eacute;m um gerador de n&uacute;meros 
+    aleat&oacute;rios. A partir da vers&atilde;o <a href="../33.html">3.3</a> 
+    este item &eacute; utilizado pelo kernel para preencher a lista de entropia.
+    <p>
+
+<li><b>OpenSSL</b><br>
+    A anos atr&aacute;s, tinhamos um grande esquema para suportar placas de
+    criptografia que podiam fazer RSA/DH/DSA automaticamente atrav&eacute;z
+    de chamadas via OpenSSL. Com o lan&ccedil;amento do OpenBSD 3.2, este
+    suporte passou a funcionar e qualquer placa que &eacute; suportada com
+    tal funcionalidade ser&aacute; automaticamente utilizada por softwares de
+    criptografia, incluindo o OpenSSH e o httpd em modo SSL. Nenhuma
+    altera&ccedil;&atilde;o nas aplica&ccedil;&otilde;es &eacute; 
+    necess&aacute;ria.
+</ul>
+
+<p>
+<b>Caso queira ajudar a escrever drivers,
+<a href="#people">venha e nos ajude</a>.</b>
+
+<p>
+<a name="people"></a>
+<h3><font color="#e00000">Criptografadores Internacionais 
+requeridos</font></h3><p>
+
+Nosso projeto precisa de pessoas para trabalhar nesses sistemas.
+Se algum criptografador n&atilde;o-Americano que preencha os 
+pr&eacute;-requisitos estabelecidos anteriormente est&aacute; 
+interessado em ajudar com a criptografia integrada do OpenBSD, 
+por favor entre em contato conosco.<p>
+
+<p>
+<a name="papers"></a>
+<h3><font color="#e00000">Leitura Adicional</font></h3><p>
+
+Alguns documentos sobre as altera&ccedil;&otilde;es efetuadas no OpenBSD
+foram escritos pelos membros do time OpenBSD. As vers&otilde;es
+postscript destes documentos est&atilde;o dispon&iacute;veis abaixo.<p>
+
+<ul>
+<li>A Future-Adaptable Password Scheme.<br>
+    <a href="../events.html#usenix99">Usenix 1999</a>,
+    por <a href="mailto:provos@openbsd.org">Niels Provos</a>,
+    <a href="mailto:dm@openbsd.org">David Mazieres</a>.<br>
+    <a href="../papers/bcrypt-paper.ps">paper</a> e
+    <a href="../papers/bcrypt-slides.ps">slides</a>.
+<p>
+<li>Cryptography in OpenBSD: An Overview.<br>
+    <a href="../events.html#usenix99">Usenix 1999</a>,
+    por <a href="mailto:deraadt@openbsd.org">Theo de Raadt</a>,
+    <a href="mailto:niklas@openbsd.org">Niklas Hallqvist</a>,
+    <a href="mailto:art@openbsd.org">Artur Grabowski</a>,
+    <a href="mailto:angelos@openbsd.org">Angelos D. Keromytis</a>,
+    <a href="mailto:provos@openbsd.org">Niels Provos</a>.<br>
+    <a href="../papers/crypt-paper.ps">paper</a> e
+    <a href="../papers/crypt-slides.ps">slides</a>.
+<p>
+<li>Implementing Internet Key Exchange (IKE).<br>
+    <a href="../events.html#usenix2000">Usenix 2000</a>,
+    por <a href="mailto:niklas@openbsd.org">Niklas Hallqvist</a> e
+    <a href="../mailto:angelos@openbsd.org">Angelos D. Keromytis</a>.<br>
+    <a href="../papers/ikepaper.ps">paper</a> e
+    <a href="../papers/ikeslides.ps">slides</a>.
+<p>
+<li>Encrypting Virtual Memory.<br>
+    <a href="../events.html#sec2000">Usenix Security 2000</a>,
+    <a href="mailto:provos@openbsd.org">Niels Provos</a>.<br>
+    <a href="../papers/swapencrypt.ps">paper</a> e 
+    <a href="../papers/swapencrypt-slides.ps">slides</a>.
+</ul>
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../back.gif" border="0" alt="OpenBSD"></a>
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: crypto.html,v 1.120 ]<br>
+$Translation: crypto.html,v 1.2 2003/05/13 22:16:43 eduardo Exp $<br>
+$OpenBSD: crypto.html,v 1.1 2003/05/15 06:56:19 jufi Exp $
+</small>
+</body>
+</html>
