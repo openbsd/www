@@ -23,59 +23,80 @@ X
 END-of-Makefile
 echo x - README
 sed 's/^X//' >README << 'END-of-README'
-Xfind enough disk space.
-X    you need roughly 300MB.
+X
+X	So, you want to run an anoncvs server.
+X
+X        A summary of the steps you'll need to do is:
+X
+X1) Find enough disk space to hold the anoncvs tree, and mount it in an 
+Xappropriate place.
+X
+X2) Compile and install anoncvssh, the shell used for the anoncvs user.
+X   ( If you aren't using OpenBSD you'll probably need to compile a sup
+X     client as well. The easier path is to use OpenBSD ;)	 
+X
+X3) Add the anoncvs user to the password file, with no password, and
+Xanoncvssh as it's shell. Decide on a user that will run sup to maintain
+Xthe archive (this is a different user, NOT the anoncvs user) 
+X
+X4) Make a home directory for the anoncvs user. The anoncvs user's home
+Xdirectory is a chroot jail in which the anoncvssh processes run when
+Xservicing anoncvs requests. The jail must contain the cvs binary and
+Xrelated programs (rcs, etc) as well as whatever shared libraries and
+Xsupport files are needed to run them unless you compile and link
+Xeverything staticly. This example shows what is needed for OpenBSD. If
+Xyou use another platform you'll need to be familiar with what needs
+Xto go in a chroot jail for your platform.
+X
+X5) Get permission to use sup to obtain the cvs tree from a server.
+X
+X6) Set up sup to retrieve the cvs tree from an appropriate place. 
+X   (If you aren't using OpenBSD you will need to compile and install
+X    a sup client).
+X
+X7) Run sup to retrieve the distribution from the server
+X
+X8) Once you get the distribution in, set up a cron job to run sup 
+X   periodically to keep your server up to date.
+X
+X**********************************************************************
+XSTEP 1) find enough disk space.
+X    you need roughly 500MB.
 X    mount it on /open
 X    if you are not able to mount it as /open, substitute it's location
-X    throughout this description
-X    
-Xcompile the anoncvssh binary
+X    throughout the rest of this description
+X
+X**********************************************************************
+XSTEP 2) compile the anoncvssh binary
 X    in the Makefile, change the variable CVSROOT
-X    install the binary setuid-root.
+X    install the binary setuid-root in /open/anoncvssh.
+X
+X**********************************************************************
+XSTEP 3) Create the anoncvs account. and decide who will run "sup"
+Xto maintain the archive. The anoncvs account should *NOT* be the one
+Xrunning sup to maintain the archive.
 X
 Xcreate an account:
 X    anoncvs::32766:32766:Anonymous CVS User:/open/anoncvs:/open/anoncvssh
 Xyes, that is right. the account has no password.
 X
-XFor :pserver: support (optional)
-X  - Create an entry in /etc/services
-X     cvspserver		2401/tcp		# CVS client/server operations
-X  - Create an entry in /etc/inetd.conf
-X     cvspserver	stream	tcp nowait anoncvs /open/anoncvssh anoncvssh pserver
+Xdecide on who will run sup to maintain the archive. call that user $SUPUSER.
+XOh, and in case it hasn't been previously mentioned, $SUPUSER should *NOT*
+Xbe the anoncvs user :)
 X
-Xinstall a crontab entry which runs as any user besides anoncvs (ie. run
-Xit as yourself, or as root). call that user $SUPUSER
+X**********************************************************************
+XSTEP 4) Build the anoncvs user's home directory chroot jail. This example
+Xassumes that you're using OpenBSD. If you're not you may need different 
+Xfiles in the chroot.
 X
-XFor example:  To run every three hours 'sup -v supfile', and thrice
-Xweekly 'sup -vo supfile' .. because sup is not reliable ..
-X
-X0 0,3,6,9,12,15,18,21 * * 0,2,4,5 sup -v  /open/anoncvs/sup/ss > /dev/null
-X0 0,12,15,18,21       * *  1,3,6  sup -v  /open/anoncvs/sup/ss > /dev/null
-X0 3                   * *  1,3,6  sup -vo /open/anoncvs/sup/ss > /dev/null
-X
-Xanoncvs5.usa.openbsd.org uses this particular set of entries.  A `sup
-X-o' is done every few days because sup is not very robust.
-X
-Xthe file /open/sup/ss contains
-X    cvs host=cvs.openbsd.org hostbase=/ base=/open/anoncvs delete
-X
-Xthe file /open/sup/cvs/refuse should contain the single line
-X    cvs/CVSROOT/history
-Xif you ever fetch the file cvs/CVSROOT/history, delete it. it will
-Xcause you problems.
-X
-Xon an IRIX or other SYSV machine, ensure that your kernel does not allow
-Xa user to chown a file to another user. this will cause sup to give away
-Xthe files to root before chmod'ing them readable. michaels@openbsd.org
-Xknows how to fix this.
-X
-Xmkdir /open/
 Xmkdir /open/anoncvs
 Xmkdir /open/anoncvs/cvs
 Xmkdir /open/anoncvs/sup
 Xchown -R $SUPUSER /open/anoncvs/cvs /open/anoncvs/sup /open/anoncvs
 X
-Xstart filling the account up with nice stuff
+Xstart filling the account up with nice stuff. You are building a chroot
+Xjail for anoncvs in /open/anoncvs.
+X
 X    cd /open/anoncvs
 X    touch .hushlogin
 X    touch .profile
@@ -127,14 +148,88 @@ Xif using shared libraries, copy the shared libs you might need:
 X    cp /usr/lib/lib*.so.* usr/lib/
 X
 Xas a final pass, make sure that all the files you have just created are
-Xnot world writeable (except dev/null)
+Xnot world writable (except dev/null)
 X
-Xsend mail to deraadt@openbsd.org
-X1) to have sup permissions granted.
+XFor :pserver: support (optional)
+X  - Create an entry in /etc/services
+X     cvspserver		2401/tcp		# CVS client/server operations
+X  - Create an entry in /etc/inetd.conf
+X     cvspserver	stream	tcp nowait anoncvs /open/anoncvssh anoncvssh pserver
+X
+XSee the example layout below for full details.
+X
+X**********************************************************************
+XSTEP 5): Get sup permission. 
+Xsend mail to sup@openbsd.org
+X1) to have sup permissions granted on an appropriate machine for you
+X   to sup from. 
 X2) to have an anoncvsN.COUNTRY.openbsd.org alias created
 X3) to have your site mentioned in the http://www.openbsd.org page.
 X
-XExample layout. In this example "deraadt" is the $SUPUSER.
+X**********************************************************************
+XSTEP 6): Configure sup
+X
+XIf you're running OpenBSD, you already have a sup client in
+X/usr/bin/sup.  If not you may need to build it. On an IRIX or other
+XSYSV machine, ensure that your kernel does not allow a user to chown a
+Xfile to another user (You may have heard of this particular brand of
+Xevil referred to as "chown giveaway"). this will cause sup to give
+Xaway the files to root before chmod'ing them
+Xreadable. michaels@openbsd.org knows how to fix this.
+X
+XThe file /open/sup/ss contains a line that tells sup where to get the
+Xcvs tree from. it can contain *one* of:
+X
+X    cvs host=anoncvs1.ca.openbsd.org hostbase=/usr/OpenBSD base=/open/anoncvs delete
+X    cvs host=cvs.openbsd.org hostbase=/ base=/open/anoncvs delete
+X
+X    You should ask which one to use when obtaining sup permission.	
+X
+XThe file /open/sup/cvs/refuse tells sup what files it should not get.
+XIt should contain the single line:
+X
+X    cvs/CVSROOT/history
+X
+Xif you ever fetch the file cvs/CVSROOT/history, delete it. it will
+Xcause you problems.
+X
+X**********************************************************************
+XSTEP 7): Run sup to retrieve the tree for the first time
+X
+XLog in as or become the $SUPUSER, and run 
+X
+Xsup -v  /open/anoncvs/sup/ss > /tmp/suplog &; tail -f /tmp/suplog
+X
+XIf you have sup permission, and have specified the correct host and
+Xhostbase in /open/anoncvs/sup/ss you should see a list of files start
+Xcoming in after a short while. Don't panic if nothing happens
+Ximmediately.  Watch for errors (sup can timeout or die). If you can't
+Xaccess files contact the sup server maintainer, If you get a timeout
+Xor if sup dies you can restart and it should continue where it left off.
+X
+XIt can take a good while (and a couple of restarts) to obtain the
+Xwhole tree for the first time.
+X
+X**********************************************************************
+XSTEP 8): Set up cron to keep the tree up to date.
+X
+XYou run sup periodically from the cron by setting up the crontab file
+Xof the $SUPUSER.
+X
+XFor example:  To run every three hours 'sup -v supfile', and thrice
+Xweekly 'sup -vo supfile' .. because sup is not reliable ..
+X
+X0 0,3,6,9,12,15,18,21 * * 0,2,4,5 sup -v  /open/anoncvs/sup/ss > /dev/null
+X0 0,12,15,18,21       * *  1,3,6  sup -v  /open/anoncvs/sup/ss > /dev/null
+X0 3                   * *  1,3,6  sup -vo /open/anoncvs/sup/ss > /dev/null
+X
+Xanoncvs5.usa.openbsd.org uses this particular set of entries.  A `sup
+X-o' is done every few days because sup is not very robust.
+X
+X**********************************************************************
+XEXAMPLE LAYOUT
+X
+XExample layout for OpenBSD. In this example "deraadt" is the $SUPUSER.
 X
 X[eap open 5 ]> cd /open
 X[eap open 6 ]> ls -alF 
@@ -276,8 +371,18 @@ Xdrwxr-xr-x  2 deraadt  wheel  512 Jun 22 06:05 cvs/
 X-rw-rw-r--  1 deraadt  wheel   54 Dec  4  1995 ss
 X
 X
-XThat's pretty much it.
+X***************************************************************
+XNOTES FOR OTHER PLATFORMS:
 X
+XIf you're not that familiar with your other platform (i.e. you haven't
+Xbuilt a chroot jail for a server on it) You may be better off
+Xfinding an OpenBSD machine to use. (and duplicating the example above)
+X
+X**SunOS 5)
+XBob Beck <beck@panopticon.ucs.ualberta.ca> has done this. E-mail for
+Xhelp if you need it.
+X
+X**OSF 1)
 XFrom Todd Fries <toddf@acm.org> to the adventurous.
 XA note for those installing anoncvs on non-OpenBSD operating systems.
 XYou are in for some fun.
