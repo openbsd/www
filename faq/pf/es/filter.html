@@ -36,6 +36,7 @@ please, use a max of 72 chars per line -->
 <li><a href="#udpstate">Mantenimiento de Estado para UDP</a>
 <li><a href="#tcpflags">Indicadores de TCP</a>
 <li><a href="#quick">La Clave <tt>quick</tt></a>
+<li><a href="#antispoof">Bloqueo de Paquetes Falsificados</a>
 <li><a href="#ipopts">Opciones de IP</a>
 <li><a href="#example">Ejemplo de Grupo de Reglas de Filtrado</a>
 </ul>
@@ -547,6 +548,121 @@ paquete coincide en la l&iacute;nea <tt>block</tt>, debido a la
 naturaleza de la opci&oacute;n <tt>quick</tt>, se bloquear&aacute; el
 paso a dicho paquete y se ignorar&aacute; el resto del grupo de reglas.
 
+<a name="antispoof"></a>
+<h2>Bloqueo de Paquetes Falsificados (<i>Spoofed Packets</i>)</h2>
+<p>
+La falsificaci&oacute;n de direcciones (<i>spoofing</i>) es cuando un
+usuario con malas intenciones falsifica la direcci&oacute;n IP de origen
+en los paquetes que se transmiten, con el objetivo de esconder su
+direcci&oacute;n real o de suplantar otro nodo en la red.  Una vez que
+el usuario ha falsificado su direcci&oacute;n, puede lanzar un ataque de
+red sin revelar el origen real del ataque, o intentar obtener acceso a
+servicios de la red que est&eacute;n restringidos para ciertas
+direcciones IP.
+
+<p>
+PF ofrece algo de protecci&oacute;n contra la falsificaci&oacute;n de
+direcciones, a trav&eacute;s de la clave <tt>antispoof</tt>:
+
+<blockquote>
+<tt>
+antispoof [log] [quick] for <i>interface</i> [<i>af</i>]
+</tt>
+</blockquote>
+
+<dl>
+<dt><tt>log</tt>
+<dd>Indica que los paquetes que concuerden se deben registrar en un
+fichero a trav&eacute;s de
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+3.3">pflogd(8)</a>.
+
+<dt><tt>quick</tt>
+<dd>Si un paquete concuerda con esta regla, entonces se
+considerar&aacute; que es la regla &laquo;ganadora&raquo;, y
+finalizar&aacute; la evaluaci&oacute;n del grupo de reglas.
+
+<dt><tt><i>interface</i></tt>
+<dd>La interfaz de red en la que se va a activar la protecci&oacute;n
+contra las falsificaciones.  Tambi&eacute;n puede ser una
+<a href="macros.html#lists">lista</a> de interfaces.
+
+<dt><tt><i>af</i></tt>
+<dd>La familia de direcciones para la que se va a activar la
+protecci&oacute;n contra las falsificaciones, y que puede ser
+<tt>inet</tt> para IPv4 &oacute; <tt>inet6</tt> para IPv6.
+</dl>
+
+<p>
+Ejemplo:
+<blockquote>
+<tt>
+antispoof for fxp0 inet
+</tt>
+</blockquote>
+
+<p>
+Cuando se carga un grupo de reglas, cualquier suceso de la clave
+<tt>antispoof</tt> se expandir&aacute; en dos reglas de filtrado.
+Asumiendo que la interfaz fxp0 tuviera una direcci&oacute;n IP 10.0.0.1
+y una m&aacute;scara de subred de 255.255.255.0 (o sea, un /24), la
+regla <tt>antispoof</tt> anterior se expandir&iacute;a as&iacute;:
+
+<blockquote>
+<tt>
+block in on ! fxp0 inet from 10.0.0.0/24 to any<br>
+block in inet from 10.0.0.1 to any
+</tt>
+</blockquote>
+
+<p>
+Estas reglas llevan a cabo dos cosas:
+
+<ul>
+<li>Bloquea todo el tr&aacute;fico que viene desde la red 10.0.0.0/24
+que <i>no</i> pase a trav&eacute;s de fxp0.  Como la red 10.0.0.0/24
+est&aacute; en la interfaz fxp0, los paquetes que tengan una
+direcci&oacute;n de origen en ese bloque de red nunca entrar&aacute;n
+por ninguna otra interfaz.
+<li>Bloquea todo el tr&aacute;fico entrante desde 10.0.0.1, la
+direcci&oacute;n IP en fxp0.  La m&aacute;quina anfitriona no
+deber&iacute;a enviar nunca paquetes a s&iacute; misma a trav&eacute;s
+de una interfaz externa;  por lo tanto, se puede considerar que
+cualquier paquete entrante con una direcci&oacute;n de origen que
+pertenezca a la m&aacute;quina es malicioso.
+</ul>
+
+<p>
+<b>NOTA</b>:  Las reglas de filtrado resultantes de la expansi&oacute;n
+de la regla <tt>antispoof</tt> tambi&eacute;n bloquear&aacute;n los
+paquetes que se env&iacute;n por la interfaz de <i>loopback</i> hacia
+direcciones locales.  Es necesario permitir el paso de estas direcciones
+de forma expl&iacute;cita.  Por ejemplo:
+
+<blockquote>
+<tt>
+pass in quick on lo0 all<br>
+<br>
+antispoof for fxp0 inet
+</tt>
+</blockquote>
+
+<p>
+Debe restringirse el uso de <tt>antispoof</tt> a las interfaces a las
+que se les ha asignado una direcci&oacute;n IP.  El uso de
+<tt>antispoof</tt> en una interfaz sin una direcci&oacute;n IP
+resultar&aacute; en reglas de filtrado como:
+
+<blockquote>
+<tt>
+block drop in on ! fxp0 inet all<br>
+block drop in inet all
+</tt>
+</blockquote>
+
+<p>
+Con estas reglas existe el riesgo de bloquear <i>todo</i> el
+tr&aacute;fico entrante en <i>todas</i> las interfaces.
+
 <a name="ipopts"></a>
 <h2>Opciones de IP</h2>
 <p>
@@ -576,13 +692,21 @@ Internet.  S&oacute;lo se muestran las reglas de filtrado:
 <table border="0" width="650">
 <tr><td nowrap bgcolor="#EEEEEE">
 <pre>
-ext_if  = fxp0
-int_if  = dc0
-lan_net = 192.168.0.0/24
+ext_if  = &quot;fxp0&quot;
+int_if  = &quot;dc0&quot;
+lan_net = &quot;192.168.0.0/24&quot;
 
 # configurar una pol&iacute;tica de denegaci&oacute;n predeterminada
 block in  all
 block out all
+
+# permitir el paso del tr&aacute;fico en la interfaz de <i>loopback</i>
+# en cualquier direcci&oacute;n
+pass quick on lo0 all
+
+# activar la protecci&oacute;n contra la falsificaci&oacute;n de direcciones
+# para la interfaz interna
+antispoof quick for $int_if inet
 
 # permitir s&oacute;lo conexiones por ssh si provienen
 # desde la m&aacute;quina de confianza, 192.168.0.15;
@@ -627,9 +751,9 @@ pass in log on $ext_if proto tcp from any to { !$ext_if, !$int_if } \
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
 <small>
-Originally [OpenBSD: filter.html,v 1.6 2003/05/25 01:35:07 nick Exp ]<br>
-$OpenBSD: filter.html,v 1.1 2003/05/28 14:39:30 jufi Exp $<br>
-$Translation: filter.html,v 1.2 2003/05/26 09:12:05 horacio Exp $
+Originally [OpenBSD: filter.html,v 1.7 2003/06/07 01:18:11 nick Exp ]<br>
+$OpenBSD: filter.html,v 1.2 2003/06/09 08:59:36 jufi Exp $<br>
+$Translation: filter.html,v 1.3 2003/06/08 10:41:34 horacio Exp $
 </small>
 </body>
 </html> 
