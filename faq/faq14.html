@@ -430,68 +430,145 @@ sh's <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ulimit&sektion=1&form
 
 <p>
 With OpenBSD 2.5 came the introduction of <a
-href="http://www.openbsd.org/cgi-bin/man.cgi?query=swapctl&sektion=8&format=h
-tml">swapctl(8)</a>, 
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=swapctl&sektion=8&format=html">swapctl(8)</a>, 
 which made dealing with swap devices much easier. Swapping to a file doesn't require a 
 custom built kernel, although that can still be done, this faq will show you how to add 
 swap space both ways.
 </p>
 
+<h3>Swapping to a file. </h3>
+
 <p>
-To swap to a file permanently, first make a kernel with vnd0c as swap. If you 
-have wd0a as root filesystem, wd0b is the previous swap, use this line in the 
-kernel configuration file (refer to compiling a new kernel if in doubt):
+Swapping to a file is easiest and quickest way to get extra swap area's setup. This is not for users who
+are currently using Softupdates. (Which isn't enabled by default).
+To start out, you can see how much swap you are currently have and how much you are using with the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=swapctl&sektion=8&format=html">swapctl(8)</a>
+utility. You can do this by using the command:
 </p>
 
-<ul>
-<pre>
+<ul><pre>
+ericj@oshibana> <strong>swapctl -l</strong>
+Device      512-blocks     Used    Avail Capacity  Priority
+swap_device      65520        8    65512     0%    0
+</pre></ul>
+
+<p>
+This shows the devices currently being used for swapping and their current statistics. In the above
+example there is only one device named &quot;swap_device&quot;. This is the predefined area on disk that
+is used for swapping. (Shows up as partition b when viewing disklabels) As you can also see in the above
+example, that device isn't getting much use at the moment. But for the purposes of this document, we
+will act as if an extra 32M is needed. 
+</p>
+<p>
+The first step to setting up a file as a swap device is to create the file. It's best to do this with
+the <a href="href="http://www.openbsd.org/cgi-bin/man.cgi?query=dd&sektion=1&format=html">dd(1)</a>
+utility. Here is an example of creating the file <i>/var/swap</i> that is 32M large.
+</p>
+
+<ul><pre>
+ericj@oshibana> <strong>sudo dd if=/dev/zero of=/var/swap bs=1k count=32768</strong>
+32768+0 records in
+32768+0 records out
+33554432 bytes transferred in 20 secs (1677721 bytes/sec)
+</ul></pre>
+
+<p>
+Once this has been done, we can turn on swapping to that device. Use the following command to turn on
+swapping to this device
+</p>
+
+<ul><pre>
+ericj@oshibana> <strong>sudo swapctl -a /var/swap</strong>
+</ul></pre>
+
+<p>
+Now we need to check to see if it has been correctly added to the list of our swap devices.
+</p>
+
+<ul><pre>
+ericj@oshibana> <strong>swapctl -l</strong>
+Device      512-blocks     Used    Avail Capacity  Priority
+swap_device      65520        8    65512     0%    0
+/var/swap        65536        0    65536     0%    0
+Total           131056        8   131048     0%
+</ul></pre>
+
+<p>
+Now that the file is setup and swapping is being done, you need to add a line to your <i>/etc/fstab</i>
+file so that this file is configured on the next boot time also. If this line is not added, your won't
+have this swap device configured.
+</p>
+
+<ul><pre>
+ericj@oshibana> <strong>cat /etc/fstab</strong>
+/dev/wd0a / ffs rw 1 1
+/var/swap /var/swap sw 0 0
+</ul></pre>
+
+<h3>Swapping via a vnode device</h3>
+
+<p>
+This is a more permenant solution to adding more swap space. To swap to a file permanently, first make a
+kernel with vnd0c as swap. If you have wd0a as root filesystem, wd0b is the previous swap, use this line
+in the kernel configuration file (refer to compiling a new kernel if in doubt): 
+</p>
+
+<ul><pre>
 config          bsd     root on wd0a swap on wd0b and vnd0c dumps on wd0b
-</pre>
-</ul>
+</ul></pre>
 
 <p>
-Second make the file for swap. If you want a 32MB swapfile named /newswap do:
+After this is done, the file which will be used for swapping needs to be created. You should do this by
+using the same command as in the above examples.
 </p>
 
-<ul>
-<strong># dd if=/dev/zero of=/newswap bs=1k count=32768</strong>
-</ul>
+<ul><pre>
+ericj@oshibana> <strong>sudo dd if=/dev/zero of=/var/swap bs=1k count=32768</strong>
+32768+0 records in
+32768+0 records out
+33554432 bytes transferred in 20 secs (1677721 bytes/sec)
+</ul></pre>
 
 <p>
-Add a line to your /etc/fstab file to indicate where the new swap will be.
+Now your file is in place, you need to add the file to you <i>/etc/fstab</i>. Here is a sample line to
+boot with this device as swap on boot.
 </p>
 
-<ul>
-<strong>/dev/vnd0c none swap sw 0 0</strong>
-</ul>
+<ul><pre>
+ericj@oshibana> <strong>cat /etc/fstab</strong>
+/dev/wd0a / ffs rw 1 1
+/dev/vnd0c none swap sw 0 0 
+</ul></pre>
 
 <p>
-Now boot with the new kernel. Then create the vnd0 device to use that file
-as a device:
+At this point your computer needs to be rebooted so that the kernel changes can take place. Once this
+has been done it's time to configure the device as swap. To do this you will use <a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=vnconfig&sektion=1&format=html">vnconfig(1)</a>.
 </p>
 
-<ul>
-<strong># vnconfig -c -v vnd0 /newswap</strong>
-</ul>
+<ul><pre>
+ericj@oshibana> <strong>sudo vnconfig -c -v vnd0 /var/swap</strong>
+vnd0: 33554432 bytes on /var/swap
+</ul></pre>
 
 <p>
-And add it now to swap:
+Now for the last step, turning on swapping to that device. We will do this just like in the above
+examples, using swapctl(8). Then we will check to see if it was correctly added to our list of swap
+devices.
 </p>
 
-<ul>
-<strong># swapon /dev/vnd0c</strong>
-</ul>
+<ul><pre>
+ericj@oshibana> <strong>sudo swapctl -a /dev/vnd0c</strong>
+ericj@oshibana> <strong>swapctl -l</strong>
+Device      512-blocks     Used    Avail Capacity  Priority
+swap_device      65520        8    65512     0%    0
+/dev/vnd0c       65536        0    65536     0%    0
+Total           131056        8   131048     0%
+</ul></pre>
 
-<p>
-You can now see if it is working with:
-</p>
 
-<ul>
-<strong># pstat -s</strong>
-</ul>
 
-<p>
-<a name="14.5">
+<p><a name="14.5"></a>
 <h2>14.5 - Soft-updates</h2>
 </p>
 
@@ -699,7 +776,7 @@ If a newer version of bootblocks are required, you will need to compile these yo
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq14.html,v 1.3 1999/09/24 01:46:14 ericj Exp $</small>
+<small>$OpenBSD: faq14.html,v 1.4 1999/10/08 15:50:52 ericj Exp $</small>
 </p>
 </body>
 </html>
