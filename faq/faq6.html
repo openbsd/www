@@ -1721,6 +1721,125 @@ against buffer overflows to your client software, and more.  To maintain
 these filters is often a high-maintenance job.
 </p>
 
+<br>
+<a name="nat3.5"></a>
+<b>Redirection and reflection</b>
+
+<p>
+Often, redirection rules are used to forward incoming connections from
+the Internet to a local server with a private address in the LAN, as in:
+<pre>
+rdr on $ext_if from any to $ext_if port 80 -&gt; $server port 80
+</pre>
+But when the redirection rule is tested from a client on the LAN, it's
+found to not work.
+The reason is that redirection rules apply only to packets that pass
+through the specified interface ($ext_if, the external interface, in
+the example).
+Connecting to the external address of the firewall from a host on the
+LAN, however, does not mean the packets will actually pass through its
+external interface.
+The TCP/IP stack on the firewall compares the destination address of
+incoming packets with its own addresses and aliases, and detects
+connections to itself as soon as they have passed the internal interface.
+Such packets do not physically pass through the external interface, and
+the stack does not simulate such a passage in any way.
+pf never sees these packets on the external interface, and the
+redirection rule, specifying the external interface, does not apply.
+</p>
+<p>
+Adding a second redirection rule for the internal interface does not
+have the desired effect.
+When the local client connects to the external address of the firewall,
+the initial packet of the TCP handshake reaches the firewall through
+the internal interface.
+The redirection rule does apply and the destination address gets
+replaced with that of the internal server.
+The packet gets forwarded back through the internal interface and
+reaches the internal server.
+But the source address has not been translated, and still contains
+the local client's address, so the server sends its replies directly
+to the client.
+The firewall never sees the reply and has no chance to properly reverse
+the translation.
+The client receives a reply from a source it never expected, and drops
+it, the TCP handshake fails, and no connection can be established.
+</p>
+<p>
+Still, it's often desirable for clients on the LAN to connect to the
+same internal server as external clients, transparently.
+There are several solutions for this problem:
+</p>
+<b>Split horizon DNS</b>
+<p>
+It's possible to configure DNS servers to answer queries from local
+hosts differently than external queries, so that local clients will
+receive the internal server's address during name resolution.
+They will then connect directly to the local server, and the firewall
+isn't involved at all.
+This reduces local traffic, since packets don't have to be sent through
+the firewall.
+</p>
+<b>Moving the server into a separate local network</b>
+<p>
+Adding an additional network interface to the firewall and moving the
+local server from the client's network into a dedicated network (DMZ)
+allows to redirect connections from local clients in the same way as
+the redirection of external connections.
+Use of separate networks has several advantages, including improving
+security by isolating the server from the remaining local hosts.
+Should the server (which in our case is reachable from the Internet)
+ever become compromised, it can't access other local hosts directly,
+as all connections have to pass through the firewall.
+</p>
+<b>TCP proxying</b>
+<p>
+A generic TCP proxy can be setup on the firewall, either listening on
+the port to be forwarded or getting connections on the internal interface
+redirected to the port it's listening on.
+When a local client connects to the firewall, the proxy accepts the
+connection, establishes a second connection to the internal server,
+and forwards data between those two connections.
+</p>
+<p>
+Simple proxies can be created using
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=inetd&sektion=8">inetd(8)</a>
+and
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=nc&sektion=1">nc(1)</a>.
+The following <i>/etc/inetd.conf</i> entry creates a listening socket
+bound to the loopback address and port 5000.
+Connections are forwarded to port 80 on server 192.168.1.10.
+<pre>
+127.0.0.1:5000 stream tcp wait nobody /usr/bin/nc nc -w 20 192.168.1.10 80
+</pre>
+The following redirection rule forwards port 80 on the internal interface
+to the proxy:
+<pre>
+rdr on $int_if proto tcp from $int_net to $ext_if port 80 -> 127.0.0.1 port 5000
+</pre>
+</p>
+<b>RDR and NAT combination</b>
+<p>
+With an additional NAT rule on the internal interface, the lacking
+source address translation described above can be achieved.
+<pre>
+rdr on $int_if proto tcp from $int_net to $ext_if port 80 -> $server
+no nat on $int_if proto tcp from $int_if to $int_net
+nat on $int_if proto tcp from $int_net to $server port 80 -> $int_if
+</pre>
+This will cause the initial packet from the client to be translated again
+when it's forwarded back through the internal interface, replacing the
+client's source address with the firewall's internal address.
+The internal server will reply back to the firewall, which can reverse
+both NAT and RDR translations when forwarding to the local client.
+This construct is rather complex, as it creates two separate states
+for each reflected connection.
+Care must taken to prevent the NAT rule from applying to other traffic,
+for instance connections originating from external hosts (through
+other redirections) or the firewall itself.
+In general, the previously mentioned solutions should be used instead.
+</p>
+
 <a name="nat4.0"></a>
 <b>6.3.4 Links and Cross-References</b>
 
@@ -2940,7 +3059,7 @@ Setup]</a> <a href= "faq7.html">[To Section 7.0 - Keyboard controls]</a>
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt= "[back]"></a>
 <a href= "mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq6.html,v 1.146 2002/10/04 14:15:26 nick Exp $</small>
+<small>$OpenBSD: faq6.html,v 1.147 2002/10/25 14:18:48 dhartmei Exp $</small>
 </p>
 </body>
 </html>
