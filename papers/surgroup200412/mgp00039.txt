@@ -1,0 +1,44 @@
+
+Exemple 
+
+
+##> Default Filtering Policy
+block in log all
+block out log all
+
+#> Bogus Networks
+block in log quick on { $if_ext1, $if_ext2 } from <Bogons> to any
+[...]
+
+# Block ident responses (commonly used on irc networks).
+block return-icmp in quick on { $if_ext1, $if_ext2 } \
+  inet proto tcp from any to any port auth
+[...]
+
+# Pass out DNS queries and zone transfers
+pass out quick on $if_ext1 proto tcp \
+  from any to any port domain flags S/SAFRUP keep state \
+  queue (q_dns, q_pri)
+pass out quick on $if_ext1 proto udp \
+  from any to any port domain queue q_dns
+[...]
+
+# Make sure incoming packets are routed properly
+pass out on $if_ext2 route-to \
+  { ($if_ext1 $gw_ext1) } \
+  from ($if_ext1) to any keep state queue (q_other2, q_pri2)
+
+#> DMZ Interface
+# Pass out all traffic
+pass out on $if_dmz from any to ($if_dmz:network) keep state
+# Allow all communication going to the outside and route it through our
+# CABLE link
+pass in quick on $if_dmz route-to ($if_ext2 $gw_ext2) \
+  proto tcp from ($if_dmz:network) \
+  to ! <NoNat> \
+  flags S/SAFRUP keep state
+
+[...]
+# Load the AuthPF Rules
+anchor "authpf/*"
+
