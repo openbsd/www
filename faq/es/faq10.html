@@ -3,6 +3,7 @@
 <title>10.0 - Gesti&oacute;n del sistema</title>
 <link rev="made" href="mailto:www@openbsd.org">
 <meta http-equiv="Content-Language" content="es">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
 <meta name="resource-type" content="documento">
 <meta name="description"   content="Preguntas Frecuentes de OpenBSD">
 <meta name="keywords"      content="openbsd,faq,documentación">
@@ -57,6 +58,7 @@ FTP an&oacute;nimo.</a></li>
 usuarios a sus directorios de usuario (<em>/home</em>) en ftpd(8).</a>
 <li><a href="#Patches">10.15 - C&oacute;mo se aplican los parches en
 OpenBSD.</a>
+<li><a href="#httpdchroot">10.16 - Acerca de chroot() Apache.</a>
 </ul>
 </p> 
 <hr>
@@ -2050,11 +2052,11 @@ interferir&aacute;n.  Si ya est&aacute; siguiendo la rama de parches,
 los parches ya deber&iacute;an estar en ese c&oacute;digo fuente, pero
 por si acaso deber&iacute;a comprobarlo y asegurarse.  Siempre puede
 mirar en
-<a href="../../es/plus.html">http://www.openbsd.org/es/plus.html</a>
-para ver qu&eacute; parches se han aplicado a la rama de parches.  Si
-los parches todav&iacute;a no han sido aplicados, tendr&aacute; que
-obtener el c&oacute;digo fuente de la &uacute;ltima versi&oacute;n
-usando la orden anterior.
+<a href="../../plus.html">http://www.openbsd.org/plus.html</a> para
+ver qu&eacute; parches se han aplicado a la rama de parches.  Si los
+parches todav&iacute;a no han sido aplicados, tendr&aacute; que obtener
+el c&oacute;digo fuente de la &uacute;ltima versi&oacute;n usando la
+orden anterior.
 </p>
 
 <p>
@@ -2148,6 +2150,111 @@ install -c -o root -g bin -m 444 talkd.cat8 /usr/share/man/cat8/talkd.0
 Una vez hecho esto, reinicie ese servicio.
 </p>
 
+
+<a name="httpdchroot"></a>
+<h2>10.16 - Acerca de chroot() Apache</h2>
+
+<p>
+A partir de la versi&oacute;n 3.2 de OpenBSD, el servidor de
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=httpd&amp;sektion=8">httpd(8)</a>
+de Apache tiene el entorno
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=chroot&amp;sektion=2">chroot(2)</a>
+activado por definici&oacute;n.  Aunque esto sea un incremento en la
+seguridad, puede crear problemas si no se est&aacute; preparado para
+ello.
+
+<h3>&iquest;Qu&eacute; es <em>chroot</em>?</h3>
+
+<p>
+Una aplicaci&oacute;n con el entorno
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=chroot&amp;sektion=2">chroot(2)</a>
+activado se encuentra encerrada en un directorio particular y no puede
+pasar al resto del &aacute;rbol del directorio, y ve ese directorio como
+su directorio ra&iacute;z (&quot;<tt>/</tt>&quot;).  En el caso de
+httpd(8), el programa se inicia, abre sus archivos de registro, se
+vincula a sus puertos TCP (aunque a&uacute;n no aceptar&aacute; datos),
+y lee su configuraci&oacute;n.  A continuaci&oacute;n, se bloquea en
+<i>/var/www</i> y pierde los privilegios, y entonces empieza a aceptar
+requerimientos.  Esto quiere decir que todos los archivos que sirva y
+que utilice Apache deben estar en el directorio <i>/var/www</i>.  Esto
+representa una gran ventaja para la seguridad;  si hubiera alg&uacute;n
+problema de seguridad con Apache, el da&ntilde;o quedar&iacute;a
+confinado a un solo directorio con permisos de s&oacute;lo lectura y sin
+recursos con los que causar ning&uacute;n da&ntilde;o.
+
+<h3>&iquest;Qu&eacute; implicaciones tiene esto para el usuario?</h3>
+
+<p>
+Para ser francos, chroot(2) Apache es algo nuevo, y muchas aplicaciones
+y configuraciones del sistema viejas no funcionar&aacute;n como hasta
+ahora.
+
+<ul>
+<li><b>Composiciones hist&oacute;ricas del sistema de archivos:</b>  Los
+servidores que se hayan actualizado partiendo desde versiones m&aacute;s
+antiguas de OpenBSD pueden tener ficheros de <em>web</em> ubicados en
+los directorios de usuario, lo que l&oacute;gicamente no
+funcionar&aacute; en un entorno chroot(2), ya que httpd(8) no
+podr&aacute; llegar hasta el directorio <i>/home</i>.  Los
+administradores tambi&eacute;n pueden encontrarse con que su
+partici&oacute;n /var/www es demasiado peque&ntilde;a para contener en
+ella todos los ficheros de <em>web</em>.  La soluci&oacute;n est&aacute;
+en reestructurarlo o en no utilizar la funcionalidad de chroot(2).  Y,
+por supuesto, se puede usar enlaces simb&oacute;licos en los directorios
+de usuario que apunten a subdirectorios en <i>/var/www</i>.  Pero NO se
+puede usar enlaces en <i>/var/www</i> que apunten a otra parte del
+sistema de archivos;  eso no funcionar&aacute; debido a que FTP chroot
+evitar&aacute; (otra vez) que se pueda acceder a los objetivos de los
+enlaces simb&oacute;licos.  Una soluci&oacute;n para esto es no usar
+<i>/home</i> como directorio de usuario para estos usuarios, y en su
+lugar usar algo parecido a <i>/var/www/home</i>.
+
+<li><b>Rotaci&oacute;n de registros:</b>  Generalmente los registros se
+rotan mediante un cambio en el nombre de archivo, y luego enviando una
+se&ntilde;al SIGUSR1 a httpd(8) para hacer que Apache cierre sus viejos
+archivos de registro y abra otros nuevos.  Ahora esto ya no es posible,
+ya que httpd(8) no podr&aacute; abrir sus propios archivos de registro
+una vez que ha perdido los privilegios.  Hay que parar httpd(8) y
+reiniciarlo:
+
+<pre>
+     # <b>apachectl stop && apachectl start</b>
+</pre>
+
+<p>
+Tambi&eacute;n se puede usar otras estrategias, como efectuar los
+registros en un
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pipe&amp;sektion=2">
+pipe(2)</a> y usar un rotador de registros externo en el otro extremo
+del pipe(2).
+
+<li><b>M&oacute;dulos de Apache:</b>  En principio, los m&oacute;dulos
+de Apache ya existentes se cargar&aacute;n, sin embargo puede que
+algunos no funcionen correctamente con chroot(2), y que muchos tengan
+problemas con
+&quot;<tt><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=apachectl&amp;sektion=8">apachectl</a> restart</tt>&quot;,
+generando un error que har&aacute; que termine httpd(8).
+
+<li><b>CGI:</b>  La mayor&iacute;a de CGI existentes funcionar&aacute;n
+sin m&aacute;s.  Puede que necesiten programas o bibliotecas fuera de
+<i>/var/www</i>.  Algunos se pueden reparar compil&aacute;ndolos de modo
+que se est&eacute;n enlazados est&aacute;ticamente (sin que necesiten
+bibliotecas en otros directorios), y la mayor&iacute;a se pueden reparar
+llenando el directorio <i>/var/www</i> con los ficheros requeridos por
+la aplicaci&oacute;n, aunque esto no es f&aacute;cil y para ello se
+requiere unos conocimientos de programaci&oacute;n considerables.  Para
+la mayor&iacute;a de usuarios ser&aacute; m&aacute;s f&aacute;cil
+desactivar la funcionalidad chroot(2) hasta que est&eacute;n
+actualizados.
+</ul>
+
+<p>
+En algunos casos, se puede alterar la aplicaci&oacute;n o su
+configuraci&oacute;n para que se ejecute sin chroot.  En otros casos, no
+quedar&aacute; m&aacute;s remedio que desactivar esta funcionalidad
+usando la opci&oacute;n <tt>-u</tt> de httpd(8) en
+<i><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rc.conf&amp;sektion=8">/etc/rc.conf</a></i>.
+
 <p>
 <font color="#0000e0">
 <a href="index.html">[Volver al &iacute;ndice principal]</a>
@@ -2161,9 +2268,9 @@ Una vez hecho esto, reinicie ese servicio.
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
 <small>
-Originally [OpenBSD: faq10.html,v 1.74 2002/11/01 15:27:13 nick Exp ]<br>
-$Translation: faq10.html,v 1.31 2002/11/05 14:18:38 horacio Exp $<br>
-$OpenBSD: faq10.html,v 1.31 2002/11/05 21:31:22 jufi Exp $
+Originally [OpenBSD: faq10.html,v 1.75 2002/11/13 00:05:54 nick Exp ]<br>
+$Translation: faq10.html,v 1.32 2002/11/13 10:54:44 horacio Exp $<br>
+$OpenBSD: faq10.html,v 1.32 2002/11/13 19:04:14 jufi Exp $
 </small>
 </p>
 </body>
