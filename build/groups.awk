@@ -31,7 +31,8 @@ $1 == "C" { country = substr($0, 3);
 	if (country == "USA")
 		country = "United States"
 	if (country != oldCountry) {
-		print "<TR><TD BGCOLOR=\"#99ffff\" COLSPAN=6 ALIGN=CENTER><B>" country "</B>"
+		print "<tr><td bgcolor=\"#99ffff\" colspan=\"6\" align=\"center\">"
+		print "<b>" country "</b></td></tr>"
 	 }
 	oldCountry = country
 	next
@@ -54,22 +55,22 @@ $1 == "N" { note = substr($0, 3); next }
 	}
 
 function dump() {
-	print "<TR>"
-	print "<TD BGCOLOR=\"White\">" 
+	print "<tr>"
+	print "<td bgcolor=\"White\">" 
 		if (indv != "")
-			print indv "<BR>" 
-		print "<B>" org "</B><BR>" addr "</TD>"
-	print "	<TD>" city "<BR>" prov "</TD>"
-	print "	<TD>" 
+			print indv "<br />" 
+		print "<b>" org "</b><br />" addr "</td>"
+	print "	<td>" city "<br />" prov "</td>"
+	print "	<td>" 
 		if (phone != "")
-			print phone "<BR>" 
-		print fax "</TD>"
-	print "	<TD>"
+			print phone "<br />" 
+		print fax "</td>"
+	print "	<td>"
 		if (email != "")
-			print "<A HREF=\"mailto:" email "\">" email "</A>" "<BR>"
-		print "<A HREF=\"" url "\">" url "</A>" "</TD>"
-	print "	<TD>" note "</TD>"
-	print "</TR>"
+			print "<a href=\"mailto:" email "\">" email "</a>" "<br />"
+		print "<a href=\"" url "\">" url "</a>" "</td>"
+	print "	<td>" note "</td>"
+	print "</tr>"
 }
 
 function reset() {
