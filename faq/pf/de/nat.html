@@ -5,132 +5,181 @@
 <link rev="made" href="mailto:www@openbsd.org">
 <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
 <meta name="resource-type" content="document">
-<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="description"   content="Die OpenBSD-FAQ-Seite">
 <meta name="keywords"      content="openbsd,faq,pf">
 <meta name="distribution"  content="global">
-<meta name="copyright"     content="This document copyright 2002-2003 by OpenBSD.">
 </head>
+
+<!--
+Copyright (c) 2003, Nick Holland <nick@openbsd.org>
+Copyright (c) 2003, 2004, Joel Knight <enabled@myrealbox.com>
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
 
 <body bgcolor="#ffffff" text="#000000">
 <!-- Passes validator.w3.org, please keep it this way;
 please, use a max of 72 chars per line -->
 
-<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
+<img alt="[OpenBSD]" height=30 width=141 src="../../images/smalltitle.gif">
 <p>
-[<a href="queueing.html">Previous: Queueing</a>]
-[<a href="index.html">Contents</a>]
-[<a href="rdr.html">Next: Traffic Redirection</a>]
+[<a href="filter.html">Zurück: Pakete filtern</a>]
+[<a href="index.html">Inhalt</a>]
+[<a href="rdr.html">Weiter: Verkehr-Umleitung (Port-Weiterleitung)</a>]
 
 <p>
 <h1><font color="#e00000">PF: Network Address Translation (NAT)</font></h1>
 
 <hr>
 
-<h3>Table of Contents</h3>
+<h3>Inhaltsverzeichnis</h3>
 <ul>
-<li><a href="#intro">Introduction</a>
-<li><a href="#works">How NAT Works</a>
-<li><a href="#enable">Enabling NAT</a>
-<li><a href="#config">Configuring NAT</a>
-<li><a href="#binat">Bidirectional Mapping (1:1 mapping)</a>
-<li><a href="#except">Translation Rule Exceptions</a>
-<li><a href="#status">Checking NAT Status</a>
+<li><a href="#intro">Einführung</a>
+<li><a href="#works">Wie NAT funktioniert</a>
+<li><a href="#filter">NAT und das Filtern von Paketen</a>
+<li><a href="#ipfwd">IP-Weiterleitung</a>
+<li><a href="#config">NAT konfigurieren</a>
+<li><a href="#binat">Bidirektionales Mapping (1:1 mapping)</a>
+<li><a href="#except">Übersetzungsregel-Ausnahmen</a>
+<li><a href="#status">Den NAT-Status abfragen</a>
 </ul>
 
 <hr>
 
 <a name="intro"></a>
-<h2>Introduction</h2>
-Network Address Translation (NAT) is a way to map an entire network (or
-networks) to a single IP address.  NAT is necessary when the number of
-IP addresses assigned to you by your Internet Service Provider is less
-than the total number of computers that you wish to provide Internet
-access for. NAT is described in
-<a href="http://www.geektools.com/rfc/rfc1631.txt">RFC 1631</a>.
+<h2>Einführung</h2>
+Network Address Translation (NAT) ist ein Weg, um ein gesamtes
+Netzwerk (oder Netzwerke) einer einzigen IP-Adresse zuzuweisen.
+NAT ist notwendig, wenn dir eine Anzahl an IP-Adressen von deinem
+Internet-Anbieter zur Verfügung gestellt wurde, die geringer ist
+als die Gesamtanzahl an Rechnern, denen du Internetzugriff ermöglichen
+möchtest. NAT wird im
+<a href="http://www.geektools.com/rfc/rfc1631.txt">RFC 1631</a>
+beschrieben.
 
 <p>
-NAT allows you to take advantage of the reserved address blocks
-described in
-<a href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a>.
-Typically, your internal network will be setup to use one or more of
-these network blocks. They are:
+NAT erlaubt dir den Vorteil der reservierten Adressblöcke zu
+nutzen, wie sie in
+<a href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a>
+beschrieben werden.
+Normalerweise wird dein internes Netzwerk so eingerichtet sein, dass einer
+dieser Netzwerkblöcke verwenden wird. Diese sind:
 <pre>
-	10.0.0.0/8       (10.0.0.0 - 10.255.255.255)
-	172.16.0.0/12    (172.16.0.0 - 172.31.255.255)
-	192.168.0.0/16   (192.168.0.0 - 192.168.255.255)
+        10.0.0.0/8       (10.0.0.0 - 10.255.255.255)
+        172.16.0.0/12    (172.16.0.0 - 172.31.255.255)
+        192.168.0.0/16   (192.168.0.0 - 192.168.255.255)
 </pre>
 
 <p>
-An OpenBSD system doing NAT will have at least two network adapters, one
-to the Internet, the other to your internal network.  NAT will be
-translating requests from the internal network so they appear to all be
-coming from your OpenBSD NAT system.
+Ein OpenBSD-System, das NAT durchführt, muss mindestens zwei
+Netzwerk-Adapter besitzen, einen in Richtung Internet und die anderen
+in Richtung internes Netzwerk. NAT wird die Anfragen vom internen
+Netzwerk so übersetzen, dass sie so wirken, als wenn sie alle vom
+OpenBSD-NAT-System kommen würden.
 
 <a name="works"></a>
-<h2>How NAT Works</h2>
+<h2>Wie NAT funktioniert</h2>
 <p>
-When a client on the internal network contacts a machine on the
-Internet, it sends out IP packets destined for that machine. These
-packets contain all the addressing information necessary to get them to
-their destination. NAT is concerned with these pieces of information:
+Wenn ein Client im internen Netzwerk eine Maschine im Internet
+kontaktiert, sendet er IP-Pakete, die für diese Maschine bestimmt
+sind. Diese Pakete beinhalten alle Adress-Informationen, die benötigt
+sind, um am Ziel anzukommen. NAT befasst sich mit diesen Informationen:
 <ul>
-<li>Source IP address (for example, 192.168.1.35)
-<li>Source TCP or UDP port (for example, 2132)
+<li>Source-IP-Adresse (zum Beispiel 192.168.1.35)
+<li>Source-TCP- oder -UDP-Port (zum Beispiel 2132)
 </ul>
 
 <p>
-When the packets pass through the NAT gateway they will be modified so
-that they appear to be coming from the NAT gateway itself. The NAT
-gateway will record the changes it makes in its state table so that it
-can a) reverse the changes on return packets and b) ensure that return
-packets are passed through the firewall and are not blocked. For example,
-the following changes might be made:
+Wenn das Paket durch das NAT-Gateway gesendet wird, wird es so
+modifiziert, dass es wirkt, als wenn sie vom NAT-Gateway geschickt
+worden sind. Das NAT-Gateway wird sich die Änderungen in der
+,state'-Tabelle merken, sodass es a) die Änderungen für die
+Antwort-Pakete wieder rückgängig machen kann und b) sicherstellen,
+dass die Antwortpakete durch die Firewall gelassen und nicht geblockt
+werden. Zum Beispiel können die folgenden Änderungen durchgeführt
+werden:
 <ul>
-<li>Source IP: replaced with the external address of the
-gateway (for example, 24.5.0.5)
-<li>Source port: replaced with a randomly chosen, unused port on the
-gateway (for example, 53136)
+<li>Source-IP: ersetzt mit der externen Adresse des Gateways
+(zum Beispiel 24.5.0.5)
+<li>Source-Port: ersetzt mit einem zufällig gewähltem, unbenutzen Port des
+Gateways (zum Beispiel 53136)
 </ul>
 
 <p>
-Neither the internal machine nor the Internet host is aware of these
-translation steps. To the internal machine, the NAT system is simply an
-Internet gateway. To the Internet host, the packets appear to come
-directly from the NAT system; it is completely unaware that the
-internal workstation even exists.
+Weder die interne Maschine noch der Internet-Host wissen etwas von
+diesen Übersetzungs-Schritten. Für die interne Maschine ist das
+NAT-System einfach ein Internet-Gateway. Für den Internet-Host
+scheinen die Pakete vom NAT-System direkt zu kommen; er weiß noch
+nicht einmal, dass die interne Workstation überhaupt existiert.
 
 <p>
-When the Internet host replies to the internal machine's packets, they
-will be addressed to the NAT gateway's external IP (24.5.0.5) at the
-translation port (53136). The NAT gateway will then search the state
-table to determine if the reply packets match an already established
-connection. A unique match will be found based on the IP/port
-combination which tells PF the packets belong to a connection initiated
-by the internal machine 192.168.1.35. PF will then make the opposite
-changes it made to the outgoing packets and forward the reply packets on
-to the internal machine.
+Wenn der Internet-Host auf die Pakete der internen Maschine antwortet,
+werden sie an die externe IP des NAT-Gateways (24.5.0.5) und den
+Übersetzungs-Port (53136) gerichtet sein. Das NAT-Gateway durchsucht dann
+die ,state'-Tabelle, ob die Antwort-Pakete zu einer bereits erstellten
+Verbindung gehören. Ein einzigartiger Treffer, basierend auf der
+IP/Port-Kombination, wird gefunden, welcher PF mitteilt, dass die
+Pakete zu einer Verbindung gehören, die von der internen Maschine
+192.168.1.35 eröffnet wurde. PF wird dann die entgegengesetzten
+Änderungen, die an den Paketen gemacht worden sind, die hinausgingen,
+vornehmen und die Antwort-Pakete an die interne Maschine weiterleiten.
 
 <p>
-Translation of ICMP packets happens in a similar fashion but without the
-source port modification.
+Die Übersetzung von ICMP-Paketen findet auf eine ähnliche Art und Weise
+statt, aber ohne der Source-Port-Modifizierung.
 
+<a name="filter"></a>
+<h2>NAT und das Filtern von Paketen</h2>
+<p>
+<font color="#ff0000">HINWEIS:</font> Übersetzte Pakete müssen weiterhin
+die Filter-Engine durchlaufen und werden geblockt oder durchgelassen,
+jenachdem, welche Filterregeln definiert worden sind.
+Die <i>einzige</i> Ausnahme zu dieser Regel ist, wenn das
+<tt>pass</tt>-Schlüsselwort innerhalb der <tt>nat</tt>-Regel verwendet
+wird.
+Dies hat zur Folge, dass NAT-Pakete direkt durch die Filter-Engine
+gelassen werden.
+
+<p>
+Sei dir ebenfalls bewusst, dass, da die Übersetzung <i>vor</i> dem
+Filtern stattfindet, die Filter-Engine die <i>übersetzten</i> Pakete
+mit den übersetzten IP-Adressen und Port sehen, wie es in
+<a href="#works">Wie NAT funktioniert</a> beschrieben wurde.
+
+<!-- legacy anchor; can eventually be removed -->
 <a name="enable"></a>
-<h2>Enabling NAT</h2>
+<a name="ipfwd"></a>
+<h2>IP-Weiterleitung</h2>
 <p>
-To enable NAT on an OpenBSD gateway, in addition to 
-<a href="config.html#activate">activating PF</a>, you must also enable
-IP forwarding:
+Da NAT fast ausschließlich auf Routern und Netzwerk-Gateways verwendet
+wird, ist es wahrscheinlich notwendig, IP-Weiterleitung zu aktivieren,
+sodass die Pakete zwischen den Netzwerk-Interfaces der OpenBSD-Maschine
+ausgetauscht werden können. IP-Weiterleitung wird durch den
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=3&amp;manpath=OpenBSD+3.6"
+>sysctl(3)</a>-Mechanismus aktiviert:
 <blockquote>
 <tt>
-# sysctl -w net.inet.ip.forwarding=1<br>
-# sysctl -w net.inet6.ip6.forwarding=1 <i>(if using IPv6)</i>
+# sysctl net.inet.ip.forwarding=1<br>
+# sysctl net.inet6.ip6.forwarding=1 <i>(if using IPv6)</i>
 </tt>
 </blockquote>
 
 <p>
-To make this change permanent, the following lines should be added to
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl.conf&amp;sektion=5&amp;manpath=OpenBSD+3.4"
-><tt>/etc/sysctl.conf</tt></a>:
+Um diese Änderungen dauerhaft zu machen, sollten die folgenden
+Zeilen der
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl.conf&amp;sektion=5&amp;manpath=OpenBSD+3.6"
+><tt>/etc/sysctl.conf</tt></a> hinzugefügt werden:
 <blockquote>
 <tt>
 net.inet.ip.forwarding=1<br>
@@ -139,119 +188,184 @@ net.inet6.ip6.forwarding=1
 </blockquote>
 
 <p>
-These lines are present but commented out (prefixed with a <tt>#</tt>)
-in the default install. Remove the <tt>#</tt> and save the file. IP
-forwarding will be enabled when the machine is rebooted.
+Diese Zeilen sind in der Standard-Installation bereits vorhanden, aber
+auskommentiert (vor ihnen steht eine Raute <tt>#</tt>).
+Entferne die <tt>#</tt> und speicher die Datei. IP-Weiterleitung
+wird aktiviert, wenn die Maschine neustartet.
 
 <a name="config"></a>
-<h2>Configuring NAT</h2>
-The general format for NAT rules in <tt>/etc/pf.conf</tt> looks
-something like this:
+<h2>NAT konfigurieren</h2>
+Das generelle Format der NAT-Regeln in <tt>pf.conf</tt> sieht so
+ähnlich aus wiefolgt:
 <blockquote>
 <tt>
-nat on <i>extif</i> [<i>af</i>] from <i>src_addr</i> 
+nat [pass] on <i>interface</i> [<i>af</i>] from <i>src_addr</i> 
 [port <i>src_port</i>] to \<br>
 &nbsp;&nbsp;&nbsp;<i>dst_addr</i> [port <i>dst_port</i>] -&gt; 
-<i>ext_addr</i>
+<i>ext_addr</i> [<i>pool_type</i>] [static-port]
 </tt>
 </blockquote>
 
 <dl>
-<dt><tt><i>extif</i></tt>
-<dd>The name of the external network interface.
+<dt><tt>nat</tt>
+<dd>Das Schlüsselwort, das eine NAT-Regel einleitet.
+
+<dt><tt>pass</tt>
+<dd>Sorgt dafür, dass übersetzte Pakete komplett von den Filterregeln
+unbeachtet bleiben.
+
+<dt><tt><i>interface</i></tt>
+<dd>Der Name des Netzwerk-Interfaces, auf dem die Pakete übersetzt
+werden sollen.
 
 <dt><tt><i>af</i></tt>
-<dd>The address family, either <tt>inet</tt> for IPv4 or <tt>inet6</tt>
-for IPv6. PF is usually able to determine this parameter based on the
-source/destination address(es).
+<dd>Die Adress-Familie, entweder <tt>inet</tt> für IPv4 oder <tt>inet6</tt>
+für IPv6. PF ist normalerweise in der Lage, das selbst anhand der
+Source-/Ziel-Adresse(n) herauszufinden.
 
 <dt><tt><i>src_addr</i></tt>
-<dd>The source (internal) address of packets that will be translated.
-The source address can be specified as:
+<dd>Die Source- (interne) Adresse der Pakete, die übersetzt werden
+sollen.
+Die Source-Adresse kann wiefolgt angegeben werden:
 <ul>
-<li>A single IPv4 or IPv6 address.
-<li>A <a href="http://public.pacbell.net/dedicated/cidr.html">CIDR</a> 
-network block.
-<li>A fully qualified domain name that will be resolved via DNS when the
-ruleset is loaded. All resulting IP addresses will be substituted into
-the rule.
-<li>The name of a network interface. Any IP addresses assigned to the
-interface will be substituted into the rule at load time.
-<li>The name of a network interface followed by
-<tt>/<i>netmask</i></tt> (e.g. <tt>/24</tt>). Each IP address on the
-interface is combined with the netmask to form a CIDR network block
-which is substituted into the rule.
-<li>The name of a network interface followed by the <tt>:network</tt>
-keyword. The resulting CIDR network (e.g. 192.168.0.0/24) will be
-substituted into the rule when the ruleset is loaded.
-<li>A <a href="tables.html">table</a>.
-<li>Any of the above but negated using the <tt>!</tt> ("not") modifier.
-<li>A set of addresses using a <a href="macros.html#lists">list</a>.
-<li>The keyword <tt>any</tt> meaning all addresses
+<li>Eine einzelne IPv4- oder IPv6-Adresse.
+<li>Ein
+<a href="http://public.pacbell.net/dedicated/cidr.html">CIDR</a>-Netzwerkblock.
+<li>Ein ,fully qualified domain name', der per DNS aufgelöst werden kann,
+wenn der Regelsatz geladen wird. Alle resultierenden IP-Adressen werden in
+die Regel eingesetzt.
+<li>Der Name eines Netzwerk-Interfaces. Jegliche IP-Adressen, die dem
+Interface zugeordnet worden sind, werden in die Regel zur Ladezeit
+eingesetzt.
+<li>Der Name eines Netzwerk-Interfaces, gefolgt von
+<tt>/<i>netmask</i></tt> (z.B. <tt>/24</tt>). Jede IP-Adresse auf dem
+Interface wird mit der Netzmaske kombiniert, um einen CIDR-Netzwerkblock
+zu bilden, der in die Regel eingesetzt wird.
+<li>Der Name eines Netzwerk-Interfaces, gefolgt von einem dieser
+Modifizierer:
+  <ul>
+  <li><tt>:network</tt> - fügt den CIDR-Netzwerkblock ein (z.B.
+  192.168.0.0/24)
+  <li><tt>:broadcast</tt> - fügt die Netzwerk-Broadcast-Adresse ein
+  (z.B. 192.168.0.255)
+  <li><tt>:peer</tt> - fügt die IP-Adresse eines Peers von einem
+  Point-to-Point-Link
+  </ul>
+  <dl>
+  <dd>Zusätzlich kann der <tt>:0</tt>-Modifizierer einem Interfacenamen
+  oder einem der vorher genannten Modifizierer angehängt werden, um
+  PF mitzuteilen, dass keine IP-Adress-Aliase mit eingefügt werden
+  sollen. Diese Modifizierer können ebenfalls verwendet werden, wenn
+  das Interface sich in Klammern befindet.
+  Beispiel: <tt>fxp0:network:0</tt>
+  </dl>
+<li>Eine <a href="tables.html">Tabelle</a>.
+<li>Irgendeine der zuvor genannten Möglichkeiten, aber mit dem <tt>!</tt>-
+(,nicht') Modifizierer.
+<li>Ein Satz an Adressen unter Verwendung einer
+<a href="macros.html#lists">Liste</a>.
+<li>Das Schlüsselwort <tt>any</tt>, das für alle Adressen steht
 </ul>
 
 <dt><tt><i>src_port</i></tt>
-<dd>The source port in the Layer 4 packet header. Ports can be specified
-as:
+<dd>Der Source-Port im Layer-4-Paket-Header. Ports können wiefolgt
+angegeben werden:
 <ul>
-<li>A number between 1 and 65535
-<li>A valid service name from
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=services&amp;sektion=5&amp;manpath=OpenBSD+3.4"
+<li>Eine Nummer zwischen 1 und 65535
+<li>Ein gültiger Service-Name aus
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=services&amp;sektion=5&amp;manpath=OpenBSD+3.6"
 ><tt>/etc/services</tt></a>
-<li>A set of ports using a <a href="macros.html#lists">list</a>
-<li>A range:
+<li>Ein Satz an Ports unter Verwendung einer
+<a href="macros.html#lists">Liste</a>
+<li>Ein Bereich:
 	<ul>
-	<li><tt>!=</tt> (not equal)
-	<li><tt>&lt;</tt> (less than)
-	<li><tt>&gt;</tt> (greater than)
-	<li><tt>&lt;=</tt> (less than or equal)
-	<li><tt>&gt;=</tt> (greater than or equal)
-	<li><tt>&gt;&lt;</tt> (range)
-	<li><tt>&lt;&gt;</tt> (inverse range)
-	</ul>
+	<li><tt>!=</tt> (ungleich)
+	<li><tt>&lt;</tt> (kleiner als)
+	<li><tt>&gt;</tt> (größer als)
+	<li><tt>&lt;=</tt> (kleiner oder gleich)
+	<li><tt>&gt;=</tt> (größer oder gleich)
+	<li><tt>&gt;&lt;</tt> (Bereich)
+	<li><tt>&lt;&gt;</tt> (invertierter Bereich)
 	<dl>
-	<dd>The last two are binary operators (they take two arguments) and
-	do not include the arguments in the range.
+	<dd>Die letzten beiden sind Binär-Operatoren (sie nehmen zwei
+	Argumente) und fügen diese Argumente nicht mit in den Bereich ein.
 	</dl>
+	<li><tt>:</tt> (inklusiver Bereich)
+	<dl>
+	<dd>Der inklusiver-Bereich-Operator ist ebenfalls ein Binär-Operator
+	und fügt die Argumente mit in den Bereich ein.
+	</dl>
+	</ul>
 </ul>
-The <tt>port</tt> option is not usually used in <tt>nat</tt> rules
-because the goal is usually to NAT all traffic regardless of the port(s)
-being used.
+Die <tt>port</tt>-Option wird normalerweise nicht in <tt>nat</tt>-Regeln
+verwendet, da das Ziel normalerweise ist, NAT auf den Verkehr
+auszuüben, unabhängig davon, welche Ports verwendet werden.
 
 <dt><tt><i>dst_addr</i></tt>
-<dd>The destination address of packets to be translated. The destination
-address is specified in the same way as the source address.
+<dd>Die Ziel-Adresse der Pakete, die übersetzt werden sollen. Die
+Ziel-Adresse wird genauso wie die Source-Adresse angegeben.
 
 <dt><tt><i>dst_port</i></tt>
-<dd>The destination port in the Layer 4 packet header. This port is
-specified in the same way as the source port.
+<dd>Der Ziel-Port im Layer-4-Paket-Header. Dieser Port wird genauso
+wie der Source-Port angegeben.
 
 <dt><tt><i>ext_addr</i></tt>
-<dd>The external (translation) address on the NAT gateway that packets
-will be translated to. The external address can be specified as:
+<dd>Die externe (Übersetzungs-)Adresse des NAT-Gateways, die die
+übersetzten Pakete annehmen sollen. Die externe Adresse kann wiefolgt
+angegeben werden:
 <ul>
-<li>A single IPv4 or IPv6 address.
-<li>A <a href="http://public.pacbell.net/dedicated/cidr.html">CIDR</a> 
-network block.
-<li>A fully qualified domain name that will be resolved via DNS when the
-ruleset is loaded.
-<li>The name of the external network interface. Any IP addresses assigned
-to the interface will be substituted into the rule at load time.
-<li>The name of the external network interface in parentheses 
-<tt>( )</tt>. This tells PF to update the rule if the IP address(es) on
-the named interface changes. This is highly useful when the external
-interface gets its IP address via DHCP or dial-up as the ruleset
-doesn't have to be reloaded each time the address changes.
-<li>The name of a network interface followed by the <tt>:network</tt>
-keyword. The resulting CIDR network (e.g. 192.168.0.0/24) will be
-substituted into the rule when the ruleset is loaded.
-<li>A set of addresses using a <a href="macros.html#lists">list</a>.
+<li>Eine einzelne IPv4- oder IPv6-Adresse.
+<li>Ein
+<a href="http://public.pacbell.net/dedicated/cidr.html">CIDR</a>-Netzwerkblock.
+<li>Ein ,fully qualified domain name', der per DNS aufgelöst werden kann,
+wenn der Regelsatz geladen wird. Alle resultierenden IP-Adressen werden in
+die Regel eingesetzt.
+<li>Der Name eines Netzwerk-Interfaces. Jegliche IP-Adressen, die dem
+Interface zugeordnet worden sind, werden in die Regel zur Ladezeit
+eingesetzt.
+<li>Der Name eines Netzwerk-Interfaces, gefolgt von
+<tt>/<i>netmask</i></tt> (z.B. <tt>/24</tt>). Jede IP-Adresse auf dem
+Interface wird mit der Netzmaske kombiniert, um einen CIDR-Netzwerkblock
+zu bilden, der in die Regel eingesetzt wird.
+<li>Der Name eines Netzwerk-Interfaces, gefolgt von einem dieser
+Modifizierer:
+  <ul>
+  <li><tt>:network</tt> - fügt den CIDR-Netzwerkblock ein (z.B.
+  192.168.0.0/24)
+  <li><tt>:broadcast</tt> - fügt die Netzwerk-Broadcast-Adresse ein
+  (z.B. 192.168.0.255)
+  <li><tt>:peer</tt> - fügt die IP-Adresse eines Peers von einem
+  Point-to-Point-Link
+  </ul>
+  <dl>
+  <dd>Zusätzlich kann der <tt>:0</tt>-Modifizierer einem Interfacenamen
+  oder einem der vorher genannten Modifizierer angehängt werden, um
+  PF mitzuteilen, dass keine IP-Adress-Aliase mit eingefügt werden
+  sollen. Diese Modifizierer können ebenfalls verwendet werden, wenn
+  das Interface sich in Klammern befindet.
+  Beispiel: <tt>fxp0:network:0</tt>
+  </dl>
+<li>Eine <a href="tables.html">Tabelle</a>.
+<li>Irgendetwas der zuvor genannten Möglichkeiten, aber mit dem <tt>!</tt>-
+(,nicht') Modifizierer.
+<li>Ein Satz an Adressen unter Verwendung einer
+<a href="macros.html#lists">Liste</a>.
+<li>Das Schlüsselwort <tt>any</tt>, das für alle Adressen steht
 </ul>
+
+<dt><tt><i>pool_type</i></tt>
+<dd>Gibt den Typ des <a href="pools.html">Adress-Pools</a> an, der
+für die Übersetzung verwendet werden soll.
+
+<dt><tt>static-port</tt>
+<dd>Teilt PF mit, den Source-Port in TCP- und UDP-Paketen nicht zu
+verändern.
 
 </dl>
 
 <p>
-This would lead to a most basic form of this line similar to this:
+Dies würde zu der einfachsten Form einer Zeile führen, die dieser
+ähnlich sein würde:
 <blockquote>
 <tt>
 nat on tl0 from 192.168.1.0/24 to any -&gt; 24.5.0.5
@@ -259,60 +373,62 @@ nat on tl0 from 192.168.1.0/24 to any -&gt; 24.5.0.5
 </blockquote>
 
 <p>
-This rule says to perform NAT on the <tt>tl0</tt> interface for any
-packets coming from 192.168.1.0/24 and to replace the source IP address
-with 24.5.0.5.
+Diese Regel besagt, dass NAT auf dem <tt>tl0</tt>-Interface für
+alle Pakete ausgeführt werden soll, die von 192.168.1.0./24 aus kommen,
+und sie mit der Source-IP-Adresse von 24.5.0.5 übersetzt werden sollen.
 
 <p>
-While the above rule is correct, it is not recommended form.
-Maintenance could be difficult as any change of the external or internal
-network numbers would require the line be changed.  Compare instead with
-this easier to maintain line (<tt>tl0</tt> is external, <tt>dc0</tt>
-internal):
+Während die vorher genannte Regel korrekt ist, ist es keine empfohlene
+Form. Die Verwaltung könnte schwierig sein, da jegliche Änderung an
+den internen oder externen Netzwerknummern eine Änderung der Zeile
+zur Folge hätte. Vergleiche sie stattdessen mit dieser einfacher zu
+verwaltenen Zeile (<tt>tl0</tt> ist extern, <tt>dc0</tt> intern):
 <blockquote>
 <tt>
-nat on tl0 from dc0/24 to any -&gt; tl0
+nat on tl0 from dc0:network to any -&gt; tl0
 </tt>
 </blockquote>
 
 <p>
-The advantage should be fairly clear: you can change the IP addresses of
-either interface without changing this rule.
+Der Vorteil sollte recht klar sein: du kannst die IP-Adressen von
+einer der Interfaces ändern, ohne die Regeln ändern zu müssen.
 
 <p>
-When specifying an interface name for the translation address as above,
-the IP address is determined at pf.conf <i>load</i> time, not on the
-fly.  If you are using DHCP to configure your external interface, this
-can be a problem. If your assigned IP address changes then NAT will
-continue translating outgoing packets using the old IP address. This
-will cause outgoing connections to stop functioning. To get around this,
-you can tell PF to automatically update the translation address by
-putting parentheses around the interface name:
+Wenn ein Interface-Name für die Übersetzungs-Adresse wie zuvor
+angegeben wird, wird die IP-Adresse zur <i>Lade</i>zeit von pf.conf
+ermittelt, nicht während der Verwendung. Wenn du DHCP verwendet, um dein
+externes Interface zu konfigurieren, kann dies zu einem Problem werden.
+Wenn deine zugewiesene IP-Adresse sich ändert, wird NAT weiterhin die
+Pakete, die hinausgehen, mit der alten IP-Adresse übersetzen. Dies
+wird dazu führen, dass ausgehende Verbindungen nicht mehr funktionieren
+werden. Um dies zu umgehen, kannst du PF sagen, dass die
+Übersetzungs-Adresse automatisch aktualisiert werden soll, indem
+Klammern um den Interface-Namen herum gesetzt werden:
 <blockquote>
 <tt>
-nat on tl0 from dc0/24 to any -&gt; (tl0)
+nat on tl0 from dc0:network to any -&gt; (tl0)
 </tt>
 </blockquote>
 
 <p>
-There is one major limitation to doing this: Only the first IP alias on
-an interface is evaluated when the interface name is placed in parentheses.
+Diese Methode funktioniert für Übersetzungen von IPv4- und IPv6-Adressen.
 
 <a name="binat"></a>
-<h2>Bidirectional Mapping (1:1 mapping)</h2>
-A bidirectional mapping can be established by using the
-<tt>binat</tt> rule. A <tt>binat</tt> rule establishes a one to one
-mapping between an internal IP address and an external address. This can
-be useful, for example, to provide a web server on the internal network
-with its own external IP address. Connections from the Internet to the
-external address will be translated to the internal address and
-connections from the web server (such as DNS requests) will be
-translated to the external address. TCP and UDP ports are never
-modified with <tt>binat</tt> rules as they are with <tt>nat</tt>
-rules.
+<h2>Bidirektionales Mapping (1:1 mapping)</h2>
+Ein bidirektionales Mapping kann durch die Verwendung der
+<tt>binat</tt>-Regel aufgebaut werden. Eine <tt>binat</tt>-Regel
+erzeugt ein eins-zu-eins-Mapping zwischen einer internen und einer
+externen IP-Adresse. Dies kann sinnvoll sein, wenn beispielsweise
+ein Webserver aus dem internen Netzwerk mit seiner eigenen externen
+Adresse bereitgestellt werden soll. Verbindungen aus dem Internet
+zur externen Adresse werden dann zur internen Adresse übersetzt und
+Verbindungen vom Webserver (zum Beispiel DNS-Anfragen) werden mit
+der externen Adresse übersetzt. TCP- und UDP-Ports werden niemals
+mit <tt>binat</tt>-Regeln modifiziert wie es mit <tt>nat</tt>-Regeln
+der Fall ist.
 
 <p>
-Example:
+Beispiel:
 <blockquote>
 <tt>
 web_serv_int = "192.168.1.100"<br>
@@ -323,86 +439,95 @@ binat on tl0 from $web_serv_int to any -&gt; $web_serv_ext<br>
 </blockquote>
 
 <a name="except"></a>
-<h2>Translation Rule Exceptions</h2>
-Exceptions can be made to translation rules by using the <tt>no</tt>
-keyword. For example, if the NAT example above was modified to look
-like this:
+<h2>Übersetzungsregel-Ausnahmen</h2>
+Ausnahmen bei den Übersetzungsregeln können unter Verwendung des
+<tt>no</tt>-Schlüsselwortes gemacht werden. Wenn zum Beispiel das
+vorherige NAT-Beispiel so modifiziert wurde, dass es nun wiefolgt
+aussieht:
 <blockquote>
 <tt>
-no nat on tl0 from 192.168.1.10 to any<br>
+no nat on tl0 from 192.168.1.208 to any<br>
 nat on tl0 from 192.168.1.0/24 to any -&gt; 24.2.74.79
 </tt>
 </blockquote>
 
 <p>
-Then the entire 192.168.1.0/24 network would have its packets
-translated to the external address 24.2.74.79 except for 192.168.1.10.
+Dann werden für das gesamte 192.168.1.0/24-Netzwerk alle Pakete
+zur externen Adresse 24.2.74.79 übersetzt, nur nicht für 192.168.1.208.
 
 <p>
-Note that the first matching rule wins; if it's a <tt>no</tt> rule,
-then the packet is not translated. The <tt>no</tt> keyword can also be
-used with <tt>binat</tt> and <a href="rdr.html"><tt>rdr</tt></a> rules.
+Bedenke, dass die erste zutreffende Regel gewinnt; wenn es eine
+<tt>no</tt>-Regel ist, dann wird das Paket nicht übersetzt. Das
+<tt>no</tt>-Schlüsselwort kann ebenfalls mit <tt>binat</tt>-
+und <a href="rdr.html"><tt>rdr</tt></a>-Regeln verwendet werden.
 
 <a name="status"></a>
-<h2>Checking NAT Status</h2>
-To view the active NAT translations
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.4"
->pfctl(8)</a> is used with the <tt>-s state</tt> option. This option will list
-all the current NAT sessions:
+<h2>Den NAT-Status abfragen</h2>
+Um die aktiven NAT-Übersetzungen zu betrachten, wird
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>pfctl(8)</a> mit der <tt>-s state</t>-Option verwendet. Diese Option
+wird alle momentanten NAT-Sitzungen auflisten:
 
 <pre>
    # pfctl -s state
-   TCP 192.168.1.35:2132 -&gt; 24.5.0.5:53136 -&gt; 65.42.33.245:22 TIME_WAIT:TIME_WAIT
-   UDP 192.168.1.35:2491 -&gt; 24.5.0.5:60527 -&gt; 24.2.68.33:53   MULTIPLE:SINGLE
+   fxp0 TCP 192.168.1.35:2132 -&gt; 24.5.0.5:53136 -&gt; 65.42.33.245:22 TIME_WAIT:TIME_WAIT
+   fxp0 UDP 192.168.1.35:2491 -&gt; 24.5.0.5:60527 -&gt; 24.2.68.33:53   MULTIPLE:SINGLE
 </pre>
 
 <p>
-Explanations (first line only):
+Erklärungen (nur die erste Zeile):
+
+<dl>
+<dt>fxp0
+<dd>Gibt das Interface an, an welche der ,state' gebunden ist. Das Wort
+<tt>self</tt> wird erscheinen, wenn der ,state'
+<a href="options.html#state-policy"><tt>,floating'</tt></a> ist.
+</dl>
 
 <dl>
 <dt>TCP
-<dd>The protocol being used by the connection.
+<dd>Das Protokoll, das von der Verbindung genutzt wird.
 </dl>
 
 <dl>
 <dt>192.168.1.35:2132
-<dd>The IP address (192.168.1.35) of the machine on the internal
-network. The source port (2132) is shown after the address. This is also
-the address that is replaced in the IP header.
+<dd>Die IP-Adresse (192.168.1.35) der Maschine im internen Netzwerk.
+Der Source-Port (2132) wird nach der Adresse angezeigt. Dies ist ebenfalls
+die Adresse, die im IP-Header ersetzt wird.
 </dl>
 
 <dl>
 <dt>24.5.0.5:53136
-<dd>The IP address (24.5.0.5) and port (53136) on the gateway that
-packets are being translated to.
+<dd>Die IP-Adresse (24.5.0.5) und Port (53136) vom Gateway, mit denen
+die Pakete übersetzt werden.
 </dl>
 
 <dl>
 <dt>65.42.33.245:22
-<dd>The IP address (65.42.33.245) and the port (22) that the internal
-machine is connecting to.
+<dd>Die IP-Adresse (65.42.33.245) und der Port (22), mit denen die
+interne Maschine verbunden ist.
 </dl>
 
 <dl>
 
 <dt>TIME_WAIT:TIME_WAIT
-<dd>This indicates what state PF believes the TCP connection to be in.
+<dd>Dies gibt an, was PF glaubt, zu welchem ,state' die TCP-Verbindung gehört.
 </dl>
 
 <p>
-[<a href="queueing.html">Previous: Queueing</a>]
-[<a href="index.html">Contents</a>]
-[<a href="rdr.html">Next: Traffic Redirection</a>]
+[<a href="filter.html">Zurück: Pakete filtern</a>]
+[<a href="index.html">Inhalt</a>]
+[<a href="rdr.html">Weiter: Verkehr-Umleitung (Port-Weiterleitung)</a>]
 
 <p>
 <hr>
-<a href="../../de/index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[back]"></a> 
+<a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a> 
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
 <small>
-Originally [OpenBSD: nat.html,v 1.11 ]<br>
-$Translation: nat.html,v 1.1 2003/11/27 17:34:57 sl Exp $<br>
-$OpenBSD: nat.html,v 1.1 2003/11/27 19:39:09 horacio Exp $
+Originally [OpenBSD: nat.html,v 1.18 ]<br>
+$Translation: nat.html,v 1.2 2004/12/01 18:47:44 paldium Exp $<br>
+$OpenBSD: nat.html,v 1.2 2004/12/01 19:35:52 jufi Exp $
 </small>
 
 </body>
