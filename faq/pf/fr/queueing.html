@@ -1,0 +1,690 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF : Gestion de La Bande Passante</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description"   content=" page de la FAQ OpenBSD">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+</head>
+
+<!--
+Copyright (c) 2003, 2004 Joel Knight <enabled@myrealbox.com>
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
+<p>
+[<a href="anchors.html">Précédent : Ancres et Bases de R&egrave;gles Nomm&eacute;es (Sub)</a>]
+[<a href="index.html">Index</a>]
+[<a href="pools.html">Suivant : PF : Ensembles d'adresses (&quot;Pools&quot;) et
+
+<p>
+<h1><font color="#e00000">PF : Gestion de La Bande Passante</font></h1>
+
+
+<hr>
+
+<h3>Table des Mati&egrave;res</h3>
+<ul>
+<li><a href="#queueing">Mise en queue</a>
+<li><a href="#sched">Planificateurs</a>
+	<ul>
+	<li><a href="#cbq">Mise en queue par classes</a>
+	<li><a href="#priq">Mise en queue par priorit&eacute;s</a>
+	<li><a href="#red">D&eacute;tection Al&eacute;atoire Anticip&eacute;e</a>
+	<li><a href="#ecn">Notification Explicite de Congestion</a>
+	</ul>
+<li><a href="#altq">Configuration de la Mise en queue</a>
+<li><a href="#assign">Assignation du Traffic dans une Queue</a>
+<li><a href="#example1">Exemple #1 : Petit R&eacute;seau, R&eacute;seau domestique </a>
+<li><a href="#example2">Exemple #2 : R&eacute;seau d'entreprise</a>
+</ul>
+
+<hr>
+
+<a name="queueing"></a>
+<h2>Mise en queue</h2>
+<p>
+Mettre en queue quelquechose signifie stocker, de mani&egrave;re ordonn&eacute;e, cette chose pendant qu'elle attend un traitement. Dans un r&eacute;seau informatique,	quand les paquets de donn&eacute;es sont envoy&eacute;s &agrave; l'ext&eacute;rieur de l'h&ocirc;te, ils entrent dans une queue ou ils attendent un traitement par le syst&egrave;me d'exploitation. Celui-ci decide ensuite quelle queue et quel(s) paquet(s) de cette queue doivent &ecirc;tre trait&eacute;s.
+L'ordre dans lequel le syst&egrave;me d'exploitation selectionne les paquets 
+&agrave; traiter peut affecter les performances du r&eacute;seau.
+Par exemple, immaginez un utilisateur lan&ccedil;ant deux applications r&eacute;seau : SSH et FTP. Id&eacute;alement, les paquets SSH devraient &ecirc;tre trait&eacute;s avant les paquets FTP &agrave; cause de la sensibilit&eacute; au temps de SSH; quand une clef est entr&eacute;e dans le client SSH, une r&eacute;ponse imm&eacute;diate est attendue, mais un transfert FTP retard&eacute; de quelques secondes n'attirera pratiquement pas l'attention. Mais que se passe t'il si le routeur manipulant ces connexions traite un grand nombre de paquets provenant de la connexion FTP avant de traiter la connexion SSH ? Les paquets de la connexion SSH resteront dans la queue (ou seront rejet&eacute;s par le routeur si la queue n'est pas assez grande pour acceuillir tous les paquets) et la session SSH apparaitra certainement comme ralentie ou haletante. En modifiant la strat&eacute;gie de mise en queue utilis&eacute;e, la bande bassante du r&eacute;seau peut être partag&eacute;e de fa&ccedil;on juste entre les diff&eacute;rents applications, utilisateurs et ordinateurs.
+
+<p>
+Notez que la mise en queue est utile uniquement pour les paquets sortant ("<i>outbound</i>"). Une fois qu'un paquet arrive sur une interface dans la direction entrante il est d&eacute;j&agrave; trop tard pour le mettre en queue -- la bande passante a d&eacute;j&agrave; &eacute;t&eacute; consomm&eacute;e et l'interface le re&ccedil;oit simplement. La seule solution est d'activer la mise en queue sur un routeur adjacent ou, si l'h&ocirc;te recevant le paquet agit comme un routeur, d'activer la mise en queue sur l'interface interne sur laquelle les paquets quittent le routeur.
+
+<a name="sched"></a>
+<h2>Planificateurs</h2>
+L'algorithme d&eacute;cide des queues &agrave; traiter et dans quel ordre.
+Par d&eacute;faut, OpenBSD utilise un algorithme "First In First Out"
+(FIFO). Une queue FIFO travaille comme une caisse de supermarch&eacute;
+-- le premier article de la queue est le premier trait&eacute;. Au fur
+et &agrave; mesure que des nouveaux paquets arrivent, ils sont
+ajout&eacute;s &agrave; la queue. Si la queue est pleine - et c'est là
+que l'analogie avec la caisse de supermarché s'arrête - les nouveaux paquets sont rejet&eacute;s. Ceci est connu sous le nom de "tail-drop".
+
+<p>
+OpenBSD supporte deux algorithmes additionels :
+<ul>
+<li>Mise en queue par classes</li>
+<li>Mise en queue par priorit&eacute;s</li>
+</ul>
+
+<a name="cbq"></a>
+<h3>Mise en queue par classes</h3>
+La Mise en queue par classes (CBQ) est un algorithme de mise en queue qui divise la bande passante des multiples connexions r&eacute;seau en queues ou en classes. Chaque queue se voit ainsi assigner un trafic sur les bases d'une adresse source ou de destination, d'un num&eacute;ro de port, d'un protocol, etc. Une queue peut optionnellement être configur&eacute;e pour emprunter de la bande passante aux queues parent si celles-ci sont sous-utilis&eacute;es. Les queues ont aussi une priorit&eacute; selon qu'elles contiennent du trafic interactif, comme SSH, et peuvent avoir leurs paquets trait&eacute;s avant les queues contenant le trafic volumineux, comme FTP.
+
+<p>
+Les queues CBQ sont ordonn&eacute;es de mani&egrave;re hi&eacute;rarchique. Au sommet de la hi&eacute;rarchie se trouve la queue "root" qui d&eacute;finit la totalit&eacute; de la bande passante disponible. Les queues enfant sont cr&eacute;es sous la queue "root", chacune d'elle peut se voir assigner une partie de la bande passante de la queue "root". Par exemple, les queues peuvent être d&eacute;finies comme suit :
+
+<dl>
+<dd>Root Queue (2Mbps)
+	<dl>
+	<dd>Queue A (1Mbps)
+	<dd>Queue B (500Kbps)
+	<dd>Queue C (500Kbps)
+	</dl>
+</dl>
+
+<p>
+Dans ce cas, la totalit&eacute; de la bande passante est fix&eacute;e &agrave; 2 megabits par seconde (Mbps). Cette bande passante est ensuite subdivis&eacute;e en trois queues enfant.
+
+<p>
+La hi&eacute;rarchie peut encore être approfondie en d&eacute;finissant des queues dans les queues. Pour subdiviser &eacute;quitablement la bande passante entre les diff&eacute;rents utilisateurs et aussi classer leur trafic pour &eacute;viter que certains protocoles ne privent de bande passante d'autres protocoles, une structure de mise en queue comme celle-ci peut être d&eacute;finie :
+
+<dl>
+<dd>Root Queue (2Mbps)
+	<dl>
+	<dd>UserA (1Mbps)
+		<dl>
+		<dd>ssh (50Kbps)
+		<dd>bulk (950Kbps)
+		</dl>
+	<dd>UserB (1Mbps)
+		<dl>
+		<dd>audio (250Kbps)
+		<dd>bulk (750Kbps)
+			<dl>
+			<dd>http (100Kbps)
+			<dd>other (650Kbps)
+			</dl>
+		</dl>
+	</dl>
+</dl>
+
+<p>
+Notez qu' &agrave; chaque niveau, la somme des bandes passantes assign&eacute;es &agrave; chaque queue ne doit pas être sup&eacute;rieure &agrave; celle assign&eacute;e &agrave; la queue parent.
+
+<p>
+Une queue peut être configur&eacute;e pour emprunter de la bande passante aux queues parent si ces derni&egrave;res en ont en exc&egrave;s suite &agrave; la non-utilisation par d'autres queues enfant. Consid&eacute;rez le r&eacute;glage de mise en queue suivant :
+
+<dl>
+<dd>Root Queue (2Mbps)
+	<dl>
+	<dd>UserA (1Mbps)
+		<dl>
+		<dd>ssh (100Kbps)
+		<dd>ftp (900Kbps, borrow)
+		</dl>
+	<dd>UserB (1Mbps)
+	</dl>
+</dl>
+
+<p>
+Si le trafic dans la queue <tt>ftp</tt> exc&egrave;de 900Kbps et le trafic dans la queue <tt>UserA</tt> est inf&eacute;rieur &agrave; 1Mbps (parce que la queue <tt>ssh</tt> utilise moins que les 100Kbps qu'elle dispose), la queue <tt>ftp</tt> empruntera l'exc&egrave;s de bande passante de <tt>UserA</tt>. Dans cette optique la queue <tt>ftp</tt> est en mesure d'utiliser davantage de bande passante que ce qui lui est assign&eacute; quand elle fait face &agrave; une surcharge. Quand la queue <tt>ssh</tt> verra sa charge augmenter, la bande passante emprunt&eacute;e sera restitu&eacute;e.
+
+<p>
+CBQ assigne une priorit&eacute; &agrave; chaque queue. Les queues avec une priorit&eacute; elev&eacute;e sont pr&eacute;fer&eacute;es aux queues avec une priorit&eacute; inf&eacute;rieure pendant une congestion tant que les deux queues partagent le même parent (en d'autres termes, tant que les deux queues appartiennent &agrave; une même branche de la hi&eacute;rarchie). Les queues avec une même priorit&eacute; sont trait&eacute;es dans un mode "round-robin". Par exemple :
+
+<dl>
+<dd>Root Queue (2Mbps)
+	<dl>
+	<dd>UserA (1Mbps, priority 1)
+		<dl>
+		<dd>ssh (100Kbps, priority 5)
+		<dd>ftp (900Kbps, priority 3)
+		</dl>
+	<dd>UserB (1Mbps, priority 1)
+	</dl>
+</dl>
+
+<p>
+CBQ traitera les queues <tt>UserA</tt> et <tt>UserB</tt> dans un mode "round-robin" -- aucune queue ne sera pr&eacute;fer&eacute;e &agrave; une autre. Pendant le temps ou la queue <tt>UserA</tt> est trait&eacute;e, CBQ traitera aussi les queues enfant. Dans ce cas, la queue <tt>ssh</tt> a une priorit&eacute; plus &eacute;lev&eacute;e et aura un traitement pr&eacute;ferentiel vis &agrave; vis de la queue <tt>ftp</tt> si le r&eacute;seau est congestionn&eacute;. Notez que les queues <tt>ssh</tt> et  <tt>ftp</tt> n'ont pas leurs priorit&eacute;s compar&eacute;es &agrave; celles de <tt>UserA</tt> et <tt>UserB</tt> &agrave; cause du fait qu'elles ne sont pas dans une même branche de la hi&eacute;rarchie.
+
+<p>
+Pour un regard plus d&eacute;taill&eacute; sur la th&eacute;orie du fonctionnement de CBQ, consultez s'il vous pla&icirc;t les <a href="http://www.icir.org/floyd/cbq.html">R&eacute;f&eacute;rences sur CBQ</a>.
+
+<a name="priq"></a>
+<h3>Mise en queue par priorit&eacute;s</h3>
+La Mise en queue par priorit&eacute;s (PRIQ) assigne des queues &agrave; une interface r&eacute;seau et chaque queue poss&eacute;de une priorit&eacute; distincte. Une queue avec une priorit&eacute; plus &eacute;lev&eacute;e est <i>toujours</i> trait&eacute;e avant une queue avec une priorit&eacute; moindre.
+
+<p>
+La structure des queues de PRIQ est plate -- vous ne pouvez pas d&eacute;finir de queue au sein d'une autre queue. La queue "root" est d&eacute;finie et poss&egrave;de la totalit&eacute; de la bande passante disponible, et les sous-queues sont d&eacute;finies ensuite en aval. Consid&eacute;rez l'exemple suivant :
+<dl>
+<dd>Root Queue (2Mbps)
+	<dl>
+	<dd>Queue A (priority 1)
+	<dd>Queue B (priority 2)
+	<dd>Queue C (priority 3)
+	</dl>
+</dl>
+
+<p>
+La queue "root" est d&eacute;finie comme ayant 2Mbps de bande passante disponible et trois sous-queues sont d&eacute;finies. La queue avec la plus haute priorit&eacute; (le nombre priorit&eacute; le plus grand) est servie en premier. Une fois que tous les paquets dans cette queue ont &eacute;t&eacute; trait&eacute;s, ou si la queue est vide, PRIQ s'occupe de la queue avec la priorit&eacute; suivante. Au sein d'une queue donn&eacute;e, les paquets sont trait&eacute;s selon la mani&egrave;re "First In First Out" (FIFO).
+
+<p>
+Il est important de noter que si vous utilisez PRIQ, vous devez cr&eacute;er vos queues tr&egrave;s prudemment. A cause du fait que PRIQ traite <i>toujours</i> une queue avec une grande priorit&eacute; avant une queue avec une priorit&eacute; basse, il est possible qu'une queue avec une priorit&eacute; &eacute;lev&eacute;e cause la suppression ou la disparition des paquets d'une queue avec une priorit&eacute; basse si la queue avec la priorit&eacute; &eacute;lev&eacute;e reçoit un flux constant de paquets.
+
+<a name="red"></a>
+<h3>D&eacute;tection Al&eacute;atoire Anticip&eacute;e</h3>
+La D&eacute;tection Al&eacute;atoire Anticip&eacute;e (RED) est un algorithme d'&eacute;vitement des congestions. Sa fonction est d'&eacute;viter les congestions en s'assurant que la queue ne devienne pas pleine. Elle r&eacute;alise cela en calculant en permanence la largeur moyenne (taille) de la queue et en la comparant &agrave; deux valeurs de seuil, un seuil minimum et un seuil maximum. Si la taille moyenne de la queue est au dessous du seuil minimal, aucun paquet n'est rejet&eacute;. Si la moyenne est au dessus du seuil maximum alors <i>tous</i> les nouveaux paquets arrivant sont rejet&eacute;s. Si la moyenne est comprise entre les seuils minimum et maximum les paquets sont rejet&eacute;s suivant une probabilit&eacute; calcul&eacute;e grâce &agrave; la taille de la queue. En d'autres mots, quand l'occupation de la queue approche le seuil maximum, de plus en plus de paquets sont rejet&eacute;s. Quand il rejete des paquets, RED choisi al&eacute;atoirement la connexion pour laquelle il va rejeter les paquets. Les connexions utilisant largement la bande passante sont une plus grande probabilit&eacute; de voir leurs paquets rejet&eacute;s.
+
+<p>
+RED est utile car il &eacute;vite la situation connue sous le nom de synchronisation globale et il peut s'adapter &agrave; des bonds du trafic. La synchronisation globale se r&eacute;ferre &agrave; une perte totale des donn&eacute;es sortantes due &agrave; la suppression simultan&eacute;e de paquets de plusieurs connexions. Par exemple, si la congestion apparait sur un routeur supportant le trafic de 10 connexions FTP et tous les paquets de ces connexions sont rejet&eacute;s (comme c'est le cas avec une mise en queue FIFO), la totalit&eacute; du trafic sortant sera rejet&eacute;; brusquement. Ce n'est pas une situation id&eacute;ale car elle entra&icirc;ne une r&eacute;duction du trafic de toutes les connexions FTP ce qui signifie que le r&eacute;seau n'est plus utilis&eacute; avec son potentiel maximum. RED &eacute;vite cela en choisissant al&eacute;atoirement une de ces connexions plut&ocirc;t que de choisir toutes les connexions. Les connexions utilisant une large partie de la bande passante ont une probabilit&eacute; sup&eacute;rieure de voir leurs paquets rejet&eacute;s. Dans cette optique, les connexions avec une haute bande passante seront &eacute;trangl&eacute;es, la congestion sera &eacute;vit&eacute;e, et les pertes violentes de trafic de sortie n'auront pas lieu. De plus, RED est capable de supporter des explosions du trafic car il commence la suppression des paquets <i>avant</i> que la queue ne devienne pleine. Si une explosion du trafic se produit, il y aura assez d'espace pour m&eacute;moriser les nouveaux paquets.
+
+<p>
+RED ne devrait être utilis&eacute; que quand le protocole est capable de r&eacute;pondre aux indicateurs de congestion du r&eacute;seau. Dans beaucoup de cas cela signifie que RED devrait être utilis&eacute; pour mettre en queue du trafic TCP et non UDP ou ICMP trafic.
+
+<p>
+Pour une regard plus d&eacute;taill&eacute; sur la th&eacute;orie derri&egrave;re RED, s'il vous plait consultez
+<a href="http://www.icir.org/floyd/red.html">References on RED</a>.
+
+<a name="ecn"></a>
+<h3>Notification Explicite de Congestion</h3>
+La Notification Explicite de Congestion (ECN) travaille en conjonction avec RED pour notifier deux h&ocirc;tes communicant via le r&eacute;seau d'une congestion le long du chemin de communication. Ceci est fait en autorisant RED &agrave; fixer un drapeau dans l'entête du paquet plut&ocirc;t que de rejeter le paquet. Si l'on part du principe que l'h&ocirc;te expediteur supporte ECN, il pourra lire ce drapeau et diminuer son trafic r&eacute;seau en fonction.
+
+<p>
+Pour plus d'informations sur ECN, r&eacute;ferrez vous s'il vous pla&icirc;t &agrave; la
+<a href="http://www.rfc-editor.org/rfc/rfc3168.txt">RFC 3168</a>.
+
+<a name="altq"></a>
+<h2>Configuration de la Mise en queue</h2>
+Depuis OpenBSD 3.0 la
+<a href="http://www.csl.sony.co.jp/person/kjc/kjc/software.html#ALTQ"
+>Mise en queue altern&eacute;e (ALTQ)</a>, impl&eacute;mentation de la mise en queue, fait partie du syst&egrave;me de base. En commençant avec OpenBSD 3.3 ALTQ a &eacute;t&eacute; int&eacute;gr&eacute;e dans PF. L'impl&eacute;mentation de ALTQ dans OpenBSD supporte les algorithmes de Mise en Queue par classes (CBQ) et de Mise en Queue par priorit&eacute;s (PRIQ). Elle supporte aussi la D&eacute;tection Al&eacute;atoire Anticip&eacute;e (RED) et la Notification de Congestion Explicite (ECN).
+
+<p>
+Parce que ALTQ a &eacute;t&eacute; fusionn&eacute;e avec PF, ce dernier doit être activ&eacute; pour que la mise en queue fonctionne. Les instructions sur la proc&eacute;dure d'activation de PF peuvent être trouv&eacute;es dans les
+<a href="config.html#activate">Principes de base</a>.
+
+<p>
+La Mise en queue est configur&eacute;e dans <tt>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+3.5"
+>pf.conf</a></tt>. Il y a deux types de directives utilis&eacute;es pour configurer la Mise en Queue :
+<ul>
+<li><tt>altq on</tt> - active la mise en queue sur une interface, d&eacute;finit l'algorithme &agrave; utiliser, et cr&eacute;&eacute;e la queue "root"
+<li><tt>queue</tt> - d&eacute;finit les propri&eacute;t&eacute;s d'une queue enfant
+</ul>
+
+<p>
+La syntaxe de la directive <tt>altq on</tt> est :
+<blockquote>
+<tt>
+altq on <i>interface scheduler</i> bandwidth <i>bw</i> qlimit 
+<i>qlim</i> \<br>
+&nbsp;&nbsp;&nbsp;tbrsize <i>size</i> queue { <i>queue_list</i> }
+</tt>
+</blockquote>
+
+<ul>
+<li><tt><i>interface</i></tt> - l'interface r&eacute;seau sur laquelle activer la mise en queue.
+<li><tt><i>scheduler</i></tt> - l'algorithme &agrave; utiliser. Les valeurs possibles sont
+<tt>cbq</tt> et <tt>priq</tt>. Actuellement, seul un algorithme &agrave; la fois peut être activ&eacute; sur une interface.
+<li><tt><i>bw</i></tt> - la quantit&eacute; totale de bande passante disponible pour l'algorithme.
+Elle peut être sp&eacute;cifi&eacute;e avec une valeur absolue en utilisant les suffixes <tt>b</tt>,
+<tt>Kb</tt>, <tt>Mb</tt>, et <tt>Gb</tt> signifiant bits, kilobits,
+megabits, et gigabits par seconde, en valeur ou en pourcentage de la bande passante de l'
+<tt><i>interface</i></tt>.
+<li><tt><i>qlim</i></tt> - le nombre maximum de paquets &agrave; stocker dans une queue. 
+Ce param&egrave;tre est optionnel. Il est par d&eacute;faut de 50.
+<li><tt><i>size</i></tt> - la taille du r&eacute;gulateur en octets. Si elle n'est pas sp&eacute;cifi&eacute;e, la taille utilis&eacute;e est bas&eacute;e sur la bande passante de l'
+<tt><i>interface</i></tt>.
+<li><tt><i>queue_list</i></tt> - une liste de queues enfant &agrave; cr&eacute;er en dessous de la queue "root".
+</ul>
+
+<p>
+Par exemple :
+<blockquote>
+<tt>
+altq on fxp0 cbq bandwidth 2Mb queue { std, ssh, ftp }
+</tt>
+</blockquote>
+Ceci active CBQ sur l'interface <tt>fxp0</tt>. La totalit&eacute; de la bande passante disponible est fix&eacute;e &agrave; 2Mbps. Trois queues enfant sont d&eacute;finies : <tt>std</tt>,
+<tt>ssh</tt>, et <tt>ftp</tt>.
+
+<p>
+La syntaxe pour la directive <tt>queue</tt> est :
+<blockquote>
+<tt>
+queue <i>name</i> [on <i>interface</i>] bandwidth <i>bw</i> [priority 
+<i>pri</i>] [qlimit <i>qlim</i>] \<br>
+&nbsp;&nbsp;&nbsp;<i>scheduler</i> ( <i>sched_options</i> )
+{ <i>queue_list</i> }
+</tt>
+</blockquote>
+
+<ul>
+<li><tt><i>name</i></tt> - le nom de la queue. Il doit correspondre &agrave;
+un des noms de queues d&eacute;finies dans la directive <tt>altq on</tt>
+<tt><i>queue_list</i></tt>. Pour <tt>cbq</tt> il peut aussi correspondre au
+nom d'une queue dans la directive <tt>queue</tt> pr&eacute;c&eacute;dente
+<tt><i>queue_list</i></tt>. Les noms de queue ne doivent pas &ecirc;tre plus longs que 15 caract&egrave;res.
+<li><tt><i>interface</i></tt> - l'interface r&eacute;seau pour laquelle la queue est valide. Cette valeur est optionnelle et si elle n'est pas pr&eacute;cis&eacute;e, la queue sera valide pour toutes les interfaces.
+<li><tt><i>bw</i></tt> - la quantit&eacute; totale de bande passante disponible pour la queue.
+Elle doit &ecirc;tre sp&eacute;cifi&eacute;e avec une valeur absolue en utilisant les suffixes <tt>b</tt>, <tt>Kb</tt>, <tt>Mb</tt>, et <tt>Gb</tt> signifiant bits, kilobits, megabits, et gigabits par seconde, en valeur ou en pourcentage de la bande passante de la queue parent.
+Ce param&egrave;tre n'est applicable que lorsque l'on utilise l'algorithme <tt>cbq</tt>.
+<li><tt><i>pri</i></tt> - la priorit&eacute; de la queue. Pour <tt>cbq</tt> la
+gamme de priorit&eacute;s va de 0 &agrave; 7 et pour <tt>priq</tt> la gamme va de 0 &agrave; 15.
+La priorit&eacute; 0 est la priorit&eacute; la plus basse. Quand elle n'est pas sp&eacute;cifi&eacute;e, elle est par d&eacute;faut de 1.
+<li><tt><i>qlim</i></tt> - le nombre maximum de paquets acceptables dans une queue. 
+Quand il n'est pas sp&eacute;cifi&eacute;, la valeur utilis&eacute;e par d&eacute;faut est de 50.
+<li><tt><i>scheduler</i></tt> - l'algorithme utilis&eacute;, soit <tt>cbq</tt> soit <tt>priq</tt>. Il doit &ecirc;tre le m&ecirc;me que celui de la queue "root".
+<li><tt><i>sched_options</i></tt> - d'autres options peuvent &ecirc;tre pass&eacute;es &agrave; l'algorithme pour contr&ocirc;ler son comportement :
+	<ul>
+	<li><tt>default</tt> - d&eacute;finit une queue par d&eacute;faut dans 
+	laquelle tous les paquets ne r&eacute;pondant pas &agrave; une quelconque 
+    r&egrave;gle vont. Cette queue par d&eacute;faut doit &ecirc;tre unique.
+	<li><tt>red</tt> - active la D&eacute;tection Al&eacute;atoire 
+	Anticip&eacute;e (RED) pour cette queue.
+	<li><tt>rio</tt> - active RED dans les sens ENTREE/SORTIE. Dans ce mode, RED 
+	maintiendra des longueurs moyennes de queues et des valeurs de seuil,
+	une pour chaque niveau de Qualit&eacute; de service.
+	<li><tt>ecn</tt> - active la Notification Explicite de Congestion (ECN) 
+	pour cette queue. <tt>Ecn</tt> implique <tt>red</tt>.
+	<li><tt>borrow</tt> - la queue peut emprunter de la bande passante aux 
+	queues parent. Ceci n'est valable que lorsque vous utilisez l'algorithme	<tt>cbq</tt>.
+	</ul>
+<li><tt><i>queue_list</i></tt> - une liste de queues enfant &agrave cr&eacute;er sous 
+cette queue. Une <tt><i>queue_list</i></tt> ne peut &ecirc;tre d&eacute;finie 
+que lorsque l'on utilise l'algorithme <tt>cbq</tt>.
+</ul>
+
+<p>
+Suite de l'exemple ci-dessus :
+<blockquote>
+<tt>
+queue std bandwidth 50% cbq(default)<br>
+queue ssh { ssh_login, ssh_bulk }<br>
+&nbsp;&nbsp;queue ssh_login  priority 4 cbq(ecn)<br>
+&nbsp;&nbsp;queue ssh_bulk   cbq(ecn)<br>
+queue ftp bandwidth 500Kb priority 3 cbq(borrow red)<br>
+</tt>
+</blockquote>
+
+<p>
+Ici, les param&egrave;tres des queues enfant d&eacute;finies pr&eacute;c&eacute;demment sont d&eacute;finis. La queue <tt>std</tt> se voit attribuer une bande passante correspondant &agrave; 50% de celle de la queue "root" (1 Mbps) et est d&eacute;finie comme queue par d&eacute;faut. La queue <tt>ssh</tt> d&eacute;finie deux queues enfant, <tt>ssh_login</tt> et <tt>ssh_bulk</tt>. La queue <tt>ssh_login</tt> a une priorit&eacute; plus &eacute;lev&eacute;e que <tt>ssh_bulk</tt> et les deux ont ECN activ&eacute;. La queue <tt>ftp</tt> obtient une bande passante de 500Kbps et obtient une priorit&eacute; de 3. Elle peut aussi emprunter de la bande passante quand une quantit&eacute; suppl&eacute;mentaire est disponible et RED est activ&eacute;.
+
+<a name="assign"></a>
+<h3>Assignation du Traffic &agrave; une Queue</h3>
+<p>
+Pour assigner du trafic &agrave; une queue, le mot-cl&eacute; <tt>queue</tt> est utilis&eacute; en conjonction avec les <a href="filter.html">r&egrave;gles de filtrage</a> de PF. Par exemple, consid&eacute;rons un jeu de r&egrave;gles de filtrage contenant une ligne comme :
+<blockquote>
+<tt>pass out on fxp0 from any to any port 22</tt>
+</blockquote>
+
+<p>
+Les paquets r&eacute;pondant &agrave; cette r&egrave;gle peuvent &ecirc;tre assign&eacute;s &agrave; une queue sp&eacute;cifique en utilisant le mot-cl&eacute; <tt>queue</tt> :
+<blockquote>
+<tt>pass out on fxp0 from any to any port 22 queue ssh</tt>
+</blockquote>
+
+<p>
+Lorsque l'on utilise le mot-cl&eacute; <tt>queue</tt> avec les directives <tt>block</tt>, les paquets TCP RST ou ICMP Unreachable r&eacute;sultants sont assign&eacute;s dans la queue sp&eacute;cifi&eacute;e.
+
+<p>
+Notez que la d&eacute;signation des queues est possible sur une interface diff&eacute;rente de celle d&eacute;finie dans la directive <tt>altq on</tt> :
+<blockquote>
+<tt> 
+altq on fxp0 cbq bandwidth 2Mb queue { std, ftp }<br>
+queue std cbq(default)<br>
+queue ftp bandwidth 1.5Mb<br>
+<br>
+pass in on dc0 from any to any port 21 queue ftp<br>
+</tt>
+</blockquote>
+
+<p>
+La Mise en queue est activ&eacute;e sur <tt>fxp0</tt> mais la d&eacute;signation concerne <tt>dc0</tt>.
+Si les paquets r&eacute;pondant &agrave; la r&egrave;gle <tt>pass</tt> sortent de l'interface <tt>fxp0</tt>, ils seront mis en queue dans <tt>ftp</tt>. Ce type de mise en queue peut &ecirc;tre tr&egrave;s pratique sur les routeurs.
+
+<p>
+Normalement, un seul nom de queue est donn&eacute; avec le mot-cl&eacute; <tt>queue</tt>, mais si un deuxi&egrave;me nom est sp&eacute;cifi&eacute; cette queue sera utilis&eacute;e pour les paquets avec un <a href="http://www.rfc-editor.org/rfc/rfc791.txt">Type de Service (ToS)</a> "low-delay" et pour les paquets TCP ACK sans donn&eacute;e. Un bon exemple de ceci est l'utilisation de SSH. Les connexions de sessions SSH mettent le ToS en "low-delay" contrairement aux sessions SCP et SFTP. PF peut utiliser cette information pour mettre les paquets correspondant &agrave; une connexion dans une queue diff&eacute;rente que celles pour les connexions sans ouverture de session. Ceci peut &ecirc;tre utile pour donner la priorit&eacute; aux connexions avec ouverture de session sur les paquets de transfert de fichiers.
+<blockquote>
+<tt>pass out on fxp0 from any to any port 22 queue(ssh_bulk, ssh_login)</tt>
+</blockquote>
+
+<p>
+Ceci assigne les paquets correspondant aux connexions d'ouverture de session SSH &agrave; la queue <tt>ssh_login</tt> et les paquets correspondant aux connexions SCP et SFTP dans la queue <tt>ssh_bulk</tt>. Les connexions d'ouverture de session auront leurs paquets trait&eacute;s avant ceux des connexions SCP et SFTP car la queue <tt>ssh_login</tt> a une priorit&eacute; plus &eacute;lev&eacute;e.
+
+<p>
+L'assignation des paquets TCP ACK &agrave; une queue ayant une priorit&eacute; &eacute;lev&eacute;e est utile pour les connexions asym&eacute;triques, c'est &agrave; dire les connexions qui ont des bandes passantes diff&eacute;rentes en envoi et en r&eacute;ception, comme les lignes ADSL. Avec une ligne ADSL, si le canal d'envoi est utilis&eacute; &agrave; son maximum et si un t&eacute;l&eacute;chargement est lanc&eacute;, le t&eacute;l&eacute;chargement en souffrira car les paquets TCP ACK devant &ecirc;tre envoy&eacute;s seront congestionn&eacute;s quand ils essaieront de traverser le canal d'envoi. Des tests ont montr&eacute; que pour r&eacute;aliser les meilleurs r&eacute;sultats, la bande passante de la queue d'envoi doit &ecirc;tre inf&eacute;rieure &agrave; la capacit&eacute; maximale. Par exemple, si une ligne ADSL a un envoi maximum de 640Kbps, le fait de r&eacute;gler la <tt>bande passante</tt> de la queue "root" sur une valeur comme 600Kb entra&icirc;nera de meilleures performances. C'est apr&egrave;s des essais et des erreurs que vous obtiendrez les meilleurs r&eacute;glages de <tt>bande passante</tt>.
+
+<p>
+Quand on utilise le mot-cl&eacute; <tt>queue</tt> avec des r&egrave;gles qui <tt>gardent l'&eacute;tat</tt> comme :
+<blockquote>
+<tt>
+pass in on fxp0 proto tcp from any to any port 22 flags S/SA \<br>
+&nbsp;&nbsp;&nbsp;keep state queue ssh
+</tt>
+</blockquote>
+
+<p>
+PF enregistrera la queue dans la table d'&eacute;tats ce qui entra&icirc;nera que les paquets traversant <tt>fxp0</tt> au retour et r&eacute;pondant &agrave; la connexion "stateful" termineront dans la queue "ssh". Notez que m&ecirc;me si le mot-cl&eacute; <tt>queue</tt> est utilis&eacute; dans une r&egrave;gle filtrant le trafic entrant, le but est de sp&eacute;cifier une queue pour le trafic sortant correspondant; la r&egrave;gle ci-dessus ne mettra pas en queue les paquets entrants.
+
+<a name="example1"></a>
+<h2>Exemple #1 : Petit R&eacute;seau, R&eacute;seau domestique</h2>
+<pre>
+  
+    [ Alice ]    [ Charlie ]
+        |             |                              ADSL
+     ---+-----+-------+------ dc0 [ OpenBSD ] fxp0 -------- ( Internet )
+              |
+           [ Bob ]
+
+</pre>
+
+<p>
+Dans cet exemple, OpenBSD est utilis&eacute; sur une passerelle Internet pour un petit r&eacute;seau &agrave; domicile avec trois stations de travail. La passerelle r&eacute;alise le filtrage de paquets et la NAT. La connexion Internet via une ligne ADSL poss&egrave;de une bande passante descendante de 2MBps et montante de 640Kbps.
+
+<p>
+La politique de mise en queue pour ce r&eacute;seau :
+<ul>
+<li>R&eacute;server une bande passante de 80Kbps en t&eacute;l&eacute;chargement pour Bob afin qu'il puisse jouer aux jeux en ligne sans &ecirc;tre ralenti par les t&eacute;l&eacute;chargements d'Alice et de Charlie. Autoriser Bob &agrave; utiliser plus de 80Kbps quand ceci est possible.
+<li>Le trafic g&eacute;n&eacute;r&eacute; par le SSH interactif et la messagerie instantan&eacute;e aura une plus haute priorit&eacute; que le trafic r&eacute;gulier.
+<li>Les requ&ecirc;tes et les r&eacute;ponses DNS auront la seconde plus haute priorit&eacute;.
+<li>Les paquets TCP ACK sortants auront une priorit&eacute; plus haute que tout autre trafic sortant.
+</ul>
+
+<p>
+Le jeu de r&egrave;gles ci-dessous permet cette politique r&eacute;seau. Notez que seul les directives de <tt>pf.conf</tt> qui concernent directement la politique ci-dessus sont pr&eacute;sentes;
+<a href="nat.html"><tt>nat</tt></a>,
+<a href="rdr.html"><tt>rdr</tt></a>, <a href="options.html">options</a>,
+etc., ne sont pas montr&eacute;es.
+
+<p>
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+# active la mise en queue sur l'interface externe pour contr&ocirc;ler 
+# le trafic allant sur Internet. utilise l'algorithme priq pour 
+# contr&ocirc;ler uniquement les priorit&eacute;s. 
+# fixe la bande passante &agrave; 610Kbps pour avoir les meilleures
+# performances &agrave; la sortie de la queue TCP ACK.
+
+altq on fxp0 priq bandwidth 610Kb queue { std_out, ssh_im_out, dns_out, \
+	tcp_ack_out }
+
+# d&eacute;finit les param&egrave;tres pour les queues enfant.
+# std_out      - la queue standard. toute r&egrave;gle de filtrage ci-dessous 
+#                qui ne sp&eacute;cifie pas explicitement une queue aura
+#                son trafic ajout&eacute; &agrave; cette queue.
+# ssh_im_out   - trafic g&eacute;n&eacute;r&eacute; par le SSH interactif et
+#                la messagerie instantan&eacute;e
+#                vari&eacute;s.
+# dns_out      - requ&ecirc;tes DNS.
+# tcp_ack_out  - paquets TCP ACK sans donn&eacute;e.
+
+queue std_out     priq(default)
+queue ssh_im_out  priority 4 priq(red)
+queue dns_out     priority 5
+queue tcp_ack_out priority 6
+
+# active la mise en queue sur l'interface interne en vue de contr&ocirc;ler
+# le trafic provenant d'Internet. utilise l'algorithme cbq pour
+# contr&ocirc;ler la bande passante. la bande passante maximale est de
+# 2Mbps.
+
+altq on dc0 cbq bandwidth 2Mb queue { std_in, ssh_im_in, dns_in, bob_in }
+
+# d&eacute;finit les param&egrave;tres pour les queues enfant.
+# std_in      - la queue standard. toute r&egrave;gle de filtrage ci-dessous 
+#               qui ne sp&eacute;cifie pas explicitement une queue aura
+#               son trafic ajout&eacute; &agrave; cette queue.
+# ssh_im_in   - trafic g&eacute;n&eacute;r&eacute; par le SSH interactif et
+#               par la messagerie instantan&eacute;e.
+# dns_in      - r&eacute;ponses DNS.
+# bob_in      - bande passante r&eacute;serv&eacute;e &agrave; la station
+#               de travail de Bob. l'autorise &agrave; emprunter.
+
+queue std_in    cbq(default)
+queue ssh_im_in priority 4
+queue dns_in    priority 5
+queue bob_in    bandwidth 80Kb cbq(borrow)
+
+
+# ... dans la section filtrage de pf.conf ...
+
+alice         = "192.168.0.2"
+bob           = "192.168.0.3"
+charlie       = "192.168.0.4"
+local_net     = "192.168.0.0/24"
+ssh_ports     = "{ 22 2022 }"
+im_ports      = "{ 1863 5190 5222 }"
+
+# r&egrave;gles de filtrage pour l'entr&eacute;e en fxp0
+block in on fxp0 all
+
+# r&egrave;gles de filtrage pour la sortie en fxp0
+block out on fxp0 all
+pass  out on fxp0 inet proto tcp from (fxp0) to any flags S/SA \
+	keep state queue(std_out, tcp_ack_out)
+pass  out on fxp0 inet proto { udp icmp } from (fxp0) to any keep state
+pass  out on fxp0 inet proto { tcp udp } from (fxp0) to any port domain \
+	keep state queue dns_out
+pass  out on fxp0 inet proto tcp from (fxp0) to any port $ssh_ports \
+	flags S/SA keep state queue(std_out, ssh_im_out)
+pass  out on fxp0 inet proto tcp from (fxp0) to any port $im_ports \
+	flags S/SA keep state queue(ssh_im_out, tcp_ack_out)
+
+# r&egrave;gles de filtrage pour l'entr&eacute;e en dc0
+block in on dc0 all
+pass  in on dc0 from $local_net
+
+# r&egrave;gles de filtrage pour la sortie en dc0
+block out on dc0 all
+pass  out on dc0 from any to $local_net
+pass  out on dc0 proto { tcp udp } from any port domain to $local_net \
+	queue dns_in
+pass  out on dc0 proto tcp from any port $ssh_ports to $local_net \
+	queue(std_in, ssh_im_in)
+pass  out on dc0 proto tcp from any port $im_ports to $local_net \
+	queue ssh_im_in
+pass  out on dc0 from any to $bob queue bob_in
+</pre>
+</td></tr>
+</table>
+
+<a name="example2"></a>
+<h2>Exemple #2 : R&eacute;seau d'entreprise</h2>
+<pre>
+
+  ( IT Dept )  [ Boss's PC ]
+       |          |                                   T1
+     --+----+-----+---------- dc0 [ OpenBSD ] fxp0 -------- ( Internet )
+            |                         fxp1
+         [ COMP1 ]    [ WWW ]         /
+                         |           / 
+                       --+----------' 
+
+</pre>
+
+<p>
+Dans cet exemple, l' h&ocirc;te OpenBSD agit en firewall pour le r&eacute;seau d'une entreprise. L'entreprise utilise un serveur WWW dans la partie DMZ de son r&eacute;seau o&ugrave; les clients envoient leurs sites via FTP. Le d&eacute;partement IT a son propre sous-r&eacute;seau connect&eacute; au r&eacute;seau principal, et le directeur a un PC sur son bureau utilis&eacute; pour les emails et le surf sur Internet. La connexion &agrave; Internet se fait via une ligne T1 avec une bande passante de 1.5Mbps dans les deux directions. Tous les autres segments du r&eacute;seau utilisent Fast Ethernet (100Mbps).
+
+<p>
+L'administrateur r&eacute;seau a decid&eacute; de la politique suivante :
+<ul>
+<li>Limiter le trafic entre le serveur WWW et Internet &agrave; 500Kbps dans 
+chaque direction.
+<li>Aucune limite de bande passante sur le trafic entre le serveur WWW et le r&eacute;seau interne.
+<li>Donner une priorit&eacute; plus haute au trafic HTTP entre le serveur WWW et Internet que tout autre trafic entre le serveur WWW et Internet (comme les 
+envois FTP).
+<li>R&eacute;server 500Kbps pour le r&eacute;seau du d&eacute;partement IT pour qu'ils puissent t&eacute;l&eacute;charger les derni&egrave;res mises &agrave; jour de logiciels de fa&ccedil;on rapide. Ils devront pouvoir utiliser plus de 500Kbps quand de la bande passante additionnelle sera disponible.
+<li>Donner une priorit&eacute; plus &eacute;lev&eacute;e au trafic entre le PC du directeur et Internet que tout autre trafic allant ou venant d'Internet.
+</ul>
+
+<p>
+Le jeu de r&egrave;gles ci-dessous permet cette politique r&eacute;seau. Notez que seul les directives de <tt>pf.conf</tt> qui concernent directement la politique ci-dessus sont pr&eacute;sentes;
+<a href="nat.html"><tt>nat</tt></a>,
+<a href="rdr.html"><tt>rdr</tt></a>, <a href="options.html">options</a>,
+etc., ne sont pas montr&eacute;es.
+
+<p>
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+# active la mise en queue sur l'interface externe pour les paquets sortant sur 
+# Internet. utilise l'algorithme cbq, afin que la bande passante de chaque 
+# queue puisse &ecirc;tre contr&ocirc;l&eacute;e. la bande passante sortante
+# maximale est de 1.5Mbps.
+
+altq on fxp0 cbq bandwidth 1.5Mb queue { std_ext, www_ext, boss_ext }
+
+# d&eacute;finit les param&egrave;tres pour les queues enfant.
+# std_ext        - la queue standard. &eacute;galement queue par d&eacute;faut 
+#                  pour le trafic sortant sur fxp0.
+# www_ext        - queue contenant les queues du serveur WWW. limit&eacute;e &agrave;
+#                  500Kbps.
+#   www_ext_http - trafic http provenant du serveur WWW
+#   www_ext_misc - tout le trafic non-http provenant du serveur WWW
+# boss_ext       - trafic venant de l'ordinateur du directeur
+
+queue std_ext        cbq(default)
+queue www_ext        bandwidth 500Kb { www_ext_http, www_ext_misc }
+  queue www_ext_http priority 3 cbq(red)
+  queue www_ext_misc priority 1
+queue boss_ext       priority 3
+
+# active la mise en queue sur l'interface interne pour contr&ocirc;ler le trafic
+# venant d'Internet ou de la DMZ. utilise l'algorithme cbq pour contr&ocirc;ler
+# la bande passante de chaque queue. la bande passante sur cette interface
+# est fix&eacute;e au maximum. le trafic venant de la DMZ sera en mesure
+# d'utiliser la totalit&eacute; de cette bande passante alors que le trafic
+# venant de l'Internet sera limit&eacute; &agrave; 1.0Mbps (car 0.5Mbps
+# (500Kbps) sont allou&eacute;s &agrave; fxp1).
+
+altq on dc0 cbq bandwidth 100% queue { net_int, www_int }
+
+# d&eacute;finit les param&egrave;tres pour les queues enfant.
+# net_int    - queue contenant le trafic provenant de Internet. la bande
+#              passante est de 1.0Mbps.
+#   std_int  - la queue standard. &eacute;galement queue par d&eacute;faut pour
+#              le trafic sortant en dc0.
+#   it_int   - trafic &agrave; destination du r&eacute;seau du
+#              d&eacute;partement IT.
+#   boss_int - trafic &agrave; destination du PC du directeur.
+# www_int    - trafic provenant du serveur WWW dans la DMZ.
+
+queue net_int    bandwidth 1.0Mb { std_int, it_int, boss_int }
+  queue std_int  cbq(default)
+  queue it_int   bandwidth 500Kb cbq(borrow)
+  queue boss_int priority 3
+queue www_int    cbq(red)
+
+# active la mise en queue sur l'interface de la DMZ pour contr&ocirc;ler
+# le trafic destin&eacute; au serveur WWW. cbq sera utilis&eacute;
+# sur cette interface tant que le contr&ocirc;le d&eacute;taill&eacute; de la bande
+# passante sera n&eacute;cessaire. la bande passante sur cette interface
+# est fix&eacute;e au maximum. le trafic provenant du r&eacute;seau
+# interne sera en mesure d'utiliser la totalit&eacute; de la bande passante
+# alors que le trafic provenant d'Internet sera limit&eacute; &agrave; 500Kbps.
+
+altq on fxp1 cbq bandwidth 100% queue { internal_dmz, net_dmz }
+
+# d&eacute;finit les param&egrave;tres pour les queues enfant.
+# internal_dmz   - trafic provenant du r&eacute;seau interne.
+# net_dmz        - queue contenant le trafic provenant de Internet.
+#   net_dmz_http - trafic http.
+#   net_dmz_misc - tout trafic autre. c'est aussi la queue par d&eacute;faut.
+
+queue internal_dmz      # aucun r&eacute;glage sp&eacute;cifique requis
+queue net_dmz        bandwidth 500Kb { net_dmz_http, net_dmz_misc }
+  queue net_dmz_http priority 3 cbq(red)
+  queue net_dmz_misc priority 1 cbq(default)
+
+
+# ... dans la section filtrage du pf.conf ...
+
+main_net  = "192.168.0.0/24"
+it_net    = "192.168.1.0/24"
+int_nets  = "{ 192.168.0.0/24, 192.168.1.0/24 }"
+dmz_net   = "10.0.0.0/24"
+
+boss      = "192.168.0.200"
+wwwserv   = "10.0.0.100"
+
+# refut par d&eacute;faut
+block on { fxp0, fxp1, dc0 } all
+
+# r&egrave;gles de filtrage pour l'entr&eacute;e de fxp0
+pass in on fxp0 proto tcp from any to $wwwserv port { 21, \
+	&gt; 49151 } flags S/SA keep state queue www_ext_misc
+pass in on fxp0 proto tcp from any to $wwwserv port 80 \
+	flags S/SA keep state queue www_ext_http
+
+# r&egrave;gles de filtrage pour la sortie de fxp0
+pass out on fxp0 from $int_nets to any keep state
+pass out on fxp0 from $boss to any keep state queue boss_ext
+
+# r&egrave;gles de filtrage pour l'entr&eacute;e de dc0
+pass in on dc0 from $int_nets to any keep state
+pass in on dc0 from $it_net to any queue it_int
+pass in on dc0 from $boss to any queue boss_int
+pass in on dc0 proto tcp from $int_nets to $wwwserv port { 21, 80, \
+	&gt; 49151 } flags S/SA keep state queue www_int
+
+# r&egrave;gles de filtrage pour la sortie de dc0
+pass out on dc0 from dc0 to $int_nets
+
+# r&egrave;gles de filtrage pour l'entr&eacute;e de fxp1
+pass in on fxp1 proto { tcp, udp } from $wwwserv to any port 53 \
+	keep state
+
+# r&egrave;gles de filtrages pour la sortie de fxp1
+pass out on fxp1 proto tcp from any to $wwwserv port { 21, \
+	&gt; 49151 } flags S/SA keep state queue net_dmz_misc
+pass out on fxp1 proto tcp from any to $wwwserv port 80 \
+	flags S/SA keep state queue net_dmz_http
+pass out on fxp1 proto tcp from $int_nets to $wwwserv port { 80, \
+	21, &gt; 49151 } flags S/SA keep state queue internal_dmz
+</pre>
+</td></tr>
+</table>
+
+<p>
+[<a href="anchors.html">Précédent : Ancres et Bases de R&egrave;gles Nomm&eacute;es (Sub)</a>]
+[<a href="index.html">Index</a>]
+[<a href="pools.html">Suivant : PF : Ensembles d'adresses (&quot;Pools&quot;) et
+Partage de Charge</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: queuing.html,v 1.22 ]<br>
+$Translation: queueing.html,v 1.2 2004/10/11 09:55:47 saad Exp $<br>
+$OpenBSD: queueing.html,v 1.1 2004/10/11 10:15:58 jufi Exp $
+</small><br>
+</body>
+</html> 
