@@ -27,6 +27,7 @@ This document borrows large pieces from:
 <UL>
 <LI><A HREF="http://www.freebsd.org/~julian/IPSEC_4_Dummies.html">IPSec for Dummies</a> by Julian Elischer
 <LI><A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=ipsec&sektion=4&format=html">ipsec(4)</a> by Niels Provos, and several other people from the OpenBSD team
+<LI><A HREF="http://www.secureops.com/resources/vpn/">Secureops VPN</a>
 </UL>
 Thanks, folks!
 </font>
@@ -112,7 +113,7 @@ got to know what the traffic is all about by other means than
 cracking the encryption, and that the traffic causes events
 favourable for him, like depositing money into his account.  We
 need to make sure he cannot just replay that traffic later.
-IP<i>WARNING: as per the standards specification, replay protection is not
+<i>WARNING: as per the standards specification, replay protection is not
 performed when using manual-keyed IPsec (e.g., when using <A
 HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=ipsecadm&apropos=0&sektion=8&format=html">ipsecadm(8)</a>)</i>.
 <p>
@@ -356,6 +357,9 @@ net.inet.esp.enable: 0 -> 1<br>
 net.inet.ah.enable: 0 -> 1
 </ul></tt>
 You can edit <tt>/etc/sysctl.conf</tt> to turn these on at boot time.
+You need to remove the # mark from in front of net.inet.esp.enable and/or
+net.inet.ah.enable
+(depending on which you plan to use) and make sure they are set to 1.
 <P>
 Now, you need to setup SAs, or Security Associations.
 A Security Association is a combination of your IP addresses, an SPI, and
@@ -554,16 +558,332 @@ bsd# <b>tcpdump host remote.host</b>
 You can make photurisd automatically set the source and destination
 host or networks in /etc/photuris/photuris.startup
 
+<P> <a name="13.8"> <h1>13.8 - How do I setup IPSec with isakmpd?</h1>
+</a> <P>If you are thinking about VPNs or other traditional applications
+of IPSec, you probably are going to use ISAKMP.  Some commercial
+implementations of IPSec do not provide any manual keying ability, instead
+they require you to use some form of ISAKMP.
 <P>
-<a name="13.8">
-<h1>13.8 - How do I setup IPSec with isakmpd?</h1>
-</a>
-<P>If you are thinking about VPNs or other traditional applications
-of IPSec, you probably are going to use ISAKMP.  Most commercial
-implementations of IPSec do not provide any manual keying ability, 
-instead they require you to use some form of ISAKMP.
+
+<h3>13.8.1 - What is isakmpd?</h3> ISAKMP (sometimes referred to as IKE,
+or Internet Key Exchange) is the key exchange mechanism for the VPN. It
+meets security concerns using the methods mentioned in RFC 2407, RFC 2408
+and RFC 2409. ISAKMP manages the exchange of cryptographic keys that you
+would normally have to manage with <A
+HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=ipsecadm&apropos=0&sektion=8">ipsecadm(8)</a>.
+It employs a two-phase process for establishing the IPSec parameters
+between two IPSec nodes.
+
+<P> <b>Phase 1</b> - The two ISAKMP peers establish a secure,
+authenticated channel upon which to communicate between two daemons. This
+establishes a Security Association (SA) between both hosts. <b>Main
+Mode</b> and <b>Aggressive Mode</b> are the methods used to establish this
+channel. Main Mode sends the various authentication information in a
+certain sequence, providing identity protection. Aggressive Mode does not
+provide identity protection because all of the authentication information
+is sent at the same time. Aggressive mode should only be used in such
+cases where network bandwidth is of concern.
 <P>
-This section is incomplete! <A HREF="mailto:faq@openbsd.org">contribute?</a>
+
+<b>Phase 2</b> - Security Associations are negotiated on behalf of IPSec.
+Phase 2 is establishes tunnels or endpoint SA's between IPSec hosts.
+<b>Quick Mode</b> is used in Phase 2 because there is not need to repeat a
+full authentication because Phase 1 has already established the SAs.
+
+<P>
+
+In brief, Phase 1 is used to get a secure channel in which to do the
+(quicker) phase 2 setups, there can be several. Phase 2 is used to setup
+the actual tunnels. In Phase 1, your IPSec nodes establish a connection
+where they exchange authentication (Either a X509 certificate or a
+pre-shared secret). This allows each end to make sure the other end is
+authenticated.  Phase 2 is an exchange of keys to determine how the data
+between the two will be encrypted.
+
+<h3>13.8.2 - How do I get started with isakmpd?</h3>
+
+<P>
+By default, OpenBSD 2.6 comes with the proper binaries for ISAKMP and the
+IPSec stack. Unfotunately, the same
+cannot be said for the sample files. To retrieve them, you need to grab:
+/usr/src/sbin/isakmpd/samples/VPN-east.conf and
+/usr/src/sbin/isakmpd/samples/policy from the source tree.  You can
+either use your CD (if you have one), <A
+HREF="http://www.openbsd.org/cgi-bin/cvsweb/">cvsweb</a>, or
+the <A HREF="http://www.usa.openbsd.org/anoncvs.html">command line CVS
+client</a>. (Cvsweb has <A
+HREF="http://www.openbsd.org/cgi-bin/cvsweb/src/sbin/isakmpd/samples/VPN-east.conf">VPN-east.conf</a>
+and <A
+HREF="http://www.openbsd.org/cgi-bin/cvsweb/src/sbin/isakmpd/samples/policy">policy</a>
+readily available).  For the purposes of this example, copy <i>policy</i>
+to /etc/isakmpd/policy.  Copy <i>VPN-east.conf</i> to /etc/isakmpd/conf.
+Here we attempt to show you how to setup a VPN (tunnel).  If you want to
+use isakmpd between single hosts, there are other configuration files in
+the <i>samples</i> directory.
+
+<P>
+Your first step is to turn on esp.  The <A HREF="#13.6" TARGET="_blank">top
+of section 13.6</a> tells you how to do this both for run-time and boot.
+Next, you need to edit /etc/isakmpd/policy.  
+This file tells ISAKMP who can access IPSec. In this scenario, the policy file states that anybody who sends data
+using Encapsulate Security Payload(ESP), and has authenticated with the passphrase mekmitasdigoat (or whatever
+passphrase you determine), is allowed to communicate with isakmpd.  You can modify this file to let ISAKMP know that we only
+want to allow data signed with certain digital certificates or using a certain encryption transform. You could also
+allow anybody to access IPSec.  This is only recommended for testing.
+To do this, edit your policy file to contain only the following lines:
+<BR>
+<PRE>
+KeyNote-Version: 2
+Authoriser: "POLICY"
+</PRE>
+<P>
+The same policy file contains two lines that start with the $ character.
+You need to remove these lines before using it, they are only for cvs.  
+<P>
+A more useful policy file for this example looks like this:
+<BR><PRE>
+KeyNote-Version: 2
+Comment: This policy accepts ESP SAs from a remote that uses the right password
+Authoriser: "POLICY"
+Licensees: "mekmitasdigoat"
+Conditions: app_domain == "IPSec policy" &&
+            esp_present == "yes" -> "true"; 
+</pre>
+This should be identical to the policy file included with OpenBSD 2.6.
+<P>
+Implementing this will give you a basic VPN (tunnel) using ESP only.
+On host A, edit /etc/isakmpd/isakmpd.conf.  The 249.2.2.2 sample IP address
+should be replaced with the external IP address of host A.
+
+<PRE>
+[General] 
+Retransmits=		5
+Exchange-max-time=	120
+Listen-on=		249.2.2.2
+</PRE>
+
+Do similar for isakmpd.conf on host B.  249.3.3.3 represents the
+external IP address for host B.
+
+<PRE>
+[General]
+Retransmits=		5
+Exchange-max-time=	120
+Listen-on=		249.3.3.3
+</PRE>
+
+<p>This is where you can setup the variables that will affect the main behaviour of isakmpd. It is okay to 
+use the defaults here.<br>
+The <b>Listen-on</b>= value specifies the IP 
+that isakmpd should listen on. Only the Internet IP of your gateway is necessary.
+If you have multiple external interfaces on your gateway, 
+you could list which interfaces you want to listening on by entering them using a comma separated list.
+<P>
+Next, on host A, edit isakmpd.conf again.
+
+<PRE>
+[Phase 1]
+249.3.3.3=		HostB
+</PRE>
+
+On host B:
+
+<PRE>
+[Phase 1]
+249.2.2.2=		HostA
+</PRE>
+
+<p>This section describes the IP addresses to accept in order to negotiate the phase 1 connection. 
+Its value points to the section below (Remember that phase 1 simply 
+authenticates the remote peer to make sure they are who they say they are). You can list multiple peers with additional lines in the format of
+IP_Address=<i> &lt;PEER-NAME&gt;.</i><br>
+<p>
+Next, on host A:
+<PRE>
+[Phase 2]
+Connections=		HostA-HostB
+</PRE>
+
+On host B:
+
+<PRE>
+[Phase 2]
+Connections=		HostB-HostA
+</PRE>
+
+<p>This describes Phase 2 of the connection. This is the phase that determines what protocols the two 
+peers will use to communicate.
+
+<p>The <b>Connections</b>= tag refers to the section below. 
+It initiates the requirements or the accepted methods to set up Phase 2. This also tells ISAKMPD which 
+connections to initiate once started. Note that you can have multiple sections
+as illustrated below 
+if you are to connect with multiple peer hosts.
+
+<p>If you do not have the IP address of the remote host, you can specify a Default= that points 
+to a section describing a generic entry that will be referenced by any 
+incoming IP that is not listed in the <b>Connections</b>= tag.
+<P>
+On host A:
+<PRE>
+[HostB]
+Phase=			1
+Transport=		udp
+Local-address=		249.2.2.2
+Address=		249.3.3.3
+Configuration=		Default-main-mode
+Authentication=		mekmitasdigoat
+#Flags=
+</PRE>
+
+On host B:
+
+<PRE>
+[HostA]
+Phase=			1
+Transport=		udp
+Local-address=		249.3.3.3
+Address=		249.2.2.2
+Configuration=		Default-main-mode
+Authentication=		mekmitasdigoat
+#Flags=
+</PRE>
+
+These represent the sections referred to by the Phase 1 section above. They each 
+describe the requirements that the peer gateway must fulfil in order to proceed to Phase 2. There are 
+many other options here but the ones mentioned above are the minimum requirements.<br>
+<b>Phase=1 </b>is required because the ISAKMPD code uses the same procedures to process Phase 1 and 
+Phase 2. It must be <b>1</b> or nothing will work.<br>
+<b>Transport= </b>is gives you different possibilities for different peers. It's 
+suggested that udp be used here so we'll leave it at that.<br>
+Please note that some peers may be behind a firewall that doesn't let UDP traffic through.  Obviously, this needs to be determined before setup.
+<b>Local-address </b>is the destination address that the incoming packets point to. In some cases, you 
+can be listening on different Interfaces for Phase 1 connections.
+In this example, there is only 1 interface listening, therefore this is the IP of the listening 
+interface on this peer.<br>
+<b>Address= </b>is the address that points to the source IP of the incoming packets. This usually points 
+to the peer gateway. 
+This needs further explanation, because the source IP address of the peer may be unknown!
+<b>Configuration= </b>points to the section below. You can specify 
+multiple sections like this. We use the default one 
+specified by the sample file.<br>
+<b>Authentication=</b> is the pre-shared secret to be used for this particular peer. It is more or less 
+a passphrase that each peer uses. This passphrase gets passed to policy to verify whether this 
+peer is allowed to use IPSEC with this host. If you change this phrase, you must also change it in the 
+policy file because the sample file provides for this passphrase. If you decided to go with a 
+minimum policy file then you can specify whatever you want here.<br>
+<b>Flags=</b> is not currently being used. The RFCs leave room for extra options to be specified for 
+phase 1.<br>
+There are other tags here that will allow for other options to be set. Refer to 
+<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd.conf&apropos=0&sektion=5&format=html">isakmpd.conf(5)</a>
+for descriptions.
+<P>
+On Host A:
+<PRE>
+[HostA-HostB]
+Phase=			2
+ISAKMP-peer=		HostB
+Configuration=		Default-quick-mode
+Local-ID=		Net-A
+Remote-ID=		Net-B
+</PRE>
+
+On Host B:
+<PRE>
+[HostB-HostA]
+Phase=			2
+ISAKMP-peer=		HostA
+Configuration=		Default-quick-mode
+Local-ID=		Net-B
+Remote-ID=		Net-A
+</PRE>
+
+<p>These represent the sections referred to by the Phase 2 section above. They are the 
+individual settings that ISAKMPD must use to talk between the two gateways for the particular 
+connection.
+<b>Phase=2</b> is required because ISAKMPD code uses the same functions to authenticate Phase 1 and Phase 
+2. This is required for the VPN to work.<br>
+<b>ISAKMPD-Peer=</b> is the name of Host section above. This means that we are 
+talking to that particular peer to establish a Phase 2 connection. This is provided because you can have 
+multiple sections to describe isakmp peers and connections.
+<b>Configuration=</b> refers to the section below that describes the 
+standards by which this host and the particular peer for this connection must abide.<br>
+<b>Local-ID=</b> refers to an IPSec-ID section below that describes our Private Network to 
+the peer gateway. This is the portion that is passed so that the other gateway can set up the proper 
+routing table that will transfer data over the VPN to our network.<br>
+<b>Remote-ID=</b> refers to an IPSec-ID section below that describes what is supposed to be 
+the remote Private Network to our host. This portion is interpreted to set up the proper routing tables 
+that will transfer data from our Private Network over the VPN to the remote Private Network.<br>
+There is another tag that is supported here called Flags=. If you require this tag, read 
+<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd.conf&apropos=0&sektion=5&format=html">isakmpd.conf(5)</a>.
+<P>
+This is the IPSec-ID section.  These entries need to exist
+in the isakmpd.conf files for both Host A and Host B.  This example
+will setup 192.168.1.0/255.255.255.0 for Host A (which was connected
+to Net-A above) and 192.168.20.0/255.255.255.0 for Host B (Net-B above).
+<PRE>
+[Net-A]
+ID-type=		IPV4_ADDR_SUBNET
+Network=		192.168.1.0
+Netmask=		255.255.255.0
+
+[Net-B]
+ID-type=		IPV4_ADDR_SUBNET
+Network=		192.168.20.0
+Netmask=		255.255.255.0
+</PRE>
+
+<p>These two sections are in the <b>conf</b> file of each host. They are the sections referenced by the 
+<b>Local-ID</b> and <b>Remote-ID</b> identifiers. They describe the 
+routes that should be set up to allow traffic from one private network to another.<br>
+<b>ID-type</b>= can be <b>IPV4_ADDR_SUBNET</b> or <b>IPV4_ADDR</b> (RFC2708 mentions more possible values. Currently only IPv4 is supported in the OpenBSD 2.6 implementation.  IPv6 may be supported in OpenBSD-current. )
+ 
+<P>
+Now, on both hosts, the sample file should read:
+<PRE>
+[Default-main-mode]
+DOI=			IPSEC
+EXCHANGE_TYPE=		ID_PROT
+Transforms=		3DES-SHA
+</PRE>
+
+This section describes the requirements for the encryption methods of Phase 1 connections. The name 
+reflects the value of <i>Configuration=</i> variable.  As we can see here, we are stating our 
+Domain of Interest which is IPSEC. The <b>EXCHANGE_TYPE</b> variable is set to <b>ID_PROT</b> for Phase 1, 
+which identifies the protocols to be covered by this Authentication.<br>
+<b>Transforms=</b> is the transform required (or assigned) for this exchange. In this case, this points to 
+the section below in the configuration file that says we are receiving a packet 
+encrypted with 3DES and a checksum verifiable with SHA. There are a bunch of different transforms defined 
+inside the sample <b>VPN-east.conf</b>. These are provided because 3DES and SHA are not always supported 
+across different platforms. For OpenBSD there should be no reason to change this for a basic setup. Feel 
+free to create multiples of this section and change the transform. The only requirement is that you change  the Configuration= variable.
+
+<PRE>
+[Default-quick-mode]
+DOI=			IPSEC
+EXCHANGE_TYPE=		QUICK_MODE
+Suites=			QM-ESP-3DES-SHA-PFS-SUITE,QM-ESP-DES-MD5-PFS-SUITE
+</PRE>
+
+<p>This section describes the requirements for the encryption of the data to be sent through the VPN and 
+is referred to by <i>Configuration</i> above. Note the difference between this 
+section and the Phase 1 equivalent just above is that the <b>EXCHANGE_TYPE</b> is <b>QUICK_MODE</b>. 
+This is always the case for Phase 2.<br>
+<b>Suites=</b> points to a IPSec Suite section describing the different encryption 
+schemes available between the two hosts.<br>
+There is much more to be said about ISAKMP and IPSec. By using the above basic descriptions you should 
+be able to create a simple but solid VPN that cares and feeds itself.
+This is the bare <i>minimum</i> 
+<b>isakmpd.conf</b> for both hosts here.
+ 
+<h3>13.8.3 - Starting isakmpd</h3>
+You may wish to use
+<b>$ isakmpd -d -DA=99</b><br>
+the first time you decide to run this daemon. The daemon will not be running in daemon mode but as a 
+regular process. It will log everything to your terminal.  To stop isakmpd
+and flush the routes, you need to kill the isakmpd process on each node,
+and run <b>ipsecadm flush</b>.
+
 <P>
 <a name= "13.9">
 <h1>13.9 - What IKE clients are compatible with isakmpd?</h1>
@@ -757,7 +1077,7 @@ And on to the RFCs...
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq13.html,v 1.21 1999/12/15 18:30:38 chris Exp $</small>
+<small>$OpenBSD: faq13.html,v 1.22 2000/01/06 17:50:12 chris Exp $</small>
 </p>
 </body>
 </html>
