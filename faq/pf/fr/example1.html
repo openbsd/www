@@ -93,7 +93,8 @@ diagramme en montre trois mais le vrai nombre n'est pas une
 donn&eacute;e utile. Ces machines sont des stations de travail normales
 servant &agrave; surfer sur le web, &eacute;crire des messages
 &eacute;lectroniques, participer &agrave; des forums de discussion en
-ligne, etc. Le r&eacute;seau interne utilise le bloc de r&eacute;seau
+ligne, etc &agrave; l'exception de COMP3 qui sert aussi de serveur Web.
+Le r&eacute;seau interne utilise le bloc de r&eacute;seau
 192.168.0.0 / 255.255.255.0.
 
 <p>
@@ -124,6 +125,10 @@ Les objectifs sont les suivants :
             utilis&eacute; par
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ping&amp;sektion=8&amp;manpath=OpenBSD+3.5">ping(8)</a>.
         </ul>
+<li>Rediriger les tentatives de connexion sur le port TCP 80 (qui sont
+    des tentatives d'acc&egrave;s &agrave; un serveur Web) vers la
+    machine COMP3. Et autoriser aussi le trafic vers le port TCP 80
+    destin&eacute; &agrave; COMP3 &agrave; travers le pare-feu.
 <li>Enregistrer des statistiques de filtrage pour l'interface externe.
 <li>Par d&eacute;faut, renvoyer un RST TCP ou un message ICMP
     "Unreachable" pour les paquets bloqu&eacute;s.
@@ -157,6 +162,9 @@ tcp_services = "{ 22, 113 }"<br>
 icmp_types = "echoreq"<br>
 <br>
 priv_nets = "{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"
+<br>
+<br>
+comp3 = "192.168.0.3"
 </tt>
 </blockquote>
 
@@ -166,9 +174,10 @@ r&eacute;seau sur lesquelles le filtrage sera effectu&eacute;. Les deux
 lignes suivantes listent les num&eacute;ros de port TCP des services
 ouverts depuis Internet (SSH et ident/auth) et les types de paquets ICMP
 qui sont autoris&eacute;s &agrave; parvenir jusqu'a&ugrave; pare-feu. La
-derni&egrave;re ligne d&eacute;finit le r&eacute;seau de loopback et les
-blocs d'adresses
+cinqui&egrave;me ligne d&eacute;finit le r&eacute;seau de loopback et
+les blocs d'adresses
 <a href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a>.
+Enfin, la derni&egrave;re ligne d&eacute;finit l'adresse IP de COMP3.
 
 <p>
 <b>Remarque</b> : Si la connexion Internet ADSL n&eacute;cessite
@@ -220,7 +229,7 @@ changements d'adresse IP sur cette interface.
 
 <a name="rdr"></a>
 <h3>Redirection</h3>
-La seule redirection n&eacute;cessaire est pour
+La premi&egrave;re redirection est pour
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+3.5">ftp-proxy(8)</a> 
 afin de permettre aux clients FTP sur le r&eacute;seau interne de se
 connecter &agrave; des serveurs FTP sur Internet.
@@ -237,6 +246,19 @@ mani&egrave;re r&eacute;guli&egrave;re &agrave; des serveurs FTP sur
 d'autres ports, une liste devra &ecirc;tre utilis&eacute;e pour
 sp&eacute;cifier le port de destination, par exemple : <tt>from any to
 any port { 21, 2121 }</tt>.
+
+<p>
+La seconde r&egrave;gle de redirection est utilis&eacute;e pour toutes les tentatives
+de connexion sur le port TCP 80 du pare-feu en provenance d'Internet.
+Les tentatives l&eacute;gitimes d'acc&egrave;s &agrave; ce port seront g&eacute;n&eacute;r&eacute;es par des
+utilisateurs qui essaient d'acc&egrave;der au serveur web du r&eacute;seau.
+Ces tentatives de connexion doivent &ecirc;tre redirig&eacute;es vers COMP3 :
+
+<blockquote>
+<tt>
+rdr on $ext_if proto tcp from any to any port 80 -&gt; $comp3
+</tt>
+</blockquote>
 
 <a name="filter"></a>
 <h3>R&egrave;gles de Filtrage</h3>
@@ -317,6 +339,23 @@ cr&eacute;ant la macro <tt>$udp_services</tt> et en ajoutant une
 r&egrave;gle de filtrage ad&eacute;quate similaire &agrave; la
 r&egrave;gle de filtrage ci-dessus en sp&eacute;cifiant <tt>proto
 udp</tt>.
+
+<p>
+En plus de la r&egrave;gle <tt>rdr</tt> qui fait suivre tout le trafic
+web vers COMP3, nous DEVONS aussi autoriser ce trafic &agrave; travers
+le pare-feu :
+<blockquote>
+<tt>
+pass in on $ext_if proto tcp from any to $comp3 port 80 \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;flags S/SA synproxy state
+</tt>
+</blockquote>
+
+<p>
+Pour un niveau de s&eacute;curit&eacute; plus &eacute;lev&eacute;, nous
+utilisons
+<a href="../filter.html#synproxy">TCP SYN Proxy</a> pour
+am&eacute;liorer la protection du web serveur.
 
 <p>
 Le trafic ICMP doit aussi &ecirc;tre permis :
@@ -419,6 +458,8 @@ icmp_types = "echoreq"
 
 priv_nets = "{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"
           
+comp3 = "192.168.0.3"
+
 # options
 set block-policy return
 set loginterface $ext_if
@@ -430,6 +471,7 @@ scrub in all
 nat on $ext_if from $int_if:network to any -&gt; ($ext_if)
 rdr on $int_if proto tcp from any to any port 21 -&gt; 127.0.0.1 \
    port 8021
+rdr on $ext_if proto tcp from any to any port 80 -&gt; $comp3
 
 # r&egrave;gles de filtrage
 block all
@@ -441,6 +483,9 @@ block drop out quick on $ext_if from any to $priv_nets
 
 pass in on $ext_if inet proto tcp from any to ($ext_if) \
    port $tcp_services flags S/SA keep state
+
+pass in on $ext_if proto tcp from any to $comp3 port 80 \
+   flags S/SA synproxy state
 
 pass in inet proto icmp all icmp-type $icmp_types keep state
 
@@ -464,9 +509,9 @@ Utilisateur pour les Passerelles d'Authentification</a>]
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
 <small>
-Originally [OpenBSD: example1.html,v 1.14 ]<br>
-$Translation: example1.html,v 1.4 2004/05/12 20:21:45 saad Exp $<br>
-$OpenBSD: example1.html,v 1.4 2004/05/12 20:51:36 saad Exp $
+Originally [OpenBSD: example1.html,v 1.15 ]<br>
+$Translation: example1.html,v 1.5 2004/05/16 05:58:11 saad Exp $<br>
+$OpenBSD: example1.html,v 1.5 2004/05/16 13:08:03 saad Exp $
 </small>
 
 </body>
