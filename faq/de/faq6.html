@@ -575,254 +575,368 @@ wenn man Filter-Regeln schreibt:
 <b>Die letzte passende Regel gibt den Ausschlag</b>.
 
 <p>
-Nat&uulm;rlich gibt es jeder Regel eine Ausnahme. The <em>quick</em> 
-option drops the packet at the first rule that matches. Let's 
-look at our above flawed example, if we add <em>quick</em> to 
-the &quot;block in&quot; rule:
+Nat&uulm;rlich gibt es jeder Regel eine Ausnahme, so auch hier. Die <em>quick</em> 
+Option z.B. l&auml;sst das Paket schickt das Paket gem&auml;ss der ersten daf&uuml;r passenden 
+Regel weiter. Sehen wir uns mal unser obiges, fehlerhaftes Beispiel an, wenn wir
+<em>quick</em> zur &quot;block in&quot; Regel hinzuf&uuml;gen:
 
-<ul>
-<pre>pass out from any to any
-block in quick on fxp0 from any to any port = 3306
-pass in from any to any</pre>
-</ul>
+<ul><pre>
+pass out all
+block in quick on fxp0 inet proto tcp from any to any port 3306
+pass in all
+</pre></ul>
 
 <p>
-Ein Paket mit Ziel f&uuml;r unseren Rechner auf Port 3306 wird die "block
-in quick" Regel treffen und sofort fallengelassen. Alle Pakete f&uuml;r
-die anderen Ports werden keine passende Regel finden bis sie auf unsere
-"pass in" Regel treffen, die alle Pakete passieren l&auml;&szlig;t.
-</p>
-
-<p><b>Standardm&auml;&szlig;iges Ablehnen</b>
-<p>Die sicherste Paketfilterregel ist standardm&auml;&szlig;iges Ablehnen.
-Jeder Datenverkehr, der nicht ausdr&uuml;cklich erlaubt ist, wird abgelehnt.
-Diese Richtlinie ist bei weitem sicherer, als jeden gesch&uuml;tzten Dienst
-ausdr&uuml;cklich zu erlauben. Erlaubt kleineren Umfang der Regeln und
-kann Schutz bieten, wenn ein unabsichtlich mi&szlig;konfigurierter Dienst
-ungesch&uuml;tzt zur&uuml;ckgelassen wurde.
+Ein Paket, dass an unseren Host und den TCP Port 3306 adressiert ist, trifft zuerst auf die
+&quot;block in quick&quot; Regel und wird sofort verworfen. Alle Pakete, die an andere Ports
+oder Protokolle adressiert sind, finden keine passende Regel, bis sie unsere 
+&quot;pass in&quot; Regel erreichen, die allen Paketen das Passieren gestattet.
 <p>
-Sehen wir uns einen anderen, realen Beispielregelsatz an und erkl&auml;ren
-Zeile f&uuml;r Zeile. Hier ein Beispiel f&uuml;r einen Webserver mit standardm&auml;&szlig;igem
-Ablehnen; erlaubt werden nur ssh Verbindungen (f&uuml;r Administration)
-und Verbindung zu http (port 80) und https (port 443).
+
+<b>Standardm&auml;&szlig;iges Ablehnen</b>
+<p> 
+
+Die sicherste Paketfilter "policy" ist ein standardm&auml;ssiges Ablehnen.
+Jeglicher Traffic, der nicht explizit erlaubt ist, wird abgelehnt.
+Diese Policy ist bedeutend sicherer als jeden einzelnen zu sch&uuml;tzenden Dienst abzusichern, 
+erlaubt kleinere Regelwerke, und sch&uuml;tzt auch vor einem m&ouml;glicherweise falsch
+konfiguriertem Dienst, der f&auml;lschlicherweise vergessen wurde.
+<p>
+
+Sehen wir uns nun ein weiteres Beispiel-Regelwerk (ruleset) Zeile f&uuml;r Zeile an.
+Hier ein Beispiel f&uuml;r einen Webserver mit einer Standard-Ablehnungs-Policy, die
+SSH Verbindungen zul&auml;sst (zum Administrieren) und Verbindungen auf http (port 80) und https 
+(port 443).
+
+<ul><pre>
+block in on fxp0 from all
+pass  in on fxp0 inet proto tcp from any to any port 22
+pass  in on fxp0 inet proto tcp from any to any port 80
+pass  in on fxp0 inet proto tcp from any to any port 443
+pass out on fxp0 from all
+</pre></ul>
+
+<p>
+Das wir eingehende Verbindungen von &uuml;berall zu den Ports
+22(ssh), 80(http) und 443(https) erlauben. Alle anderen Verbindungsversuche
+wurden fallengelassen, und alle ausgehenden Verbindungen erlaubt. 
+Das ist schon ein recht strenges Regelwerk. Aber was, wenn nur interne
+Hosts aus deinem 1.1.1.0 Address-Block Zugriff auf SSH haben sollen, aber
+HTTP und HTTPS von &uuml;berall aus erreichbar sein sollen ?
+
 <ul>
 <pre>
-pass in quick on fxp0 from any to any port = 22
-pass in quick on fxp0 from any to any port = 80
-pass in quick on fxp0 from any to any port = 443
-block in quick on fxp0 from any to any
-pass out on fxp0 from any to any
-</pre>
-</ul>
-
-<p>
-Dies wird ankommende Verbindungen von &uuml;berall zu Ports 22 (ssh), 80
-(http), and 443 (https) erlauben. Es werden alle anderen Verbindungsversuche
-fallengelassen und alle ausgehenden Verbindungen erlaubt. Dies ist ein
-recht fester Regelsatz. Aber wenn wir nur interne Rechner vom 1.1.1.0 Adressbereich
-zu ssh verbinden lassen wollen, aber Verbindungen von au&szlig;erhalb zu
-http und https zulassen wollen?
-</p>
-
-<ul>
-<pre>
-pass in quick on fxp0 from 1.1.1.0/24 to any port = 22
-pass in quick on fxp0 from any to any port = 80
-pass in quick on fxp0 from any to any port = 443
-block in quick on fxp0 from any to any
-pass out on fxp0 from any to any
+block in on fxp0 from all
+pass  in on fxp0 inet proto tcp from 1.1.1.0/24 to any port 22
+pass  in on fxp0 inet proto tcp from any to any port 80
+pass  in on fxp0 inet proto tcp from any to any port 443
+pass out on fxp0 from all
 </pre>
 </ul>
 Recht nett, aber wenn nur eine einzige Machine (1.1.1.1) den Webserver
 administrieren darf? In diesem Fall &auml;ndern wir dies:
 <ul>
 <pre>
-pass in quick on fxp0 from 1.1.1.0/24 to any port = 22
+pass  in on fxp0 inet proto tcp from 1.1.1.0/24 to any port 22
 </pre>
 </ul>
 in:
 <ul>
 <pre>
-pass in quick on fxp0 from 1.1.1.1/32 to any port = 22</pre>
-</ul>
-IP Filter unterst&uuml;tzt sowohl CIDR als auch Punkt/Dezimalformat der
-Netzmaskenadresse. Obiges in anderer Schreibweise:
-<ul>
-<pre>pass in quick on fxp0 from 1.1.1.1/255.255.255.255 to any port = 22</pre>
-</ul>
-aber warum solltest du?
-<b></b>
-
-<p>
-<b>Beispielregeln</b>
-<p>Hier ein paar gute Regeln, die jeder verwenden kann (angenommen wird,
-da&szlig; fxp0 das externe Interface mit Internetverbindung ist). Zun&auml;chst
-einfacher Schutz gegen Adressenschwindel ("address spoofing").
-<ul>
-<pre>block in quick on fxp0 from 127.0.0.0/8 to any
-block in quick on fxp0 from 192.168.0.0/16 to any
-block in quick on fxp0 from 172.16.0.0/12 to any
-block in quick on fxp0 from 10.0.0.0/8 to any
-block out quick on fxp0 from any to 127.0.0.1/8
-block out quick on fxp0 from any to 192.168.0.0/16
-block out quick on fxp0 from any to 172.16.0.0/12
-block out quick on fxp0 from any to 10.0.0.0/8</pre>
-</ul>
-Eine gute Idee ist es, das loopback Interface von deinen anderen Regeln
-zu trennen.
-<ul>
-<pre>pass out quick on lo0
-pass in quick on lo0</pre>
-</ul>
-Unsere Regelsatz schaut schon recht gut aus. Zusammen sieht er so aus:
-<ul>
-<pre>
-# Loopback regeln
-
-pass out quick on lo0
-pass in quick on lo0
-
-# anti-adressenschwindel von nicht-routebaren adressen
-
-block in quick on fxp0 from 127.0.0.0/8 to any
-block in quick on fxp0 from 192.168.0.0/16 to any
-block in quick on fxp0 from 172.16.0.0/12 to any
-block in quick on fxp0 from 10.0.0.0/8 to any
-block out quick on fxp0 from any to 127.0.0.1/8
-block out quick on fxp0 from any to 192.168.0.0/16
-block out quick on fxp0 from any to 172.16.0.0/12
-block out quick on fxp0 from any to 10.0.0.0/8
-
-# nur unser administrationsrechner darf sich mittels ssh verbinden
-
-pass in quick on fxp0 from 1.1.1.1/32 to any port = 22
-
-# erlaube anderen http und https
-
-pass in quick on fxp0 from any to any port = 80
-pass in quick on fxp0 from any to any port = 443
-
-# zuletzt standardmaessiges ablehnen</pre>
-
-<pre>block in quick on fxp0 from any to any
-
-# und lass ausgehenden datenverkehr raus
-
-pass out on fxp0 from any to any
-
+pass  in on fxp0 inet proto tcp from 1.1.1.1/32 to any port 22
 </pre>
 </ul>
-</p>
+<p>
 
-<b>Paket logging</b>
+<b>Beispielregeln</b>
+<p>
+Hier sind einige gute Regeln, die fast jeder gebrauchen kann (Mit der Annahme, dass
+fxp0 das externe Interface mit der Anbindung ins Internet ist). Zuerst schaffen
+einen einfachen Schutz gegen "address spoofing". Diese Adressen sollten normalerweise 
+nicht im Internet herumfliegen, und wenn doch, ist das nicht gut, also 
+blocken wir sie:
+<ul><pre>
+block in quick on fxp0 inet from { 127.0.0.0/8, 192.168.0.0/16, \
+172.16.0.0/12, 10.0.0.0/8 } to any
+block out quick on fxp0 inet from any to { 127.0.0.0/8, 192.168.0.0/16, \ 
+172.16.0.0/12, 10.0.0.0/8 }
+</pre></ul>
+
+Unser Regelwerk sieht schon recht gut aus; wenn wir alles zusammentun, sieht
+das ganze wie folgt aus:
+
+<ul><pre>
+# adress spoofing wird geblockt
+block in quick on fxp0 inet from { 127.0.0.0/8, 192.168.0.0/16, \
+172.16.0.0/12, 10.0.0.0/8 } to any
+block out quick on fxp0 inet from any to { 127.0.0.0/8, 192.168.0.0/16, \
+172.16.0.0/12, 10.0.0.0/8 }
+ 
+# nur unsere Administrationsmaschine darf sich auf ssh verbinden
+pass in quick on fxp0 inet proto tcp from 1.1.1.1/32 to any port 22
+ 
+# andere duerfen http und https erreichen
+pass in quick on fxp0 inet proto tcp from any to any port 80
+pass in quick on fxp0 inet proto tcp from any to any port 443
+ 
+# den Rest mit einem pauschalen block ausschliessen
+block in quick on fxp0 from any to any
+ 
+# und ausgehenden Traffic rauslassen
+pass out on fxp0 from any to any
+</pre></ul>
+ 
+<b>Packet Logging</b>
 <p>Nun, dies ist zwar schon recht gut, aber es k&ouml;nnte besser sein.
-Z. B. wenn wir alle Verbindungsversuche zu Port 22(ssh) loggen wollten,
-die von unserer Firewall blockiert werden? Einfach - IP Filter hat daf&uuml;r
+Was, wenn wir z.B. alle Verbindungsversuche zu Port 22(ssh) loggen wollten,
+die von unserer Firewall blockiert werden? Einfach - Packet Filter hat daf&uuml;r
 das <em>log</em> Stichwort:
-<ul>
-<pre>pass in quick on fxp0 from 1.1.1.1/32 to any port = 22
-block in log quick on fxp0 from any to any port = 22</pre>
-</ul>
+
+<ul><pre>
+pass in quick on fxp0 inet proto tcp from 1.1.1.1/32 to any port 22
+block in log quick on fxp0 inet proto tcp from any to any port 22
+</pre></ul>
+
 Diese Regel wird erlauben, da&szlig; sich unser Administrationsrechner
 auf Port 22 verbinden darf, aber alle anderen Verbindungsversuche auf Port
 22 ablehnt und aufzeichnet.
+
+Pakete, die geloggt wurden (also die mitprotokolliert worden sind) werden 
+zum pflog0 Interface gesendet, das wiederum vom
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&sektion=8">pflogd(8)</a>,
+&uuml;berwacht wird, der normalerweise die Pakete im
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tcpdump&sektion=8">tcpdump(8)</a>
+Bin&auml;rformat in die Datei <i>/var/log/pflog</i> schreibt. Der pflogd(8) wird 
+standarm&auml;ssig in
+<i><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rc&sektion=8">/etc/rc(8)</a></i>
+gestartet, wenn pf in
+<i><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rc.conf&sektion=8">/etc/rc.conf(8)</a></i>.
+eingeschaltet ist.
+Lesen kannst du diese Logfiles wie folgt:
+<ul><pre>
+# <b>tcpdump -n -e -ttt -r /var/log/pflog</b>
+</pre></ul>
+
+Man sollte wissen, dass die Benutzung von tcpdump KEINE real-time Anzeige der pflog Datei 
+erm&ouml;glicht. Die kann man aber wie folgt bekommen:
+
+<ul><pre>
+# <b>tcpdump -i pflog0</b>
+</pre></ul>
+
+Man k&ouml;nnte tcpdump auch benutzen, um den Focus beim Debugging zu sch&auml;rfen:
+<ul><pre>
+# <b>tcpdump -e -i pflog0 port 80</b>
+</pre></ul>
+
+Wenn man das eingibt, hat das KEINEN Einfluss auf die Daten, die in die Datei
+<i>/var/log/pflog</i> geschrieben werden.  
+<p>
+
+Wenn man seine Logdateien untersucht, sollte man besondere Aufmerksamkeit 
+auf das "verbose protocol decoding" von tcpdump richten (wird mittels der -v 
+Kommandzeilen Option aktiviert). Tcpdump's protocol decoder haben keine
+perfekte Sicherheitshistorie.  Zumindest in der Theorie ist ein 
+verz&ouml;gerter Angriff &uuml;ber die "partial packet payloads" denkbar,
+der vom Logging-Device aufgezeichnet wird.
+</p>
+<p>
+Auch wer &uuml;berhaupt Zugriff auf die Logs hat, sollte man genau pr&uuml;fen. Pflogd
+greift sich 96 Bytes des Paketes und loggt es. Zugriff auf die Logs kann teilweisen
+Zugriff auf sensible Teile von Paketen bedeuten (wie z.B. bei
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=telnet&sektion=1">telnet(1)</a> oder
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp&sektion=1">ftp(1)</a> Logins).
 </p>
 
-<b>Protokollbasierende Paketfilterung</b>
-<p>IP Filter kann auch nach jedem IP Protokoll filtern, entweder nach seiner Nummer oder seinem Name, der in <a href="file://localhost/etc/protocols">/etc/protocols</a>
-aufgelistet ist. Im Sinne der Klarheit werden wir uns nur mit tcp, udp
-und icmp besch&auml;ftigen.
-Dies sind die am meisten verwendeten Protokolle, auf denen alle grundlegenden Internetanwendungen basieren. 
-<p>Damit IPF protokollbasierend filtert mu&szlig; das Stichwort <i>proto</i>
-verwendet werden. Um unsere fr&uuml;here ssh Beispielsregel zu verwenden,
-da ssh ja &uuml;ber tcp rennt,&nbsp; sollten wir nur tcp Pakete zur Verbindung
-zulassen. Mit dem <i>proto</i> Stichwort erlauben wir nur tcp, und wir
-bekommen eine Regel wie folgt:
-<ul>
-<pre>pass in quick on fxp0 proto tcp from 1.1.1.1/32 to any port = 22</pre>
-</ul>
-Aber wenn wir eine Verbindung f&uuml;r einen Dienst brauchen, die tcp und
-udp ben&ouml;tigt (wie z. B. bind)? Nun im Falle von tcp/udp erlaubt uns
-IP Filter beide Protokolle zusammen zu schreiben. NB: Dies gilt nur f&uuml;r
-tcp/udp. F&uuml;r das bind Beispiel w&uuml;rde folgende Regel tcp und udp
-Verbindungen (bei standardm&auml;&szlig;igem Ablehnen) erlauben:
-<ul>
-<pre>pass in quick on fxp0 proto tcp/udp from any to any port = 53</pre>
-</ul>
+<p>
+<b>Multiple Protokolle</b>
+</p>
+<p>
+Was aber, wenn wir Verbindungen zu einem Dienst erlauben wollen, der
+&uuml;ber mehrere Protokolle l&auml;uft, wie z.B. BIND, der TCP und 
+UDP benutzt ?
+Mit Packet Filter kannst du mehrere Regeln zu einer zusammenfassen
+(mehr dazu sp&auml;ter): 
+<ul><pre>
+# Passierenlassen von DNS traffic f&uuml;r BIND
+pass in quick on fxp0 inet proto { tcp, udp } from any to any port 53
+</pre></ul>
+
+Beachte die Spaces (Leerzeichen) auf beiden Seiten der '{ }' Zeichen. Das
+ist viel netter, als die Variante, die du sonst benutzen m&uuml;sstest:
+
+<ul><pre>
+pass in quick on fxp0 inet proto tcp from any to any port 53
+pass in quick on fxp0 inet proto udp from any to any port 53
+</pre></ul>
+
+
 </p>
 
-<b>Paketfilterung</b>
-<p>Zus&auml;tzlich zur protokollbasierenden Filterung ist IP Filter auch
-zum Handhaben der zersplitterten IP Pakete f&auml;hig (eine allgemeine
-Methode des Besiegens der Paketfilter). Es gibt zwei m&ouml;gliche Schl&uuml;sselw&ouml;rter:&nbsp;
-<em>frag</em> f&uuml;r allgemein zersplitterte IP Pakete, oder <em>short</em>
-f&uuml;r IP Pakete mit f&uuml;r Vergleiche zu kurzen Informationen (<em>headers</em>).
-Da zersplitterte Pakete auch normalerweise auftreten k&ouml;nnen, abh&auml;ngig
-von den Verbindungsumst&auml;nden, es ist am besten, Pakete mit den Vors&auml;tzen
-nur zu filtern, die f&uuml;r g&uuml;ltigen Vergleich zu klein sind. Dieses
-kann mit der folgenden Richtlinie vollendet werden:
-<ul>
-<pre>block in quick proto tcp all with short</pre>
-</ul>
-Und bzgl. IP Optionen? IP Filter kann jene Pakete auch behandeln. Pakete
-k&ouml;nnen entweder fallengelassen werden, wenn sie IP Optionen haben,
-oder sie spezifischen IP Optionen besitzen, die eingestellt werden. Z.
-B. l&auml;&szlig;t die folgende Richtlinie fallen und protokolliert alle
-Pakete mit den eingestellten IP Optionen.
-<ul>
-<pre>block in log quick on fxp0 all with ipopts</pre>
-</ul>
-Dies kann aber einige Dinge wie <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=traceroute&sektion=8&format=html">traceroute(8)</a>
-brechen. Du kannst auch bestimmte Optionen verbieten. Z. B. ist eine gute
-Regel, alle Pakete mit "source routing" Option zu verbieten. Dies geschieht
-mit dieser Regel:
-<ul>
-<pre>block in quick on fxp0 all with opt lsrr
-block in quick on fxp0 all with opt ssrr</pre>
-</ul>
+<p>
+<a name="normalization"></a>
+<b>Packet Normalization</b>
+</p>
+<p> 
+Da einige Anwendungen und auch ganze Betriebssysteme Probleme mit abnormen oder 
+fragmentierten Paketen haben, ist es manchmal vorteilhaft, die Pakete erst zu 
+normaliseren, bevor sie zu ihrem endg&uuml;ltigen Bestimmungsort weiterreisen.
+Das macht man mit Hilfe der <b>scrub</b> Direktive, die man wie folgt benutzt:
+<ul><pre>
+scrub in all
+</pre></ul>
+Das das zus&auml;tzliche Last auf dem System erzeugt, gibt es keinen Grund, diese
+Anweisung zu benutzen, es sei denn, das System sch&uuml;tzt ein Ger&auml;lt mit einer
+schlechten Implementierung von TCP/IP.
+</p>
+
+<p>
+<b>IP Optionen</b>
+
+<p>
+PF blockt standardm&auml;ssig Pakete, deren IP Optionen gesetzt sind. Das kann die Arbeit
+von &quot;OS fingerprinting&quot; Werkzeugen wie nmap erschweren.
+Wenn du eine Anwendung hast, die das Passierenlassen solcher Pakete erfordert, wie z.B.
+multicast oder IGMP, kannst du die
+<b>allow-opts</b>
+Direktive benutzen:
+
+<ul><pre>
+pass in quick on fxp0 allow-opts
+</pre></ul>
+
+<p>
 <b>TCP Flags, bestehende Verbindungen und keep state</b>
-<p>Nun kommt IP Filter in vollem Ernst: IP Filters gr&ouml;&szlig;te
-St&auml;rken liegen in der F&auml;higkeit, Pakete anhand ihrer TCP flags
-(=Kennzeichen) zu filtern und bestehende Verbindungen und Verbindungszust&auml;nde
-aufrechtzuerhalten. Man sollte die Rolle jedes TCP flags verstehen, wenn
-man die Pakete danach filtern will. Z. B. wenn du alle Pakete mit den FIN,
-URG und PSH flags filtern willst (f&uuml;r z. B. einen "nmap OS fingerprinting
-attempt"), dann solltest du eine Regel wie diese einsetzen:
-<ul>
-<pre>block in quick on fxp0 proto tcp from any to any flags FUP</pre>
-</ul>
+Packet Filter kann also Pakete auf Basis von TCP flags filtern und 
+kann bereits bestehende Verbindungen verfolgen und den Status
+der Verbindungen ebenso. Es wird also empfohlen, dass alle User, die
+Paketen auf Basis von TCP flags filtern wollen, die Rolle jedes einzelnen
+flags auch wirklich verstehen.
+Wenn du z.B. alle Pakete ablehnen willst, die die FIN, URG, und PSH 
+flags gesetzt haben (wie z.B. ein nmap OS fingerprinting Versuch) 
+k&ouml;nntest du dazu ein Regel wie diese hier verwenden:
+
+<ul><pre>
+block in quick on fxp0 inet proto tcp from any to any flags FUP/FUP
+</pre></ul>
+
 (Danke an <a href="mailto:halogen@nol.net">Kyle Hargraves</a> f&uuml;r
 diesen Tip)
 </p>
-<p>Die n&auml;chste F&auml;higkeit von IP Filter ist, Verbindungszust&auml;nde
-beizubehalten. Den Zustand beizubehalten ist beschrieben worden, wie "
-nicht sprechend bis gesprochen mit ", das hei&szlig;t, sobald ein Anschlu&szlig;
-hergestellt ist, m&uuml;ssen Pakete die Regels&auml;tze nicht mehr &uuml;berqueren.
-Dieses ist eine sehr leistungsf&auml;hige Eigenschaft, was viel einfacheres
-und sichereres Richtlinie Schreiben erlaubt.
+Packet Filter's next cool trick is its ability to maintain state. 
+Maintaining state has been described as &quot;not speaking until 
+spoken to&quot;; in other words, once a connection is established, 
+packets no longer have to traverse rulesets. This is a very 
+powerful feature allowing much simpler and more secure rule 
+writing.
 </p>
-<p>Z. B. lassen sehen wir uns an, wie wir Zustand an unserem vorhergehenden
-Beispielregelsatz anwenden k&ouml;nnen (schon verwirrt?). Zu Wiederholung,
-wir erlauben Managementzugriff von unserem Klasse C Netz zu Kanal 22 (ssh)
-und erlauben allen ankommenden Web-Verkehr auf Kan&auml;len 80 (http) und
-443 (https). Wir blocken jeglichen weiteren Verkehr. Aber was, wenn ich
-mit ssh aus dem webserver heraus w&uuml;nsche? Was, wenn ich lynx benutzen
-mu&szlig;, um etwas im FAQ nachzuschauen? Gut, kann ich nicht, weil ich
-alle ankommenden Anschl&uuml;sse anders als auf den spezifizierten Kan&auml;len
-geblockt habe. W&auml;hrend dieses der sicherste Weg ist, kann es ziemlich
-ung&uuml;nstig bzw. unhandlich sein. Indem wir die Schl&uuml;sselw&ouml;rter
-<em>keep state</em> unserer "pass out" Richtlinie hinzuf&uuml;gen, k&ouml;nnen
-wir ankommende Verbindungen in Erwiderung auf von uns selbst initialisierte
-Verbindungen automatisch erlauben, wie z. B. beim Webbrowsen.
-NB: Wir m&uuml;ssen das Protokol angeben, f&uuml;r das wir "keep state" 
-halten.
-<ul>
-<pre>
-pass in quick on fxp0 from 1.1.1.0/24 to any port = 22
-pass in quick on fxp0 from any to any port = 80
-pass in quick on fxp0 from any to any port = 443
-block in quick on fxp0 from any to any
-pass out on fxp0 proto tcp from any to any keep state
+<p>
+For example, let's see how we can apply state to our previous 
+example ruleset (confused yet?). To review, we are allowing 
+management access from our Class C to port 22(ssh) and allowing 
+all incoming web traffic on ports 80(http) and 443(https). We 
+are blocking all other traffic. But, what if I want to
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ssh&sektion=1">ssh(1)</a>
+out of the webserver? What if I need to use
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=lynx&sektion=1">lynx(1)</a> to look up 
+something in the FAQ? Well, I can't because I have blocked all 
+incoming connections other than those on the specified ports. While 
+this is the safest route, it can be quite inconvenient. By 
+adding the <em>keep state</em> keywords to our &quot;pass 
+out&quot; rule, we can automatically allow incoming 
+packets in response to connections we initiate, such as 
+when web browsing.  Remember, we do need to specify what 
+protocol we are keeping state for.
+</p>
+<ul><pre>
+block in  on fxp0 inet proto tcp all
+pass  in  on fxp0 inet proto tcp from 1.1.1.0/24 to any port 22 keep state
+pass  in  on fxp0 inet proto tcp from any to any port 80 keep state
+pass  in  on fxp0 inet proto tcp from any to any port 443 keep state
+pass  out on fxp0 inet proto tcp all keep state
+</pre></ul>
+<p>
+This little change will dramatically increase the flexibility and
+security of our ruleset: for instance, in the above ruleset, we are
+allowing all tcp traffic into ports 80 &amp; 443. We can tighten this up
+even more. In order for a tcp connection to be established, we only need
+to allow the initial handshake to occur; once that occurs, we can block
+traffic to that port and allow our &quot;keep state&quot; rule to manage
+the connection. To allow the initial handshake to complete, we need only
+allow packets with the SYN flag set and ACK flag not set. By passing only 
+packets with SYN set, we can prevent many forms of portscanning such
+as FIN scanning. flags S/SA means: out of flags S (SYN) and A (ACK), only
+SYN may be set. Other flags aren't investigated.
+The rules now look like this:
+<ul><pre>
+block in  on fxp0 inet proto tcp all
+pass  in  on fxp0 inet proto tcp from 1.1.1.0/24 to any port 22 \
+       flags S/SA keep state
+pass  in  on fxp0 inet proto tcp from any to any port 80 \
+       flags S/SA keep state
+pass  in  on fxp0 inet proto tcp from any to any port 443 \
+       flags S/SA keep state
+block out on fxp0 inet proto tcp all
+pass  out on fxp0 inet proto tcp all flags S/SA keep state
+</pre></ul>
+</p>
+<p>
+Let's start to tie things together by putting all of the rules we 
+have so far into a ruleset. This ruleset will support IPv4, have 
+a default deny policy, allow management connections from an 
+internal network only (via ssh) and allow incoming traffic on 
+ports 80(http) and 443(https). It will also protect against 
+spoofed non-routeable ip addresses, and drop all packets that are 
+too fragmented to inspect. A pretty comprehensive setup for a public 
+webserver. Here's what <i>/etc/pf.conf</i> could look like:
+<ul><pre>
+# Clean up fragmented and abnormal packets
+scrub in all
+
+# don't allow anyone to spoof non-routeable addresses
+block in quick on fxp0 inet from { 127.0.0.0/8, 192.168.0.0/16, \
+172.16.0.0/12, 10.0.0.0/8 } to any
+block out quick on fxp0 inet from any to { 127.0.0.0/8, 192.168.0.0/16, \
+172.16.0.0/12, 10.0.0.0/8 }
+
+# by default, block all incoming packets, except those explicitly
+# allowed by further rules
+block in on fxp0 all
+
+# allow others to use http and https
+pass in on fxp0 inet proto tcp from any to any port 80 \
+       flags S/SA keep state
+pass in on fxp0 inet proto tcp from any to any port 443 \
+       flags S/SA keep state
+
+# and let out-going traffic out and maintain state on established connections
+# pass out all protocols, including TCP, UDP and ICMP, and create state,
+# so that external DNS servers can reply to our own DNS requests (UDP).
+block out on fxp0                 all
+pass  out on fxp0 inet proto tcp  all flags S/SA keep state
+pass  out on fxp0 inet proto udp  all            keep state
+pass  out on fxp0 inet proto icmp all            keep state
+</pre></ul>
+</p>
+<p>
+While this may look good, there are some things Packet Filter 
+will let you do to make your <i>pf.conf</i> file look neater and easier
+to maintain.
+</p>
+
+<p>
+<b>Sets</b>
+</p>
+<p>
+For example, let's see how we can apply state to our previous example ruleset (confused yet?). To review, we are allowing management access from our Class C to port 22(ssh) and allowing all incoming web traffic on ports 80(http) and 443(https). We are blocking all other traffic. But what if I want to ssh out of the webserver? What if I need to use lynx to look up something in the FAQ? Well, I can't because I have blocked all incoming connections other than on the specified ports. While this is the safest route, it can be quite inconvenient. By adding the <em>keep state</em> keywords to our &quot;pass out&quot; rule, we can automagically allow incoming connections in response to connections we initiate, such as when web browsing.  Remember, we do need to specify what protocol we are keeping state for.
+Sets are useful "shortcuts" for writing simple and clear 
+rules in PF.  For example, what if we need to allow 
+connections to a service running
+over multiple protocols, such as BIND, which uses TCP and UDP?
+<ul><pre>
+pass in quick on fxp0 inet proto { tcp, udp } from any to any port 53
+</pre></ul>
+Note the spaces on both sides of the '{ }' characters. 
 </ul>
 Diese kleine &Auml;nderung wird die Flexibilit&auml;t und Sicherheit unseres
 Regelsatzes dramatisch erh&ouml;hen, weil IP Filter extrem flexibel ist.
@@ -2710,9 +2824,9 @@ aufgebaut wird.
 <br>
 Originally [OpenBSD: faq6.html,v 1.107 ]
 <br>
-$Translation: faq6.html,v 1.44 2002/05/20 18:12:40 jufi Exp $
+$Translation: faq6.html,v 1.45 2002/05/20 20:51:29 jufi Exp $
 <br>
-<small>$OpenBSD: faq6.html,v 1.37 2002/05/20 18:27:23 jufi Exp $</small>
+<small>$OpenBSD: faq6.html,v 1.38 2002/05/21 12:38:46 jufi Exp $</small>
 </p>
 </body>
 </html>
