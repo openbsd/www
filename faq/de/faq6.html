@@ -602,7 +602,7 @@ deine DHCP Clients wünschen.
 
 <p>
 Das Point-to-Point Protokoll wird verwendet, um eine Verbindung zu deinem ISP
-mit deinem Modem herzustellen. OpenBSD bietet dafür 2 Möglichkeiten.
+mit deinem Einwahl-Modem herzustellen. OpenBSD bietet dafür 2 Möglichkeiten:
 
 <ul>
 <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pppd&sektion=8">pppd(8)</a>
@@ -612,12 +612,20 @@ mit deinem Modem herzustellen. OpenBSD bietet dafür 2 Möglichkeiten.
 </ul>
 
 <p>
-Die erste, den wir behandeln, wird der Userland PPP Daemon sein. Um zu 
-beginnen, benötigen wir einige einfache Informationen über deinen
-ISP. Hier eine Liste hilfreicher Informationen, die du brauchen wirst.
+Sowohl ppp als auch pppd führen zwar die gleichen Funktionen auf, dieses
+jedoch auf unterschiedliche Wege. pppd arbeitet mit dem 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ppp&amp;sektion=4">ppp(4)</a>-Treiber
+des Kernels, während ppp mit
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tun&amp;sektion=4">tun(4)</a>
+im Userland arbeitet.
+Dieses Dokument wird sich nur mit dem PPP-Daemon des Userlands beschäftigen,
+da es mit ihm einfacher ist, Fehlfunktionen zu korrigieren sowie mit ihm zu
+interagieren. Um zu beginnen, benötigen wir einige einfache Informationen
+über deinen ISP. Hier eine Liste hilfreicher Informationen, die du brauchen
+wirst.
 
 <ul>
-<li>Die Einwahlnummer deines ISP
+<li>Die Einwahlnummer deines ISPs
 <li>Deinen Nameserver 
 <li>Deinen Benutzernamen und dein Passwort
 <li>Dein Gateway
@@ -625,20 +633,12 @@ ISP. Hier eine Liste hilfreicher Informationen, die du brauchen wirst.
 
 <p>
 Einige von diesen benötigst du nicht unbedingt, aber sie wären
-hilfreich. Der Userland PPP Daemon benutzt die Datei 
+beim Aufsetzen des ppp hilfreich. Der Userland PPP Daemon benutzt die Datei 
 <a href="http://www.openbsd.org/cgi-bin/cvsweb/src/etc/ppp/ppp.conf.sample">/etc/ppp/ppp.conf</a>
 als seine Konfigurationsdatei. Es gibt viele hilfreiche Dateien in
 <i>/etc/ppp</i>, die verschiedene Einstellungen für verschiedene
 Situationen zeigen. Du solltest dir dieses Verzeichnis ansehen und es
 durchforsten.
-
-<p>
-Solltest du keinen GENERIC Kernel verwenden, dann stelle sicher, dass du
-folgende Zeile in deiner Kernelkonfigurationsdatei hast:
-
-<blockquote><pre><strong>
-pseudo-device   tun
-</strong></pre></blockquote>
 
 <p>
 <h3>Erste Einstellungen - für PPP(8)</h3>
@@ -670,8 +670,8 @@ log&quot; stellen wir unsere Loglevel ein. Um dies zu ändern, siehe
 für weitere Info. Unsere Schnittstelle wird mit
 &quot;set device&quot; eingestellt. Dies ist die Schnittstelle, mit der das 
 Modem verbunden ist. In diesem Beispiel hängt das Modem auf COM Port 2.
-Daher wird COM Port 1 auf /dev/cua00 gesetzt. Mit &quot;set speed&quot;
-setzen wir die Geschwindigkeit unserer Dialup Verbindung und mit &quot;set
+Daher wird COM Port 1 auf <i>/dev/cua00</i> gesetzt. Mit &quot;set speed&quot;
+setzen wir die Geschwindigkeit unserer Einwahl-Verbindung und mit &quot;set
 dail&quot; setzen wir unsere Dialup Parameter, mit denen wir den Timeout,
 usw. setzen können. Diese Zeile sollte eigentlich ziemlich genau so bleiben,
 wie sie jetzt ist.
@@ -698,7 +698,7 @@ enable dns
 
 <p>
 Hier stehen alle wichtigen Informationen für unseren spezifischen ISP.
-Die erste Option &quot;set phone&quot; setzt die Telefonnummer deines ISP.
+Die erste Option &quot;set phone&quot; setzt die Einwahlnummer deines ISPs.
 &quot;set login&quot; setzt unsere login-Optionen. Hier haben wir den Timeout
 auf 5 gesetzt, was bedeutet, dass wir unseren login-Versuch nach 5 Sekunden
 abbrechen, wenn wir kein Trägersignal bekommen. Ansonsten wird er auf
@@ -744,6 +744,33 @@ laufen hast, da PPP dies umgehen wird, indem es einige Zeilen in
 <i>/etc/resolv.conf</i> schreibt.
 
 <p>
+Gegenüber den herkömmlichen Login-Methoden, verwenden viele IPS nun
+entweder CHAP- oder PAP-Authentifizierung. Wenn das der Fall ist, wird
+unsere Konfiguration etwas anders aussehen:
+
+<blockquote>
+<pre>
+myisp:
+set phone 1234567   
+set authname ppp
+set authkey ppp
+set login
+set timeout 120   
+set ifaddr 10.0.0.1/0 10.0.0.2/0 255.255.255.0 0.0.0.0
+add default HISADDR 
+enable dns
+</pre>
+</blockquote>
+
+<p>
+In dem oben genannten Beispiel geben wir unseren Benutzernamen (ppp) und
+das Passwort (ppp) unter jeweiliger Verwendung von authname und authkey an.
+Es ist nicht notwendig, anzugeben, ob CHAP- oder PAP-Authentifizierung
+genutzt wird - es wird automatisch ermittelt. "set login" gibt lediglich
+an, dass versucht wird, sich mit dem zuvor genannten Benutzernamen und
+dem Passwort anzumelden.
+
+<p>
 <h3>PPP(8) verwenden</h3>
 
 <p>
@@ -764,6 +791,12 @@ Mit dem Aufruf von <i>/usr/sbin/ppp</i> ohne Optionen kommst du in den
 interaktiven Modus. Hier kannst du direkt mit dem Modem interagieren; das
 eignet sich hervorragend, um Probleme in deiner <i>ppp.conf</i> Datei zu
 debuggen.
+Wenn das oben genannte fehlschlägt, versuche, <i>/usr/sbin/ppp</i> ohne
+Optionen aufzurufen - somit wird ppp im interaktiven Modus gestartet.
+Die Optionen können einzeln angegeben werden, um nach Fehlern oder anderen
+Problemen zu suchen. Unter Verwendung der zuvor genannten Einstellungen,
+wird ppp in /var/log/ppp.log schreiben. Diese Log enthält, wie die
+Manual-Seite, hilfreiche Informationen.
 
 <p>
 <h3>ppp(8) Extras</h3>
@@ -779,12 +812,6 @@ Beispielkonfigurationen kannst du hier finden:
 <li><a href="http://www.openbsd.org/cgi-bin/cvsweb/src/etc/ppp/ppp.linkup.sample">ppp.linkup</a>
 <li><a href="http://www.openbsd.org/cgi-bin/cvsweb/src/etc/ppp/ppp.linkdown.sample">ppp.linkdown</a>
 </ul>
-
-<p>
-Weitere Informationen findest du im
-<a href="http://www.freebsd.org/doc/en_US.ISO8859-1/books/handbook/userppp.html">FreeBSD
-Handbucheintrag zum Thema User PPP</a>.
-
 
 <p>
 <a name= "Tuning"></a>
@@ -1939,12 +1966,12 @@ deiner Firewall ist.
 <br>
 <small>
 <br>
-Originally [OpenBSD: faq6.html,v 1.207 ]
+Originally [OpenBSD: faq6.html,v 1.208 ]
 <br>
-$Translation: faq6.html,v 1.82 2004/12/03 15:43:35 paldium Exp $
+$Translation: faq6.html,v 1.83 2004/12/10 12:12:12 paldium Exp $
 </small>
 <br>
-<small>$OpenBSD: faq6.html,v 1.66 2004/12/03 19:44:11 jufi Exp $</small>
+<small>$OpenBSD: faq6.html,v 1.67 2004/12/10 20:11:01 saad Exp $</small>
 
 </body>
 </html>
