@@ -1,0 +1,65 @@
+Weakness in OpenSSH's source IP based access control
+for SSH protocol v2 public key authentication.
+
+1. Systems affected:
+
+	Versions of OpenSSH between 2.5.x and 2.9.x using
+	the 'from=' key file option in combination with
+	both RSA and DSA keys in ~/.ssh/authorized_keys2.
+
+2. Description:
+
+        Depending on the order of the user keys in
+        ~/.ssh/authorized_keys2 sshd might fail to apply the
+        source IP based access control restriction (e.g.
+        from="10.0.0.1") to the correct key:
+
+        If a source IP restricted key (e.g. DSA key) is
+        immediately followed by a key of a different type
+	(e.g. RSA key), then key options for the second key
+	are applied to both keys, which includes 'from='.
+
+3. Impact:
+
+	Users can circumvent the system policy
+	and login from disallowed source IP addresses.
+	
+4. Solution:
+
+	Apply the following patch.
+
+	This bug is fixed in OpenSSH 2.9.9
+
+5. Credits:
+
+	None.
+
+Appendix:
+
+Index: key.c
+===================================================================
+RCS file: /cvs/src/usr.bin/ssh/key.c,v
+retrieving revision 1.31
+retrieving revision 1.32
+diff -u -p -IRCSID -r1.31 -r1.32
+--- key.c	2001/09/17 20:50:22	1.31
++++ key.c	2001/09/19 13:23:29	1.32
+@@ -358,7 +358,7 @@ write_bignum(FILE *f, BIGNUM *num)
+ 	return 1;
+ }
+ 
+-/* returns 1 ok, -1 error, 0 type mismatch */
++/* returns 1 ok, -1 error */
+ int
+ key_read(Key *ret, char **cpp)
+ {
+@@ -413,7 +413,7 @@ key_read(Key *ret, char **cpp)
+ 		} else if (ret->type != type) {
+ 			/* is a key, but different type */
+ 			debug3("key_read: type mismatch");
+-			return 0;
++			return -1;
+ 		}
+ 		len = 2*strlen(cp);
+ 		blob = xmalloc(len);
+
