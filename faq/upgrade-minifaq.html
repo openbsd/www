@@ -12,7 +12,7 @@
 <h4>Kjell Wooding 
 &lt;<A HREF="mailto:kjell@openbsd.com">kjell@openbsd.org</A>&gt;
 </h4>
-Last Update - $OpenBSD: upgrade-minifaq.html,v 1.69 2001/09/06 05:54:43 kjell Exp $
+Last Update - $OpenBSD: upgrade-minifaq.html,v 1.70 2001/09/15 17:39:08 kjell Exp $
 
 <P>
 
@@ -233,6 +233,11 @@ recognized by the kernel.
 
 <a href="#8.4">
 8.4: New proxy user
+</a>
+<br>
+
+<a href="#8.5">
+8.5: New sendmail version
 </a>
 <br>
 
@@ -1819,11 +1824,112 @@ Also add the <i>proxy</i> group to /etc/group:
 proxy:*:71:
 </pre>
 
+<h4><a name="8.5">
+8.5: New sendmail version
+</a></h4>
+
+<p>Sendmail has been upgraded to version 8.12. As this version of <i>sendmail</i>
+no longer runs setuid root, this has resulted in some significant changes.
+</p>
+
+<ol>
+<li>Both a new user and a new group, named <i>smmsp</i>, have
+been added to the system.  Add a line like the following to your
+<tt>/etc/group</tt>:
+
+<pre>
+smmsp:*:25:
+</pre>
+
+Then, run <tt>vipw</tt> and add the following line for the <i>smmsp</i> user:
+
+<pre>
+smmsp:*:25:25::0:0:Sendmail Message Submission Program:/nonexistent:/sbin/nologin
+</pre>
+
+Make sure this line appears before any yp settings line.<p>
+</li>
+
+<li> Create the <tt>/var/spool/clientmqueue</tt> directory and change
+<tt>/var/spool/mqueue</tt> permissions with <tt>mtree</tt>:
+<pre>
+  # cd /usr/src/etc/mtree
+  # install -c -o root -g wheel -m 600 special /etc/mtree
+  # install -c -o root -g wheel -m 444 4.4BSD.dist /etc/mtree
+  # mtree -qdef /etc/mtree/4.4BSD.dist -p / -u
+</pre>
+</li>
+
+<li>Add the following to root's crontab. This is necessary since
+<i>sendmail</i> is no longer setuid root, and relies on this entry to
+do parts of its job:
+
+<pre>
+# sendmail clientmqueue runner
+*/30    *       *       *       *       /usr/sbin/sendmail -L sm-msp-queue -Ac -q
+</pre>
+</li>
+
+<li> Upgrade sendmail:
+
+<pre>
+  $ cd /usr/src/gnu/usr.sbin/sendmail
+  $ make clean && make obj && make depend && make && sudo make install
+</pre>
+
+<p><b>Note:</b> The files <tt>submit.cf</tt> and <tt>localhost.cf</tt> have
+been installed to your <tt>/etc/mail</tt> directory.</p>
+
+<p>It is highly recommended that you regenerate and update your
+sendmail configuration files in <tt>/etc/mail</tt>. You can find some
+working configuration files in <tt>/usr/share/sendmail/cf</tt>.<p>
+</li>
+
+<li> If you were running sendmail without the <tt>-bd</tt>
+option in <tt>/etc/rc.conf</tt>, as the default installation settings do, 
+you will need to use <tt>localhost.cf</tt>. Edit <tt>rc.conf</tt> to
+use the following:
+
+<pre>
+# For normal use: "-L sm-mta -bd -q30m"
+sendmail_flags="-L sm-mta -C/etc/mail/localhost.cf -bd -q30m"
+</pre>
+
+</li>
+
+<li>
+Once your configuration file is ready, kill the existing sendmail:
+
+<pre>
+  kill `sed 1q /var/run/sendmail.pid`
+</pre>
+
+Restart the new sendmail with the appropriate options, for example:
+
+<pre>
+  /usr/sbin/sendmail -L sm-mta -bd -q30m
+</pre>
+
+for a configuration accepting mail from outside, or
+
+<pre>
+  /usr/sbin/sendmail -L sm-mta -C/etc/mail/localhost.cf -bd -q30m
+</pre>
+
+for a local mail-only configuration. 
+
+<p><b>Note:</b> the <tt>-bd</tt> flag is now needed in both cases.
+</li>
+
+</ol>
+
+The new <i>sendmail</i> should now be running.
+
 <P>
 <FONT SIZE=-1>
 --
 <BR>
-$OpenBSD: upgrade-minifaq.html,v 1.69 2001/09/06 05:54:43 kjell Exp $
+$OpenBSD: upgrade-minifaq.html,v 1.70 2001/09/15 17:39:08 kjell Exp $
 
 <BR>
 Copyright &copy; 1998-2001, Kjell Wooding. 
