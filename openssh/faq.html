@@ -1,0 +1,191 @@
+<!DOCTYPE HTML PUBLIC  "-//IETF//DTD HTML Strict//EN">
+<html>
+<head>
+<title>OpenSSH FAQ</title>
+<link rev=made href=mailto:www@openbsd.org>
+<meta name="resource-type" content="document">
+<meta name="description" content="the OpenSSH project portable version upgrading issues page">
+<meta name="keywords" content="openbsd,portable version,upgrading">
+<meta name="distribution" content="global">
+<meta name="copyright" content="This document copyright 1999 by OpenBSD.">
+</head>
+
+<BODY BGCOLOR="#FFFFFF" TEXT="#000000" LINK="#23238E">
+
+<img alt="[OpenSSH]" height=30 width=141 SRC="images/smalltitle.gif">
+<p>
+<h2><font color=#e00000>OpenSSH FAQ</font><hr></h2>
+
+<P>
+OpenSSH is almost completely compatible with the commercial SSH 1.2.x.
+There are, however, a few exceptions that you will need to bear in
+mind while upgrading from the commercial version, or trying to add
+OpenSSH to a system that does not ship with it by default.
+
+<ol>
+<li>OpenSSH does not support any patented transport algorithms.<p>
+	Only 3DES and Blowfish can be selected. This difference may manifest
+	itself in the
+	<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ssh">ssh</a>
+	command refusing to read its config files.
+
+	<b><i>Solution:</b></i>
+	Edit <i>/etc/ssh/ssh_config</i> and select a different 
+	<b>Cipher</b> option ("3des" or "blowfish").
+
+<p>
+<li>Old versions of commercial SSH encrypt host keys with IDEA<p>
+	The old versions of SSH used a patented algorithm to encrypt their
+	<i>/etc/ssh/ssh_host_key</i><p>
+
+	This problem will manifest as
+	<<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sshd">sshd</a>
+	not being able to read its host key.
+	<p>
+
+	<b><i>Solution:</b></i>
+	You will need to run the <u>commercial</u> version of
+	ssh-keygen on the host's private key:
+	<p>
+
+	<pre>ssh-keygen -u -f /etc/ssh/ssh_host_key</pre>
+
+	This will "upgrade" the key to 3DES.
+<p>
+<li>Incompatible changes to <i>sshd_config</i> format.<p>
+	OpenSSH extends the <I>sshd_config</I> file format in a number of 
+	ways. There is currently one change which is incompatible with the old.
+	<p>
+
+	Commercial SSH controlled logging using the <b>QuietMode</b> and
+	<b>FascistLogging</b> directives. OpenSSH introduces a more 
+	general set of logging options <b>SyslogFacility</b> and 
+	<b>LogLevel</b>. See the
+	<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sshd">sshd</a>
+	manual page for details.
+
+<p>
+<li>Warning messages about key lengths<p>
+	Commercial SSH's ssh-keygen program contained a bug which caused it 
+	to occasionally generate RSA keys which had their Most Significant 
+	Bit (MSB) unset. Such keys were advertised as being full-length, 
+	but are actually only half as secure.
+	<p>
+
+	OpenSSH will print warning messages when it encounters such keys. To
+	rid yourself of these message, edit you known_hosts files and replace
+	the incorrect key length (usually "1024") with the correct key length
+	(usually "1023").
+
+<p>
+<li>Portable OpenSSH: Spurious PAM authentication messages in logfiles<p>
+
+	The portable version of OpenSSH will generate spurious authentication
+	failures at every login, similar to:
+
+	<pre>"authentication failure; (uid=0) -> root for sshd service"</pre>
+
+	These are generated because OpenSSH first tries to determine whether a
+	user needs authentication to login (e.g. empty password). Unfortunatly
+	PAM likes to log all authentication events, this one included.
+	<p>
+
+	If it annoys you too much, set <b>PermitEmptyPasswords</b> to "no" in 
+	<i>sshd_config</i>. This will quiet the error message at the expense of
+	disabling logins to accounts with no password set. This is the 
+	default if you use the supplied <i>sshd_config</i> file.
+
+<p>
+<li>Portable OpenSSH: Empty passwords not allowed with PAM authentication<p>
+
+	To enable empty passwords with a version of OpenSSH built with PAM you
+	must add the flag <B>nullok</B> to the end of the password checking 
+	module in the <I>/etc/pam.d/sshd</I> file. For example:
+
+	<PRE>auth required/lib/security/pam_unix.so shadow nodelay nullok</PRE>
+
+	This must be done in addtion to setting <B>PermitEmptyPasswords</B> to 
+	"yes" in the <I>sshd_config</I> file.
+	<P>
+
+	There is one caveat when using empty passwords with PAM
+	authentication: PAM will allow <U>any</U> password when authenticating
+	an account with an empty password. This breaks the check that sshd
+	uses to determined whether an account has no password set and grant
+	users access to the account regardless of the policy specified by
+	<B>PermitEmptyPasswords</B>. For this reason, it is recommended that
+	you do not add the <B>nullok</B> directive to your PAM configuration 
+	file unless you specifically wish to allow empty passwords.
+
+<p>
+<li>X11 and/or agent forwarding does not work<p>
+	Check your <I>ssh_config</I> and <I>sshd_config</I>. The default 
+	configuration files disable authentication agent and X11 forwarding.
+
+<p>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ssh">ssh</a>
+    takes a long time to connect with Linux/glibc 2.1<p>
+
+	The glibc shipped with Redhat 6.1 appears to take a long time to 
+	resolve "IPv6 or IPv4" addresses from domain names. This can be 
+	kludged around with the <B>--with-ipv4-default</B> configure option. 
+	This instructs OpenSSH to use IPv4-only address resolution. (IPv6
+	lookups may still be made by specifying the -6 option).
+
+<p>
+<li>Logins from commercial ssh generate the error:
+	<pre>Selected cipher type idea not supported by server</pre>
+	<p>
+
+	This error is generated when a commercial ssh which has been 
+	configured to use the 'idea' cipher attempts to connect to an 
+	OpenSSH server. To rectify this, select a different cipher in
+	<I>ssh_config</I> or <I>~/.ssh/config</I> (3des for security or
+	blowfish for speed).
+
+<p>
+<li>Portable OpenSSH: "Can't locate module net-pf-10" messages in log under Linux<p>
+	The Linux kernel is looking (via modprobe) for protocol family 10
+	(IPv6). Either load the appropriate kernel module, enter the correct
+	alias in <I>/etc/modules.conf</I> or disable IPv6 in 
+	<I>/etc/modules.conf</I>.
+	<p>
+
+	For some silly reason <I>/etc/modules.conf</I> may also be named
+	<I>/etc/conf.modules</I>
+
+<p>
+<li>Portable OpenSSH: Password authentication doesn't work on Slackware 7.0<p>
+
+	Link OpenSSH with libcrypt:
+
+	<pre>LIBS=-lcrypt ./configure [options]</pre>
+
+<p>
+<li>Portable OpenSSH: Configure or sshd complain about lack of RSA support<p>
+
+	Ensure that your OpenSSL libraries have been built to include RSA
+	support either internally or through RSAref.<p>
+
+<p>
+<li>"scp: command not found" errors<P>
+
+	scp must be in the default PATH on both the client and the server. 
+	You may need to use the <B>--with-default-path</B> option to specify a 
+	custom path to search on the server. This option replaces the 
+	default path, so you need to specify all the current directories on
+	your path as well as where you have installed scp. For example: 
+
+	<pre>./configure --with-default-path=/bin:/usr/bin:/usr/local/bin:/path/to/scp</pre>
+
+</ol>
+<p>
+
+<hr>
+<a href=index.html><img height=24 width=24 src=back.gif border=0 alt=OpenSSH></a>
+<a href=mailto:www@openbsd.org>www@openbsd.org</a>
+<br>
+<small>$OpenBSD: faq.html,v 1.1 2000/05/08 01:39:04 deraadt Exp $</small>
+
+</body>
+</html>
