@@ -1,6 +1,6 @@
 #!/usr/bin/nawk -f
 
-# used both by support.bld and by groups.bld, since the formats are similar
+# used by support.bld to generate the table in support.html
 
 # convert data like this (order doesn't matter except 0 at front)
 # 0
@@ -8,6 +8,7 @@
 # P Ontario
 # T Palgrave
 # A R R # 1
+# Z L0N 1P0
 # O Consultant
 # I Ian F. Darwin
 # M ian@darwinsys.com
@@ -28,7 +29,7 @@ $1 == "0" {
 
 $1 == "C" { country = substr($0, 2);
 	if (country != oldCountry) {
-		print "<TR><TD BGCOLOR=\"#FFFF00\" COLSPAN=6 ALIGN=CENTER><B>" country "</B>"
+		print "<TR><TD BGCOLOR=\"#FFFF00\" COLSPAN=2 ALIGN=CENTER><B>" country "</B>"
 	 }
 	oldCountry = country
 	next
@@ -36,6 +37,7 @@ $1 == "C" { country = substr($0, 2);
 $1 == "P" { prov = substr($0, 2); next }
 $1 == "T" { city = substr($0, 2); next }
 $1 == "A" { addr = substr($0, 2); next }
+$1 == "Z" { zip = substr($0, 2); next }
 $1 == "O" { org = substr($0, 2); next }
 $1 == "I" { indv = substr($0, 2); next }
 $1 == "B" { phone = substr($0, 2); next }
@@ -54,17 +56,27 @@ function dump() {
 	print "<TR>"
 	print "<TD>" 
 		if (indv != "")
-			print indv "<BR>" 
-		print org "<BR>" addr
-	print "	<TD>" city "<BR>" prov
-	print "	<TD>" 
+			print "Name: " indv "<BR>" 
+		if (org != "")
+			print "Organization: " org "<BR>" 
+		if (addr != "")
+			print "Address: " addr "<BR>"
+		if (city != "") {
+			print "City: " city
+			if (prov != "")
+				print ", " prov
+			if (zip != "")
+				print " " zip
+			print "<BR>"
+		}
 		if (phone != "")
-			print phone "<BR>" 
-		print fax
-	print "	<TD>"
+			print "Phone: " phone "<BR>" 
+		if (fax != "")
+			print "FAX: " fax "<BR>" 
 		if (email != "")
-			print "<A HREF=\"mailto:" email "\">" email "</A>" "<BR>"
-		print "<A HREF=\"" url "\">" url "</A>"
+			print "Email: <A HREF=\"mailto:" email "\">" email "</A>" "<BR>"
+		if (url != "")
+			print "URL: <A HREF=\"" url "\">" url "</A>"
 	print "	<TD>" note
 }
 
@@ -72,6 +84,7 @@ function reset() {
 	prov = ""
 	city = ""
 	addr = ""
+	zip = ""
 	org = ""
 	indv = ""
 	email = ""
