@@ -1,0 +1,545 @@
+
+----------------------------------------------------------------------------
+                
+                        OpenBSD Security Advisory
+        
+                            September 15, 1997
+
+   	          Vulnerability in I/O Signal Handling
+
+----------------------------------------------------------------------------
+
+SYNOPSIS
+
+A vulnerability discovered in the 4.4BSD kernel allows unprivileged users
+to send certain signals to arbitrary processes on the system. Depending on
+the operating system and targeted program, this may allow users to kill
+off processes or disrupt the operation of certain programs.
+
+----------------------------------------------------------------------------
+
+AFFECTED SYSTEMS
+
+This vulnerability has been tested on all available 4.4BSD-based operating
+systems, including BSDI, NetBSD, OpenBSD, and FreeBSD, in their most
+recent release revisions. Additionally, this problem is known to affect
+SGI IRIX, and may affect other operating systems as well.
+
+----------------------------------------------------------------------------
+
+DETAILS
+
+Certain programs implemented in Unix operating systems make use of a
+facility called "asynchronous I/O" to handle multiple tasks
+simultaneously. Asynchronous I/O allows a process to be notified whenever
+it has data that needs to be read from an input source; the kernel
+notifies the process using a signal.
+
+Asynchronous I/O is enabled on a descriptor using the fcntl() system call;
+a descriptor with the O_ASYNC flag set will cause a signal to be sent
+whenever there is data available to be read from it. Additionally, using
+the FIOASYNC ioctl(), asynchronous notification can be enabled on a
+descriptor. 
+
+In cases where multiple processes are used in an application, it becomes
+useful to allow a descriptor to notify other processes as well. This is
+accomplished by use of another fcntl() operation, F_SETOWN, as well as an
+ioctl, FIOSETOWN (certain devices also provide an interface to this
+facility with the TIOCSPGRP ioctl). These operations allow a program to
+set the process or process group that will receive signal notification of
+pending I/O.
+
+A lack of checking in the code that handles these operations allows a
+program to specify an arbitrary process ID when using a socket or device
+file descriptor. By setting the recipient of signal notification to a
+process that is not owned by the program, the kernel can be tricked into
+signalling arbitrary programs. 
+
+Additionally, vulnerable kernels do not keep track of the credentials
+associated with a process when determining whether to send I/O signals;
+because of this, it is possible to specify the PID of a process that is
+owned by an attacker, and then destroy that process and wait for it's PID
+to be re-used. The new process occupying that PID can then be signalled by
+the attacker, regardless of it's owner.
+
+It's important to note that operating systems that check credentials when
+a program attempts to set the PID for I/O notification (thus evading part
+of this vulnerability) may still be vulnerable to the latter problem
+(process ID re-use), if credentials aren't checked at signal delivery
+time. We recommend that concerned parties contact their operating system
+vendors or support channels to verify their vulnerability status.
+
+----------------------------------------------------------------------------
+
+TECHNICAL DETAILS
+
+This vulnerability exists due to a lack of credential checking in the
+kernel when setting the recipient of I/O notification. BSD-based
+kernels maintain this information in descriptor-specific data structures
+unrelated to the process table; the vulnerability discussed here involves
+sockets, which maintain the signal recipient in the per-descriptor
+"socket" structure, although certain devices provide similar facilities
+and vulnerabilities.
+
+On 4.4BSD systems, the signal normally sent to inform a process of pending
+I/O is SIGIO. The default disposition of the SIGIO signal is "ignore" -
+thus, most processes are unaffected by this vulnerability. However,
+certain programs explicitly catch SIGIO in order to use asynchronous I/O;
+these programs can be disrupted by sending stray SIGIO's. 
+
+The process notification information is also used to determine the process
+that receives notification of out-of-band data on a socket. The same
+vulnerability applies, this time by setting the process to notify and then
+sending a message with the MSG_OOB flag set; the targetted process will
+receive a SIGURG signal. Certain network daemons (ftpd, for instance) can
+be disrupted by being sent a stray SIGURG signal when no data is available
+for reading.
+
+The problem is more serious on vulnerable System V operating systems; in
+many cases, SIGIO is the equivalent of SIGPOLL, and the default
+disposition of that signal is "terminate process". On SGI's IRIX operating
+system, exploitation of this vulnerability can kill any process on the
+system.
+
+In addition to being an extremely potent denial of service attack,
+surgical application of this vulnerability can be used to compromise the
+system - for example, a process holding a bound address (NFS port 2049,
+for instance) can be killed off and it's port stolen; this can be used to
+steal NFS file handles.
+
+In addition to sockets, some devices also provide facilities for
+notification of pending I/O; examples include the "log", "tun", and "bpf".
+The BPF and tunnel devices are of minimal concern, as they are not
+typically accessible by arbitrary users (although BPF is interesting in
+that it will allow the owner of a bpf-associated descriptor to choose an
+arbitrary signal to send, including SIGSTOP). 
+
+Unfortunately, the log device is normally accessible by users, and can be
+used to perform the same attack as sockets allow. It's also worth noting
+that the interface that allows programs to set the process to receive
+notification of I/O on the log device renders the legitimate purpose of
+this facility totally unreliable; unrelated programs can seize control of
+the asynchronous I/O notification on the log device, causing programs that
+rely on it to fail. The provided patches do not attempt to resolve this
+problem.
+
+----------------------------------------------------------------------------
+
+RESOLUTION
+
+This is a kernel problem that can only be fixed by patching the
+problematic system code. Patches for the OpenBSD operating system are
+provided in this advisory; FreeBSD is known to be working on a similar
+resolution.
+
+The provided OpenBSD patch causes the kernel to keep track of the
+credentials of the process associated with an I/O object; the credentials
+are checked whenever I/O notification will occur, and therefore resolve
+both the F_SETOWN and PID-reuse problems. Device drivers that present an
+interface to I/O notification must be modified to check credentials when
+the TIOCSPGRP (or equivalent) ioctl() is used to set notificatio PID; the
+OpenBSD patch resolves all currently known occurances of this in that
+operating system.
+
+----------------------------------------------------------------------------
+
+CREDITS
+
+This vulnerability is believed to have been discovered originally by Alan
+Peakall. Documentation and testing of this problem was conducted by Theo
+de Raadt and the OpenBSD development team; SGI information was obtained
+from Timothy Newsham. 
+
+The OpenBSD patch for this vulnerability was written in a caffeinated haze
+by Theo de Raadt of the OpenBSD project.
+
+The developers at OpenBSD would like to thank Perry Metzger for his
+continuous support of their work.
+
+----------------------------------------------------------------------------
+
+OPENBSD PATCH
+
+Index: sys/signalvar.h
+===================================================================
+RCS file: /cvs/src/sys/sys/signalvar.h,v
+retrieving revision 1.6
+retrieving revision 1.7
+diff -u -r1.6 -r1.7
+--- signalvar.h	1997/02/01 21:49:36	1.6
++++ signalvar.h	1997/08/31 20:42:01	1.7
+@@ -156,6 +156,7 @@
+ int	coredump __P((struct proc *p));
+ void	execsigs __P((struct proc *p));
+ void	gsignal __P((int pgid, int sig));
++void	csignal __P((pid_t pgid, int signum, uid_t uid, uid_t euid));
+ int	issignal __P((struct proc *p));
+ void	pgsignal __P((struct pgrp *pgrp, int sig, int checkctty));
+ void	postsig __P((int sig));
+Index: sys/socketvar.h
+===================================================================
+RCS file: /cvs/src/sys/sys/socketvar.h,v
+retrieving revision 1.10
+retrieving revision 1.11
+diff -u -r1.10 -r1.11
+--- socketvar.h	1997/02/28 04:04:13	1.10
++++ socketvar.h	1997/08/31 20:42:02	1.11
+@@ -71,6 +71,8 @@
+ 	short	so_timeo;		/* connection timeout */
+ 	u_short	so_error;		/* error affecting connection */
+ 	pid_t	so_pgid;		/* pgid for signals */
++	uid_t	so_siguid;		/* uid of process who set so_pgid */
++	uid_t	so_sigeuid;		/* euid of process who set so_pgid */
+ 	u_long	so_oobmark;		/* chars to oob mark */
+ /*
+  * Variables for socket buffering.
+Index: kern/kern_descrip.c
+===================================================================
+RCS file: /cvs/src/sys/kern/kern_descrip.c,v
+retrieving revision 1.13
+retrieving revision 1.14
+diff -u -r1.13 -r1.14
+--- kern_descrip.c	1997/08/21 05:17:37	1.13
++++ kern_descrip.c	1997/08/31 20:42:15	1.14
+@@ -55,6 +55,7 @@
+ #include <sys/fcntl.h>
+ #include <sys/malloc.h>
+ #include <sys/syslog.h>
++#include <sys/ucred.h>
+ #include <sys/unistd.h>
+ #include <sys/resourcevar.h>
+ #include <sys/conf.h>
+@@ -251,8 +252,11 @@
+ 
+ 	case F_SETOWN:
+ 		if (fp->f_type == DTYPE_SOCKET) {
+-			((struct socket *)fp->f_data)->so_pgid =
+-			    (long)SCARG(uap, arg);
++			struct socket *so = (struct socket *)fp->f_data;
++
++			so->so_pgid = (long)SCARG(uap, arg);
++			so->so_siguid = p->p_cred->p_ruid;
++			so->so_sigeuid = p->p_ucred->cr_uid;
+ 			return (0);
+ 		}
+ 		if ((long)SCARG(uap, arg) <= 0) {
+Index: kern/kern_sig.c
+===================================================================
+RCS file: /cvs/src/sys/kern/kern_sig.c,v
+retrieving revision 1.16
+retrieving revision 1.17
+diff -u -r1.16 -r1.17
+--- kern_sig.c	1997/02/01 21:49:41	1.16
++++ kern_sig.c	1997/08/31 20:42:18	1.17
+@@ -481,6 +481,46 @@
+ 		}
+ 	}
+ 	return (nfound ? 0 : ESRCH);
++}
++
++#define CANDELIVER(uid, euid, p) \
++	(euid == 0 || \
++	(uid) == (p)->p_cred->p_ruid || \
++	(uid) == (p)->p_cred->p_svuid || \
++	(uid) == (p)->p_ucred->cr_uid || \
++	(euid) == (p)->p_cred->p_ruid || \
++	(euid) == (p)->p_cred->p_svuid || \
++	(euid) == (p)->p_ucred->cr_uid)
++
++/*
++ * Deliver signum to pgid, but first check uid/euid against each
++ * process and see if it is permitted.
++ */
++void
++csignal(pgid, signum, uid, euid)
++	pid_t pgid;
++	int signum;
++	uid_t uid, euid;
++{
++	struct pgrp *pgrp;
++	struct proc *p;
++
++	if (pgid == 0)
++		return;
++	if (pgid < 0) {
++		pgid = -pgid;
++		if ((pgrp = pgfind(pgid)) == NULL)
++			return;
++		for (p = pgrp->pg_members.lh_first; p;
++		    p = p->p_pglist.le_next)
++			if (CANDELIVER(uid, euid, p))
++				psignal(p, signum);
++	} else {
++		if ((p = pfind(pgid)) == NULL)
++			return;
++		if (CANDELIVER(uid, euid, p))
++			psignal(p, signum);
++	}
+ }
+ 
+ /*
+Index: kern/subr_log.c
+===================================================================
+RCS file: /cvs/src/sys/kern/subr_log.c,v
+retrieving revision 1.3
+retrieving revision 1.4
+diff -u -r1.3 -r1.4
+--- subr_log.c	1996/04/21 22:27:17	1.3
++++ subr_log.c	1997/08/31 20:42:20	1.4
+@@ -60,6 +60,8 @@
+ 	int	sc_state;		/* see above for possibilities */
+ 	struct	selinfo sc_selp;	/* process waiting on select call */
+ 	int	sc_pgid;		/* process/group for async I/O */
++	uid_t	sc_siguid;		/* uid for process that set sc_pgid */
++	uid_t	sc_sigeuid;		/* euid for process that set sc_pgid */
+ } logsoftc;
+ 
+ int	log_open;			/* also used in log() */
+@@ -179,17 +181,12 @@
+ void
+ logwakeup()
+ {
+-	struct proc *p;
+-
+ 	if (!log_open)
+ 		return;
+ 	selwakeup(&logsoftc.sc_selp);
+-	if (logsoftc.sc_state & LOG_ASYNC) {
+-		if (logsoftc.sc_pgid < 0)
+-			gsignal(-logsoftc.sc_pgid, SIGIO); 
+-		else if ((p = pfind(logsoftc.sc_pgid)) != NULL)
+-			psignal(p, SIGIO);
+-	}
++	if (logsoftc.sc_state & LOG_ASYNC)
++		csignal(logsoftc.sc_pgid, SIGIO,
++		    logsoftc.sc_siguid, logsoftc.sc_sigeuid);
+ 	if (logsoftc.sc_state & LOG_RDWAIT) {
+ 		wakeup((caddr_t)msgbufp);
+ 		logsoftc.sc_state &= ~LOG_RDWAIT;
+@@ -232,6 +229,8 @@
+ 
+ 	case TIOCSPGRP:
+ 		logsoftc.sc_pgid = *(int *)data;
++		logsoftc.sc_siguid = p->p_cred->p_ruid;
++		logsoftc.sc_sigeuid = p->p_ucred->cr_uid;
+ 		break;
+ 
+ 	case TIOCGPGRP:
+Index: kern/sys_generic.c
+===================================================================
+RCS file: /cvs/src/sys/kern/sys_generic.c,v
+retrieving revision 1.7
+retrieving revision 1.8
+diff -u -r1.7 -r1.8
+--- sys_generic.c	1997/01/27 23:21:13	1.7
++++ sys_generic.c	1997/08/31 20:42:21	1.8
+@@ -480,7 +480,11 @@
+ 	case FIOSETOWN:
+ 		tmp = *(int *)data;
+ 		if (fp->f_type == DTYPE_SOCKET) {
+-			((struct socket *)fp->f_data)->so_pgid = tmp;
++			struct socket *so = (struct socket *)fp->f_data;
++
++			so->so_pgid = tmp;
++			so->so_siguid = p->p_cred->p_ruid;
++			so->so_sigeuid = p->p_ucred->cr_uid;
+ 			error = 0;
+ 			break;
+ 		}
+Index: kern/sys_socket.c
+===================================================================
+RCS file: /cvs/src/sys/kern/sys_socket.c,v
+retrieving revision 1.2
+retrieving revision 1.3
+diff -u -r1.2 -r1.3
+--- sys_socket.c	1997/02/24 14:19:59	1.2
++++ sys_socket.c	1997/08/31 20:42:23	1.3
+@@ -39,6 +39,7 @@
+ #include <sys/param.h>
+ #include <sys/systm.h>
+ #include <sys/file.h>
++#include <sys/proc.h>
+ #include <sys/mbuf.h>
+ #include <sys/protosw.h>
+ #include <sys/socket.h>
+@@ -112,6 +113,8 @@
+ 
+ 	case SIOCSPGRP:
+ 		so->so_pgid = *(int *)data;
++		so->so_siguid = p->p_cred->p_ruid;
++		so->so_sigeuid = p->p_ucred->cr_uid;
+ 		return (0);
+ 
+ 	case SIOCGPGRP:
+Index: kern/uipc_socket.c
+===================================================================
+RCS file: /cvs/src/sys/kern/uipc_socket.c,v
+retrieving revision 1.15
+retrieving revision 1.17
+diff -u -r1.15 -r1.17
+--- uipc_socket.c	1997/06/29 18:14:35	1.15
++++ uipc_socket.c	1997/08/31 20:42:24	1.17
+@@ -1058,11 +1060,6 @@
+ sohasoutofband(so)
+ 	register struct socket *so;
+ {
+-	struct proc *p;
+-
+-	if (so->so_pgid < 0)
+-		gsignal(-so->so_pgid, SIGURG);
+-	else if (so->so_pgid > 0 && (p = pfind(so->so_pgid)) != 0)
+-		psignal(p, SIGURG);
++	csignal(so->so_pgid, SIGURG, so->so_siguid, so->so_sigeuid);
+ 	selwakeup(&so->so_rcv.sb_sel);
+ }
+Index: kern/uipc_socket2.c
+===================================================================
+RCS file: /cvs/src/sys/kern/uipc_socket2.c,v
+retrieving revision 1.5
+retrieving revision 1.6
+diff -u -r1.5 -r1.6
+--- uipc_socket2.c	1997/02/21 08:45:00	1.5
++++ uipc_socket2.c	1997/08/31 20:42:26	1.6
+@@ -315,20 +315,14 @@
+ 	register struct socket *so;
+ 	register struct sockbuf *sb;
+ {
+-	struct proc *p;
+-
+ 	selwakeup(&sb->sb_sel);
+ 	sb->sb_flags &= ~SB_SEL;
+ 	if (sb->sb_flags & SB_WAIT) {
+ 		sb->sb_flags &= ~SB_WAIT;
+ 		wakeup((caddr_t)&sb->sb_cc);
+ 	}
+-	if (so->so_state & SS_ASYNC) {
+-		if (so->so_pgid < 0)
+-			gsignal(-so->so_pgid, SIGIO);
+-		else if (so->so_pgid > 0 && (p = pfind(so->so_pgid)) != 0)
+-			psignal(p, SIGIO);
+-	}
++	if (so->so_state & SS_ASYNC)
++		csignal(so->so_pgid, SIGIO, so->so_siguid, so->so_sigeuid);
+ }
+ 
+ /*
+Index: net/bpf.c
+===================================================================
+RCS file: /cvs/src/sys/net/bpf.c,v
+retrieving revision 1.9
+retrieving revision 1.10
+diff -u -r1.9 -r1.10
+--- bpf.c	1997/03/17 16:29:37	1.9
++++ bpf.c	1997/08/31 20:42:29	1.10
+@@ -522,14 +522,10 @@
+ bpf_wakeup(d)
+ 	register struct bpf_d *d;
+ {
+-	struct proc *p;
+-
+ 	wakeup((caddr_t)d);
+ 	if (d->bd_async && d->bd_sig)
+-		if (d->bd_pgid > 0)
+-			gsignal (d->bd_pgid, d->bd_sig);
+-		else if ((p = pfind (-d->bd_pgid)) != NULL)
+-			psignal (p, d->bd_sig);
++		csignal(d->bd_pgid, d->bd_sig,
++		    d->bd_siguid, d->bd_sigeuid);
+ 
+ #if BSD >= 199103
+ 	selwakeup(&d->bd_sel);
+@@ -822,6 +818,8 @@
+ 	 */
+ 	case TIOCSPGRP:		/* Process or group to send signals to */
+ 		d->bd_pgid = *(int *)addr;
++		d->bd_siguid = p->p_cred->p_ruid;
++		d->bd_sigeuid = p->p_ucred->cr_uid;
+ 		break;
+ 
+ 	case TIOCGPGRP:
+Index: net/bpfdesc.h
+===================================================================
+RCS file: /cvs/src/sys/net/bpfdesc.h,v
+retrieving revision 1.2
+retrieving revision 1.3
+diff -u -r1.2 -r1.3
+--- bpfdesc.h	1997/02/24 13:33:56	1.2
++++ bpfdesc.h	1997/08/31 20:42:30	1.3
+@@ -77,6 +77,8 @@
+ 	int		bd_async;	/* non-zero if packet reception should generate signal */
+ 	int		bd_sig;		/* signal to send upon packet reception */
+ 	pid_t		bd_pgid;	/* process or group id for signal */
++	uid_t		bd_siguid;	/* uid for process that set pgid */
++	uid_t		bd_sigeuid;	/* euid for process that set pgid */
+ #if BSD < 199103
+ 	u_char		bd_selcoll;	/* true if selects collide */
+ 	int		bd_timedout;
+Index: net/if_tun.c
+===================================================================
+RCS file: /cvs/src/sys/net/if_tun.c,v
+retrieving revision 1.19
+retrieving revision 1.20
+diff -u -r1.19 -r1.20
+--- if_tun.c	1997/07/29 07:18:20	1.19
++++ if_tun.c	1997/08/31 20:42:32	1.20
+@@ -84,7 +84,9 @@
+ struct tun_softc {
+ 	u_short	tun_flags;		/* misc flags */
+ 	struct	ifnet tun_if;		/* the interface */
+-	int	tun_pgrp;		/* the process group - if any */
++	pid_t	tun_pgid;		/* the process group - if any */
++	uid_t	tun_siguid;		/* uid for process that set tun_pgid */
++	uid_t	tun_sigeuid;		/* euid for process that set tun_pgid */
+ 	struct	selinfo	tun_rsel;	/* read select */
+ 	struct	selinfo	tun_wsel;	/* write select (not used) */
+ };
+@@ -228,7 +230,7 @@
+ 		}
+ 		splx(s);
+ 	}
+-	tp->tun_pgrp = 0;
++	tp->tun_pgid = 0;
+ 	selwakeup(&tp->tun_rsel);
+ 		
+ 	TUNDEBUG(("%s: closed\n", ifp->if_xname));
+@@ -331,7 +333,6 @@
+ {
+ 	struct tun_softc *tp = ifp->if_softc;
+ 	struct tunnel_header *th;
+-	struct proc	*p;
+ 	int		s;
+ 
+ 	TUNDEBUG(("%s: tun_output\n", ifp->if_xname));
+@@ -371,12 +372,9 @@
+ 		tp->tun_flags &= ~TUN_RWAIT;
+ 		wakeup((caddr_t)tp);
+ 	}
+-	if (tp->tun_flags & TUN_ASYNC && tp->tun_pgrp) {
+-		if (tp->tun_pgrp > 0)
+-			gsignal(tp->tun_pgrp, SIGIO);
+-		else if ((p = pfind(-tp->tun_pgrp)) != NULL)
+-			psignal(p, SIGIO);
+-	}
++	if (tp->tun_flags & TUN_ASYNC && tp->tun_pgid)
++		csignal(tp->tun_pgid, SIGIO,
++		    tp->tun_siguid, tp->tun_sigeuid);
+ 	selwakeup(&tp->tun_rsel);
+ 	return 0;
+ }
+@@ -446,10 +444,12 @@
+ 		splx(s);
+ 		break;
+ 	case TIOCSPGRP:
+-		tp->tun_pgrp = *(int *)data;
++		tp->tun_pgid = *(int *)data;
++		tp->tun_siguid = p->p_cred->p_ruid;
++		tp->tun_sigeuid = p->p_ucred->cr_uid;
+ 		break;
+ 	case TIOCGPGRP:
+-		*(int *)data = tp->tun_pgrp;
++		*(int *)data = tp->tun_pgid;
+ 		break;
+ 	default:
+ 		splx(s);
+
+

