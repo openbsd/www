@@ -9,16 +9,16 @@
 <meta name= "description"   content= "Die FAQ-Seite des OpenSSH-Projekts">
 <meta name= "keywords"      content= "OpenSSH,SSH,Secure Shell,faq">
 <meta name= "distribution"  content= "global">
-<meta name= "copyright"     content= "This document copyright 1999-2004 OpenBSD.">
+<meta name= "copyright"     content= "This document copyright 1999-2005 OpenBSD.">
 </head>
 
 <body bgcolor= "#ffffff" text= "#000000" link= "#23238E">
 <a href="index.html"><img alt="[OpenSSH]" height="30" width="141" src="../images/smalltitle.gif" border="0"></a>
 <p>
 
-<h1>OpenSSH FAQ (Häufig gestellte Fragen)</h1>
+<h1>OpenSSH-FAQ (Häufig gestellte Fragen)</h1>
 
-<strong>Datum: 12.04.2004</strong>
+<strong>Datum: 25.01.2005</strong>
 
 <hr>
 
@@ -56,7 +56,7 @@
 <li><a href= "#3.2">3.2 - Leere Passwörter sind bei der PAM-Authentifikation nicht erlaubt.</a>
 <li><a href= "#3.3">3.3 - ssh(1) benötigt sehr lange zum Verbinden oder zum Einloggen</a>
 <li><a href= "#3.4">3.4 - ,Can't locate module net-pf-10'-Meldungen im Log unter Linux.</a>
-<li><a href= "#3.5">3.5 - Passwortauthentifikation funktioniert nicht unter Slackware 7.0 oder Red Hat 6.x</a>
+<li><a href= "#3.5">3.5 - Passwortauthentifikation funktioniert nicht (z.B. unter Slackware 7.0 oder Red Hat 6.x)</a>
 <li><a href= "#3.6">3.6 - Configure oder sshd(8) beschweren sich über fehlende RSA-Unterstützung</a>
 <li><a href= "#3.7">3.7 - ,scp: command not found'-Fehler</a>
 <li><a href= "#3.8">3.8 - Kann die Passphrase nicht lesen</a>
@@ -66,6 +66,7 @@
 <li><a href= "#3.12">3.12 - Ich habe ein Upgrade auf OpenSSH 3.1 durchgeführt und dann ging X11-Weiterleitung nicht mehr.</a>
 <li><a href= "#3.13">3.13 - Ich habe ein Upgrade auf OpenSSH 3.8 durchgeführt und dann gingen einige X11-Programme nicht mehr.</a>
 <li><a href= "#3.14">3.14 - Ich habe meinen öffentlichen Schlüssel in authorized_keys kopiert, aber public-key-Authentifizierung funktioniert immernoch nicht.</a>
+<li><a href= "#3.15">3.15 - OpenSSH-Versionen und das Verhalten von PAM.</a>
 </ul>
 
 </blockquote>
@@ -858,39 +859,65 @@ Aus irgendeinem blödsinnigen Grund kann
 <i>/etc/modules.conf</i> auch <i>/etc/conf.modules</i> heißen.
 
 
-<h2><a name= "3.5">3.5 - Passwortauthentifikation funktioniert nicht unter Slackware 7.0 oder Red Hat 6.x</a></h2>
+<h2><a name= "3.5">3.5 - Passwortauthentifikation funktioniert nicht (z.B. unter Slackware 7.0 oder Red Hat 6.x)</a></h2>
 
 <p>
-Fü Slackware 7.0 musst du OpenSSH mit der libcrypt verlinken.
-
-<blockquote>
-<table border=0 width="800">
-        <tr>
-                <td nowrap bgcolor="#EEEEEE">
-LIBS=-lcrypt ./configure [Optionen]
-                </td>
-        </tr>
-</table>
-</blockquote>
-
-<p> Einige Versionen von Red Hat haben Passwort-Tools, die zwar MD5-style
-Passwörter erstellen, die von der crypt()-Funktion des Systems jedoch
-nicht verstanden werden. Wenn Passwortauthentifikation für neue
-Accounts oder Accounts mit Passwörtern, die vor kurzem geändert
-worden sind, fehlschlagen, es aber mit alten Accounts funktioniert, ist
-das sehr wahrscheinlich der Grund. (Betroffene Accounts haben
-Passwort-Zeichenketten in <i>/etc/shadow</i>, die mit <code>$1$</code>
-beginnen).
+Falls das Passwort das korrekte Passwort ist, und der Login weiterhin
+verwehrt bleibt, liegt die Ursache normalerweise darin, dass das
+System zwar mit MD5-Typ-Passwörtern arbeitet, aber die
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=crypt&amp;sektion=3"
+>crypt(3)</a>-Funktion, die von sshd verwendet wird, diese nicht
+verstehen kann.
 
 <p>
-Um das Problem zu behebnen, aktiviere MD5-Unterstützung in sshd
-während der Entwicklungsphase, um das Problem zu beheben:
+Betroffene Passwörter haben eine Passwortzeichenkette in
+<i>/etc/passwd</i> oder <i>/etc/shadow</i>, die mit <b>$1$</b> beginnt.
+Falls die Passwortauthentifikation für neue Accounts oder Accounts
+mit Passwörtern, die kürzlich aktualisiert wurden, fehlschlägt, aber
+mit alten Accounts funktioniert, dann ist dies wahrscheinlich das
+Problem.
+
+<p>
+Der Grund hierfür ist, dass einige Versionen von OpenSSL eine
+crypt(3)-Funktion haben, die keine MD5-Passwörter versteht, und die
+,link'-Reihenfolge von sshd führt dazu, dass OpenSSLs crypt(3) und nicht
+das vom System genutzt wird. OpenSSHs configure versucht dies
+zu korrigieren aber ist damit nicht immer erfolgreich.
+
+<p>
+Es gibt einige mögliche Lösungen:
+
+<ul>
+<li>
+<p>
+Aktiviere sshds eingebaute Unterstützung für MD5-Passwörter während
+der Erzeugungsphase.
 
 <blockquote>
 <table border=0 width="800">
         <tr>
                 <td nowrap bgcolor="#EEEEEE">
 ./configure --with-md5-passwords [Optionen]
+                </td>
+        </tr>
+</table>
+</blockquote>
+
+Dies ist sogar dann sicher, wenn du beide Verschlüsselungstypen
+verwendest, da sshd den korrekten Algorithmus für jeden Account
+automatisch auswählt.
+
+<li>
+<p>
+Wenn dein System eine separate libcrypt-Bibliothek hat (z.B.
+Slackware 7), dann kannst du manuell -lcrypt zur LIBS-Liste
+einfügen, so dass es statt OpenSSLs verwendet wird:
+
+<blockquote>
+<table border=0 width="800">
+        <tr>
+                <td nowrap bgcolor="#EEEEEE">
+LIBS=-lcrypt ./configure [Optionen]
                 </td>
         </tr>
 </table>
@@ -1089,16 +1116,101 @@ Falls das aus irgendeinem Grund nicht möglich sein sollte, besteht die
 Alternative darin, <b>StrictModes no</b> in <i>sshd_config</i> zu setzen,
 jedoch wird das nicht empfohlen.
 
+<h2><a name= "3.15">3.15 - OpenSSH-Versionen und das Verhalten von PAM.</a></h2>
+
+Das portable OpenSSH hat eine Option, die während der Konfigurationsphase
+gesetzt werden kann, um sshds Nutzung des
+<a href="http://www.opengroup.org/onlinepubs/008329799/">PAM</a>-
+(Pluggable Authentication Modules) Interfaces zu aktivieren.
+
+<blockquote>
+<table border=0 width="800">
+        <tr>
+                <td nowrap bgcolor="#EEEEEE">
+./configure --with-pam [Optionen]
+                </td>
+        </tr>
+</table>
+</blockquote>
+
+Um PAM auf irgendeine Weise nutzen zu können, muss diese Option während
+der Erzeugungsphase gesetzt sein. Das Laufzeit-Verhalten, wenn PAM
+erzeugt wurde, variiert mit der Version des portablen OpenSSH, und
+spätere Versionen müssen es ebenfalls mit dem Setzen von
+<b>UsePAM</b> auf <b>yes</b> in <i>sshd_config</i> aktivieren.
+
+<p>
+Das Verhalten der relevanten Authentifikations-Optionen, wenn
+PAM-Unterstützung integriert wurde, ist in der folgenden Tabelle
+zusammengefasst.
+
+<p>
+<table border="1">
+  <tr> <th>Version</th> <th>UsePAM</th> <th>PasswordAuthentication</th> <th>ChallengeResponseAuthentication</th> </tr>
+  <tr>
+    <td>&lt;=3.6.1p2</td>
+    <td>Nicht nutzbar</td>
+    <td>Verwendet PAM</td>
+    <td>Verwendet PAM, wenn <b>PAMAuthenticationViaKbdInt</b> aktiv ist</td>
+  </tr>
+  <tr>
+    <td>3.7p1 - 3.7.1p1</td>
+    <td>Standard ist <b>yes</b></td>
+    <td>Verwendet nicht PAM</td>
+    <td>Verwendet PAM, wenn <b>UsePAM</b> aktiv ist</td>
+  </tr>
+  <tr>
+    <td>3.7.1p2 - 3.8.1p1</td>
+    <td>Standard ist <b>no</b></td>
+    <td>Verwendet nicht PAM <a href="#3.15fn1">[1]</a></td>
+    <td>Verwendet PAM, wenn <b>UsePAM</b> aktiv ist</td>
+  </tr>
+  <tr>
+    <td>3.9p1</td>
+    <td>Standard ist <b>no</b></td>
+    <td>Verwendet PAM, wenn <b>UsePAM</b> aktiv ist</td>
+    <td>Verwendet PAM, wenn <b>UsePAM</b> aktiv ist</td>
+  </tr>
+</table>
+<p>
+
+<a name ="3.15fn1">[1]</a> Einige Verkäufer, insbesondere
+Redhat/Fedora, haben die Passwortauthentifikation von 3.9p1
+auf ihre 3.8x-basierenden Packages zurückportiert. Wenn du ein
+Package nutzt, das von einem Verkäufer bereitgestellt wurde,
+konsultiere bitte derren Dokumentation.
+
+<p>
+,OpenSSH Portable's PAM-Interface hat immernoch Probleme mit ein
+paar Modulen, jedoch hoffen wir, dass wir diese Anzahl in Zukunft
+verringern können. Zum Zeitpunkt der Veröffentlichung von 3.9p1
+sind folgende Probleme bekannt:
+
+<ul>
+  <li>Module, die sich auf ,module-private' Daten verlassen (z.B.
+  pam_dhkeys, pam_krb5, AFS) können darin fehlschlagen, korrekte
+  ,Credentials' zu erzeugen (Fehler <a
+  href="http://bugzilla.mindrot.org/show_bug.cgi?id=688">#688</a>)
+  wenn über <b>ChallengeResponseAuthentication</b> authentifiziert
+  wird. <b>PasswordAuthentication</b> mit 3.9p1 und neuer sollten
+  funktionieren.
+</ul>
+
+Du kannst außerdem <a
+href="http://bugzilla.mindrot.org/buglist.cgi?product=Portable+OpenSSH&amp;bug_status=RESOLVED&amp;bug_status=NEW&amp;bug_status=ACCEPTED&amp;component=PAM+support"
+>bugzilla für aktuelle PAM-Probleme</a> durchsehen.
+
+
 <hr>
 <a href="index.html"><img height=24 width=24 src="../back.gif" border=0 alt=OpenSSH></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
 <small>
 <!--
-Originally [OpenBSD: faq.html,v 1.91 ]
-$Translation: faq.html,v 1.52 2005/01/18 14:33:47 paldium Exp $
+Originally [OpenBSD: faq.html,v 1.97 ]
+$Translation: faq.html,v 1.54 2005/01/26 14:55:57 paldium Exp $
 -->
-$OpenBSD: faq.html,v 1.51 2005/01/18 17:17:23 jufi Exp $
+$OpenBSD: faq.html,v 1.52 2005/01/28 09:01:56 saad Exp $
 </small>
 
 </body>
