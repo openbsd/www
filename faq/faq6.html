@@ -20,7 +20,7 @@
 <ul><h3>Table of Contents</h3>
 <li><A href= "#6.0.1">6.0.1 - Before we go any further</a>
 <li><a href= "#6.1">6.1 - Initial network setup</a>
-<li><a href= "#6.2">6.2 - IP Filter</a>
+<li><a href= "#6.2">6.2 - Packet Filter (PF)</a>
 <li><a href= "#6.3">6.3 - Network Address Translation</a>
 <li><a href= "#6.4">6.4 - Dynamic Host Configuration Protocol</a>
 <li><a href= "#6.5">6.5 - Point to Point Protocol</a>
@@ -112,7 +112,7 @@ Which Includes Cards Such As:
 <P>
 If you are upgrading to OpenBSD 2.7 from an older release of OpenBSD,
 you need to pay attention here.
-Any references in /etc/ifaliases, /etc/ipf.rules, /etc/ipnat.rules
+Any references in /etc/ifaliases, /etc/pf.conf, /etc/nat.conf
 to the old interface names mx, al, ax, or pn must be replaced with dc.  Also, any hostname.xxx
 files with the old interface names must be renamed to hostname.dcX to
 be recognized.  Replace the X with the interface number.
@@ -263,7 +263,7 @@ BASE-ADDRESS.MCA LOCALHOST          U
 
 <p>
 This is the basic information you need to set up your OpenBSD box as a gateway (also called a router). If
-you are using OpenBSD as a router on the Internet, we suggest that you also read the IP Filter setup
+you are using OpenBSD as a router on the Internet, we suggest that you also read the Packet Filter setup
 instructions below to block potentially malicious traffic. Also, due to the low availability of IPv4
 addresses from network service providers and regional registries, you may want to look at Network Address
 Translation for information on conserving your IP address space. 
@@ -359,380 +359,654 @@ dc0: flags=8863&lt;UP,BROADCAST,NOTRAILERS,RUNNING,SIMPLEX,MULTICAST&gt;
 
 <p>
 <a name= "6.2"></a>
-<h2>6.2 - IP Filter</h2>
+<a name= "PacketFilter"></a>
+<h2>6.2 - Packet Filter (PF)</h2>
 </p>
-
 <p>
-The IPFilter package was created to handle two tasks, dealing with packet level forwarding permissions 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ipf&sektion=8&manpath=OpenBSD+2.7">ipf(8)</a> and mapping hosts/subnets 
-to a range of external addresses <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ipnat&sektion=8&manpath=OpenBSD+2.7">ipnat(8)</a>. 
-The configuration files for these two services are <i>/etc/ipf.rules</i> and <i>/etc/ipnat.rules</i>.
+<h5>Note: Packet Filter is the filtering system in OpenBSD 3.0 and 
+later.  If you are looking for the IPF/IPNAT FAQ for OpenBSD 2.9 and 
+before, click <a href="faqipf.html">here</a>.</h5>
 </p>
-
 <p>
-To start these services with your system, you need to edit <i>/etc/rc.conf</i> and set the lines to:
+The Packet Filter subsystem was created to handle two tasks, dealing 
+with packet level forwarding permissions and mapping hosts/subnets to 
+a range of external addresses.  The configuration files for these 
+two services are 
+<i><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&sektion=5">/etc/pf.conf</a></i> 
+and 
+<i><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=nat.conf&sektion=5">/etc/nat.conf</a></i>.
+</p>
+<p>
+To start these services with your system, you need to edit
+<i><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rc.conf&sektion=8">/etc/rc.conf</a></i>
+and set the line to:
 </p>
 
 <ul><pre>
-ipfilter=YES
-ipnat=YES
+pf=YES
 </pre></ul>
 
 <p>
-<b>NOTE:</b> You do not need both options activated always, unless you are using both. However, if you are using 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ipnat&sektion=8&manpath=OpenBSD+2.7">ipnat(8)</a>, ipfilter must also be activated.
+If you are using NAT, you will most 
+likely also need to set the sysctl value <tt>net.inet.ip.forwarding</tt> 
+to 1. You can do this by uncommenting the relevant lines in 
+<i><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl.conf&sektion=5">/etc/sysctl.conf</a></i>
+and rebooting your computer.
 </p>
-
-<p>
-If you are using <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ipnat&sektion=8&manpath=OpenBSD+2.7">ipnat(8)</a>, you will most 
-likely also need to set the sysctl value &quot;net.inet.ip.forwarding&quot; to 1. You can do this by uncommenting 
-the pertaining lines in <i>/etc/sysctl.conf</i>.
-</p>
+<P>
+If you have Packet Filter compiled into your kernel, but you don't have 
+it turned on in your <i>/etc/rc.conf</i> file, you can still activate it
+with the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&sektion=8">pfctl</a>
+command.
+<ul><pre>
+# <b>pfctl -R /etc/pf.conf</b>
+# <b>pfctl -N /etc/nat.conf</b>
+# <b>pfctl -e</b>
+</pre></ul>
 
 <P>
-If you have IP Filter compiled into your kernel, but you don't have 
-it turned on in your <i>/etc/rc.conf</i> file, you can still activate it easily. 
-
+The first line sets up filtering, using <i>/etc/pf.conf</i> and the 
+second sets up NAT, using <i>/etc/nat.conf</i> (more on NAT later 
+in <a href="#NAT">Section 6.3, NAT</a>), and finally, the last line 
+activates PF.
+</p>
+This can also be combined into one command line:
 <ul><pre>
-# <strong>ipf -Fa -f /etc/ipf.rules -E</strong>
-# <strong>ipnat -CF -f /etc/ipnat.rules</strong>
-</pre></ul>
-
-<P>
-The <tt>-E</tt> flag on ipf 'enables' IP Filter.  <Tt>-Fa</tt> clears out any rules that you may have in there.  <tt>-f /etc/ipf.rules</tt> loads the rules from
-<i>/etc/ipf.rules</i>.
-<p>
-If you make changes to <i>/etc/ipf.rules</i> after ipf is loaded, you can reload your rules pretty easily!
-
-<ul><pre>
-# <strong>ipf -Fa -f /etc/ipf.rules</strong>
-</pre></ul>
-Same for ipnat...
-
-<ul><pre>
-# <strong>ipnat -CF -f /etc/ipnat.rules</strong>
-</pre></ul>
-You will also want to enable <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ipmon&sektion=8&manpath=OpenBSD+2.7">ipmon(8)</a> for debugging.
-<ul><pre>
-# <strong>ipmon -Ds</strong>
+# <strong>pfctl -R /etc/pf.conf -N /etc/nat.conf -e</strong>
 </pre></ul>
 <p>
-This document will cover some basic <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ipf&sektion=8&manpath=OpenBSD+2.7">ipf(8)</a>
-and <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ipnat&sektion=8&manpath=OpenBSD+2.7">ipnat(8)</a> configurations below.
-There are a lot of nice examples in <i>/usr/share/ipf/</i> for ipnat and ipf. We recommend
-you choose the one closest to what you want, and modify it to fit your needs.  You can find other IP Filter information
-at the IP Filter <A HREF="http://false.net/ipfilter/">mailing list archive</a>, the <A HREF="http://coombs.anu.edu.au/~avalon/">IP Filter web site</a>, and finally the <A
-HREF="http://www.obfuscation.org/ipf/">IP Filter HOWTO</a>. 
+If you make changes to <i>/etc/pf.conf</i> after 
+PF is started, you can reload your rules by reloading the 
+appropriate file:
+<ul><pre>
+# <b>pfctl -R /etc/pf.conf</b>
+</pre></ul>
 </p>
 
 <p>
-<h3>IPF</h3>
+This document will cover some basic 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&sektion=5">pf.conf(5)</a>
+and <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=nat.conf&sektion=5">nat.conf(5)</a> 
+configurations below.  You can also look at the <a href="#sample_pf.conf">resulting 
+ruleset</a> that includes all the tweaks explained below in more detail.
+You can find other Packet Filter information
+at the <A HREF="http://www.benzedrine.cx/pf.html">Packet Filter web site</a> 
+and in the 
+<A HREF="http://www.inebriated.demon.nl/pf-howto/">Packet Filter HOWTO</a>. 
 </p>
 
 <p>
-In order to enable ipf at boot, you will need to modify /etc/rc.conf so it reads IPFILTER=YES.
-IP Filter (ipf) is controlled by /etc/ipf.rules, which is read at boot. For a more detailed explanation, see <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ipf&sektion=5&manpath=OpenBSD+2.7">ipf(5)</a>. In the examples that follow, 
-fxp0 will represent the external interface to the internet. It will be different for you, based on the
-ethernet adaptor present in your computer. These rules will assume full-time internet connectivity, such as you would see on a webserver.
+<h3>Packet Filter</h3>
 </p>
 
 <p>
-IP Filter rules are processed sequentially from top to bottom, it helps to visualize each packet having to traverse every rule before it reaches it's destination.
+In order to enable Packet Filter at boot, you will need to 
+modify <i>/etc/rc.conf</i> so that it reads <tt>pf=YES</tt>.  Packet Filter (pf)
+is controlled by <i>/etc/pf.conf</i>, which is read at boot. For a 
+more detailed explanation, see 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&sektion=5">pf.conf(5)</a>. 
+In the examples that follow, <tt>fxp0</tt> will represent the external 
+interface to the internet. It will be different for you, 
+based on the ethernet adapter present in your computer. These 
+rules will assume full-time internet connectivity, such as 
+you would see on a webserver.
 </p>
 
 <p>
-For example, the default ruleset provided allows all packets to travel in, and all packets to travel out:
+Packet Filter rules are processed sequentially from top to bottom; 
+it helps to visualize each packet having to traverse every 
+rule before it reaches it's destination.
+</p>
+
+<p>
+For example, the default ruleset provided allows all packets 
+to travel in, and all packets to travel out:
 
 <ul><pre>
-pass out from any to any 
+pass out all 
+pass in all
+</pre></ul>
+
+This is shorthand, for:
+<ul><pre>
 pass in from any to any
-</pre></ul>
-
-Now lets say we don't want to allow any incoming connections to port 3306 (mysql) because the database should only be connected to from localhost. Our ruleset would look like this:
-
-<ul><pre>
 pass out from any to any
-pass in from any to any
-block in on fxp0 from any to any port = 3306
 </pre></ul>
 
-This says &quot;block in all incoming packets, from anywhere to anywhere whose destination is 3306.&quot;
-Essentially a packet destined for port 3306 on interface fxp0 will pass the first &quot;pass in&quot; rule and then be dropped by the &quot;block in port = 3306&quot; rule. If you reversed the order of our incoming rules (remember, order is important):
-
-<ul><pre>
-pass out from any to any
-block in on fxp0 from any to any port = 3306
-pass in from any to any
-</pre></ul>
-
-Packets destined for port 3306 would pass because the last rule in the set allows all packets to pass. It is important to keep this in mind when writing packet filter rules:
- <b> The last matching rule wins</b>.
+which can be read as &quot;Pass incoming packets from any source to 
+any destination&quot;, with an implied &quot;on any interface (which is 
+always implied if a specific interface isn't specified) of any
+address family, inet (v4) or inet6 (v6)&quot;.
+</p>
+<p>
+Obviously, this isn't much of a filter.  More useful filtering
+will be based on the address family (IPv4 or IPv6), protocol(s) 
+and port(s) used by the services
+you wish to filter.  Any of the protocols listed in <i>/etc/protocols</i>
+can be specified, by either name or number, but we will concern 
+ourselves with TCP, UDP and ICMP.
 </p>
 
 <p>
-Of course, there are exceptions to every rule. the <em>quick</em> option drops the packet at the first rule that matches. Let's look at our above flawed example, if we add <em>quick</em> to the &quot;block in&quot; rule:
+Now lets say we don't want to allow any incoming IPv4 connections to 
+TCP port 3306 (MySQL) because the database should only be connected 
+to from localhost. Our ruleset would look like this:
 
 <ul><pre>
-pass out from any to any
-block in quick on fxp0 from any to any port = 3306
-pass in from any to any
+pass out all
+pass in all
+block in on fxp0 inet proto tcp from any to any port = 3306
+</pre></ul>
+
+This says &quot;block in all IPv4 (inet) incoming packets, from 
+any source to 
+any destination bound for tcp port 3306.&quot;  Note that 
+it is required that you specify a protocol with any port-based
+filter, and recommended that you specify the address family.  
+For services defined in the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=services&sektion=5">/etc/services</a>
+file, you can also use the service names, such as <em>www</em>
+or <em>mysql</em>.
+A packet destined for tcp port 3306 on interface 
+<tt>fxp0</tt> will pass the first &quot;pass in rule and then 
+be dropped by the &quot;block 
+in port = 3306&quot; rule. If you reversed the order of our 
+incoming rules (remember, order is important):
+
+<ul><pre>
+pass out all
+block in on fxp0 inet proto tcp from any to any port = 3306
+pass in all
+</pre></ul>
+
+Packets destined for tcp port 3306 would pass because the last rule 
+in the set allows all packets to pass. It is important to keep 
+this in mind when writing packet filter rules:
+<b> The last matching rule wins</b>.
+</p>
+
+<p>
+Of course, there are exceptions to every rule. The <em>quick</em> 
+option drops the packet at the first rule that matches. Let's 
+look at our above flawed example, if we add <em>quick</em> to 
+the &quot;block in&quot; rule:
+
+<ul><pre>
+pass out all
+block in quick on fxp0 inet proto tcp from any to any port = 3306
+pass in all
 </pre></ul>
 
 <p>
-A packet destined for our host on port 3306 will hit the &quot;block in quick&quot; rule and be dropped immediately. All packets destined for other ports wont find a rule match until they reach our &quot;pass in&quot; rule that allows all packets to pass.
+A packet destined for our host on tcp port 3306 will hit the 
+&quot;block in quick&quot; rule and be dropped immediately. All 
+packets destined for other ports or protocols won't find a rule match until 
+they reach our &quot;pass in&quot; rule that allows all packets 
+to pass.
 </p>
 
 <b>Default Deny</b>
-<p> The safest packet filtering policy is a default deny policy. All traffic not explicitly allowed is denied. This policy is far safer than explicitly denying each protected service, allows for smaller rulesets, and can protect from an accidentally misconfigured service that has been left exposed.
+<p> The safest packet filtering policy is a default deny policy. 
+All traffic not explicitly allowed is denied. This policy is far 
+safer than explicitly denying each protected service, allows for 
+smaller rulesets, and can protect from an accidentally 
+misconfigured service that has been left exposed.
 <p>
-Let's now look at another real world example ruleset and explain things line by line. Here's an example for a webserver with a default deny policy that only allows ssh connections (for administration) and connections to http (port 80) and https (port 443).
+Let's now look at another example ruleset and explain 
+things line by line. Here's an example for a webserver with a 
+default deny policy that only allows ssh connections (for 
+administration) and connections to http (port 80) and https 
+(port 443).
 <ul><pre>
-pass in quick on fxp0 from any to any port = 22
-pass in quick on fxp0 from any to any port = 80
-pass in quick on fxp0 from any to any port = 443
+pass in quick on fxp0 inet proto tcp from any to any port = 22
+pass in quick on fxp0 inet proto tcp from any to any port = 80
+pass in quick on fxp0 inet proto tcp from any to any port = 443
 block in quick on fxp0 from any to any
 pass out on fxp0 from any to any
 </pre></ul>
 
 <p>
-This will allow incoming connections from anywhere to ports 22(ssh), 80(http), and 443(https). It will drop all other connection attempts, and allow all outgoing connections. This is a pretty tight ruleset.
-But what if you only wanted to allow internal hosts on your 1.1.1.0 address block to connect to ssh, but allow outside connections to http and https?
+This will allow incoming connections from anywhere to tcp ports 
+22(ssh), 80(http), and 443(https). It will drop all other 
+connection attempts, and allow all outgoing connections. This 
+is a pretty tight ruleset.  But what if you only wanted to 
+allow internal hosts on your 1.1.1.0 address block to connect 
+to ssh, but allow outside connections to http and https?
 </p>
 
 <ul><pre>
-pass in quick on fxp0 from 1.1.1.0/24 to any port = 22
-pass in quick on fxp0 from any to any port = 80
-pass in quick on fxp0 from any to any port = 443
+pass in quick on fxp0 inet proto tcp from 1.1.1.0/24 to any port = 22
+pass in quick on fxp0 inet proto tcp from any to any port = 80
+pass in quick on fxp0 inet proto tcp from any to any port = 443
 block in quick on fxp0 from any to any
 pass out on fxp0 from any to any
 </pre></ul>
 
-Pretty good, but what if we only want to allow one machine (1.1.1.1) to administer the web server remotely?
+Pretty good, but what if we only want to allow one machine 
+(1.1.1.1) to administer the web server remotely?
 In that case, we can change this:
 
 <ul><pre>
-pass in quick on fxp0 from 1.1.1.0/24 to any port = 22
+pass in quick on fxp0 inet proto tcp from 1.1.1.0/24 to any port = 22
 </pre></ul>
 to this:
 <ul><pre>
-pass in quick on fxp0 from 1.1.1.1/32 to any port = 22
+pass in quick on fxp0 inet proto tcp from 1.1.1.1/32 to any port = 22
 </pre></ul>
-IP Filter supports both CIDR and dotted decimal forms of netmask address. You could also write the above as:
-<ul><pre>
-pass in quick on fxp0 from 1.1.1.1/255.255.255.255 to any port = 22
-</pre></ul>
-but why would you?
 </p>
 <b>Sample Rules</b>
 <p>
-Here are some good rules for everyone to use (assuming that fxp0 is the external internet-connected interface). First we will set up simple address spoofing protection.
+Here are some good rules for everyone to use (assuming that 
+fxp0 is the external internet-connected interface). First we 
+will set up simple address spoofing protection.  These addresses
+shouldn't (normally) be floating around the Internet, 
+and if they are, it is rarely good, so we block them:
 <ul><pre>
-block in quick on fxp0 from 127.0.0.0/8 to any
-block in quick on fxp0 from 192.168.0.0/16 to any
-block in quick on fxp0 from 172.16.0.0/12 to any
-block in quick on fxp0 from 10.0.0.0/8 to any
-block out quick on fxp0 from any to 127.0.0.1/8
-block out quick on fxp0 from any to 192.168.0.0/16
-block out quick on fxp0 from any to 172.16.0.0/12
-block out quick on fxp0 from any to 10.0.0.0/8
+block in quick on fxp0 inet from 127.0.0.0/8 to any
+block in quick on fxp0 inet from 192.168.0.0/16 to any
+block in quick on fxp0 inet from 172.16.0.0/12 to any
+block in quick on fxp0 inet from 10.0.0.0/8 to any
+block out quick on fxp0 inet from any to 127.0.0.1/8
+block out quick on fxp0 inet from any to 192.168.0.0/16
+block out quick on fxp0 inet from any to 172.16.0.0/12
+block out quick on fxp0 inet from any to 10.0.0.0/8
 </pre></ul>
-It's also a good idea to separate your loopback interface from your other rules. 
-<ul><pre>
-pass out quick on lo0
-pass in quick on lo0
-</pre></ul>
-Our ruleset is starting to look pretty good, when we put it together, here's what it looks like:
-<ul><pre>
-# Loopback Rules
-pass out quick on lo0
-pass in quick on lo0
 
+Our ruleset is starting to look pretty good, when we put 
+it together, here is what it looks like:
+
+<ul><pre>
 # don't allow anyone to spoof non-routeable addresses
-
-block in quick on fxp0 from 127.0.0.0/8 to any
-block in quick on fxp0 from 192.168.0.0/16 to any
-block in quick on fxp0 from 172.16.0.0/12 to any
-block in quick on fxp0 from 10.0.0.0/8 to any
-block out quick on fxp0 from any to 127.0.0.1/8
-block out quick on fxp0 from any to 192.168.0.0/16
-block out quick on fxp0 from any to 172.16.0.0/12
-block out quick on fxp0 from any to 10.0.0.0/8
+block in quick on fxp0 inet from 127.0.0.0/8 to any
+block in quick on fxp0 inet from 192.168.0.0/16 to any
+block in quick on fxp0 inet from 172.16.0.0/12 to any
+block in quick on fxp0 inet from 10.0.0.0/8 to any
+block out quick on fxp0 inet from any to 127.0.0.1/8
+block out quick on fxp0 inet from any to 192.168.0.0/16
+block out quick on fxp0 inet from any to 172.16.0.0/12
+block out quick on fxp0 inet from any to 10.0.0.0/8
 
 # only allow our administration machine to connect via ssh
-
-pass in quick on fxp0 from 1.1.1.1/32 to any port = 22
+pass in quick on fxp0 inet proto tcp from 1.1.1.1/32 to any port = 22
 
 # allow others to use http and https
-
-pass in quick on fxp0 from any to any port = 80
-pass in quick on fxp0 from any to any port = 443
+pass in quick on fxp0 inet proto tcp from any to any port = 80
+pass in quick on fxp0 inet proto tcp from any to any port = 443
 
 # finally lock the rest down with a default deny
-
 block in quick on fxp0 from any to any
 
 # and let out-going traffic out
-
 pass out on fxp0 from any to any
 </pre></ul>
 </p>
 
-<b>Packet logging</b>
+<b>Packet Logging</b>
 <p>
-Now that's pretty good, but it could be better. What if we want to log any connection attempts to port 22(ssh) that get blocked by our firewall? Easy, IP Filter can handle this with the <em>log</em> keyword:
+Now that's pretty good, but it could be better. What if we want to 
+log any connection attempts to port 22(ssh) that get blocked by 
+our firewall? Easy, Packet Filter can handle this with the <em>log</em> keyword:
 <ul><pre>
-pass in quick on fxp0 from 1.1.1.1/32 to any port = 22
-block in log quick on fxp0 from any to any port = 22
+pass in quick on fxp0 inet proto tcp from 1.1.1.1/32 to any port = 22
+block in log quick on fxp0 inet proto tcp from any to any port = 22
 </pre></ul>
-This rule will allow our remote administration machine to connect to port 22, but deny and log all other attempts to connect to port 22.
+This rule will allow our remote administration machine to connect 
+to port 22, but deny and log all other attempts to connect to 
+port 22.
 </p>
-<b> Protocol based packet filtering</b>
 <p>
-IP Filter can filter any IP protocol based on its number or name from <a href=file://localhost/etc/protocols>/etc/protocols</a>. For the sake of clarity, we will only concern ourselves with tcp, udp, and icmp.  These are the
-most commonly used protocols.  All basic internet applications
-rely on the availability and correct operation of these protocols.</p>
-<p>
-In order for ipf to filter based on protocol, the keyword <em>proto</em> must be used. To examine our earlier ssh example rule, since ssh runs over tcp, we should only allow tcp packets to connect. by using the <em>proto</em> keyword to allow only tcp, we get a rule that looks like this:
+Logged packets are sent to the pflog0 interface, which is monitored
+by 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&sektion=8">pflogd(8)</a>,
+which typically dumps the packets to <i>/var/log/pflog</i> in 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tcpdump&sektion=8">tcpdump(8)</a>
+binary format.  pflogd(8) is started by default by <i>/etc/rc</i> if pf is 
+enabled in <i>/etc/rc.conf/</i>.
+You can read these log files using the following command:
 <ul><pre>
-pass in quick on fxp0 proto tcp from 1.1.1.1/32 to any port = 22
-</pre></ul>
-But what if we need to allow connections to a service running over both tcp and udp like bind? Well, in the case of tcp/udp, IP Filter allows you to group both protocols together. Note: this only applies to tcp/udp. Using the bind example, a rule allowing tcp and udp connections in a default deny environment would look like:
-<ul><pre>
-pass in quick on fxp0 proto tcp/udp from any to any port = 53
+# <b>tcpdump -n -e -ttt -r /var/log/pflog</b>
 </pre></ul>
 </p>
-<b> Packet Filtering</b>
+<p>
+One should be aware that using tcpdump to watch the pflog file does 
+NOT give a real-time display.  If you wish a real-time display, you 
+can use this command:
+<ul><pre>
+# <b>tcpdump -i pflog0</b>
+</pre></ul>
+One could also use tcpdump to narrow down the focus to facilitate
+debugging:
+<ul><pre>
+# <b>tcpdump -e -i pflog0 port 80</b>
+</pre></ul>
+Doing this does NOT impact the data that is put to the file 
+<i>/var/log/pflog</i>.  
+</p>
+<p>
+When one is examining their logs, they should be especially careful
+with tcpdump's verbose protocol decoding (activated via the -v command
+line option).  Tcpdump's protocol decoders do not have a perfect
+security history.  At least in theory, a delayed attack could be
+possible via the partial packet payloads recorded by the logging
+device.
+</p><p>
+Additional care should be taken about access to the logs.  Pflogd
+will capture 96 bytes of the packet and log it.  Access to the logs
+could provide partial access to sensitive packet payloads (like telnet
+or FTP logins)
+</p>
+<p>
+<b>Multiple Protocols</b>
+</p>
+<p>
+What if we need to allow connections to a service running 
+over multiple protocols, such as bind, which uses TCP and UDP? 
+Packet filter lets you lump options together into sets  
+(more on this later): 
+<ul><pre>
+# Pass DNS traffic for BIND
+pass in quick on fxp0 inet proto { tcp, udp } from any to any port = 53
+</pre></ul>
+Note the spaces on both sides of the '{ }' characters.  This is 
+neater than the alternative you might otherwise have to use:
+<ul><pre>
+pass in quick on fxp0 inet proto tcp from any to any port = 53
+pass in quick on fxp0 inet proto udp from any to any port = 53
+</pre></ul>
+</p>
+<a name="normalization"></a>
+<b> Packet Normalization</b>
 <p> 
-In addition to filtering based on protocol, IP Filter is also capable of managing fragmented IP packets (a common method of defeating packet filters). There are two possible keywords that can be used when dealing with fragmented ip packets, <em>frag</em> for commonly fragmented IP packets, or <em>short</em> for IP packets with headers too small for comparison. Since fragmented packets can occur normally, depending on link conditions, it is best to only filter packets with headers too small for valid comparison. This can be accomplished with the following rule:
+As some OSs and applications have trouble with abnormal or 
+fragmented packets, it is sometimes beneficial to normalize the 
+packets before they are passed on to their ultimate destination.
+This is done with the <b>scrub</b> directive, used as here:
 <ul><pre>
-block in quick proto tcp all with short
+scrub in all
 </pre></ul>
-What about IP Options? IP Filter can handle those packets too. Packets can either be dropped if they have IP options set, or they can be dropped based on the specific IP options that are set. For example, the following rule will drop and log all packets with ip options set.
+As this does put additional load on the system, there is no reason
+to use this command unless this system is protecting a computer 
+with a poor TCP/IP implementation
+</p>
+<p>
+<b>IP Options</b>
+</p>
+<p>
+By default, PF blocks packets with IP options set.  This can make
+the job more difficult for &quot;OS fingerprinting&quot; utilities
+like nmap.  If you have an application that requires the passing of 
+these packets, such as multicast or IGMP, you can use the 
+<b>allow-opts</b>
+directive:
 <ul><pre>
-block in log quick on fxp0 all with ipopts
+pass in quick on fxp0 allow-opts
 </pre></ul>
-This may however break some things such as <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=traceroute&sektion=8&format=html">traceroute(8)</a>. You can also specify which options not to allow. For instance a good rule is to block all packets with source routing options. This is accomplished with this rule:
-<ul><pre>
-block in quick on fxp0 all with opt lsrr
-block in quick on fxp0 all with opt ssrr
-</pre></ul>
+
 <b>TCP Flags, established connections and keeping state</b>
 <p>
-Now the filtering begins in earnest. IP Filter's greatest strengths are it's ability to filter packets based on TCP flags and to maintain established connections and connection state. It is recommend that all users who wish to filter packets based on TCP flags understand what role each flag plays. For instance, if you wanted to deny all packets with the FIN, URG, and PSH flags set (like for instance an nmap OS fingerprinting attempt) you could use a rule like this:
+Packet Filter can also filter packets based on TCP flags and 
+maintain established connections and connection state. It is 
+recommend that all users who wish to filter packets based on 
+TCP flags understand what role each flag plays. For instance, 
+if you wanted to deny all packets with the FIN, URG, and PSH 
+flags set (like for instance an nmap OS fingerprinting attempt) 
+you could use a rule like this:
 <ul><pre>
-block in quick on fxp0 proto tcp from any to any flags FUP
+block in quick on fxp0 inet proto tcp from any to any flags FUP/FUP
 </pre></ul>
 (Thanks to <a href=mailto:halogen@nol.net>Kyle Hargraves</a> for that tip)
 </p>
 <p>
-IP Filter's next cool trick is it's ability to maintain state. Maintaining state has been described as &quot;not speaking until spoken to&quot;, in other words, once a connection is established, packets no longer have to traverse rulesets. This is a very powerful feature allowing much simpler and more secure rule writing.</p>
+Packet Filter's next cool trick is it's ability to maintain state. 
+Maintaining state has been described as &quot;not speaking until 
+spoken to&quot;, in other words, once a connection is established, 
+packets no longer have to traverse rulesets. This is a very 
+powerful feature allowing much simpler and more secure rule 
+writing.
+</p>
 <p>
-For example, let's see how we can apply state to our previous example ruleset (confused yet?). To review, we are allowing management access from our Class C to port 22(ssh) and allowing all incoming web traffic on ports 80(http) and 443(https). We are blocking all other traffic. But what if I want to ssh out of the webserver? What if I need to use lynx to look up something in the FAQ? Well, I can't because I have blocked all incoming connections other than on the specified ports. While this is the safest route, it can be quite inconvenient. By adding the <em>keep state</em> keywords to our &quot;pass out&quot; rule, we can automagically allow incoming connections in response to connections we initiate, such as when web browsing.  Remember, we do need to specify what protocol we are keeping state for.
+For example, let's see how we can apply state to our previous 
+example ruleset (confused yet?). To review, we are allowing 
+management access from our Class C to port 22(ssh) and allowing 
+all incoming web traffic on ports 80(http) and 443(https). We 
+are blocking all other traffic. But what if I want to ssh out 
+of the webserver? What if I need to use lynx to look up 
+something in the FAQ? Well, I can't because I have blocked all 
+incoming connections other than on the specified ports. While 
+this is the safest route, it can be quite inconvenient. By 
+adding the <em>keep state</em> keywords to our &quot;pass 
+out&quot; rule, we can automagically allow incoming 
+connections in response to connections we initiate, such as 
+when web browsing.  Remember, we do need to specify what 
+protocol we are keeping state for.
+</p>
 <ul><pre>
-pass in quick on fxp0 from 1.1.1.0/24 to any port = 22
+pass in quick on fxp0 inet proto tcp from 1.1.1.0/24 to any port = 22
 pass in quick on fxp0 from any to any port = 80
 pass in quick on fxp0 from any to any port = 443
 block in quick on fxp0 from any to any
-pass out on fxp0 proto tcp from any to any keep state
+pass out on fxp0 inet proto tcp from any to any keep state
 </pre></ul>
-</p>
 <p>
-This little change will dramatically increase the flexibility and security of our ruleset because IP Filter is extremely flexible. For instance, in the above ruleset, we are allowing all tcp traffic into ports 80 &amp; 443. We can tighten this up even more. In order for a tcp connection to be established, we only need to allow the initial handshake to occur, once that occurs, we can block traffic to that port and allow our &quot;keep state&quot; rule to manage the connection. To allow the initial handshake to complete, we need only allow packets with the SYN and SYNACK flags set. By passing only packets with SYN and SYNACK set, we can prevent many forms of portscanning such as FIN scanning. The rules now look like this:
+This little change will dramatically increase the flexibility and
+security of our ruleset: for instance, in the above ruleset, we are
+allowing all tcp traffic into ports 80 &amp; 443. We can tighten this up
+even more. In order for a tcp connection to be established, we only need
+to allow the initial handshake to occur, once that occurs, we can block
+traffic to that port and allow our &quot;keep state&quot; rule to manage
+the connection. To allow the initial handshake to complete, we need only
+allow packets with the SYN and SYNACK flags set. By passing only packets
+with SYN and SYNACK set, we can prevent many forms of portscanning such
+as FIN scanning. The rules now look like this:
 <ul><pre>
-pass in quick on fxp0 from 1.1.1.0/24 to any port = 22
-pass in quick on fxp0 from any to any port = 80 flags S/SA
-pass in quick on fxp0 from any to any port = 443 flags S/SA
+pass in quick on fxp0 inet proto tcp from 1.1.1.0/24 to any port = 22
+pass in quick on fxp0 inet proto tcp from any to any port = 80 flags S/SA
+pass in quick on fxp0 inet proto tcp from any to any port = 443 flags S/SA
 block in quick on fxp0 from any to any
 pass out on fxp0 proto tcp from any to any keep state
 </pre></ul>
 </p>
 <p>
-Let's wrap this up by putting all of the rules we have so far into a ruleset. This ruleset will have a default deny policy, allow management connections from an internal network only (via ssh) and allow incoming traffic on ports 80(http) and 443(https). It will also protect against spoofed non-routeable ip addresses, and drop all packets that are too fragmented to inspect. A pretty comprehensive setup for a public webserver. Here's what /etc/ipf.rules should look like:
+Let's start to tie things together by putting all of the rules we 
+have so far into a ruleset. This ruleset will support IPv4, have 
+a default deny policy, allow management connections from an 
+internal network only (via ssh) and allow incoming traffic on 
+ports 80(http) and 443(https). It will also protect against 
+spoofed non-routeable ip addresses, and drop all packets that are 
+too fragmented to inspect. A pretty comprehensive setup for a public 
+webserver. Here's what /etc/pf.conf could look like:
 <ul><pre>
-# loopback rules
-pass out quick on lo0
-pass in quick on lo0
-
-# drop itsy bitsy frags
-block in quick proto tcp all with short
-
-# drop source routed packets
-block in quick on fxp0 all with opt lsrr
-block in quick on fxp0 all with opt ssrr
+# Clean up fragmented and abnormal packets
+scrub in all
 
 # don't allow anyone to spoof non-routeable addresses
-block in quick on fxp0 from 127.0.0.0/8 to any
-block in quick on fxp0 from 192.168.0.0/16 to any
-block in quick on fxp0 from 172.16.0.0/12 to any
-block in quick on fxp0 from 10.0.0.0/8 to any
-block out quick on fxp0 from any to 127.0.0.1/8
-block out quick on fxp0 from any to 192.168.0.0/16
-block out quick on fxp0 from any to 172.16.0.0/12
-block out quick on fxp0 from any to 10.0.0.0/8
+block in quick on fxp0 inet from 127.0.0.0/8 to any
+block in quick on fxp0 inet from 192.168.0.0/16 to any
+block in quick on fxp0 inet from 172.16.0.0/12 to any
+block in quick on fxp0 inet from 10.0.0.0/8 to any
+block out quick on fxp0 inet from any to 127.0.0.1/8
+block out quick on fxp0 inet from any to 192.168.0.0/16
+block out quick on fxp0 inet from any to 172.16.0.0/12
+block out quick on fxp0 inet from any to 10.0.0.0/8
 
 # only allow our machines to connect via ssh
-pass in quick on fxp0 from 1.1.1.0/24 to any port = 22
+pass in quick on fxp0 inet proto tcp from 1.1.1.0/24 to any port = 22
 
 # allow others to use http and https
-pass in quick on fxp0 from any to any port = 80 flags S/SA
-pass in quick on fxp0 from any to any port = 443 flags S/SA
+pass in quick on fxp0 inet proto tcp from any to any port = 80 flags S/SA
+pass in quick on fxp0 inet proto tcp from any to any port = 443 flags S/SA
 
 # finally lock the rest down with a default deny
 block in quick on fxp0 from any to any
 
 # and let out-going traffic out and maintain state on established connections
-# -- The flags S on the keep state is to ensure that state tracking starts
-#    only on the first outbound packet in a tcp session. 
-#    unnecessary consumption of state table entries.
-# -- The flag s only works on the tcp protocol, so three entries are required to 
-#    to cover all three protocols (tcp, udp, icmp).
-
-pass out	quick on fxp0 proto tcp  from any to any flags S keep state
-pass out 	quick on fxp0 proto udp  from any to any         keep state
-pass out 	quick on fxp0 proto icmp from any to any         keep state
+pass out on fxp0 from any to any keep state
 </pre></ul>
 </p>
 <p>
-If you experience problems, you may want to enable logging on individual rules to effectively troubleshoot. ie: pass in log quick on fxp0 from 1.1.1.0/24 to any port = 22<br> 
-When you modify the configuration file to log packets, don't forget to ipf -Fa -f /etc/ipf.rules for the changes to take affect! 
-<br>ipmon will write to ip log entries to /var/log/ipflog.<br>
+While this may look good, there are some things Packet Filter 
+will let you do to make your pf.conf file look neater and easier
+to maintain.
+</p>
+<p>
+<b>Sets</b>
+</p>
+<p>
+Sets are a useful "shortcut" for writing simple and clear 
+rules in PF.  For example, what if we need to allow 
+connections to a service running
+over multiple protocols, such as BIND, which uses TCP and UDP?
+Normally, you would have to do something like this:
+<ul><pre>
+pass in quick on fxp0 inet proto tcp from any to any port = 53
+pass in quick on fxp0 inet proto udp from any to any port = 53
+</pre></ul>
+but instead, you could use PF's set notation to simplify this:
+<ul><pre>
+pass in quick on fxp0 inet proto { tcp, udp } from any to any port = 53
+</pre></ul>
+Note the spaces on both sides of the '{ }' characters. 
+</p>
+<p>
+Groups of related IPs can be clustered together into sets, which 
+can be used anywhere a single IP could be used.  For example, 
+looking at our anti-spoofing rules above:
+<ul><pre>
+# don't allow anyone to spoof non-routeable addresses
+block in quick on fxp0 inet from 127.0.0.0/8 to any
+block in quick on fxp0 inet from 192.168.0.0/16 to any
+block in quick on fxp0 inet from 172.16.0.0/12 to any
+block in quick on fxp0 inet from 10.0.0.0/8 to any
+block out quick on fxp0 inet from any to 127.0.0.1/8
+block out quick on fxp0 inet from any to 192.168.0.0/16
+block out quick on fxp0 inet from any to 172.16.0.0/12
+block out quick on fxp0 inet from any to 10.0.0.0/8
+</pre></ul>
 
-For further information on ipf, the <a href=http://www.obfuscation.org/ipf/ipf-howto.txt>IPF how-to</a> is an excellent source, as are the resources available at the <a href=http://coombs.anu.edu.au/~avalon/ip-filter.html>IP Filter</a> homepage.
+they could be consolidated into two lines:
+<ul><pre>
+block in quick on fxp0 inet from { 127.0.0.1/8, 192.168.0.0/16, \
+172.16.0.0/12, 10.0.0.0/8 } to any
+block out quick on fxp0 inet from any to { 127.0.0.1/8, 192.168.0.0/16, \
+172.16.0.0/12, 10.0.0.0/8 }
+</pre></ul>
+</p>
+<p>
+<b>Variable Expansion</b>
+</p>
+<p>
+One problem with the above sample <i>pf.conf</i> file is that should
+you need to change your NIC, or change an IP address, you would
+need to change a number of lines.  This can be lessened by using
+variable expansion:
+</p>
+<ul><pre>
+NoRouteIPs="{ 127.0.0.1/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"
+ExtIF="fxp0"
+block in quick on $ExtIF from $NoRouteIPs to any
+block out quick on $ExtIF from any to $NoRouteIPs
+</pre></ul>
+</p>
+<p>
+<a name="sample_pf.conf"></a>
+<b>Putting it all together</b>
+</p>
+<p>
+Now, let's put it all together, and look at the elegance of the file:
+<ul><pre>
+# Define useful variables
+ExtIF="fxp0"              # External Interface
+IntNet="1.1.1.0/24"       # Our internal network
+NoRouteIPs="{ 127.0.0.1/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"
+Services="{ www, https }"
+
+# Clean up fragmented and abnormal packets
+scrub in all
+
+# don't allow anyone to spoof non-routeable addresses
+block in quick on $ExtIF from $NoRouteIPs to any
+block out quick on $ExtIF from any to $NoRouteIPs
+
+# only allow our machines to connect via ssh
+pass in quick on $ExtIF inet proto tcp from $IntNet to any port = 22
+
+# allow others to use http and https
+pass in quick on $ExtIF inet proto tcp from any to any port = $Services flags S/SA
+
+# finally lock the rest down with a default deny
+block in quick on $ExtIF from any to any
+
+# and let out-going traffic out and maintain state on established connections
+pass out on $ExtIf from any to any keep state
+</pre></ul>
 </p>
 
+<p>
+If you experience problems, you may want to enable logging on 
+individual rules to effectively troubleshoot. ie: 
+<ul><pre>
+pass in log quick on fxp0 from 1.1.1.0/24 to any port = 22
+</pre></ul>
+pflogd(8) will write to ip log entries to <i>/var/log/pflog</i>.
+Remember that <i>/var/log/pflog</i> is a binary file, intended to be
+read by tcpdump(8), NOT directly by humans.
+</p>
+<p>
+When you modify the configuration file to log packets, don't 
+forget to <b>pfctl -R /etc/pf.conf</b> for the changes to take affect! 
+</p>
+<p>
+<h3>Differences between PF and IPF</h3>
+</p>
+<p>
+Packet Filter (PF) was designed to be very compatible with IPF's 
+<i>ipf.rules</i> file.  However, PF is not, nor was it intended to be,
+a drop-in replacement for IPF.  This section details some of the
+differences between these systems.
+</p>
+<ul>
+<li><b>group and head:</b>  These options are no longer used,
+as the filter rules are optimized on the fly.  If you are 
+migrating your old rulesets from IPF, you should delete any <em>group</em>
+or <em>head</em> definitions and manually reorder your rules, making sure
+their semantics haven't changed.</li>
+<li><b>level:</b> When logging, PF does not accept a <em>level</em> option to the log
+keyword, as logging is not performed by syslogd(8), but by a separate 
+logging daemon.  To examine a particular kind of traffic, as might have been
+done with <em>level</em> option, use any of the available options of 
+tcpdump(8)</li>
+<li><b>keep frags:</b>  This has been replaced by the normalization 
+the <a href="#normalization">scrub</a> option performs.
+<li><b>@n Rules:</b>  PF does not support prepending rules with <em>@n</em>
+to insert them into particular points in the rule list as IPF does.  To
+view the rule numbers PF has assigned, use the command <tt>pfctl -sr</tt>
+</ul>
 <p>
 <a name="6.3"></a>
-<h2>6.3 - IPNAT</h2>
+<a name="NAT"></a>
+<h2>6.3 - NAT</h2>
 </p>
-
 <p>
-Initial work done by Wayne Fergerstrom &lt;wayne@methadonia.net&gt;
+<h5>Note: Packet Filter is the filtering system in OpenBSD 3.0 and
+later.  If you are looking for the IPF/IPNAT FAQ for OpenBSD 2.9 and
+before, click <a href="faqipf.html">here</a>.</h5>
 </p>
-
 <a name="nat1.0"></a>
 <h3><u>6.3.1 NAT Introduction</u></h3>
 
 <a name="nat1.1"></a>
-<b>Section Introduction</b>
-<p>
-This section attempts to aid for those
-installing and configuring Network Address Translation ("NAT")
-on an OpenBSD machine. 
-
-The user is assumed to have already set up
-and configured an OpenBSD machine with two network cards (one
-connected to the Internet and the other to the local network).
-IP Network Address Translation will work on machines with only one NIC,
-however since packets will be going in and out of the same interface,
-ethernet collisions will slow down performance considerably.  
-</p>
 
 <p>
-Based on <a HREF="http://www.geektools.com/rfc/rfc1631.txt">RFC 1631</a>, ipnat provides an easy way to
-map internal networks to a single routeable ("real") internet address. This is very useful if you don't have
-officially assigned addresses for every host on your internal network. When
-you set up private/internal networks, you can take advantage of reserved
-address blocks (assigned in <A HREF="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a>), such as:
+Based on 
+<a HREF="http://www.geektools.com/rfc/rfc1631.txt">RFC 1631</a>, 
+NAT provides an easy way to map internal networks to a single 
+routeable ("real") internet address. This is very useful if you 
+don't have officially assigned addresses for every host on your 
+internal network. When you set up private/internal networks, you 
+can take advantage of reserved address blocks (assigned in 
+<A HREF="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a>), 
+such as:
 <P>
 
 10.0.0.0/8 (10.0.0.0 - 10.255.255.255)<br>
@@ -740,107 +1014,74 @@ address blocks (assigned in <A HREF="http://www.geektools.com/rfc/rfc1918.txt">R
 192.168.0.0/16 (192.168.0.0 - 192.168.255.255)<br>
 
 </p>
-
-<a name="nat1.2"></a>
-<b>Terminology</b>
-
 <p>
-The conventions used in this document are fairly straightforward.
-For documentation purposes I will review some of the terms and format
-for which this document adheres to.
+The user is assumed to have already set up
+and configured an OpenBSD machine with two network cards (one
+connected to the Internet and the other to the local network).
 </p>
 
-<ul>
-<strong>"NAT"</strong>
-<p>
-This describes the function of "Network Address Translation."
-The process of NAT is described later in this document.
-</p>
-</ul>
-
-<ul>
-<strong>"ipnat"</strong>
-
-<p>
-This is short for "IP Network Address Translation." In-and-of
-itself, it can be used interchangeably with NAT. However, in
-this document the term "ipnat" will be used solely for
-command-line only use.
-</p>
-</ul>
-
-<ul>
-<strong>"IPF"</strong>
-
-<p>
-This is short for "IP Filter." IP Filter is a portable packet filtering
-software that is included as part of OpenBSD.   IP Filter must be enabled
-before you can turn on ipnat.  This is easy, just edit /etc/rc.conf
-and change ipfilter=NO to ipfilter=YES.  That only changes it for the boot up sequence,
-you also need to do 'ipf -E' to turn on ipf while you are booted.  Of course,
-this is described further, below.
-</p>
-</ul>
 
 <br>
 <a name="nat1.3"></a>
 <b>Configuration</b>
 
 <p>
-This is how the computers are setup concerning this document. Your setup will vary from this, but 
-the purpose of the document is to give you an overview so you can conform this information to your setup.
+For the purpose of example, we will use the system described
+below. Your setup will almost certainly vary from this, so be 
+very careful in typing anything you see here literally into
+your system and expecting it to work as you desire.  
 </p>
 
 <ul>
-<b>Computer Operating System: </b>OpenBSD v2.7 i386<br>
+<b>Computer Operating System: </b>OpenBSD v3.0 i386<br>
 <br>
 <b>NICs: </b>
 <ul>
-	NetGear 10/100MB <b>dc0</b><br>
-	Connected to the EXTERNAL LAN (or WAN)<br>
-	<b>IP Address: </b>24.5.0.5<br>
-	<b>Netmask: </b>255.255.255.0<br>
-	<br>
-	NetGear 10/100MB <b>dc1</b><br>
-	Connected to the INTERNAL LAN<br>
-	<b>IP Address: </b>192.168.1.1<br>
-	<b>Netmask: </b>255.255.255.0<br>	
+Intel EtherExpress Pro/100 <b>fxp0</b><br>
+Connected to the EXTERNAL LAN (or WAN)<br>
+<b>IP Address: </b>24.5.0.5<br>
+<b>Netmask: </b>255.255.255.0<br>
+<br>
+Compaq Netelligent 10/100Mb <b>tl0</b><br>
+Connected to the INTERNAL LAN<br>
+<b>IP Address: </b>192.168.1.1<br>
+<b>Netmask: </b>255.255.255.0<br>	
 </ul>
 <br>
 <b>External, Internet-routeable IP (provided by ISP, in this example, a cable modem provider)<br></b>
 <ul>
-	<b>IP Address: </b>24.5.0.5<br>
-	<b>Netmask: </b>255.255.255.0<br>
-	<b>Gateway: </b>24.5.0.1<br>
+<b>IP Address: </b>24.5.0.5<br>
+<b>Netmask: </b>255.255.255.0<br>
+<b>Gateway: </b>24.5.0.1<br>
 </ul>
 <br>
 <b>Local Area Network</b><br>
 <ul>
-In this example,
-machines on the LAN use the IP addressing scheme 192.168.1.xxx
-(where xxx is a unique number). There are a variety of different
-operating systems on the internal LAN including Windows 98,
-Windows NT, OpenBSD and Linux. Each machine is connected to a hub
-that is designated for internal use. For this document and its
-examples the client on the LAN will assume IP address 192.168.1.40
+In this example environment,
+machines on the internal network use the IP addressing scheme 192.168.1.xxx
+(where xxx is a unique number). There could be a variety of different
+operating systems on the internal network, such as Windows 98,
+Windows NT, OpenBSD and Linux, but the client OS is not an issue for NAT. 
+For the examples, the client we will look at on the internal
+network will be assumed to have an IP address of 192.168.1.40.
 </ul>
 <br>
 <b>Diagram of Configuration</b>
 <ul><pre>
-+-----+              +---------+         +----------+
-| Hub |--------- dc1 |   NAT   | dc0 ----| Internet |
-+-----+              +---------+         +----------+
-  | |
-  | +-- Client A
-  +---- More clients 
++-----+              +---------+          +----------+
+| Hub |--------- tl0 |   NAT   | fxp0 ----| Internet |
++-----+              +---------+          +----------+
+| |
+| +-- Client A
++---- More clients 
 
-                              +-------------------------+
-                              |          LEGEND         |
-                              +-------------------------+
-                              |  NIC dc0 - 24.5.0.5     |
-                              |  NIC dc1 - 192.168.1.1  |
-                              | Client A - 192.168.1.40 |
-                              +-------------------------+
+		      +--------------------------+
+		      |          LEGEND          |
+		      +--------------------------+
+		      |  NIC fxp0 - 24.5.0.5     |
+		      |  NIC tl0  - 192.168.1.1  |
+		      | Client A  - 192.168.1.35 |
+		      +--------------------------+
 
 </pre></ul>
 </ul>
@@ -854,38 +1095,39 @@ examples the client on the LAN will assume IP address 192.168.1.40
 <b>Introduction to NAT</b>
 
 <p>
-As more and more businesses and users get on the Internet, each one
-must have an IP address. Public IP addresses are becoming harder and
-harder to get. The solution for a lot of people has been Network
-Address Translation (or "NAT"). NAT is a very simple, yet powerful way
-to get your LAN connected to the Internet without having to purchase
-or lease IP addresses for each machine. NAT is also known as "IP
-Masquerading" if you're a Linux user.
+Each node on the Internet requires a unique IP address.  At least
+with IPv4, there is a very finite number of distinct IP addresses 
+available, and as a result, they are not free.  Most "low-cost" ISPs
+will limit a site to anywhere from 1 to 30 addresses, and while 
+larger budget organizations may be able to afford a larger block, 
+in most cases, there are relatively few benefits and considerable 
+risks to having each computer individually addressable on the 
+Internet.
 </p>
-
 <p>
-When NAT is up and running correctly, it allows users on the internal
-LAN to access the Internet through a different IP address (the one you
-set up with your provider). Each machine on the LAN uses the one IP
-address (transparently) of the one machine that is set up to use the
-ISP assigned IP address.
+Network Address Translation, or NAT, (also known as &quot;IP Masquerading&quot;
+if you are coming from a Linux background) allows multiple computers
+to be located &quot;behind&quot; one (or a small number) of IP addresses.  Each 
+&quot;internal&quot; computer has a locally assigned, unregistered
+IP address (per <a href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a>), 
+and all utilize the same external IP address, simultaneously.  
 </p>
-
 <p>
-The way NAT works is amazingly simple. When a client on the LAN
+The way NAT works is rather simple. When a client on the LAN
 wants to connect to a machine on the Internet, it sends out a TCP
 packet with a request to connect. Inside the TCP packet header is the
-client's IP address (i.e. 192.168.1.40) and the requested host's IP
-address (i.e. 123.45.67.89). The machine running NAT intercepts this
+client's IP address (e.g. 192.168.1.40) and the requested host's IP
+address (e.g. 123.45.67.89). The machine running NAT intercepts this
 TCP packet and changes the client's IP address from 192.168.1.40 to
-the IP address of the Internet-connected machine (i.e. 24.5.0.5). This
+the IP address of the Internet-connected machine (e.g. 24.5.0.5). This
 effectively tricks the host machine into thinking the actual connection
 is from the NAT machine, not the actual client's machine. The host then
 sends back responses to the NAT machine like it was the one connecting.
 When the NAT machine receives the responses it quickly translates the
 destination IP address back from itself to the client's machine and
-sends the packet to the client. The client didn't have any idea of
-what happened and spoofed Internet connectivity is totally transparent.
+sends the packet to the client. The client normally does not have any 
+idea what happened and the apparent Internet connectivity is 
+transparent to the user and user's applications.
 </p>
 
 <p>
@@ -893,11 +1135,11 @@ The example below shows NAT a little more clearly:
 </p>
 
 <ul><pre>
-Client ----------------- dc1 [ NAT ] dc0 ---------- Internet Host
-192.168.1.40 --- 192.168.1.1 [ NAT ] 24.5.0.5 --- 123.45.67.89
+Client ----------------- tl0 [ NAT ] fxp0 ---------- Internet Host
+192.168.1.35 --- 192.168.1.1 [ NAT ] 24.5.0.5 --- 123.45.67.89
 
 OUTGOING TCP Packet                     OUTGOING TCP Packet
-From: 192.168.1.40  &gt;&gt;=== NAT ===&gt;&gt;     From: 24.5.0.5
+From: 192.168.1.35  &gt;&gt;=== NAT ===&gt;&gt;     From: 24.5.0.5
 To: 123.45.67.89                        To: 123.45.67.89
 
 INCOMING TCP Packet                     INCOMING TCP Packet
@@ -907,39 +1149,40 @@ To:   192.168.1.40  &lt;&lt;=== NAT ===&lt;&lt;     To: 24.5.0.5
 
 <br>
 <a name="nat2.2"></a>
-<b>Why to use NAT</b>
+<b>Why use NAT?</b>
 
 <p>
 When presented with a cable modem in my new apartment I was also
-presented with another minor problem. How to get Internet access to
+presented with another minor problem. How to get Internet access for
 my roommates, when the cable modem resides in my room? There were a
-few options I could implement ranging from obtaining extra IP
+few options I could implement, ranging from obtaining extra IP
 addresses, to setting up a proxy server, to setting up NAT.
-(Don't let the cable modem example fool you.  NAT is powerful enough
+(Don't let the home cable modem example fool you.  NAT is powerful enough
 to masquerade a large network with hundreds or even thousands of computers!)
 </p>
 
 <p>
 There are many reasons why I wanted to set up NAT. The number one
-reason is for saving money. There
-are two roommates in my house (each with their own PC) and myself with
-3 computers. My ISP only allows for three IP addresses per household.
-This means that there weren't enough IPs to allow every machine
-internet access.
+reason is to save money. There
+are two roommates in my house, splitting the cost is certainly attractive.
+Further, as each roommate has their own PC and I have three, we
+had five computers to connect, but my ISP only allows for three IP 
+addresses per household.  This means that there weren't enough IP 
+addresses to allow every machine simultaneous direct Internet access.
 </p>
 
 <p>
-By using NAT each machine will have a unique (internal) IP address
+By using NAT each machine will have a unique internal IP address
 but share the one IP address given to me by my ISP. The cost goes down.
 </p>
 
 <br>
-<a name="nat2.3"></a>
+<a name="nat2.4"></a>
 <b>Setup</b>
 
 <p>
 In order to enable NAT on your OpenBSD machine you will need to turn on
-IPF and NAT. This is easily accomplished by editing the files listed
+PF. This is easily accomplished by editing the files listed
 below (make the changes to the file so it looks like the options below):
 </p>
 
@@ -947,53 +1190,54 @@ below (make the changes to the file so it looks like the options below):
 <b>/etc/rc.conf</b> (this file used to start services at boot time)
 </p>
 
-<ul>
-	ipfilter=YES<br>
-	ipnat=YES
-</ul>
+<ul><pre>
+pf=YES<br>
+</pre></ul>
 
 <p>
 <b>/etc/sysctl.conf</b>
 </p>
 
-<ul>
-	net.inet.ip.forwarding=1
-</ul>
+<ul><pre>
+net.inet.ip.forwarding=1
+</pre></ul>
 
 <p>
-After these changes are made, the machine is now ready to for the
+After these changes are made, the machine is now ready for the
 configuration of NAT.
 </p>
 
 <br>
-<a name="nat2.4"></a>
+<a name="nat2.5"></a>
 <b>Configuration</b>
 
 <p>
-The first step is to configure the IPF rules file (<i>/etc/ipf.rules</i>).
+The first step is to configure the PF configuration file
+(<i><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&sektion=5">/etc/pf.conf</a></i>).
 For the purposes of this document we will allow traffic to pass
-through this firewall option without any interference. The file
+through this firewall without any interference. The file
 should look like this:
 </p>
 
 <ul><pre>
-pass in from any to any
-pass out from any to any
+pass in all
+pass out all
 </pre></ul>
 
 <p>
-Again for more information you can read <a href="#6.2">FAQ 6.2</a>
+Again, for more information you can read <a href="#6.2">FAQ 6.2</a>
 </p>
 
 <p>
-The NAT configuration file (<i>/etc/ipnat.rules</i>) has a very simple syntax.
+The NAT configuration file
+(<i><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=nat.conf&sektion=5">/etc/nat.conf</a></i>).
+has a very simple syntax.
 For the configuration set forth above, the file should contain the
 following entry:
 </p>
 
 <ul><pre>
-map dc0 192.168.1.0/24 -&gt; 24.5.0.5/32 portmap tcp/udp 10000:60000
-map dc0 192.168.1.0/24 -&gt; 24.5.0.5/32
+nat on fxp0 from 192.168.1.0/24 to any -&gt; 24.5.0.5
 </pre></ul>
 
 <p>
@@ -1001,16 +1245,14 @@ Here is an explanation for the above lines.
 </p>
 
 <ul>
-<strong>"map"</strong>
+<strong>"nat"</strong>
 <p>
-This is the command you are giving ipnat. It is telling ipnat
-that this entry is an entry to change IP addresses between the LAN
-and the Internet.
+This indicates the command you are giving is a NAT rule.
 </p>
 </ul>
 
 <ul>
-<strong>"dc0"</strong>
+<strong>"fxp0"</strong>
 <p>
 This is the network interface that is connected to the Internet.
 </p>
@@ -1021,100 +1263,48 @@ This is the network interface that is connected to the Internet.
 <p>
 the IP address and netmask (the netmask is in
 CIDR format). Combined they state "any IP address of value
-192.168.1.1 through 192.168.1.254" should be mapped. If you would
-prefer not to use CIDR notation you can substitute "/24" for
-"/255.255.255.0".
+192.168.1.1 through 192.168.1.254" should be mapped. 
 </p>
 </ul>
 
 <ul>
-<b>"24.5.0.5/32"</b>
+<b>"24.5.0.5"</b>
 <p>
-This IP address and netmask state the IP address
-that the LAN IP addresses will be mapped to.  /32 means one single
-IP address.  You can also map to a /24, or 256 IP addresses (or a /27,
-or whatever number of bits you'd like)!! This is
-useful if you have several thousand client machines behind your NAT....
-(Of course, this is only useful if that /24 is being routed to your OpenBSD
-box!)
+This is the external IP address the internal IP addresses will be mapped to.
 </p>
 </ul>
-
-<ul>
-<b>"portmap tcp/udp 10000:60000"</b>
-<p>
-This maps all tcp/udp packets
-to ports in the range of 10000 to 60000.
-</p>
-</ul>
-
-<p>
-The second line has almost the same entry except for the last portion.
-This tells ipnat to map anything else (not tcp/udp, those packets are already
-matched by the first line) to whatever port
-it requests (used for ICMP, and other protocols). Once this
-is in the file, all that's needed is to run the IPF daemon.
-</p>
-
-<br>
-
-<a name="nat2.5"></a>
-<b>Selective NAT</b>
-
-<p>
-You might want to prevent NAT to some range of addresses on the outside.
-Continuing the example above, suppose that there are hosts on the 24.5.0.0/28
-network for which you would like your NAT gateway to act as a simple router,
-without address translation.
-You can suppress address translation for traffic going from dc0 to this subnet
-with the following:
-</p>
-
-<ul><pre>
-map dc0 from 192.168.1.0/24 ! to 24.5.0.0/28 -&gt; 24.5.0.5/32 portmap tcp/udp 10000:60000
-map dc0 from 192.168.1.0/24 ! to 24.5.0.0/28 -&gt; 24.5.0.5/32
-</pre></ul>
 
 <a name="nat2.6"></a>
 <b>Running</b>
 
 <p>
-Executing NAT is a very simple process also. Once the configuration is
+Once the configuration is
 complete, there are two ways to enable NAT. The first (and best way if
-possible-to test the setup stage) is to reboot your OpenBSD machine.
-This is accomplished with the command "<i>reboot</i>"
+possible) is to reboot your OpenBSD machine.
+This is accomplished with the command "<i>reboot</i>". 
 </p>
 
 <p>
-If you would like to run ipnat from the command line, use the following
+If you would like to configure NAT from the command line, use the following
 commands:
 </p>
 
 <ul><pre>
-# ipf -Fa -f /etc/ipf.rules -E
-# ipnat -CF -f /etc/ipnat.rules
+# <b>pfctl -N /etc/net.conf</b>
+# <b>pfctl -e</b>
 </pre></ul>
 
 <p>
-The first line is to enable IPF (remember that NAT piggy-backs on IPF
-therefore IPF must be initialized and running before NAT can be loaded).
-The options on the command line "-Fa" clear out any existing entries
-already in effect. "-f /etc/ipf.rules" tells ipf where the rules file
-can be found. "-E" is the switch to enable the IPF daemon.
-</p>
-
-<p>
-The second command line is to enable NAT. "-CF" clears and flushes all
-
-existing entries in the NAT table. "-f /etc/ipnat.rules" tells NAT where
-
-the NAT rules file is at. NAT is now running. It's as simple as that.
+The first line is to load a set of NAT rules into PF (and flushing any
+old rules), the second line enables PF.  Again, though, rebooting is 
+the best way to ensure that everything will startup from a reboot as 
+you expect.
 </p>
 
 
 <p>
 <b>Note:</b> in order to reload the NAT settings (in case you edit the file
-but don't want to reboot) just execute the 2nd command over again. The
+but don't want to reboot) just execute the first command over again. The
 settings will be flushed and reloaded.
 </p>
 
@@ -1128,170 +1318,214 @@ settings will be flushed and reloaded.
 
 <p>
 To find out how NAT is doing or make sure the settings have taken
-effect, you use the "-l" option. This option will list all the
-settings and current sessions that ipnat is running:
+effect, you use the "-ss" option. This option will list all the
+current sessions that NAT is running:
 </p>
 
 <ul><pre>
-# <b>ipnat -l</b>
-map dc0 192.168.1.0/24 -&gt; 24.5.0.5/32 portmap tcp/udp 10000:60000
-map dc0 192.168.1.0/24 -&gt; 24.5.0.5/32
-
-List of active sessions:
-MAP 192.168.1.40  2473  &lt;- -&gt; 24.5.0.5  13463 [129.128.5.191 80]
+# pfctl -ss
+TCP  192.168.1.35:2132 -> 24.5.0.5:53136 -> 65.42.33.245:22       TIME_WAIT:TIME_WAIT
+TCP  192.168.1.35:2492 -> 24.5.0.5:55011 -> 65.42.33.245:22       ESTABLISHED:ESTABLISHED
+UDP  192.168.1.35:2491 -> 24.5.0.5:60527 -> 24.2.68.33:53       2:1
 </pre></ul>
 
 <p>
-The purpose of the first two lines is to confirm the settings that
-were entered in /etc/ipnat.rules earlier. The line(s) below will show
-you a list of the current NAT controlled connections.
+Explanations (first line, others are similar):
 </p>
-
 <ul>
-<b>"MAP 192.168.1.40  2473"</b>
+<b>"192.168.1.35:2132"</b>
 <p>
 This tells you the IP address of the
-machine on the LAN that is using NAT. The port number used to make
-the connection is displayed afterwards.
+machine on the LAN that is using NAT (192.168.1.35). The port number used to make
+the connection (2132) is displayed afterwards.
 </p>
 </ul>
-
 <ul>
-<b>"&lt;- -&gt;"</b>
-<p>
-This shows that NAT is handling the flow of traffic
-in both directions.
-</p>
-</ul>
-
-<ul>
-<b>"24.5.0.5  13463"</b>
+<b>"24.5.0.5:53136"</b>
 <p>
 This denotes that the connection is going
-to the Internet via IP address 24.5.0.5 and using port 13463.
+to the Internet via IP address 24.5.0.5 and using port 53136.
 </p>
 </ul>
-
 <ul>
-<b>"129.128.5.191 80"</b>
+<b>"65.42.33.245:22"</b>
 <p>
-The IP address and the port being connected
-to are listed last.
+The IP address and the port being connected to.
+</p>
+</ul>
+<ul>
+<b>"TIME_WAIT:TIME_WAIT"</b>
+<p>
+This indicates what state PF believes the TCP connection to be in.
 </p>
 </ul>
 
 <a name="nat3.2"></a>
-<b> Limitations of NAT (in FTP)</b>
+<b> Issues with FTP and NAT</b>
 
 <p>
-There are a few limitations of NAT. One is with FTP. When a user connects
-to a remote FTP server and requests information or file, the FTP server
-will make a connection to the client and transfer the info. This is done
-on a random free port. This is a problem for users attempting to gain
-access to FTP servers from within the LAN. When the FTP server sends its
-information it sends it to the external NIC at a random port. The NAT
-machine will receive this, but because it has no mappings for the unknown
-packet and doesn't have any mappings for that port, it will drop the
-packet and won't deliver it.
-
+There are a few limitations of NAT, the most commonly encountered is
+with FTP. You can use FTP in two ways: passive and active. Of these,
+passive FTP is generally considered more secure.
+</p>
 <p>
-The solution to this is to place yourself in "passive mode" in your
-FTP client. This will tell the server that you want to connect to the
-server, and not what you just read. Then when you make that connection out
-NAT will correctly handle your connection.
-<P>
-IP Filter provides another solution for this situation,
-that is, an ftp proxy which is built-in to the NAT code.
-To activate it, put something like this before your other NAT mappings.
-<PRE>
-map dc0 192.168.1.0/24 -&gt; 24.5.0.5/32 proxy port ftp ftp/tcp
+With active FTP, when a user connects to a remote FTP server and
+requests information or file, the FTP client sends the server a random
+port number that the the FTP server will make a connection to on the
+client and transfer the info. This is a problem for users attempting
+to gain access to FTP servers from within the LAN. When the FTP server
+sends its information it sends it to the external NIC at a random port.
+The NAT machine will receive this, but because it has no mappings for
+the unknown packet and doesn't have any mappings for that port, it will
+drop the packet and won't deliver it.
+</p>
+<p>
+With passive mode FTP (the default with OpenBSD <a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp&sektion=1">ftp(1)</a>
+client), the client requests that the server picks up a random port
+that it will listen on for the data connection. The server informs the
+client of the port it has chosen, and the client connects to this port
+to transfer the data. Unfortunately, this is not always possible or
+desirable. ftp(1) uses this mode by default; to force active mode FTP,
+use the -A flag to ftp, or set the passive mode to off by issuing
+the command
+<dl><dt>
+<pre>passive off
 </pre>
-With this in place, the kernel will watch your FTP connections
-for the "PORT" command coming from the ftp client, and it will
-replace the IP address and port with it's own outside IP address, and a port
-of its own choosing.  Then it will open up that port and tunnel the
-data to the port your ftp client asked for.  Obviously, this is slightly
-more resource intensive.  But, unless your NAT/IP Filter box is reaching
-critical mass, you should be fine.
+</dt></dl>
+at the ftp&gt; prompt.
+</p>
 <P>
-
-
+Packet Filter provides another solution for this situation, redirecting 
+FTP traffic through an FTP proxy server, a process which acts to "guide" your 
+FTP traffic through the filters.  The FTP proxy used by OpenBSD and PF is 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&sektion=8">ftp-proxy(8)</a>.
+To activate it, put something like this in your <i>/etc/nat.rules</i> file:
+<ul><PRE>
+rdr on tl0 from any to any port 21 -> 127.0.0.1 port 8081
+</pre></ul>
+Short explanation of this line is, "Traffic on the internal interface is 
+redirected to the proxy server running on this machine which is listening at
+port 8081".
+</p>
+<P>
+Hopefully, it is apparent the proxy server has to be started and running on 
+the OpenBSD box, this is done by inserting the following line in 
+<i>/etc/inetd.conf</i>:
+<ul><pre>
+8081 stream tcp nowait root /usr/libexec/ftp-proxy ftp-proxy
+</pre></ul>
+and either rebooting the system or sending a 'HUP' signal to inetd.  One
+way to send the 'HUP' signal is with the command:
+<ul><pre>
+kill -HUP `cat /var/run/inetd.pid`
+</pre></ul>
+You will note that ftp-proxy is listening on port 8081, the same port the above 
+rdr statement was sending FTP traffic to.  The choice of port 8081 is arbitrary,
+though 8081 is a good choice, as it is not defined for any other application.
+</p>
 <br>
 <a name="nat3.3"></a>
 <b>Redirecting Traffic</b>
 
 <p>
-        At times you may need to redirect incoming or outgoing traffic for
-        a certain protocol or port. A good example of this is if there were a
-        server residing inside the LAN running a web server. Incoming connections
-        to your valid Internet IP will find that unless your NAT box is running
-        a web server, no connection can be made. For this purpose we use the
-        NAT 'rdr' directive in the rules file to instruct where to redirect
-        (or route) a particular connection to.
+For some applications, you may need to redirect incoming or outgoing 
+traffic for a certain protocol and/or port to a particular machine behind
+the filtering system. An example of this would be a computer residing inside 
+the local network running a web server which was to be accessed by the outside world, 
+(or of course, the already discussed ftp-proxy(8)). Incoming connections to 
+your valid Internet IP will find that unless your NAT box is also running
+a web server, no connection can be made. For this purpose we use the
+NAT 'rdr' directive in the rules file to instruct where to redirect
+a particular connection to.
 </p>
 
 <p>
-
-        For our example, lets say a web server resides on the LAN with IP address
-        of 192.168.1.80. The NAT rules file needs a new directive to handle this.
-        Add a line similar to the following one to your ipnat.rules:
+For our example, lets say a web server resides on the LAN with IP address
+of 192.168.1.80. The NAT rules file needs a new directive to handle this.
+Add a line similar to the following one to your <i>/etc/nat.rules</i>:
 </p>
 
 <ul><pre>
-rdr dc0 24.5.0.5/32 port 80 -&gt; 192.168.1.80 port 80
+rdr on fxp0 from any to any port 80 -&gt; 192.168.1.80 port 80
 </pre></ul>
 
 <p>
-The reason for each line is this:
+The explanation for each part of this line:
 </p>
-
 <ul>
 <b>"rdr"</b>
 <p>
-This is the command you are giving ipnat. It is telling ipnat
+This is the command you are giving NAT. It is telling NAT 
 that this entry is an entry to redirect a connection. 
 </p>
 </ul>
 
-
 <ul>
-<b>"dc0"</b>
+<b>"on fxp0"</b>
 <p>
 This is the network interface that is connected to the Internet.
 </p>
 </ul>
 
 <ul>
-<b>"24.5.0.5/32"</b>
+<b>"from any to any"</b>
 <p>
-This means an incoming connection to this IP address (only on dc0, as above)
+This indicates which IP addresses to redirect (from any coming in 
+on fxp0, as indicated above, to any destination IP) 
 </p>
 </ul>
 
 <ul>
 <b>"port 80"</b>
 <p>
-This is the port (80) that should be redirected. The number
+This is the incoming port (80) that should be redirected. The number
 "80" didn't have to be used. You can use "port www" also to specify
 a redirection of port 80. If you would like to use a name instead of
 a number, the service name and corresponding port, must exist in the
-file /etc/services.
+file <i>/etc/services</i>.
 </p>
 </ul>
-
 <ul>
-<b>"192.168.1.80"</b>
+<b>"192.168.1.80 port 80"</b>
 <p>
-The IP address and netmask of the LAN machine
-which the packets are redirected to. The netmask is always "/32"
-(and therefore not needed to be specified) so
-the packets can be redirected to a particular machine.
+The IP address of the LAN machine which the packets are redirected to. 
+Note that the destination port does NOT need to match the incoming port. 
+For example, the following is valid, and even potentially useful:
+<pre>
+rdr on fxp0 from any to any port 8080 -> 192.168.1.35 port 80
+</pre>
+This line would redirect incoming traffic on port 8080 to a webserver
+running on a machine in the internal network, at the "standard" port 80.
 </p>
 </ul>
-
 <p>
 When the addition is complete reload the NAT rules, and the redirection
 will start immediately.
+</p>
+<p>
+<b>Negation</b>
+</p>
+<p>
+Sometimes, you need to make exceptions to a NAT or redirection rule.
+Here's an example.  AOL Instant Messenger is noted for sneaking out 
+firewalls through any available port.  You may find that the 
+ftp-proxy is interfering with AIM when it chooses to go out to 
+remote port 21.  In the event you consider this bad (many people 
+spend considerable time trying to block AIM!), you might wish to 
+exclude the IP addresses used by the AIM servers from the traffic
+redirected by our above ftp-proxy line.  You can do this with the
+following line:
+<ul><pre>
+rdr on tl0 from any to ! 64.12.163.199 port 21 -> 127.0.0.1 port 8081
+</pre></ul>
+Interpretation: Redirect traffic coming in on tl0 going to port 21 
+but NOT to 64.12.163.199 (the AIM server users were having trouble
+with) to localhost port 8081 (where
+hopefully ftp-proxy is waiting).  Now, be advised that there are many
+AIM servers, if this application interests you, you will probably 
+have to play with these IP addresses (64.12.0.0/16 might be more 
+productive, though probably also interferes with some non-AOL sites)
 </p>
 
 <br>
@@ -1316,24 +1550,22 @@ these filters is often a high-maintenance job.
 </p>
 
 <a name="nat4.0"></a>
-<b>6.3.4 Links and X-References</b>
+<b>6.3.4 Links and Cross-References</b>
 
 <p>
 OpenBSD files:
 <ul>
-<li>/etc/ipnat.rules - NAT rules file
-<li>/etc/rc.conf - need to edit to start up ipnat and ipf at boot time
+<li>/etc/nat.conf - NAT rules file
+<li>/etc/rc.conf - need to edit to start up NAT and PF at boot time
 <li>/etc/sysctl.conf - need to edit to enable IP forwarding
-<li>/usr/share/ipf/nat.1 - samples of ipnat.rules
 </ul>
 </p>
 
 <p>
 NAT Internet Links:
 <ul>
-<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ipnat&sektion=8&manpath=OpenBSD+2.7">http://www.openbsd.org/cgi-bin/man.cgi?query=ipnat&sektion=8</a>
-<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ipnat&sektion=5&manpath=OpenBSD+2.7">Man page showing correct ipnat.rules syntax</a>
-<li><a href="http://coombs.anu.edu.au/~avalon/">http://coombs.anu.edu.au/~avalon/</a>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=nat.conf&sektion=5">nat.conf man page</a>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&sektion=8">pfctl man page</a>
 <li><a href="http://www.geektools.com/rfc/rfc1631.txt">http://www.geektools.com/rfc/rfc1631.txt</a>
 </ul>
 <p>
@@ -2354,7 +2586,7 @@ We also suggest that you put the startup command in <i>/etc/rc.local</i> so that
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt= "[back]"></a>
 <a href= "mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq6.html,v 1.108 2001/11/19 20:59:00 horacio Exp $</small>
+<small>$OpenBSD: faq6.html,v 1.109 2001/11/20 00:39:41 dhartmei Exp $</small>
 </p>
 </body>
 </html>
