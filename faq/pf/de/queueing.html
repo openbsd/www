@@ -1,15 +1,32 @@
 <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
 <html>
 <head>
-<title>PF: Queueing</title>
+<title>PF: Paket-Queueing und Priorisierung</title>
 <link rev="made" href="mailto:www@openbsd.org">
 <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
 <meta name="resource-type" content="document">
-<meta name="description"   content="the OpenBSD FAQ page">
+<meta http-equiv="Content-Language" content="de">
+<meta name="description"   content="die OpenBSD-FAQ-Seite">
 <meta name="keywords"      content="openbsd,faq,pf">
 <meta name="distribution"  content="global">
-<meta name="copyright"     content="This document copyright 2003 by OpenBSD.">
 </head>
+
+<!--
+Copyright (c) 2003, 2004 Joel Knight <enabled@myrealbox.com>
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
 
 <body bgcolor="#ffffff" text="#000000">
 <!-- Passes validator.w3.org, please keep it this way;
@@ -17,17 +34,17 @@ please, use a max of 72 chars per line -->
 
 <img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
 <p>
-[<a href="scrub.html">Previous: Scrub</a>]
-[<a href="index.html">Contents</a>]
-[<a href="nat.html">Next: Network Address Translation</a>]
+[<a href="scrub.html">Zurück: Anker und benannte (Unter-)Regelsätze</a>]
+[<a href="index.html">Inhalt</a>]
+[<a href="pools.html">Weiter: Adress-Pools und Load Balancing</a>]
 
 <p>
-<h1><font color="#e00000">PF: Queueing</font></h1>
+<h1><font color="#e00000">PF: Paket-Queueing und Priorisierung</font></h1>
 
 
 <hr>
 
-<h3>Table of Contents</h3>
+<h3>Inhaltsverzeichnis</h3>
 <ul>
 <li><a href="#queueing">Queueing</a>
 <li><a href="#sched">Schedulers</a>
@@ -37,10 +54,10 @@ please, use a max of 72 chars per line -->
 	<li><a href="#red">Random Early Detection</a>
 	<li><a href="#ecn">Explicit Congestion Notification</a>
 	</ul>
-<li><a href="#altq">Configuring Queueing</a>
-<li><a href="#assign">Assigning Traffic to a Queue</a>
-<li><a href="#example1">Example #1: Small, Home Network</a>
-<li><a href="#example2">Example #2: Company Network</a>
+<li><a href="#altq">Queueing konfigurieren</a>
+<li><a href="#assign">Verkehr einer Queue zuweisen</a>
+<li><a href="#example1">Beispiel #1: kleines, Heim-Netzwerk</a>
+<li><a href="#example2">Beispiel #2: Firmen-Netzwerk</a>
 </ul>
 
 <hr>
@@ -48,46 +65,55 @@ please, use a max of 72 chars per line -->
 <a name="queueing"></a>
 <h2>Queueing</h2>
 <p>
-To queue something is to store it, in order, while it awaits
-processing. In a computer network, when data packets are sent out from a
-host, they enter a queue where they await processing by the operating
-system.  The operating system then decides which queue and which
-packet(s) from that queue should be processed. The order in which the
-operating system selects the packets to process can affect network
-performance. For example, imagine a user running two network
-applications: SSH and FTP. Ideally, the SSH packets should be
-processed before the FTP packets because of the time-sensitive nature
-of SSH; when a key is typed in the SSH client, an immediate response 
-is expected, but an FTP transfer being delayed by a few extra
-seconds hardly bears any notice.  But what happens if the router
-handling these connections processes a large chunk of packets from the
-FTP connection before processing the SSH connection? Packets from the
-SSH connection will remain in the queue (or possibly be dropped by the
-router if the queue isn't big enough to hold all of the packets)
-and the SSH session may appear to lag or slow down.  By modifying the
-queueing strategy being used, network bandwidth can be shared fairly
-between different applications, users, and computers.
+Etwas einzureihen heißt, es in Reihe aufzubewahren, während es darauf
+wartet, verarbeitet zu werden. Wenn Daten-Pakete in einem Computer-Netzwerk
+von einem Host ausgesendet werden, treten sie eine Warteschlange ein, wo
+sie darauf warten, vom Betriebssystem verarbeitet zu werden. Das
+Betriebssystem entscheidet dann, welche Warteschlange und welche(e)
+Paket(e) von der Warteschlange verarbeitet werden sollten. Die Reihenfolge,
+in der das Betriebssystem die zu verarbeitenden Pakete auswählt, kann
+die Leistung vom Netzwerk beeinflussen. Stell dir zum Beispiel vor, ein
+Benutzer lässt zwei Netzwerk-Anwendungen laufen: SSH und FTP. Idealerweise
+sollten die SSH-Pakete vor den FTP-Paketen wegen der Zeit-sensiblen
+Natur von SSH verarbeitet werden; wenn eine taste im SSH-Client gedrückt
+wird, wird eine unverzügliche Antwort erwartet, aber wenn eine
+FTP-Übertraung um ein paar Sekunden verzögert wird, wird es wohl kaum
+auffallen. Aber was passiert, wenn der Router, der diese Verbindungen
+handhabt, eine große Portion an Paketen von der FTP-Verbindung
+verarbeitet, bevor die SSH-Verbindung verarbeitet wird? Pakete von
+der SSH-Verbindung werden in der Warteschlange verweilen
+(oder vielleicht sogar vom Router fallengelassen, wenn die
+Warteschlange nicht groß genug ist, um alle Pakete zu beinhalten)
+und die SSH-Sitzung wirkt, als wenn sie ,laggt' oder verlangsamt
+ist. Durch das Modifizieren der Warteschlangen-Strategie, die
+verwendet wird, kann Netzwerk-Bandbreite gerecht zwischen unterschiedlichen
+Applikationen, Benutzern und Computern aufgeteilt werden.
 
 <p>
-Note that queueing is only useful for packets in the <i>outbound</i>
-direction. Once a packet arrives on an interface in the inbound
-direction it's already too late to queue it -- it's already consumed
-network bandwidth to get to the interface that just received it. The
-only solution is to enable queueing on the adjacent router or, if the
-host that received the packet is acting as a router, to enable queueing
-on the internal interface where packets exit the router.
+Bedenke, dass das einreihen nur nützlich für Pakete in die
+<i>ausgehende</i> Verbindung ist. Sobald ein Paket auf dem Interface
+in einer eingehenden Richtung ankommt, ist es bereits zu spät, dieses
+einzureihen -- es hat bereits Netzwerk-Bandbreite verbraucht, um
+auf dem Interface anzukommen, das es aufgenommen hat. Die einzige
+Lösung ist, das Einreihen auf dem angrenzenden Router zu aktivieren
+oder, wenn der Host, der das Paket erhalten hat als Router fungiert,
+das Einreihen auf dem internen Interface zu aktiveren, von dem
+Pakete den Router verlassen.
 
 <a name="sched"></a>
 <h2>Schedulers</h2>
-The scheduler is what decides which queues to process and in what order.
-By default, OpenBSD uses a First In First Out (FIFO) scheduler. A FIFO
-queue works like the line-up at a supermarket or a bank -- the first
-item into the queue is the first processed. As new packets arrive they
-are added to the end of the queue. If the queue becomes full, newly
-arriving packets are dropped.  This is known as tail-drop.
+Der ,scheduler' ist, wer entscheidet, welche Warteschlange verarbeitet
+werden soll und in welcher Reihenfolge. Standardmäßig verwendet OpenBSD
+einen ,First In First Out'- (FIFO) ,scheduler'. Eine FIFO-Warteschlange
+funktioniert wie das Anreihen an einer Kasse in einem Supermarkt
+-- das erste Objekt in der Schlange wird zuerst verarbeitet. Wenn
+neue Pakete ankommen, werden sie an das Ende der Warteschlange angehängt.
+Wenn die Warteschlange voll wird, und hier endet die Analogie mit dem
+Supermarkt, werden neu ankommende Pakete fallen gelassen. Dies ist bekannt
+als ,tail-drop'.
 
 <p>
-OpenBSD supports two additional schedulers:
+OpenBSD unterstützt zwei zusätzliche ,scheduler':
 <ul>
 <li>Class Based Queueing
 <li>Priority Queueing
@@ -95,246 +121,271 @@ OpenBSD supports two additional schedulers:
 
 <a name="cbq"></a>
 <h3>Class Based Queueing</h3>
-Class Based Queueing (CBQ) is a queueing algorithm that divides a
-network connection's bandwidth among multiple queues or classes.  Each
-queue then has traffic assigned to it based on source or destination
-address, port number, protocol, etc.  A queue may optionally be
-configured to borrow bandwidth from its parent queue if the parent is
-being under-utilized.  Queues are also given a priority such that those
-containing interactive traffic, such as SSH, can have their packets
-processed ahead of queues containing bulk traffic, such as FTP.
+,Class Based Queueing' (CBQ) ist ein Einreihe-Algorithmus, der die
+Bandbreite einer Netzwerkverbindung auf mehrere Warteschlangen oder
+Klassen aufteilt. Jeder Warteschlange wird dass Verkehr zugewiesen,
+basierend auf der Quell- oder Ziel-Adresse, Port-Nummer, Protokoll, etc.
+Eine Warteschlange kann optional so konfiguriert werden, dass Bandbreite
+von seiner Eltern-Warteschlange ausgeliehen wird, wenn diese nicht
+voll ausgenutzt wird. Warteschlangen geben außerdem eine Priorität,
+so dass jene, die interaktiven Verkehr beinhalten, zum Beispiel SSH,
+ihre Pakete vor denen verarbeiten können, die ,bulk'-Verkehr, wie
+zum Beispiel FTP, beinhalten.
 
 <p>
-CBQ queues are arranged in an hierarchical manner.  At the top of the
-hierarchy is the root queue which defines the total amount of bandwidth
-available.  Child queues are created under the root queue, each of
-which can be assigned some portion of the root queue's bandwidth.  For
-example, queues might be defined as follows:
+CBQ-Warteschlangen werden in einer hierarchischen Manier angeordnet.
+An oberster Stelle dieser Hierarchie ist die root-Warteschlange, welche
+den Gesamtgröße der verfügbaren Bandbreite angibt. ,Child'-Warteschlangen
+werden unter der root-Warteschlange angelegt, von der jeder ein Teil der
+Bandbreite der root-Warteschlange zugewiesen werden kann. Zum
+Beispiel können Warteschlangen wie folgt definiert werden:
 <dl>
-<dd>Root Queue (2Mbps)
+<dd>Root-Warteschlange (2Mbps)
 	<dl>
-	<dd>Queue A (1Mbps)
-	<dd>Queue B (500Kbps)
-	<dd>Queue C (500Kbps)
+	<dd>Warteschlange A (1Mbps)
+	<dd>Warteschlange B (500Kbps)
+	<dd>Warteschlange C (500Kbps)
 	</dl>
 </dl>
 
 <p>
-In this case, the total available bandwidth is set to 2 megabits per
-second (Mbps). This bandwidth is then split among three child queues.
+In diesem Fall wird die gesamt-verfügbare Bandbreite auf 2 Megabits pro
+Sekunde (Mbps) gesetzt. Diese Bandbreite wird dann auf drei
+,child'-Warteschlangen aufgeteilt.
 
 <p>
-The hierarchy can further be expanded by defining queues within queues.
-To split bandwidth equally among different users and also classify their
-traffic so that certain protocols don't starve others for bandwidth, a
-queueing structure like this might be defined:
+Die Hierarchie kann weiter ausgebreitet werden, indem Warteschlangen
+in Warteschlangen definiert werden. Um die Bandbreite auf mehrere
+verschiende Benutzer gleich aufzuteilen und ebenfalls ihren Verkehr
+zu klassifizieren, so dass bestimmte Protokolle anderen nicht
+Bandbreite wegnehmen, kann eine Warteschlangen-Struktur wie diese
+definiert werden:
 <dl>
-<dd>Root Queue (2Mbps)
+<dd>Root-Warteschlange (2Mbps)
 	<dl>
-	<dd>UserA (1Mbps)
+	<dd>BenutzerA (1Mbps)
 		<dl>
 		<dd>ssh (50Kbps)
 		<dd>bulk (950Kbps)
 		</dl>
-	<dd>UserB (1Mbps)
+	<dd>BenutzerB (1Mbps)
 		<dl>
 		<dd>audio (250Kbps)
 		<dd>bulk (750Kbps)
 			<dl>
 			<dd>http (100Kbps)
-			<dd>other (650Kbps)
+			<dd>andere (650Kbps)
 			</dl>
 		</dl>
 	</dl>
 </dl>
 
 <p>
-Note that at each level the sum of the bandwidth assigned to each of the
-queues is not more than the bandwidth assigned to the parent queue.
+Bedenke, dass die Summe der Bandbreite für jedes Level nicht höher ist,
+als was der Eltern-Warteschlange zugewiesen wurde.
 
 <p>
-A queue can be configured to borrow bandwidth from its parent if the
-parent has excess bandwidth available due to it not being used by
-the other child queues.  Consider a queueing setup like this:
+Eine Warteschlange kann konfiguriert werden, um Bandbreite von seinen
+Eltern zu leihen, wenn die Eltern genügend Bandbreite zur Verfügung
+haben, wenn die ,child'-Warteschlangen diesen nicht verwenden.
+Siehe dir eine Warteschlangen-Einrichtung wie die folgende an:
 <dl>
-<dd>Root Queue (2Mbps)
+<dd>Root-Warteschlange (2Mbps)
 	<dl>
-	<dd>UserA (1Mbps)
+	<dd>BenutzerA (1Mbps)
 		<dl>
 		<dd>ssh (100Kbps)
-		<dd>ftp (900Kbps, borrow)
+		<dd>ftp (900Kbps, leihen)
 		</dl>
-	<dd>UserB (1Mbps)
+	<dd>BenutzerB (1Mbps)
 	</dl>
 </dl>
 
 <p>
-If traffic in the <tt>ftp</tt> queue exceeds 900Kbps and traffic in the
-<tt>UserA</tt> queue is less than 1Mbps (because the ssh queue is using
-less than its assigned 100Kbps), the <tt>ftp</tt> queue will borrow the
-excess bandwidth from <tt>UserA</tt>.  In this way the <tt>ftp</tt>
-queue is able to use more than its assigned bandwidth when it faces
-overload.  When the <tt>ssh</tt> queue increases its load, the borrowed
-bandwidth will be returned.
+Wenn Verkehr in der <tt>ftp</tt>-Warteschlange größer ist als 900 Kbps
+und Verkehr in der <tt>BenutzerA</tt>-Queue kleiner ist als 1 Mbps
+(weil die <tt>ssh</tt>-Warteschlange weniger als die zugewiesenen 100 Kbps
+verwendet), wird sich die <tt>ftp</tt>-Warteschlange die zusätzliche
+Bandbreite von <tt>BenutzerA</tt> ausleihen. Auf diesem Weg ist die
+<tt>ftp</tt>-Warteschlange in der Lage, mehr Bandbreite zu nutzen,
+als ihr zugewiesen wurde, wenn eine Überladung stattfindet.
+Wenn die <tt>ssh</tt>-Warteschlange nun ihre Last erhöht, wird die
+geliehene Bandbreite zurückgegeben.
 
 <p>
-CBQ assigns each queue a priority level. Queues with a higher priority
-are preferred during congestion over queues with a lower priority as
-long as both queues share the same parent (in other words, as long as
-both queues are on the same branch in the hierarchy).  Queues with the
-same priority are processed in a round-robin fashion.  For example:
+CBQ weist jeder Warteschlange ein Prioritäts-Level zu. Warteschlangen
+mit einer höheren Priorität werden während der Anhäufung gegenüber
+den Warteschlangen mit einer geringen Priorität bevorzugt, so lange
+beide Warteschlangen die gleichen Eltern-Warteschlange haben
+(in anderen Worten, so lange beide Warteschlangen im gleichen Zweig
+der Hierarchie sind). Warteschlangen mit der gleichen Priorität werden
+in einer ,round-robin'-Manier verarbeitet. Zum Beispiel:
 <dl>
-<dd>Root Queue (2Mbps)
+<dd>Root-Warteschlange (2Mbps)
 	<dl>
-	<dd>UserA (1Mbps, priority 1)
+	<dd>BenutzerA (1Mbps, Priorität 1)
 		<dl>
-		<dd>ssh (100Kbps, priority 5)
-		<dd>ftp (900Kbps, priority 3)
+		<dd>ssh (100Kbps, Priorität 5)
+		<dd>ftp (900Kbps, Priorität 3)
 		</dl>
-	<dd>UserB (1Mbps, priority 1)
+	<dd>BenutzerB (1Mbps, Priorität 1)
 	</dl>
 </dl>
 
 <p>
-CBQ will process the <tt>UserA</tt> and <tt>UserB</tt> queues in a
-round-robin fashion -- neither queue will be preferred over the other.
-During the time when the <tt>UserA</tt> queue is being processed, CBQ
-will also process its child queues.  In this case, the <tt>ssh</tt>
-queue has a higher priority and will be given preferential treatment
-over the <tt>ftp</tt> queue if the network is congested.  Note how the
-<tt>ssh</tt> and <tt>ftp</tt> queues do not have their priorities
-compared to the <tt>UserA</tt> and <tt>UserB</tt> queues because they
-are not all on the same branch in the hierarchy.
+CBQ wird die <tt>BenutzerA</tt>- und <tt>BenutzerB</tt>-Warteschlangen
+in einer ,round-robin'-Manier verarbeiten -- keine Warteschlange wird
+der anderen bevorzugt. Während der Zeit, in der die
+<tt>BenutzerA</tt>-Warteschlange verarbeitet wird, wird CBQ ebenfalls
+die ,child'-Warteschlangen verarbeiten. In diesem Fall hat die
+<tt>ssh</tt>-Warteschlange eine höhere Priorität und wird gegenüber
+der <tt>ftp</tt>-Warteschlange somit bevorzugt behandelt, wenn das
+Netzwerk überladen ist. Bedenke, wie die <tt>ssh</tt>- und
+<tt>ftp</tt>-Warteschlangen ihre Prioritäten nicht mit den
+<tt>BenutzerA</tt>- und <tt>BenutzerB</tt>-Warteschlangen vergleichen,
+weil sie sich nicht auf dem gleichen Ast in der Hierarchie befinden.
 
 <p>
-For a more detailed look at the theory behind CBQ, please visit
-<a href="http://www.icir.org/floyd/cbq.html">this website</a>.
+Für eine detaillierte Betrachtung der Theorie hinter CBQ, siehe bitte
+<a href="http://www.icir.org/floyd/cbq.html">Reference on CBQ</a>.
 
 <a name="priq"></a>
 <h3>Priority Queueing</h3>
-Priority Queueing (PRIQ) assigns multiple queues to a network
-interface with each queue being given a unique priority level. A queue
-with a higher priority is <i>always</i> processed ahead of a queue with
-a lower priority. 
+,Priority Queuing' (PRIQ) weist mehreren Warteschlangen einem Interface
+zu, wobei jeder Warteschlange ein einzigartiges Prioritätslevel gegeben
+wird. Eine Warteschlange mit einer höheren Priorität wird <i>immer</i>
+vor einer Warteschlange mit einer geringeren Priorität verarbeitet.
 
 <p>
-The queueing structure in PRIQ is flat -- you cannot define queues
-within queues. The root queue is defined, which sets the total amount of
-bandwidth that is available, and then sub queues are defined under the
-root. Consider the following example:
+Die Einreihe-Struktur in PRIQ ist flach -- du kannst keine Warteschlangen
+in Warteschlangen definieren. Die root-Warteschlange, welche die
+Gesamtgröße der Bandbreite angibt, wird definiert und Unterwarteschlangen
+werden unter root definiert. Betrachte folgendes Beispiel:
 <dl>
-<dd>Root Queue (2Mbps)
+<dd>Root-Warteschlange (2Mbps)
 	<dl>
-	<dd>Queue A (priority 1)
-	<dd>Queue B (priority 2)
-	<dd>Queue C (priority 3)
+	<dd>Warteschlange A (Priorität 1)
+	<dd>Warteschlange B (Priorität 2)
+	<dd>Warteschlange C (Priorität 3)
 	</dl>
 </dl>
 
 <p>
-The root queue is defined as having 2Mbps of bandwidth available to it
-and three subqueues are defined. The queue with the highest priority
-(the highest priority number) is served first. Once all the packets
-in that queue are processed, or if the queue is found to be empty, PRIQ
-moves onto the queue with the next highest priority.  Within a given
-queue, packets are processed in a First In First Out (FIFO) manner.
+Die root-Warteschlange wurde so definiert, dass ihr 2Mbps der
+Bandbreite zur Verfügung stehen und drei Unterwarteschlangen wurden
+definiert. Die Warteschlange mit der höchsten Priorität (die höchste
+Prioritätennummer) wird zuerst bedient. Sobald alle Pakete in der
+Warteschlange bearbeitet wurden, oder wenn festgestellt wird, dass
+die Warteschlange leer ist, wird PRIQ zur nächsten Warteschlange
+mit der höchsten Priorität gehen. Innerhalb einer gegebenen
+Warteschlange werden Pakete in einer ,First in First Out'- (FIFO)
+Manier verarbeitet.
 
 <p>
-It is important to note that when using PRIQ you must plan your queues
-very carefully.  Because PRIQ <i>always</i> processes a higher priority
-queue before a lower priority one, it's possible for a high priority
-queue to cause packets in a lower priority queue to be delayed or
-dropped if the high priority queue is receiving a constant stream of
-packets.
+Es ist wichtig, daran zu denken, dass du, wenn PRIQ verwendet wird, deine
+Warteschlangen sehr sorgfältig planen musst. Weil PRIQ <i>immer</i>
+eine höher priorisierte Warteschlange vor einer niedrigeren verarbeitet,
+ist es möglich für eine höher priorisierte Warteschlange, dazu zu führen,
+dass Pakete einer niedriger priorisierten Warteschlange verzögert oder
+fallen gelassen werden, wenn die höher priorisierte Warteschlange einen
+konstanten Fluss an Paketen erhält.
 
 <a name="red"></a>
 <h3>Random Early Detection</h3>
-Random Early Detection (RED) is a congestion avoidance algorithm. Its
-job is to avoid network congestion by making sure that the queue doesn't
-become full. It does this by continually calculating the average length
-(size) of the queue and comparing it to two thresholds, a minimum
-threshold and a maximum threshold. If the average queue size is below
-the minimum threshold then no packets will be dropped. If the average is
-above the maximum threshold then <i>all</i> newly arriving packets will
-be dropped. If the average is between the threshold values then packets
-are dropped based on a probability calculated from the average queue
-size. In other words, as the average queue size approaches the maximum
-threshold, more and more packets are dropped. When dropping packets,
-RED randomly chooses which connections to drop packets from.
-Connections using larger amounts of bandwidth have a higher probability
-of having their packets dropped.
+,Random Early Detection' (RED) ist ein Anhäufig-vermeidender Algorithmus.
+Seine Aufgabe ist, Netzwerk-Anhäufungen zu vermeiden, indem sichergestellt
+wird, dass die Warteschlange nicht voll wird. Er macht das, indem
+durchgehend die durchschnittliche Länge (Größe) der Warteschlange
+berechnet wird und vergleicht sie mit zwei ,tresholds', einem minimalem
+,treshold' und einem maximalen ,treshold'. Wenn die durchschnittliche
+Größe unterhalb des minimalem ,treshold' liegt, dann wird kein Paket
+fallen gelassen. Wenn der Durchschnitt oberhalb des maximalen ,tresholds'
+iegt, dann werden <i>alle</i> neu ankommenden Pakete fallengelassen.
+Wenn der Durchschnitt zwischen den ,treshold'-Werten liegt, dann werden
+Pakete basierend auf einer errechneten Wahrscheinlichkeit der
+durchschnittlichen Warteschlangen-Größe fallengelassen.
+Mit anderen Worten, je größer die durchschnittliche Warteschlangen-Größe
+wird, umso mehr Pakete werden fallengelassen. Wenn Pakete fallengelassen
+werden, wählt RED zufällig, von welchen Verbindungen Pakete fallengelassen
+werden sollen.
+Verbindungen, die mehr Bandbreite verwenden, haben eine höher Priorität
+beim Fallenlassen ihrer Pakete.
 
 <p>
-RED is useful because it avoids a situation known as global
-synchronization and it is able to accommodate bursts of traffic.  Global
-synchronization refers to a loss of total throughput due to packets
-being dropped from several connections at the same time. For example, if
-congestion occurs at a router carrying traffic for 10 FTP connections
-and packets from all (or most) of these connections are dropped (as is
-the case with FIFO queueing), overall throughput will drop sharply. This
-isn't an ideal situation because it causes all of the FTP connections to
-reduce their throughput and also means that the network is no longer
-being used to its maximum potential.  RED avoids this by randomly
-choosing which connections to drop packets from instead of choosing all
-of them. Connections using large amounts of bandwidth have a higher
-chance of their packets being dropped. In this way, high bandwidth
-connections will be throttled back, congestion will be avoided, and
-sharp losses of overall throughput will not occur. In addition, RED is
-able to handle bursts of traffic because it starts to drop packets
-<i>before</i> the queue becomes full. When a burst of traffic comes
-through there will be enough space in the queue to hold the new packets.
+RED ist nützlich, da es eine Situation verhindert, die als globale
+Synchronisation bekannt ist, und ist in der Lage, das Anstürmen
+von Verkehr in Einklang zu bringen. Globale Synchronisation verweist auf
+den Verlust des gesamten Durchsatzes, weil Pakete von vielen Verbindungen
+zur gleichen Zeit fallengelassen werden. Wenn zum Beispiel eine Anhäufung
+auf einem Router eintritt, der den Verkehr für 10 FTP-Verbindungen trägt
+und Pakete von allen (oder fast allen) dieser Verbindungen fallengelassen
+werden (wie es der Fall in FIFO-Warteschlangen ist), wird der gesamte
+Durchsatz drastisch fallen. Dies ist keine ideale Situation, da es dazu
+führt, dass alle FTP-Verbindungen ihren Durchsatz reduzieren und das dann
+bedeutet, dass das Netzwerk nicht mehr länger völlig ausgereizt wird. RED
+verhindert dies, indem die Verbindung, von der Pakete fallengelassen werden
+sollen, zufällig auswählt, statt alle dafür auszuwählen. Verbindungen,
+die sehr viel der Bandbreite in Anspruch nehmen, werden wahrscheinlicher
+Pakete durch das Fallenlassen genommen. Auf diesem Weg werden
+Verbindungen mit hoher Bandbreite gedrosselt, Anhäufung wird verhindert
+und das rapide reduzieren des gesamten Durchsatzes wird nicht eintreten.
+Zusätzlich ist RED in der Lage, das Anstürmen von Verkehr handzuhaben,
+da er beginnt, Pakete fallenzulassen, <i>bevor</i> die Warteschlange voll
+wird. Wenn ein Ansturm an Verkehr durchkommt, wird dort genug
+Platz in der Warteschlange sein, um die neuen Pakete zu halten.
 
 <p>
-RED should only be used when the transport protocol is capable of
-responding to congestion indicators from the network. In most cases
-this means RED should be used to queue TCP traffic and not UDP or ICMP
-traffic.
+RED sollte nur benutzt werden, wenn das Transport-Protokoll in der
+Lage ist, auf Anhäufungs-Anzeichen vom Netzwerk zu antworten. In den
+meisten Fällen bedeutet das, dass RED nur in einer Warteschlange für
+TCP-Verkehr und nicht für UDP- oder ICMP-Verkehr genutzt werden sollte.
 
 <p>
-For a more detailed look at the theory behind RED, please visit
-<a href="http://www.icir.org/floyd/red.html">this website</a>.
+Für einen detaillierteren Blick auf die Theorie hinter RED, siehe bitte
+<a href="http://www.icir.org/floyd/red.html">References on RED</a>.
 
 <a name="ecn"></a>
 <h3>Explicit Congestion Notification</h3>
-Explicit Congestion Notification (ECN) works in conjunction with RED to
-notify two hosts communicating over the network of any congestion along
-the communication path. It does this by enabling RED to set a flag in
-the packet header instead of dropping the packet. Assuming the sending
-host has support for ECN, it can then read this flag and throttle back
-its network traffic accordingly.
+,Explicit Congestion Notification' (ECN) funktioniert in Verbindung mit
+RED, um zwei Hosts, die über ein Netzwerk miteinander kommunizieren, über
+Anhäufungen auf dem Verbindungsweg zu informieren. Es macht dies, indem
+RED aktiviert wird, um ein Flag im Paket-Header zu setzen, statt das Paket
+fallenzulassen. Angenommen, der sendende Host hat Unterstützung für ECN,
+dann kann er das Flag lesen und den Netzwerkverkehr dementsprechend
+drosseln.
 
 <p>
-For more information on ECN, please refer to 
+Für weitere Informationen über ECN, lese bitte
 <a href="http://www.rfc-editor.org/rfc/rfc3168.txt">RFC 3168</a>.
 
 <a name="altq"></a>
-<h2>Configuring Queueing</h2>
-Since OpenBSD 3.0 the 
+<h2>Queueing konfigurieren</h2>
+Seit OpenBSD 3.0 ist die
 <a href="http://www.csl.sony.co.jp/person/kjc/kjc/software.html#ALTQ"
->Alternate Queueing (ALTQ)</a> queueing implementation has been a part of
-the base system. Starting with OpenBSD 3.3 ALTQ has been integrated into
-PF.  OpenBSD's ALTQ implementation supports the Class Based Queueing
-(CBQ) and Priority Queueing (PRIQ) schedulers. It also supports Random
-Early Detection (RED) and Explicit Congestion Notification (ECN).
+>,Alternate Queueing'- (ALTQ)</a> Implementierung Teil des Basis-Systems.
+Beginnend mit OpenBSD 3.3 wurde ALTQ in PF integriert. OpenBSDs
+ALTQ-Implementierung unterstützt ,Class Based Queueing'- (CBQ) und
+,Priority Queueing'- (PRIQ) ,schedulers'. Es unterstützt ebenfalls
+,Random Early Detection' (RED) und ,Explicit Congestion Notification' (ECN).
 
 <p>
-Because ALTQ has been merged with PF, PF must be enabled for queueing to
-work. Instructions on how to enable PF can be found in the 
-<a href="config.html#activate">configuration section</a>.
+Weil ALTQ mit PF verbunden wurde, muss PF aktiviert werden, damit
+,queueing' funktioniert. Anweisungen, wie man PF aktiviert, können in
+den <a href="config.html#activate">Ersten Schritten</a> gefunden werden.
 
 <p>
-Queueing is configured in <tt>
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+3.4"
->/etc/pf.conf</a></tt>. There are two types of directives that are used
-to configure queueing:
+,Queueing' wird in <tt>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+3.6"
+>pf.conf</a></tt> konfiguriert. Dort gibt es zwei Arten an
+Direktiven, die genutzt werden, um ,queueing' zu konfigurieren.
 <ul>
-<li><tt>altq on</tt> - enables queueing on an interface, defines which
-scheduler to use, and creates the root queue
-<li><tt>queue</tt> - defines the properties of a child queue
+<li><tt>altq on</tt> - aktiviert ,queueing' auf einem Interface, definiert,
+welcher ,scheduler' genutzt werden soll und erstellt die root-Warteschlange
+<li><tt>queue</tt> - definiert die Eigenschaften einer ,child'-Warteschlange
 </ul>
 
 <p>
-The syntax for the <tt>altq on</tt> directive is:
+Die Syntax für die <tt>altq on</tt>-Direktive ist:
 <blockquote>
 <tt>
 altq on <i>interface scheduler</i> bandwidth <i>bw</i> qlimit 
@@ -344,84 +395,102 @@ altq on <i>interface scheduler</i> bandwidth <i>bw</i> qlimit
 </blockquote>
 
 <ul>
-<li><tt><i>interface</i></tt> - the network interface to activate queueing on.
-<li><tt><i>scheduler</i></tt> - the queueing scheduler to use. Possible values are 
-<tt>cbq</tt> and <tt>priq</tt>. Only one scheduler may be active on an
-interface at a time.
-<li><tt><i>bw</i></tt> - the total amount of bandwidth available to the scheduler.
-This may be specified as an absolute value using the suffixes <tt>b</tt>,
-<tt>Kb</tt>, <tt>Mb</tt>, and <tt>Gb</tt> to represent bits, kilobits,
-megabits, and gigabits per second, respectively or as a percentage of the
-<tt><i>interface</i></tt> bandwidth.
-<li><tt><i>qlim</i></tt> - the maximum number of packets to hold in the queue. 
-This parameter is optional. The default is 50.
-<li><tt><i>size</i></tt> - the size of the token bucket regulator in bytes. If not
-specified, the size is set based on the <tt><i>interface</i></tt> bandwidth.
-<li><tt><i>queue_list</i></tt> - a list of child queues to create under the root
-queue.
+<li><tt><i>interface</i></tt> - das Netzwerk-Interface, auf dem ,queueing'
+aktiviert werden soll.
+<li><tt><i>scheduler</i></tt> - der zu nutzende ,queueing scheduler'.
+Mögliche Werte sind:
+<tt>cbq</tt> und <tt>priq</tt>. Nur ein ,scheduler' kann auf einem Interface
+gleichzeitig aktiv sein.
+<li><tt><i>bw</i></tt> - die gesamte Bandbreite, die für den ,scheduler'
+verfügbar ist. Dies kann entweder mit absoluten Werten unter Verwendung
+der <tt>b</tt>, <tt>Kb</tt>, <tt>Mb</tt> und <tt>Gb</tt> gemacht werden, die
+respektiv Bits, Kilobits, Megabits und Gigabits pro Sekunde darstellen oder
+als Prozent der <tt><i>Interface</i></tt>-Bandbreite.
+<li><tt><i>qlim</i></tt> - die maximale Anzahl an Paketen, die in der
+Warteschlange gehalten werden soll. Dieser Parameter ist optional.
+Der Standard ist 50.
+<li><tt><i>size</i></tt> - Die Größe des ,token bucket regulator' in Bytes.
+Wenn nicht angegeben, basiert die Größe auf der
+<tt><i>Interface</i></tt>-Bandbreite gesetzt.
+<li><tt><i>queue_list</i></tt> - Eine Liste an ,child'-Warteschlangen, die
+unterhalb der root-Warteschlange erstellt werden sollen.
 </ul>
 
 <p>
-For example:
-<blockquote>
-altq on fxp0 cbq bandwidth 2Mb queue { std, ssh, ftp }
-</blockquote>
-This enables CBQ on the fxp0 interface. The total bandwidth available is
-set to 2Mbps. Three child queues are defined: <tt>std</tt>,
-<tt>ssh</tt>, and <tt>ftp</tt>.
-
-<p>
-The syntax for the <tt>queue</tt> directive is:
+Zum Beispiel:
 <blockquote>
 <tt>
-queue <i>name</i> bandwidth <i>bw</i> priority <i>pri</i> qlimit
-<i>qlim</i> \<br>
+altq on fxp0 cbq bandwidth 2Mb queue { std, ssh, ftp }
+</tt>
+</blockquote>
+Dies aktiviert CBQ auf dem <tt>fxp0</tt>-Interface. Die gesamte verfügbare
+Bandbreite wird auf 2Mbps gesetzt. Drei ,child'-Warteschlangen werden
+definiert: <tt>std</tt>, <tt>ssh</tt> und <tt>ftp</tt>.
+
+<p>
+Die Syntax für die <tt>queue</tt>-Direktive ist:
+<blockquote>
+<tt>
+queue <i>name</i> [on <i>interface</i>] bandwidth <i>bw</i> [priority
+<i>pri</i>] [qlimit <i>qlim</i>] \<br>
 &nbsp;&nbsp;&nbsp;<i>scheduler</i> ( <i>sched_options</i> )
 { <i>queue_list</i> }
 </tt>
 </blockquote>
 
 <ul>
-<li><tt><i>name</i></tt> - the name of the queue. This must match the
-name of one of the queues defined in the <tt>altq on</tt> directive's
-<tt><i>queue_list</i></tt>. For <tt>cbq</tt> it can also match the name
-of a queue in a previous <tt>queue</tt> directive's
-<tt><i>queue_list</i></tt>. Queue names must be no longer than 15 characters.
-<li><tt><i>bw</i></tt> - the total amount of bandwidth available to the scheduler.
-This may be specified as an absolute value using the suffixes <tt>b</tt>,
-<tt>Kb</tt>, <tt>Mb</tt>, and <tt>Gb</tt> to represent bits, kilobits,
-megabits, and gigabits per second, respectively or as a percentage of the
-<tt><i>interface</i></tt> bandwidth.
-<li><tt><i>pri</i></tt> - the priority of the queue. For <tt>cbq</tt> the
-priority range is 0 to 7 and for <tt>priq</tt> the range is 0 to 15.
-Priority 0 is the lowest priority. When not specified, a default of 1 is
-used.
-<li><tt><i>qlim</i></tt> - the maximum number of packets to hold in the queue. 
-When not specified, a default of 50 is used.
-<li><tt><i>scheduler</i></tt> - the scheduler being used, either <tt>cbq</tt>
-or <tt>priq</tt>. Must be the same as the root queue.
-<li><tt><i>sched_options</i></tt> - further options may be passed to the scheduler
-to control its behavior:
+<li><tt><i>name</i></tt> - Der Name der Warteschalgen. Dieser muss mit einer
+<tt><i>queue_list</i></tt> in der <tt>altq on</tt>-Direktive definierten
+Warteschlange übereinstimmen. Für <tt>cbq</tt> kann er ebenfalls mit dem
+Namen einer Warteschlange einer vorherigen <tt><i>queue_list</i></tt> der
+<tt>queue</tt>-Direktive übereinstimmen. Warteschlangen-Namen dürfen nicht
+länger als 15 Zeichen sein.
+<li><tt><i>interface</i></tt> - Das Netzwerk-Interface, für as die
+Warteschlange gültig ist. Dieser Wert ist optional und wenn er nicht
+angegeben wird, wird die Warteschlange für alle Interfaces gültig sein.
+<li><tt><i>bw</i></tt> - die gesamte Bandbreite, die für die Warteschlange
+verfügbar ist. Dies kann entweder mit absoluten Werten unter Verwendung
+der <tt>b</tt>, <tt>Kb</tt>, <tt>Mb</tt> und <tt>Gb</tt> gemacht werden, die
+respektiv Bits, Kilobits, Megabits und Gigabits pro Sekunde darstellen oder
+als Prozent der Bandbreite der Eltern-Warteschlange.
+Dieser Parameter ist nur anwendbar, wenn der <tt>cbq</tt>-,scheduler'
+verwendet wird.
+<li><tt><i>pri</i></tt> - Die Priorität der Warteschlange. Für <tt>cbq</tt>
+ist der Prioritätsbereich von 0 bis 7 und für <tt>priq</tt> 0 bis 15.
+Priorität 0 ist die niedrigste Priorität. Wenn nicht angegeben, wird ein
+Standard von 1 verwendet.
+<li><tt><i>qlim</i></tt> - Die maximale Anzahl an Paketen, die in einer
+Warteschlange gehalten werden sollen. Wenn nicht angegeben, wird ein Standard
+von 50 verwendet.
+<li><tt><i>scheduler</i></tt> - Der ,scheduler', der genutzt werden soll,
+entweder <tt>cbq</tt> oder <tt>priq</tt>. Muss der gleiche wie der
+root-Warteschlange sein.
+<li><tt><i>sched_options</i></tt> - Weitere Optionen können dem ,scheduler'
+übergeben werden, um sein Verhalten zu kontrollieren:
 	<ul>
-	<li><tt>default</tt> - defines a default queue where all packets not
-	matching any other queue will be queued. Exactly one default queue
-	is required.
-	<li><tt>red</tt> - enables Random Early Detection (RED) on this queue.
-	<li><tt>rio</tt> - enables RED with IN/OUT. In this mode, RED will
-	maintain multiple average queue lengths and multiple threshold
-	values, one for each IP Quality of Service level.
-	<li><tt>ecn</tt> - enables Explicit Congestion Notification (ECN) on
-	this queue. <tt>Ecn</tt> implies <tt>red</tt>.
-	<li><tt>borrow</tt> - the queue can borrow bandwidth from its parent. This can
-	only be specified when using the <tt>cbq</tt> scheduler.
+	<li><tt>default</tt> - definierte eine Standard-Warteschlange, in der
+	alle Pakete eingereiht werden, die zu keiner anderen Warteschlange
+	passen. Genau eine Standard-Warteschlange wird benötigt.
+	<li><tt>red</tt> - aktiviert ,Random Early Detection' (RED) auf dieser
+	Warteschlange.
+	<li><tt>rio</tt> - aktiviert RED mit IN/OUT. In diesem Modus wird
+	RED mehrere durchschnittliche Warteschlangenlängen verwalten und
+	mehrere ,treshold'-Werte, einen für jeden
+	IP-,Quality of Service'-Level.
+	<li><tt>ecn</tt> - aktiviert ,Explicit Congestion Notification' (ECN)
+	auf dieser Warteschlange. <tt>Ecn</tt> beinhaltet <tt>red</tt>.
+	<li><tt>borrow</tt> - Die Warteschlange kann ungenutzte Bandbreite
+	von seiner Eltern-Warteschlange leihen. DIes kann nur angegeben
+	werden, wenn der <tt>cbq</tt>-,scheduler' genutzt wird.
 	</ul>
-<li><tt><i>queue_list</i></tt> - a list of child queues to create under this
-queue. A <tt><i>queue_list</i></tt> may only be defined when using the
-<tt>cbq</tt> scheduler.
+<li><tt><i>queue_list</i></tt> - eine Liste von ,child'-Warteschlangen, die
+unter dieser Warteschlange erstellt werden sollen. Eine
+<tt><i>queue_list</i></tt> darf nur definiert werden, wenn der
+<tt>cbq</tt>-,scheduler' genutzt wird.
 </ul>
 
 <p>
-Continuing with the example above:
+Das oben angegebene Beispiel weiterführend:
 <blockquote>
 <tt>
 queue std bandwidth 50% cbq(default)<br>
@@ -433,41 +502,46 @@ queue ftp bandwidth 500Kb priority 3 cbq(borrow red)<br>
 </blockquote>
 
 <p>
-Here the parameters of the previously defined child queues are set. The
-<tt>std</tt> queue is assigned a bandwidth of 50% of the root queue's
-bandwidth (or 1Mbps) and is set as the default queue. The <tt>ssh</tt>
-queue defines two child queues, <tt>ssh_login</tt> and
-<tt>ssh_bulk</tt>. The <tt>ssh_login</tt> queue is given a higher
-priority than <tt>ssh_bulk</tt> and both have ECN enabled.  The
-<tt>ftp</tt> queue is assigned a bandwidth of 500Kbps and given a
-priority of 3. It can also borrow bandwidth when extra is available and
-has RED enabled. 
+Hier werden die Parameter der zuvor definierten ,child'-Warteschlangen
+gesetzt. Der <tt>std</tt>-Warteschlange wird eine Bandbreite von 50% der
+Bandbreite der root-Warteschlange (oder 1Mbps) zugewiesen und als
+standardmäßige Warteschlange definiert. Die <tt>ssh</tt>-Warteschlange
+definiert zwei ,child'-Warteschlangen, <tt>ssh_login</tt> und
+<tt>ssh_bulk</tt>. Der <tt>ssh_login</tt>-Warteschlange wird eine
+höhere Priorität als <tt>ssh_bulk</tt> gegeben und beide haben
+ECN aktiv. Der <tt>ftp</tt>-Warteschlange wird eine Bandbreite von
+500 Kbps zugewiesen und eine Priorität von 3. Es kann ebenfalls
+Bandbreite leihen, wenn weitere verfügbar ist, und hat RED aktiviert.
 
 <a name="assign"></a>
-<h3>Assigning Traffic to a Queue</h3>
+<h3>Verkehr einer ,Queue' zuweisen</h3>
 <p>
-To assign traffic to a queue, the <tt>queue</tt> keyword is used in
-conjunction with PF's <a href="filter.html">filter rules</a>. For example,
-consider a set of filtering rules containing a line such as:
+Um Verkehr einer Warteschlange zuzweisen, wird das
+<tt>queue</tt>-Schlüsselwort in Verbindung mit PFs
+<a href="filter.html">Filterregeln</a> verwendet. Siehe dir zum
+Beispiel einen Satz an Filterregeln an, der eine Zeile wie folgende
+beinhaltet:
 <blockquote>
 <tt>pass out on fxp0 from any to any port 22</tt>
 </blockquote>
 
 <p>
-Packets matching that rule can be assigned to a specific queue by using
-the <tt>queue</tt> keyword:
+Pakete, die zu dieser Regel zutreffen, können einer bestimmten
+Warteschlange zugewiesen werden, unter Verwendung des
+<tt>queue</tt>-Schlüsselwortes:
 <blockquote>
 <tt>pass out on fxp0 from any to any port 22 queue ssh</tt>
 </blockquote>
 
 <p>
-When using the <tt>queue</tt> keyword with <tt>block</tt> directives, any
-resulting TCP RST or ICMP Unreachable packets are assigned to the specified
-queue.
+Wenn das <tt>queue</tt>-Schlüsselwort mit <tt>block</tt>-Direktiven
+verwendet wird, werden jegliche resultierende ,TCP RST'- oder
+,ICMP Unreachable'-Pakete dieser angegebenen Warteschlange zugewiesen.
 
 <p>
-Note that queue tagging can happen on an interface other than the one
-defined in the <tt>altq on</tt> directive:
+Bedenke, dass das Bestimmen der Warteschlangen auf einem anderen Interface
+stattfinden kann als auf dem, auf dem <tt>altq on</tt>-Direktive angegeben
+wurde:
 <blockquote>
 <tt> 
 altq on fxp0 cbq bandwidth 2Mb queue { std, ftp }<br>
@@ -479,49 +553,56 @@ pass in on dc0 from any to any port 21 queue ftp<br>
 </blockquote>
 
 <p>
-Queueing is enabled on fxp0 but the tagging takes place on dc0. If 
-packets matching the <tt>pass</tt> rule exit from interface fxp0, they
-will be queued in the <tt>ftp</tt> queue. This type of queueing can be
-very useful on routers.
+,Queueing' wird auf <tt>fxp0</tt> aktiviert, aber das Markieren findet auf
+<tt>dc0</tt> statt. Wenn Pakete, die mit dieser <tt>pass</tt>-Regel
+übereinstimmten, vom Interface <tt>fxp0</tt> aus hinausgehen, werden sie
+in der <tt>ftp</tt>-Warteschlange eingereiht. Diese Art von ,queueing' kann
+auf Routern sehr nützlich sein.
 
 <p>
-Normally only one queue name is given with the <tt>queue</tt> keyword,
-but if a second name is specified that queue will be used for packets
-with a <a href="http://www.rfc-editor.org/rfc/rfc791.txt">Type of
-Service (ToS)</a> of low-delay and for TCP ACK packets with no data payload.
-A good example of this is found when using SSH. SSH login sessions will
-set the ToS to low-delay while SCP and SFTP sessions will not. PF can
-use this information to queue packets belonging to a login connection in a
-different queue than non-login connections. This can be useful to prioritize
-login connection packets over file transfer packets.
+Normalerweise wird nur ein Warteschlangen-Name mit dem
+<tt>queue</tt>-Kennwort angegeben, aber wenn ein zweiter Name angegeben wurde,
+dann wird diese Warteschlange für Pakete mit einem
+<a href="http://www.rfc-editor.org/rfc/rfc791.txt">Type of
+Service (ToS)</a> von ,low-delay' und für ,TCP ACK'-Pakete mit keinem
+Daten-,payload' verwendet. Ein gutes Beispiel hierfür kann in der Verwendung
+von SSH gefunden werden. SSH-Login-Sitzungen werden das ToS auf ,low-delay'
+setzen, während SCP- und SFTP-Sitzungen das nicht machen. PF kann diese
+Information verwenden, um Warteschlangen-Pakete, die zu einer
+Login-Verbindung gehören, in eine andere Warteschlange zu stecken, als
+sie für Nicht-Login-Verbindungen genutzt werden. Dies kann nützlich sein,
+um Login-Verbindungspakete gegenüber Dateitransfer-Pakete zu bevorzugen.
 <blockquote>
 <tt>pass out on fxp0 from any to any port 22 queue(ssh_bulk, ssh_login)</tt>
 </blockquote>
 
 <p>
-This assigns packets belonging to SSH login connections to the
-<tt>ssh_login</tt> queue and packets belonging to SCP and SFTP
-connections to the <tt>ssh_bulk</tt> queue. SSH login connections will
-then have their packets processed ahead of SCP and SFTP connections
-because the <tt>ssh_login</tt> queue has a higher priority.
+Dies weist Pakete, die zu einer SSH-Login-Sitzunge gehören, zu der
+<tt>ssh_login</tt>-Warteschlange zu und Pakete, die zu SCP- und
+SFTP-Sitzungen gehören, zu der <tt>ssh_bulk</tt>-Warteschlange.
+SSH-Login-Verbindungen werden dann ihre Pakete früher verarbeitet bekommen
+als SCP- und SFTP-Verbindungen, da die <tt>ssh_login</tt>-Warteschlange
+eine höhere Priorität hat.
 
 <p>
-Assigning TCP ACK packets to a higher priority queue is useful on
-asymmetric connections, that is, connections that have different upload
-and download bandwidths such as ADSL lines. With an ADSL line, if the
-upload channel is being maxed out and a download is started, the
-download will suffer because the TCP ACK packets it needs to
-send will run into congestion when they try to pass through the upload
-channel. Testing has shown that to achieve the best results, the
-bandwidth on the upload queue should be set to a value less than what
-the connection is capable of. For instance, if an ADSL line has a max
-upload of 640Kbps, setting the root queue's <tt>bandwidth</tt> to a value
-such as 600Kb should result in better performance. Trial and error will
-yield the best <tt>bandwidth</tt> setting.
+,TCP ACK'-Pakete einer höher priorisierten Warteschlange hinzuzufügen
+ist sinnvoll, wenn man asymmetrische Verbindungen hat, das heißt,
+Verbindunge, die eine andere Upload- als Download-Bandbreite haben,
+wie zum Beispiel ADSL-Verbindungen. Wenn bei einer ADSL-Verbindung
+der Upload-Kanal ausgereizt ist und ein Download gestartet wird, wird
+der Download benachteiligt, da die ,TCP ACK'-Pakete, die gesendet werden
+müssen, in eine Anhäufung geraten, wenn sie durch den upload-Kanal
+gelangen wollen. Tests haben gezeigt, dass das beste Resultat erzielt
+werden kann, wenn die Bandbreite für die Upload-Warteschlange auf einen
+kleineren Wert gesetzt wird, als die Verbindung hergeben könnte. Wenn
+zum Beispiel eine ADSL-Verbindung einen maximalen Upload von 640 Kbps
+hat, wird das setzen <tt>bandwith</tt> der root-Warteschlange auf einen
+Wert wie zum Beispiel 600 Kb bessere Leistung erbringen. Versuch und
+Irrtum werden die beste <tt>bandwith</tt>-Einstellung liefern.
 
 <p>
-When using the <tt>queue</tt> keyword with rules that <tt>keep
-state</tt> such as:
+Wenn das <tt>queue</tt>-Schlüsselwort mit Regeln genutzt wird, die
+<tt>keep state</tt> beinhalten, wie zum Beispiel:
 <blockquote>
 <tt>
 pass in on fxp0 proto tcp from any to any port 22 flags S/SA \<br>
@@ -530,15 +611,16 @@ pass in on fxp0 proto tcp from any to any port 22 flags S/SA \<br>
 </blockquote>
 
 <p>
-PF will record the queue in the state table entry so that packets
-traveling back out fxp0 that match the stateful connection will
-end up in the <tt>ssh</tt> queue. Note that even though the <tt>queue</tt>
-keyword is being used on a rule filtering incoming traffic, the goal is
-to specify a queue for the corresponding outgoing traffic; the above
-rule does not queue incoming packets.
+wird PF die Warteschlange in dem ,state'-Tabelleneintrag halten, so
+dass Pakete, die zurück durch <tt>fxp0</tt> kommen und mit der ,stateful'
+Verbindung übereinstimmen, in der <tt>ssh</tt>-Warteschlange enden. Bedenke,
+dass, obwohl das <tt>queue</tt>-Schlüsselwort mit einem Regelfilter für
+eingehenden Verkehr genutzt wird, das Ziel das Angeben einer Warteschlange
+für korrespondierenden ausgehenden Verkehr ist; die oben angegebene Regel
+reiht keine eingehenden Pakete ein.
 
 <a name="example1"></a>
-<h2>Example #1: Small, Home Network</h2>
+<h2>Beispiel #1: kleines, Heim-Netzwerk</h2>
 <pre>
   
     [ Alice ]    [ Charlie ]
@@ -550,70 +632,71 @@ rule does not queue incoming packets.
 </pre>
 
 <p>
-In this example, OpenBSD is being used on an Internet gateway for a small
-home network with three workstations. The gateway is performing packet
-filtering and NAT duties. The Internet connection is via an ADSL line
-running at 2Mbps down and 640Kbps up.
+In diesem Beispiel wird OpenBSD auf einem Internet-Gateway für ein kleines
+Heim-Netzwerk mit drei Workstations verwendet. Das Gateway führt
+das Filtern von Paketen und NAT-Dienste aus. Die Internetverbindung ist
+ein ADSL-Anschluss, der mit 2 Mbps down und 640 Kbps up läuft.
 
 <p>
-The queueing policy for this network:
+Die ,queueing'-Richtlinie für dieses Netzwerk:
 <ul>
-<li>Reserve 80Kbps of download bandwidth for Bob so he can play his
-online games without being lagged by Alice or Charlie's downloads. Allow
-Bob to use more than 80Kbps when it's available.
-<li>Interactive SSH and instant message traffic will have a higher
-priority than regular traffic.
-<li>DNS queries and replies will have the second highest priority.
-<li>Outgoing TCP ACK packets will have a higher priority than all other
-outgoing traffic.
+<li>Reserivere 80 Kbps an Download-Bandbreite für Bob, so dass er seine
+Online-Spiele ohne ,lags' spielen kann, während Alices oder Charlies
+Downloads laufen. Erlaube Bob, mehr als 80 Kbps zu nutzen, wenn mehr
+zur Verfügung steht.
+<li>Interaktiver SSH- und ,instant message'-Verkehr hat eine höhere
+Priorität als regulärer Verkehr.
+<li>DNS-Anfragen und -Antworten haben die zweithöchste Priorität.
+<li>Ausgehende ,TCP ACK'-Pakete haben eine höhere Priorität als der ganze
+andere ausgehende Verkehr.
 </ul>
 
 <p>
-Below is the ruleset that meets this network policy. Note that only the
-<tt>pf.conf</tt> directives that apply directly to the above policy are
-present; <a href="nat.html"><tt>nat</tt></a>,
-<a href="rdr.html"><tt>rdr</tt></a>, <a href="options.html">options</a>,
-etc., are not shown.
+Weiter unten ist der Regelsatz, der dieser Netzwerk-Richtlinie entspricht.
+Bedenke, dass nur die <tt>pf.conf</tt>-Direktiven, die direkt für diese
+Richtlinie gelten, vorhanden sind; <a href="nat.html"><tt>nat</tt></a>,
+<a href="rdr.html"><tt>rdr</tt></a>, <a href="options.html">Optionen</a>,
+etc. werden nicht gezeigt.
 
 <p>
 <table border=0 width="650">
 <tr><td nowrap bgcolor="#EEEEEE">
 <pre>
-# enable queueing on the external interface to control traffic going to
-# the Internet. use the priq scheduler to control only priorities. set
-# the bandwidth to 610Kbps to get the best performance out of the TCP
-# ACK queue.
+# aktiviere ,queueing' auf dem externen interface, um den verkehr, der
+# zum internet geht, zu kontrollieren. verwende den priq-,scheduler',
+# um nur prioritäten zu kontrollieren. setze die bandbreite auf 610 kbps,
+# um die beste leistung aus der ,tcp ack'-warteschlange zu bekommen.
 
 altq on fxp0 priq bandwidth 610Kb queue { std_out, ssh_im_out, dns_out, \
 	tcp_ack_out }
 
-# define the parameters for the child queues.
-# std_out      - the standard queue. any filter rule below that does not
-#                explicitly specify a queue will have its traffic added
-#                to this queue.
-# ssh_im_out   - interactive SSH and various instant message traffic.
-# dns_out      - DNS queries.
-# tcp_ack_out  - TCP ACK packets with no data payload.
+# definiere die parameter für die ,child'-warteschlangen.
+# std_out      - die standard-warteschlange. jegliche filterregel weiter
+#                unten, die nicht explizit eine warteschlange angibt,
+#                wird ihren verkehr zu dieser warteschlange hinzufügen.
+# ssh_im_out   - interaktiver SSH- und etlicher ,instant message'-verkehr.
+# dns_out      - DNS-anfragen.
+# tcp_ack_out  - ,TCP ACK'-pakete mit keinem daten-,payload'.
 
 queue std_out     priq(default)
 queue ssh_im_out  priority 4 priq(red)
 queue dns_out     priority 5
 queue tcp_ack_out priority 6
 
-# enable queueing on the internal interface to control traffic coming in
-# from the Internet. use the cbq scheduler to control bandwidth. max
-# bandwidth is 2Mbps.
+# aktivere ,queueing' auf dem internen interface, um den verkehr zu
+# kontrollieren, der vom internet kommt. verwende den cbq-,scheduler' um
+# die bandbreite zu kontrollieren. max bandbreite ist 2 Mbps.
 
 altq on dc0 cbq bandwidth 2Mb queue { std_in, ssh_im_in, dns_in, bob_in }
 
-# define the parameters for the child queues.
-# std_in      - the standard queue. any filter rule below that does not
-#               explicitly specify a queue will have its traffic added
-#               to this queue.
-# ssh_im_in   - interactive SSH and various instant message traffic.
-# dns_in      - DNS replies.
-# bob_in      - bandwidth reserved for Bob's workstation. allow him to
-#               borrow.
+# definiere die parameter für die ,child'-warteschlangen.
+# std_in      - die standard-warteschlange. jegliche filterregel weiter
+#               unten, die nicht explizit eine warteschlange angibt,
+#               wird ihren verkehr zu dieser warteschlange hinzufügen.
+# ssh_im_in   - interaktiver SSH- und etlicher ,instant message'-verkehr.
+# dns_in      - DNS-antworten.
+# bob_in      - für bobs workstation reservierte bandbreite. erlaube ihm,
+#               zu leihen.
 
 queue std_in    cbq(default)
 queue ssh_im_in priority 4
@@ -621,7 +704,7 @@ queue dns_in    priority 5
 queue bob_in    bandwidth 80Kb cbq(borrow)
 
 
-# ... in the filtering section of pf.conf ...
+# ... in der filter-sektion von pf.conf ...
 
 alice         = "192.168.0.2"
 bob           = "192.168.0.3"
@@ -630,10 +713,10 @@ local_net     = "192.168.0.0/24"
 ssh_ports     = "{ 22 2022 }"
 im_ports      = "{ 1863 5190 5222 }"
 
-# filter rules for fxp0 inbound
+# filterregeln für fxp0-eingang
 block in on fxp0 all
 
-# filter rules for fxp0 outbound
+# filterregeln für fxp0-ausgang
 block out on fxp0 all
 pass  out on fxp0 inet proto tcp from (fxp0) to any flags S/SA \
 	keep state queue(std_out, tcp_ack_out)
@@ -645,11 +728,11 @@ pass  out on fxp0 inet proto tcp from (fxp0) to any port $ssh_ports \
 pass  out on fxp0 inet proto tcp from (fxp0) to any port $im_ports \
 	flags S/SA keep state queue(ssh_im_out, tcp_ack_out)
 
-# filter rules for dc0 inbound
+# filterregeln für dc0-eingang
 block in on dc0 all
 pass  in on dc0 from $local_net
 
-# filter rules for dc0 outbound
+# filterregeln für dc0-ausgang
 block out on dc0 all
 pass  out on dc0 from any to $local_net
 pass  out on dc0 proto { tcp udp } from any port domain to $local_net \
@@ -664,10 +747,10 @@ pass  out on dc0 from any to $bob queue bob_in
 </table>
 
 <a name="example2"></a>
-<h2>Example #2: Company Network</h2>
+<h2>Beispiel #2: Firmen-Netzwerk</h2>
 <pre>
 
-  ( IT Dept )  [ Boss's PC ]
+  ( IT Abt )  [ PC vom Chef ]
        |          |                                   T1
      --+----+-----+---------- dc0 [ OpenBSD ] fxp0 -------- ( Internet )
             |                         fxp1
@@ -678,56 +761,59 @@ pass  out on dc0 from any to $bob queue bob_in
 </pre>
 
 <p>
-In this example, the OpenBSD host is acting as a firewall for a company
-network. The company runs a WWW server in the DMZ portion of their
-network where customers upload their websites via FTP. The IT department
-has their own subnet connected to the main network, and the boss has a PC
-on his desk that's used for email and surfing the web. The connection to
-the Internet is via a T1 line running at 1.5Mbps in both directions. All
-other network segments are using Fast Ethernet (100Mbps).
+In diesem Beispiel fungiert der OpenBSD-Host als eine Firewall für ein
+Firmen-Netzwerk. Die Firma betreibt einen WWW-Server in dem DMZ-Bereich
+ihres Netzwerk, in dem Kunden ihre Webseiten per FTP hochladen können.
+Die IT-Abteilung hat ihr eigenes Subnetz zum Haupt-Netzwerk verbunden
+und der Chef hat einen PF auf seinem Schreibtiss, der für E-Mails und
+zum Surfen im Web verwendet wird. Die Verbindung zum Internet ist über
+einen T1-Anschluss realisiert, der mit 1.5 Mbps in beide Richtungen
+läuft. Alle anderen Netzwerksegmente verwenden Fast Ethernet (100 Mbps).
 
 <p>
-The network administrator has decided on the following policy:
+Der Netzwerkadministrator hat sich für die folgende Richtlinie entschieden:
 <ul>
-<li>Limit traffic between the WWW server and the Internet to 500Kbps in
-each direction.
-<li>No bandwidth limit on traffic between the WWW server and the
-internal network.
-<li>Give HTTP traffic between the WWW server and the Internet a higher
-priority than other traffic between the WWW server and the Internet
-(such as FTP uploads).
-<li>Reserve 500Kbps for the IT Dept network so they can download the
-latest software updates in a timely manner. They should be able to use
-more than 500Kbps when extra bandwidth is available.
-<li>Give traffic between the boss's PC and the Internet a higher
-priority than other traffic to/from the Internet.
+<li>Begrenze den Verkehr zwischen dem WWW-Server un dem Internet auf
+500 Kbps in beide Richtungen.
+<li>Keine Bandbreiten-Begrenzungen für den Verkehr zwischen dem WWW-Server
+und dem internen Netzwerk.
+<li>Gib dem HTTP-Verkehr zwischen dem WWW-Server und dem Internet eine
+höhere Priorität als dem anderen Verkehr zwischen dem WWW-Server und dem
+Internet (zum Beispiel FTP-Uploads).
+<li>Reserviere 500 Kbps für das IT-Abt-Netzwerk, so dass sie die aktuellsten
+Software-Updates in einer zeitlichen Manier herunterladen können. Sie
+sollten in der Lage sein, mehr als 500 Kbps zu verwenden, wenn mehr zur
+Verfügung steht.
+<li>Gib dem Verkehr zwischen dem PC vom Check und dem Internet eine höhere
+Priorität als jeglichem anderen Verkehr vom/zum Internet.
 </ul>
 
-<p>
-Below is the ruleset that meets this network policy. Note that only the
-<tt>pf.conf</tt> directives that apply directly to the above policy are
-present; <a href="nat.html"><tt>nat</tt></a>,
-<a href="rdr.html"><tt>rdr</tt></a>, <a href="options.html">options</a>,
-etc., are not shown.
+Weiter unten ist der Regelsatz, der dieser Netzwerk-Richtlinie entspricht.
+Bedenke, dass nur die <tt>pf.conf</tt>-Direktiven, die direkt für diese
+Richtlinie gelten, vorhanden sind; <a href="nat.html"><tt>nat</tt></a>,
+<a href="rdr.html"><tt>rdr</tt></a>, <a href="options.html">Optionen</a>,
+etc. werden nicht gezeigt.
 
 <p>
 <table border=0 width="650">
 <tr><td nowrap bgcolor="#EEEEEE">
 <pre>
-# enable queueing on the external interface to queue packets going out
-# to the Internet. use the cbq scheduler so that the bandwidth use of
-# each queue can be controlled. the max outgoing bandwidth is 1.5Mbps.
+# aktiviere ,queueing' auf dem externen interface um pakete einzureihen,
+# die ins internet hinaus gehen. verwende den ,cbq'-scheduler, so dass die
+# bandbreite, die für jede warteschlange genutzt wird, kontrolliert werden
+# kann. die max ausgehende bandbreite ist 1,5 Mbps.
 
 altq on fxp0 cbq bandwidth 1.5Mb queue { std_ext, www_ext, boss_ext }
 
-# define the parameters for the child queues.
-# std_ext        - the standard queue. also the default queue for
-#                  outgoing traffic on fxp0.
-# www_ext        - container queue for WWW server queues. limit to
-#                  500Kbps.
-#   www_ext_http - http traffic from the WWW server
-#   www_ext_misc - all non-http traffic from the WWW server
-# boss_ext       - traffic coming from the boss's computer
+# definiere die parametr für die ,child'-warteschlangen.
+# std_ext        - die standard-warteschlange. ebenfalls die
+#                  standardmäßige warteschlange für ausgehenden verkehr
+#                  auf fxp0.
+# www_ext        - container-warteschlange für WWW-server-warteschlangen.
+#                  begrenzt für 500 Kbps.
+#   www_ext_http - http-verkehr von dem WWW-server
+#   www_ext_misc - jeder nicht-http-verkehr von dem WWW-server
+# boss_ext       - verkehr, der vom computer des chefs kommt
 
 queue std_ext        cbq(default)
 queue www_ext        bandwidth 500Kb { www_ext_http, www_ext_misc }
@@ -735,23 +821,25 @@ queue www_ext        bandwidth 500Kb { www_ext_http, www_ext_misc }
   queue www_ext_misc priority 1
 queue boss_ext       priority 3
 
-# enable queueing on the internal interface to control traffic coming
-# from the Internet or the DMZ. use the cbq scheduler to control the
-# bandwidth of each queue. bandwidth on this interface is set to the
-# maximum. traffic coming from the DMZ will be able to use all of this
-# bandwidth while traffic coming from the Internet will be limited to
-# 1.0Mbps (because 0.5Mbps (500Kbps) is being allocated to fxp1).
+# aktiviere ,queueing' auf dem internen interface, um verkehr zu
+# kontrollieren, der vom internet oder der DMZ kommt. verwende
+# den cbq-,scheduler' um die bandbreite für jede warteschlange zu
+# kontrollieren. bandbreite auf diesem interface ist auf das maximum
+# gesetzt. verkehr, der von der dmz kommt, wird in der lage sein,
+# die gesamte bandbreite zu nutzen, während verkehr, der vom internet
+# kommt, auf 1,0 Mbps (wegen 0,5 Mbps (500 Kbps) für fxp1 zugewiesen
+# wird) begrenzt wird.
 
 altq on dc0 cbq bandwidth 100% queue { net_int, www_int }
 
-# define the parameters for the child queues.
-# net_int    - container queue for traffic from the Internet. bandwidth
-#              is 1.0Mbps.
-#   std_int  - the standard queue. also the default queue for outgoing
-#              traffic on dc0.
-#   it_int   - traffic to the IT Dept network.
-#   boss_int - traffic to the boss's PC.
-# www_int    - traffic from the WWW server in the DMZ.
+# definiere die parameter für die ,child'-warteschlangen.
+# net_int    - container-warteschlange für verkehr vom internet.
+#              bandbreite ist 1,0 Mbps.
+#   std_int  - die standard-warteschlange. ebenfalls die
+#              standard-warteschlange für ausgehenden verkehr auf dc0.
+#   it_int   - verkehr zum it-abt-netzwerk.
+#   boss_int - verkehr zum PC des chefs.
+# www_int    - verkehr vom WWW-server in die DMZ.
 
 queue net_int    bandwidth 1.0Mb { std_int, it_int, boss_int }
   queue std_int  cbq(default)
@@ -759,28 +847,30 @@ queue net_int    bandwidth 1.0Mb { std_int, it_int, boss_int }
   queue boss_int priority 3
 queue www_int    cbq(red)
 
-# enable queueing on the DMZ interface to control traffic destined for
-# the WWW server. cbq will be used on this interface since detailed
-# control of bandwidth is necessary. bandwidth on this interface is set
-# to the maximum. traffic from the internal network will be able to use
-# all of this bandwidth while traffic from the Internet will be limited
-# to 500Kbps.
+# aktivere ,queueing' auf dem DMZ-interface, um den verkehr, der für
+# den WWW-server bestimmt ist, zu kontrollieren. cbq wird auf diesem
+# interface vwerdnet, da detaillierte kontrolle der bandbreite notwendig
+# ist. bandbreite auf diesem interface ist auf das maximum gesetzt.
+# verkehr vom internen netzwerk wird in der lage sein, alles dieser
+# bandbreite nutzen zu können, während verkehr vom internet auf 500 Kbps
+# begrenzt wird.
 
 altq on fxp1 cbq bandwidth 100% queue { internal_dmz, net_dmz }
 
-# define the parameters for the child queues.
-# internal_dmz   - traffic from the internal network.
-# net_dmz        - container queue for traffic from the Internet.
-#   net_dmz_http - http traffic.
-#   net_dmz_misc - all non-http traffic. this is also the default queue.
+# definiere die parameter für die ,child'-warteschlangen.
+# internal_dmz   - verkehr vom internen netzwerk.
+# net_dmz        - container-warteschlange für den verkehr vom Internet.
+#   net_dmz_http - http verkehr.
+#   net_dmz_misc - der gesamte nicht-http-verkehr. dies ist ebenfalls die
+#                  standardmäßige warteschlange.
 
-queue internal_dmz      # no special settings needed
+queue internal_dmz      # keine speziellen einstellungen benötigt
 queue net_dmz        bandwidth 500Kb { net_dmz_http, net_dmz_misc }
   queue net_dmz_http priority 3 cbq(red)
   queue net_dmz_misc priority 1 cbq(default)
 
 
-# ... in the filtering section of pf.conf ...
+# ... in der filter-sektion von pf.conf ...
 
 main_net  = "192.168.0.0/24"
 it_net    = "192.168.1.0/24"
@@ -790,34 +880,34 @@ dmz_net   = "10.0.0.0/24"
 boss      = "192.168.0.200"
 wwwserv   = "10.0.0.100"
 
-# default deny
+# standardmäßiges blocken
 block on { fxp0, fxp1, dc0 } all
 
-# filter rules for fxp0 inbound
+# filterregeln für fxp0-eingang
 pass in on fxp0 proto tcp from any to $wwwserv port { 21, \
 	&gt; 49151 } flags S/SA keep state queue www_ext_misc
 pass in on fxp0 proto tcp from any to $wwwserv port 80 \
 	flags S/SA keep state queue www_ext_http
 
-# filter rules for fxp0 outbound
+# filterregeln für fxp0-ausgang
 pass out on fxp0 from $int_nets to any keep state
 pass out on fxp0 from $boss to any keep state queue boss_ext
 
-# filter rules for dc0 inbound
+# filterregeln für dc0-eingang
 pass in on dc0 from $int_nets to any keep state
 pass in on dc0 from $it_net to any queue it_int
 pass in on dc0 from $boss to any queue boss_int
 pass in on dc0 proto tcp from $int_nets to $wwwserv port { 21, 80, \
 	&gt; 49151 } flags S/SA keep state queue www_int
 
-# filter rules for dc0 outbound
+# filterregeln für dc0-ausgang
 pass out on dc0 from dc0 to $int_nets
 
-# filter rules for fxp1 inbound
+# filterregeln für fxp1-eingang
 pass in on fxp1 proto { tcp, udp } from $wwwserv to any port 53 \
 	keep state
 
-# filter rules for fxp1 outbound
+# filterregeln für fxp1-ausgang
 pass out on fxp1 proto tcp from any to $wwwserv port { 21, \
 	&gt; 49151 } flags S/SA keep state queue net_dmz_misc
 pass out on fxp1 proto tcp from any to $wwwserv port 80 \
@@ -829,19 +919,19 @@ pass out on fxp1 proto tcp from $int_nets to $wwwserv port { 80, \
 </table>
 
 <p>
-[<a href="scrub.html">Previous: Scrub</a>]
-[<a href="index.html">Contents</a>]
-[<a href="nat.html">Next: Network Address Translation</a>]
+[<a href="anchors.html">Zurück: Anker und benannte (Unter-)Regelsätze</a>]
+[<a href="index.html">Inhalt</a>]
+[<a href="pools.html">Weiter: Adress-Pools und Load Balancing</a>]
 
 <p>
 <hr>
-<a href="../../de/index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[back]"></a> 
+<a href="../../de/index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[zurück]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
 <small>
-Originally [OpenBSD: queueing.html,v 1.13 ]<br>
-$Translation: queueing.html,v 1.1 2003/11/27 17:34:57 sl Exp $<br>
-$OpenBSD: queueing.html,v 1.1 2003/11/27 19:39:09 horacio Exp $
+Originally [OpenBSD: queueing.html,v 1.23 ]<br>
+$Translation: queueing.html,v 1.2 2004/12/07 16:56:32 paldium Exp $<br>
+$OpenBSD: queueing.html,v 1.2 2004/12/08 05:22:44 saad Exp $: queueing.html,v 1.23 2004/10/29 17:22:57 nick Exp $
 </small>
 
 </body>

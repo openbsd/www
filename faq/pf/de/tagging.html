@@ -1,0 +1,334 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Pakete markieren</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta http-equiv="Content-Language" content="de">
+<meta name="description"   content="die OpenBSD-FAQ-Seite">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+</head>
+
+<!--
+Copyright (c) 2003, 2004 Joel Knight <enabled@myrealbox.com>
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
+<p>
+[<a href="pools.html">Zurück: Adress-Pools und Load Balancing</a>]
+[<a href="index.html">Contents</a>]
+[<a href="logging.html">Weiter: Aufzeichnen</a>]
+
+<p>
+<h1><font color="#e00000">PF: Pakete markieren</font></h1>
+
+<hr>
+
+<h3>Inhaltsverzeichnis</h3>
+<ul>
+<li><a href="#intro">Einführung</a>
+<li><a href="#assign">Markierungen den Paketen zuweisen</a>
+<li><a href="#check">Nach angebrachte Markierungen suchen</a>
+<li><a href="#policy">Richtlinien-Filterung</a>
+<li><a href="#ethernet">Ethernet-Frames markieren</a>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Einführung</h2>
+Paket-Markierung ist ein Weg, um Pakete mit einem internen Identifizierer
+zu markieren, der später als Kriterie in Filter- und Übersetzungs-Regeln
+genutzt werden kann.
+Mit dem Markieren ist es möglich, Dinge zu tun wie zum Beispiel
+das Erstellen von ,trusts' zwischen Interfaces und das Herausfinden, ob
+Pakete von Übersetzungsregeln bearbeitet worden sind.
+Es ist ebenfalls möglich, Regel-basierende Filtern zu entfernen und mit
+Richtlinien-basierendem Filtern zu beginnen.
+
+<a name="assign"></a>
+<h2>Markierungen den Paketen zuweisen</h2>
+Um eine Markierung einem Paket zuzuweisen, verwende das
+<tt>tag</tt>-Schlüsselwort:
+<blockquote>
+<tt>
+pass in on $int_if all tag INTERNAL_NET keep state
+</tt>
+</blockquote>
+
+<p>
+Die Markierung <tt>INTERNAL_NET</tt> wird zu jedem Paket hinzugefügt,
+das der oben genannten Regel entspricht. Beachte die Verwendung von
+<tt>keep state</tt>; <tt>keep state</tt> (oder
+<tt>modulate state</tt>/<tt>synproxy state</tt>) muss in
+<tt>pass</tt>-Regeln verwendet werden, die Pakete markieren.
+
+<p>
+Eine Markierung kann ebenfalls unter der Verwendung eines
+<a href="macros.html#macros">Makros</a> zugewiesen werden.
+Zum Beispiel:
+
+<blockquote>
+<tt>
+name = "INTERNAL_NET"<br>
+pass in on $int_if all tag $name keep state
+</tt>
+</blockquote>
+
+<p>
+Dort gibt es einen Satz an vordefinierten Makros, welche verwendet
+werden können.
+<ul>
+<li><tt>$if</tt> - Das Interface
+<li><tt>$srcaddr</tt> - Quell-IP-Adresse
+<li><tt>$dstaddr</tt> - Ziel-IP-Adresse
+<li><tt>$srcport</tt> - Die Quell-Port-Angabe
+<li><tt>$dstport</tt> - Die Ziel-Port-Angabe
+<li><tt>$proto</tt> - Das Protokoll
+<li><tt>$nr</tt> - Die Regelnummer
+</ul>
+
+<p>
+Die Makros werden während dem Laden des Regelsatzes erweitert und
+NICHT zur Laufzeit.
+
+<p>
+Das Markieren folgt diesen Regeln:
+<ul>
+<li>Markierungen sind standhaft. Sobald eine Markierung an einem Paket
+durch eine zutreffende Regel angebracht wurde, kann sie niemals mehr
+entfernt werden. Sie kann jedoch mit einer anderen Markierung ersetzt
+werden.
+<li>Wegen der Standhaftigkeit der Markierung kann ein Paket eine
+Markierung selbst dann haben, wenn die letzte zutreffende Regel nicht
+das <tt>tag</tt>-Schlüsselwort verwendet hat.
+<li>Einem Paket wird immer nur maximal eine Markierung gleichzeitig
+zugewiesen.
+<li>Markierungen sind <i>interne</i> Identifizierer. Markierungen werden
+nicht über das Kabel gesendet.
+</ul>
+
+<p>
+Nimm den folgenden Regelsatz als ein Beispiel.
+<blockquote>
+<tt>
+(1) pass in on $int_if tag INT_NET keep state<br>
+(2) pass in quick on $int_if proto tcp to port 80 tag \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;INT_NET_HTTP keep state<br>
+(3) pass in quick on $int_if from 192.168.1.5 keep state
+</tt>
+</blockquote>
+
+<p>
+<ul>
+<li>Paketen, die durch <tt>$int_if</tt> kommen, werden eine Markierung
+von <tt>INT_NET</tt> durch Regel #1 zugewiesen.
+<li>TCP-Paketen, die durch <tt>$int_if</tt> kommen und für Port 80
+bestimmt sind, werden eine Markierung von <tt>INT_NET</tt> durch Regel
+#1 zugewiesen. Diese Markierung wird dann mit der
+<tt>INT_NET_HTTP</tt>-Markierung durch Regel #2 ersetzt.
+<li>Pakete, die durch <tt>$int_if</tt> von 192.168.1.5 kommen, werden
+durch Regel #3 durchgelassen, da sie die letzte zutreffende Regel ist.
+Trotzdem werden diese Pakete mit der <tt>INT_NET_HTTP</tt>-Markierung
+markiert, wenn sie für TCP-Port 80 bestimmt sind, ansonsten werden
+sie mit der <tt>INT_NET</tt>-Markierung markiert.
+</ul>
+
+<p>
+Zusätzlich zum Anbringen der Markierungen durch Filterregeln können
+<tt>nat</tt>-, <tt>rdr</tt>- und <tt>binat</tt>-Übersetzungsregeln
+ebenfalls durch das <tt>tag</tt>-Schlüsselwort Markierungen an Paketen
+anbringen.
+
+<a name="check"></a>
+<h2>Nach angebrachte Markierungen suchen</h2>
+Um nach zuvor angebrachten Markierungen zu suchen, verwende das
+<tt>tagged</tt>-Schlüsselwort:
+<blockquote>
+<tt>
+pass out on $ext_if tagged INT_NET keep state
+</tt>
+</blockquote>
+
+<p>
+Ausgehende Pakete von <tt>$ext_if</tt> müssen mit der
+<tt>INT_NET</tt>-Markierung markiert sein, damit sie die oben
+angegebene Regel passieren können. Invertiertes Zutreffen kann ebenfalls
+mit Hilfe des <tt>!</tt>-Operators durchgeführt werden:
+<blockquote>
+<tt>
+pass out on $ext_if tagged ! WIFI_NET keep state
+</tt>
+</blockquote>
+
+<a name="policy"></a>
+<h2>Richtlinien-Filterung</h2>
+Richtlinien-Filterung schlägt einen anderen Weg ein als es das Schreiben
+von Filter-Regelsätzen tut. Eine Richtlinie wird so definiert, dass sie sagt,
+welche Regeln für welchen Vekehrstyp gesetzt werden, und welcher Typ
+durchgelassen und welcher geblockt wird.
+Pakete werden dann in die Richtlinie klassifiziert, basierend auf den
+traditionellen Kriterien der Quell-/Ziel-IP-Adresse/-Port, Protokoll, etc.
+Betrachte zum Beispiel die folgende Firewall-Richtlinie:
+<ul>
+<li>Verkehr vom internen LAN zur DMZ ist erlaubt (LAN_DMZ)
+<li>Verkehr vom Internet zu Servern in der DMZ ist erlaubt (INET_DMZ)
+<li>Verkehr vom Internet, der zum
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=spamd&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>spamd(8)</a> umgeleitet wird, ist erlaubt (SPAMD)
+<li>Jeglicher andere Verkehr wird geblockt
+</ul>
+
+<p>
+Beachte, wie die Richtlinie den <i>gesamten</i> Verkehr abdeckt, der
+durch die Firewall gelangen wird.
+Das Objekt in Klammern weist auf die Markierung hin, die für dieses
+Richtlinien-Objekt verwendet wird.
+
+<p>
+Filter- und Übersetzungs-Regeln werden nun geschrieben, um die Pakete
+in die Richtlinie zu klassifizieren.
+<blockquote>
+<tt>
+rdr on $ext_if proto tcp from &lt;spamd&gt; to port smtp \<br>
+&nbsp;&nbsp;&nbsp;tag SPAMD -&gt; 127.0.0.1 port 8025<br>
+<br>
+block all<br>
+pass in on $int_if from $int_net tag LAN_INET keep state<br>
+pass in on $int_if from $int_net to $dmz_net tag LAN_DMZ keep state<br>
+pass in on $ext_if proto tcp to $www_server port 80 tag INET_DMZ keep state
+</tt>
+</blockquote>
+
+<p>
+Nun sind die Regeln, die die Richtlinie definieren, gesetzt.
+<blockquote>
+<tt>
+pass in &nbsp;quick on $ext_if tagged SPAMD keep state<br>
+pass out quick on $ext_if tagged LAN_INET keep state<br>
+pass out quick on $dmz_if tagged LAN_DMZ keep state<br>
+pass out quick on $dmz_if tagged INET_DMZ keep state
+</tt>
+</blockquote>
+
+<p>
+Nun, da der gesamte Regelsatz aufgesetzt ist, sind Änderungen nur noch
+eine Sache von Klassifkationsregel-Änderungen.
+Wenn zum Beispiel ein POP3/SMTP-Server zur DMZ hinzugefügt wird, ist
+es notwendig, eine Klassifkationsregel für POP3- und SMTP-Verkehr
+wie folgt hinzuzufügen:
+<blockquote>
+<tt>
+mail_server = "192.168.0.10"<br>
+...<br>
+pass in on $ext_if proto tcp to $mail_server port { smtp, pop3 } \<br>
+&nbsp;&nbsp;&nbsp;tag INET_DMZ keep state
+</tt>
+</blockquote>
+
+<p>
+E-Mail-Verkehr wird nun als Teil des INET_DMZ-Richtlinien-Eintrages
+durchgelassen.
+
+<p>
+Der komplette Regelsatz:
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+# macros
+int_if  = "dc0"
+dmz_if  = "dc1"
+ext_if  = "ep0"
+int_net = "10.0.0.0/24"
+dmz_net = "192.168.0.0/24"
+www_server = "192.168.0.5"
+mail_server = "192.168.0.10"
+
+table &lt;spamd&gt; persist file "/etc/spammers"
+
+# klassifizierung -- klassifiziert pakete basierend auf der definierten
+# firewall-richtlinie
+rdr on $ext_if proto tcp from &lt;spamd&gt; to port smtp \
+    tag SPAMD -&gt; 127.0.0.1 port 8025
+
+block all
+pass in on $int_if from $int_net tag LAN_INET keep state
+pass in on $int_if from $int_net to $dmz_net tag LAN_DMZ keep state
+pass in on $ext_if proto tcp to $www_server port 80 tag INET_DMZ keep state 
+pass in on $ext_if proto tcp to $mail_server port { smtp, pop3 } \
+    tag INET_DMZ keep state 
+
+# richtlinien-erzwingung -- lässt durch/blockt basierend auf der
+# definierten firewall-richtlinie
+pass in  quick on $ext_if tagged SPAMD keep state
+pass out quick on $ext_if tagged LAN_INET keep state
+pass out quick on $dmz_if tagged LAN_DMZ keep state
+pass out quick on $dmz_if tagged INET_DMZ keep state 
+</pre>
+</td></tr>
+</table>
+
+<a name="ethernet"></a>
+<h2>Ethernet-Frames markieren</h2>
+Das Markieren kann auf der Ethernet-Ebene stattfinden, wenn die Maschine,
+die das Markieren/Filtern durchführt, ebenfalls als
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridge&amp;sektion=4&amp;manpath=OpenBSD+3.6"
+>bridge(4)</a> eingesetzt wird.
+Durch das Erzeugen von bridge(4)-Filterregeln, die das
+<tt>tag</tt>-Schlüsselwort verwenden, kann PF dazu gebracht werden,
+basierend auf der Quell-/Ziel-MAC-Adresse zu filtern.
+Bridge(4)-Regeln werden anhand des
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=brconfig&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>brconfig(8)</a>-Kommandos erzeugt. Beispiel:
+<blockquote>
+<tt>
+# brconfig bridge0 rule pass in on fxp0 src 0:de:ad:be:ef:0 \<br>
+&nbsp;&nbsp;&nbsp;tag USER1
+</tt>
+</blockquote>
+
+<p>
+Und dann in <tt>pf.conf</tt>:
+<blockquote>
+<tt>
+pass in on fxp0 tagged USER1
+</tt>
+</blockquote>
+
+<p>
+[<a href="pools.html">Zurück: Adress-Pools und Load Balancing</a>]
+[<a href="index.html">Inhalt</a>]
+[<a href="logging.html">Weiter: Aufzeichnen</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[zurück]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: tagging.html,v 1.5 ]<br>
+$Translation: tagging.html,v 1.1 2004/12/07 16:57:49 paldium Exp $<br>
+$OpenBSD: tagging.html,v 1.1 2004/12/08 05:22:44 saad Exp $
+</small>
+
+</body>
+</html> 
