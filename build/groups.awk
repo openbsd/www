@@ -43,7 +43,7 @@ $1 == "A" { addr = substr($0, 3); next }
 $1 == "O" { org = substr($0, 3); next }
 $1 == "I" { indv = substr($0, 3); next }
 $1 == "B" { phone = substr($0, 3); next }
-$1 == "F" { fax = substr($0, 3); next }
+$1 == "F" { freq = substr($0, 3); next }
 $1 == "M" { email = substr($0, 3); next }
 $1 == "U" { url = substr($0, 3); next }
 $1 == "N" { note = substr($0, 3); next }
@@ -64,7 +64,7 @@ function dump() {
 	print "	<td>" 
 		if (phone != "")
 			print phone "<br />" 
-		print fax "</td>"
+		print freq "</td>"
 	print "	<td>"
 		if (email != "")
 			print "<a href=\"mailto:" email "\">" email "</a>" "<br />"
@@ -81,7 +81,7 @@ function reset() {
 	indv = ""
 	email = ""
 	phone = ""
-	fax = ""
+	freq = ""
 	url = ""
 	note = ""
 }

@@ -46,7 +46,7 @@ $1 == "Z" { zip = substr($0, 3); next }
 $1 == "O" { org = substr($0, 3); next }
 $1 == "I" { indv = substr($0, 3); next }
 $1 == "B" { phone = substr($0, 3); next }
-$1 == "F" { fax = substr($0, 3); next }
+$1 == "X" { fax = substr($0, 3); next }
 $1 == "M" { email = substr($0, 3); next }
 $1 == "U" { url = substr($0, 3); next }
 $1 == "N" { note = substr($0, 3); next }
@@ -66,14 +66,18 @@ function dump() {
 			print "<b>" org "</b><br />" 
 		if (addr != "")
 			print addr "<br />"
-		if (city != "") {
-			print city
-			if (prov != "")
-				print ", " prov
-			if (zip != "")
-				print " " zip
-			print "<br />"
+		line = ""
+		if (city != "")
+			line = city
+		if (prov != "") {
+			if (line == "")
+				line = prov
+			else
+				line = line ", " prov
 		}
+		if (zip != "")
+			line = line " " zip
+		print line "<br />"
 		if (phone != "")
 			print "Phone: " phone "<br />" 
 		if (fax != "")
