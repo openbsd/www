@@ -1,0 +1,325 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Logging</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-2022-JP">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 2003 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
+<p>
+[<a href="filter.html">前に戻る: パケットフィルタリング</a>]
+[<a href="index.html">目次</a>]
+[<a href="anchors.html">次に進む: アンカーと名前付きルールセット</a>]
+
+<p>
+<h1><font color="#e00000">PF: ログの取得</font></h1>
+
+<hr>
+
+<h3>目次</h3>
+<ul>
+<li><a href="#intro">はじめに</a>
+<li><a href="#logfile">ログファイルを読む</a>
+<li><a href="#filter">ログ出力のフィルタリング</a>
+<li><a href="#syslog">syslog 経由のパケットロギング</a>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>はじめに</h2>
+PF におけるパケットのログの取得は、
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflog&amp;sektion=4&amp;manpath=OpenBSD+3.3">
+pflog0</a> インターフェイスをリスンしている
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+3.3">
+pflogd(8)</a> によって行われ、パケットはログファイル
+(通常は /var/log/pflog) に 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tcpdump&amp;sektion=8&amp;manpath=OpenBSD+3.3">
+tcpdump(8)</a> のバイナリフォーマットで書き込まれます。<tt>log</tt> か <tt>log-all</tt>
+キーワードが指定された<a name="filter.html">フィルタ</a>ルールは、
+この方法でログを取得します。
+
+<a name="logfile"></a>
+<h2>ログファイルを読む</h2>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+3.3">
+pflogd(8)</a> によって書き込まれたログファイルは、
+バイナリフォーマットですので、テキストエディタを
+使用してこれを読むことはできません。ログを読むためには、
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tcpdump&amp;sektion=8&amp;manpath=OpenBSD+3.3">
+tcpdump(8)</a> を使用する必要があります。
+
+<p>
+ログを読むためには、以下のようにします。
+<blockquote>
+<tt>
+# tcpdump -n -e -ttt -r /var/log/pflog
+</tt>
+</blockquote>
+
+<p>
+pflog ファイルを見るために
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tcpdump&amp;sektion=8&amp;manpath=OpenBSD+3.3">
+tcpdump(8)</a> を使用しても、リアルタイムで表示される<i>わけではない</i>ことに
+注意してください。取得されたパケットのログをリアルタイムで表示させるためには、
+pflog0 インターフェイスを使用して、以下のようにします。
+<blockquote>
+<tt>
+# tcpdump -n -e -ttt -i pflog0
+</tt>
+</blockquote>
+
+<p>
+<font color="#e00000">注: </font>
+ログを調べる場合には、
+(<tt>-v</tt> コマンドラインオプションによって有効化される)
+tcpdump の冗長なプロトコルデコーディングを使用して、
+特に注意して行うべきです。tcpdump のプロトコルデコーダは、
+完全なセキュリティの履歴を持ちません。少なくとも理論的には、
+ログデバイスによって記録される部分的なパケットのペイロードを利用した
+遅延攻撃が可能です。この方法でログを調べる前に、ログファイルを
+ファイアウォールから移動させておくことを推奨します。
+
+<p>
+また、ログに安全にアクセスするためには、さらなる注意が必要です。デフォルトでは、
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+3.3">
+pflogd</a> は、パケットの 96 バイトをログファイルに記録します。
+ログにアクセスするということは、
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=telnet&amp;sektion=1&amp;manpath=OpenBSD+3.3">
+telnet(1)</a> や
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp&amp;sektion=1&amp;manpath=OpenBSD+3.3">
+ftp(1)</a> のユーザ名やパスワードのような)
+注意を要するパケットのペイロードに部分的にアクセスすることができてしまうことを意味します。
+
+<a name="filter"></a>
+<h2>ログ出力のフィルタリング</h2>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+3.3">
+pflogd(8)</a> は
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tcpdump&amp;sektion=8&amp;manpath=OpenBSD+3.3">
+tcpdump(8)</a> のバイナリフォーマットでログを記録するので、
+ログを表示する際に tcpdump の機能がフルに使用される可能性があります。
+ですので、たとえば、ある特定のポートにマッチするパケットのみを
+見たいだけでしたら、以下のようにすると良いでしょう。
+<blockquote>
+<tt>
+# tcpdump -n -e -ttt -r /var/log/pflog port 80
+</tt>
+</blockquote>
+
+<p>
+これによって、たとえば以下のように、ある特定のホストとポートの組み合わせによって
+パケットの表示を限定することで、より洗練された表示を行うことができるようになります。
+<blockquote>
+<tt>
+# tcpdump -n -e -ttt -r /var/log/pflog port 80 and host 192.168.1.3
+</tt>
+</blockquote>
+
+<p>
+pflog0 インターフェイスから読み込む場合にも、同様のアイディアを適用可能です。
+<blockquote>
+<tt>
+# tcpdump -n -e -ttt -i pflog0 host 192.168.4.2
+</tt>
+</blockquote>
+
+<p>
+これ自体は、pflogd のログファイルにパケットのログを取得する際にも一切のインパクトを
+与えてはいないことに注意してください。上記のコマンドは、ログを取得中のパケットを
+表示するだけです。
+
+<p>
+標準的な
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tcpdump&amp;sektion=8&amp;manpath=OpenBSD+3.3">
+tcpdump(8)</a> のフィルタルールだけでなく、OpenBSD の tcpdump フィルタ言語は、
+pflogd の出力を読むために拡張されています。
+<ul>
+<li><tt>ip</tt> - アドレスファミリは IPv4 です。
+<li><tt>ip6</tt> - アドレスファミリは IPv6 です。
+<li><tt>on <i>int</i></tt> - パケットはインターフェイス
+<i>int</i> を通じてわたされます。
+<li><tt>ifname <i>int</i></tt> - <tt>on <i>int</i></tt> と同義です。
+<li><tt>rulenum <i>num</i></tt> - パケットがマッチしたフィルタルールは、
+ルール番号 <i>num</i> のルールです。
+<li><tt>action <i>act</i></tt> - パケットに対して指定の動作を適用します。
+指定可能な動作は <tt>pass</tt> ならびに <tt>block</tt> です。
+<li><tt>reason <i>res</i></tt> - <tt>action</tt> が適用される理由を指定します。
+指定可能な理由は <tt>match</tt>、<tt>bad-offset</tt>、
+<tt>fragment</tt>、<tt>short</tt>、<tt>normalize</tt> および
+<tt>memory</tt> です。
+<li><tt>inbound</tt> - パケットは着信パケットです。
+<li><tt>outbound</tt> - パケットは送出パケットです。
+</ul>
+
+<p>
+例:
+<blockquote>
+<tt>
+# tcpdump -n -e -ttt -i pflog0 inbound and action block and on wi0
+</tt>
+</blockquote>
+
+<p>
+これは、インターフェイス wi0 上でブロックされた着信パケットのログを
+リアルタイムに表示します。
+
+<a name="syslog"></a>
+<h2>syslog 経由のパケットロギング</h2>
+多くの場面で、ファイアウォールのログが ASCII フォーマットで存在することが望ましかったり、
+そして/あるいは、それをリモートのログ取得用サーバに送りたい場合があったりします。これらは
+すべて、ふたつの小さなシェルスクリプトを使用し、OpenBSD の設定ファイルにいくつかの小さな
+変更を加え、そしてログ取得用デーモンである
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=syslogd&amp;sektion=8&amp;manpath=OpenBSD+3.3">
+syslogd(8)</a> があれば可能なことです。syslogd(8) は ASCII でログを取得しますし、また、
+リモートのログ取得用サーバにログを取得させることも可能となります。
+
+<p>
+まず、ユーザ <tt>pflogger</tt> を、<tt>/sbin/nologin</tt> をシェルとして作成してください。
+このユーザを作成するのに最も簡単な方法は、
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=adduser&amp;sektion=8&amp;manpath=OpenBSD+3.3">
+adduser(8)</a> を使用することでしょう。
+
+<p>
+<tt>pflogger</tt> ユーザの作成後、以下のふたつのスクリプトを
+作成してください。
+
+<p>
+<tt>/etc/pflogrotate</tt>
+<pre>
+	FILE=/home/pflogger/pflog5min.$(date "+%Y%m%d%H%M")
+	kill -ALRM $(cat /var/run/pflogd.pid)
+	if [ $(ls -l /var/log/pflog | cut -d " " -f 8) -gt 24 ]; then
+	   mv /var/log/pflog $FILE
+	   chown pflogger $FILE
+	   kill -HUP $(cat /var/run/pflogd.pid)
+	fi
+</pre>
+
+<p>
+<tt>/home/pflogger/pfl2sysl</tt>
+<pre>
+	for logfile in /home/pflogger/pflog5min* ; do
+	   tcpdump -n -e -ttt -r $logfile | logger -t pf -p local0.info
+	   rm $logfile
+	done
+</pre>
+
+<p>
+次に root ユーザの crontab を編集します。
+<blockquote>
+<tt>
+# crontab -u root -e
+</tt>
+</blockquote>
+
+<p>
+以下の 2 行を追加してください。
+<blockquote>
+<tt>
+# rotate pf log file every 5 minutes<br>
+0-59/5 *       *       *       *       /bin/sh /etc/pflogrotate
+</tt>
+</blockquote>
+
+<p>
+そして、<tt>pflogger</tt> ユーザ用の crontab を生成します。
+<blockquote>
+<tt>
+# crontab -u pflogger -e
+</tt>
+</blockquote>
+
+<p>
+こちらには以下の 2 行を追加します。
+<blockquote>
+<tt>
+# feed rotated pflog file(s) to syslog<br>
+0-59/5 *       *       *       *       /bin/sh /home/pflogger/pfl2sysl
+</tt>
+</blockquote>
+
+<p>
+また、<tt>/etc/syslog.conf</tt> ファイルに以下の行を追加します。
+<blockquote>
+<tt>
+local0.info    /var/log/pflog.txt
+</tt>
+</blockquote>
+
+<p>
+そして、リモートサーバにログを取得させる場合には、以下の行を追加しておいてください。
+<blockquote>
+<tt>
+local0.info    @syslogger
+</tt>
+</blockquote>
+
+<p>
+ここで、ホスト <i>syslogger</i> が
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hosts&amp;sektion=5&amp;manpath=OpenBSD+3.3">
+/etc/hosts(5)</a> ファイル内に定義されていることを確認しておいてください。
+
+<p>
+最後に syslogd(8) に HUP シグナルを送信して、設定の変更を通知します。
+<blockquote>
+<tt>
+# kill -HUP $(cat /var/run/syslog.pid)
+</tt>
+</blockquote>
+
+<p>
+これで、すべての取得したパケットのログは <tt>/var/log/pflog.txt</tt>
+に送り込まれるようになります。もし、ふたつ目の行が追加されていれば、
+リモートのログ取得用ホスト <i>syslogger</i> にログを送信します。
+
+<p>
+これからは、スクリプト <tt>/etc/pflogrotate</tt> が処理を行うようになりますので、
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=newsyslog&amp;sektion=8&amp;manpath=OpenBSD+3.3">
+newsyslogd(8)</a> による <tt>pflog</tt> は不要になりますので、これを無効化して、
+<tt>/var/log/pflog</tt> ファイルも削除してください。
+しかし、<tt>/var/log/pflog.txt</tt> で <tt>/var/log/pflog</tt> が置き換えられますので、
+そのローテーションが有効化されなければなりません。
+そのためには、<tt>/etc/newsyslog.conf</tt> を以下のように変更してください。
+<blockquote>
+<tt>
+#/var/log/pflog       600    3    250    *    ZB /var/run/pflogd.pid<br>
+/var/log/pflog.txt    600    7    *      24
+</tt>
+</blockquote>
+
+<p>
+これで、PF は ASCII で <tt>/var/log/pflog.txt</tt> にログを取得するようになりました。
+もし、<tt>/etc/syslog.conf</tt> 内にそのように設定すれば、PF はリモートサーバにログを
+送信します。ログの取得は直ちに行われるわけではありませんが、取得したパケットのログが
+ファイルに記録されるまでの遅延時間は、(cron ジョブの間隔である)
+およそ 5 〜 6 分程度でしょう。
+
+<p>
+[<a href="filter.html">前に戻る: パケットフィルタリング</a>]
+[<a href="index.html">目次</a>]
+[<a href="anchors.html">次に進む: アンカーと名前付きルールセット</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[back]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: logging.html,v 1.3 ]
+<br>
+$Translation: logging.html,v 1.2 2003/06/04 12:51:12 toshi Exp $
+<br>
+$OpenBSD: logging.html,v 1.1 2003/06/05 13:33:00 jufi Exp $
+</small>
+
+</body>
+</html> 
