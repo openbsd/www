@@ -18,11 +18,12 @@
 # into HTML to make nice neat tables.
 
 
-$1 ~ /^#/ { next; }
+/^#/ { next; }
 
 $1 == "0" {
-	if (FNR != 1)
-		dump();
+	if (country == "" && prov == "")
+		next;
+	dump();
 	reset();
 	next;
 	}
