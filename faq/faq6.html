@@ -396,6 +396,52 @@ block in log on xl0 proto udp from any to any port = sunrpc
 </p>
 
 <p>
+Initial work done by Wayne Fergerstrom &lt;wayne@methadonia.net&gt;
+</p>
+
+<ul>
+<li><a href="#nat1.0">1.0 Introduction</a>
+	<ul>
+	<li><a href="#nat1.1">1.1 Purpose</a>
+	<li><a href="#nat1.2">1.2 Terminology</a>
+	<li><a href="#nat1.3">1.3 Configuration</a>
+	</ul>
+<li><a href="#nat2.0">2.0 Network Address Translation</a>
+	<ul>
+	<li><a href="#nat2.1">2.1 Introduction to Network Address Translation</a>
+	<li><a href="#nat2.2">2.2 Why to use Network Address Translation</a>
+	<li><a href="#nat2.3">2.3 Setup</a>
+	<li><a href="#nat2.4">2.4 Configuration</a>
+	<li><a href="#nat2.5">2.5 Running</a>
+	</ul>
+<li><a href="#nat3.0">3.0 Network Address Translation Knowledge Base</a>
+	<ul>
+	<li><a href="#nat3.1">3.1 Checking NAT status</a>
+	<li><a href="#nat3.2">3.2 Limitations of NAT (in FTP)</a>
+	<li><a href="#nat3.3">3.3 Redirecting Traffic</a>
+	<li><a href="#nat3.4">3.4 Network Address Translation versus Proxy</a>
+	</ul>
+<li><a href="#nat4.0">4.0 Links and X-References</a>
+</ul>
+
+<hr>
+
+<a name="nat1.0"></a>
+<h3><u>1.0 Introduction</u></h3>
+
+<a name="nat1.1"></a>
+<b>Purpose</b>
+<p>
+The purpose of this document is to explain and give and overview
+of installing and configuring Network Address Translation ("NAT")
+on an OpenBSD machine. This document is meant for users with a
+beginning to intermediate level of knowledge in UNIX, TCP/IP, and
+networking technologies. The user is assumed to have already set up
+and configured an OpenBSD machine with two network cards (one
+connected to the Internet and the other to the local network).
+</p>
+
+<p>
 Based on <a HREF="http://www.geektools.com/rfc/rfc1631.txt">RFC 1631</a>, ipnat provides an easy way to
 map internal networks to a single routeable ("real") internet address. This is very useful if you don't have
 officially assigned addresses for every host on your internal network. When
@@ -409,130 +455,563 @@ address blocks (assigned in <A HREF="http://www.geektools.com/rfc/rfc1918.txt">R
 
 </pre>
 </p>
-<p>
-To use ipnat, ipf must be activated.
-As outlined above, for changes to stay effective
-through reboots, you should make changes to /etc/rc.conf (where it has IPNAT and IPFILTER.)
-You can manually activate ipf with the command below.
-<pre>
-# ipf -E
-</pre>
+
+<a name="nat1.2"></a>
+<b>Terminology</b>
 
 <p>
-Example: You have an internal network using 192.168.5.0, with a netmask of 255.255.255 0, and you want to give
-it access to internet using OpenBSD (of course!), and a ppp connection using address 200.1.2.3, use this rule:
+The conventions used in this document are fairly straightforward.
+For documentation purposes I will review some of the terms and format
+for which this document adheres to.
+</p>
+
+<ul>
+<strong>"NAT"</strong>
+<p>
+This describes the function of "Network Address Translation."
+The process of NAT is described later in this document.
+</p>
+</ul>
+
+<ul>
+<strong>"ipnat"</strong>
+
+<p>
+This is short for "IP Network Address Translation." In-and-of
+itself, it can be used interchangeably with NAT. However, in
+this document the term "ipnat" will be used solely for
+command-line only use.
+</p>
+</ul>
+
+<ul>
+<strong>"IPF"</strong>
+
+<p>
+This is short for "IP Filter." IP Filter is the daemon which
+ipnat piggy-backs on. You can set up IP Filtering on your
+machine to also act as a network firewall, however that is
+beyond the scope of this document. However, you can see more information on IPF
+at <a href="#6.2">FAQ 6.2</a>.
+</p>
+</ul>
+
+<br>
+<a name="nat1.3"></a>
+<b>Configuration</b>
+
+<p>
+This is how the computers are setup concerning this document. Your setup will vary from this, but 
+the purpose of the document is to give you an overview so you can conform this information to your setup.
+</p>
+
+<ul>
+<b>Computer Operating System: </b>OpenBSD v2.5 i386<br>
+<br>
+<b>NICs: </b>
+<ul>
+	NetGear 10/100MB ("/dev/pn0")<br>
+	Connected to the EXTERNAL LAN (or WAN)<br>
+	<b>IP Address: </b>24.5.0.5<br>
+	<b>Netmask: </b>255.255.255.0<br>
+	<br>
+	NetGear 10/100MB ("/dev/pn1")<br>
+	Connected to the INTERNAL LAN<br>
+	<b>IP Address: </b>192.168.1.1<br>
+	<b>Netmask: </b>255.255.255.0<br>	
+</ul>
+<br>
+<b>Cable Modem IP (provided by ISP)<br></b>
+<ul>
+	<b>IP Address: </b>24.5.0.5<br>
+	<b>Netmask: </b>255.255.255.0<br>
+	<b>Gateway: </b>24.5.0.1<br>
+</ul>
+<br>
+<b>Local Area Network</b><br>
+<ul>
+                Machines on the LAN use the IP addressing scheme 192.168.1.xxx
+                (where xxx is a unique number). There are a variety of different
+                operating systems on the internal LAN including Windows 98,
+                Windows NT, OpenBSD and Linux. Each machine is connected to a hub
+                that is designated for internal use. For this document and its
+                examples the client on the LAN will assume IP address 192.168.1.40
+</ul>
+<br>
+<b>Diagram of Configuration</b>
+<ul><pre>
++-----+              +---------+         +----------+
+| Hub |--------- pn1 |   NAT   | pn0 ----| Internet |
++-----+              +---------+         +----------+
+  | |
+  | +-- Client A
+  +---- More clients 
+
+                              +-------------------------+
+                              |          LEGEND         |
+                              +-------------------------+
+                              |  NIC pn0 - 24.5.0.5     |
+                              |  NIC pn1 - 192.168.1.1  |
+                              | Client A - 192.168.1.40 |
+                              +-------------------------+
+
+</ul></pre>
+</ul>
+
+<br>
+<a name="nat2.0"></a>
+<h3><u>2.0 NETWORK ADDRESS TRANSLATION</u></h3>
+<br>
+
+<a name="nat2.1"></a>
+<b>Introduction to NAT</b>
+
+<p>
+As more and more businesses and users get on the Internet, each one
+must have an IP address. Public IP addresses are becoming harder and
+harder to get. The solution for a lot of people has been Network
+Address Translation (or "NAT"). NAT is a very simple, yet powerful way
+to get your LAN connected to the Internet without having to purchase
+or lease IP addresses for each machine. NAT is also known as "IP
+Masquerading" if you're a Linux user.
 </p>
 
 <p>
-<pre>
-map tun0 192.168.5.0/24 -> 200.1.2.3/32
-</pre>
+When NAT is up and running correctly, it allows users on the internal
+LAN to access the Internet through a different IP address (the one you
+set up with your provider). Each machine on the LAN uses the one IP
+address (transparently) of the one machine that is set up to use the
+ISP assigned IP address.
 </p>
 
 <p>
-This rule means:
+The way NAT works is amazingly simple. When a client on the LAN
+wants to connect to a machine on the Internet, it sends out a TCP
+packet with a request to connect. Inside the TCP packet header is the
+client's IP address (i.e. 192.168.1.40) and the requested host's IP
+address (i.e. 123.45.67.89). The machine running NAT intercepts this
+TCP packet and changes the client's IP address from 192.168.1.40 to
+the IP address of the Internet-connected machine (i.e. 24.5.0.5). This
+effectively tricks the host machine into thinking the actual connection
+is from the NAT machine, not the actual client's machine. The host then
+sends back responses to the NAT machine like it was the one connecting.
+When the NAT machine receives the responses it quickly translates the
+destination IP address back from itself to the client's machine and
+sends the packet to the client. The client didn't have any idea of
+what happened and spoofed Internet connectivity is totally transparent.
 </p>
 
 <p>
-"Any IP connections going out tun0 from an address matching the first
-24 bits of 192.168.5.0 should be mapped to the address 200.1.2.3 (only one
-address since /32 means every bit)"
-</p>
-<P>
-If you don't like using CIDR notation, IP Filter also allows you to use netmasks.  A functional 
-equivalent to the example above, using netmasks looks like this:
-<P>
-<PRE>
-map tun0 192.168.5.0/255.255.255.0 -> 200.1.2.3/255.255.255.255
-</pre>
-
-<p>
-But here arises a problem. You are assigning a lot of addresses to only
-one address. But the port numbers aren't changing, and it is very likely that
-your workstations on 192.168.5.0/24 will use the same port numbers to initiate connections
-from.  (If this doesn't make sense, don't worry, but keep reading.)  The way to go around it is to map TCP and UDP ports to
-a certain range with the option "portmap". Since ICMP doesn't even use ports, it is not covered by the
-"portmap" rule.  (ICMP uses an ID field
-usually based on a process number)
-In our example, there are now two map rules to cover all of these protocols.  The end result looks like this:
+The example below shows NAT a little more clearly:
 </p>
 
+<ul><pre>
+Client ----------------- pn1 [ NAT ] pn0 ---------- Internet Host
+192.168.1.40 --- 192.168.1.1 [ NAT ] 24.12.34.56 --- 123.45.67.89
+
+OUTGOING TCP Packet                     OUTGOING TCP Packet
+From: 192.168.1.40  >>=== NAT ===>>     From: 24.12.34.56
+To: 123.45.67.89                        To: 123.45.67.89
+
+INCOMING TCP Packet                     INCOMING TCP Packet
+From: 123.45.67.89  <<=== NAT ===<<     From: 123.45.67.89
+To:   192.168.1.40                      To: 24.12.34.56
+</ul></pre>
+
+<br>
+<a name="nat2.2"></a>
+<b>Why to use NAT</b>
+
 <p>
-<pre>
-map tun0 192.168.5.0/24 -> 200.1.2.3/32 portmap tcp/udp 10000:65000
-map tun0 192.168.5.0/24 -> 200.1.2.3/32
-</pre>
+When presented with a cable modem in my new apartment I was also
+presented with another minor problem. How to get Internet access to
+my roommates, when the cable modem resides in my room? There were a
+few options I could implement ranging from obtaining extra IP
+addresses, to setting up a proxy server, to setting up NAT.
 </p>
 
 <p>
-If you have a dynamic address assignment (as in, you do not know what address they will give you when you connect), you can put
-the interface name in place of the IP address.  Note that if you do this, you will have to run <tt>ipnat -CF -f /etc/ipnat.rules</tt> every time
-your IP address changes (or, every time you dial up.)
+There are many reasons why I wanted to set up NAT. The number one
+reason is for saving money. My ISP charges (at the date above) $7 per
+month more per IP address you want bound to your cable modem. There
+are two roommates in my house (each with their own PC) and myself with
+3 computers. My ISP only allows for three IP addresses per household.
+This means that there weren't enough IPs to allow every machine
+internet access.
 </p>
 
 <p>
-<pre>
-map tun0 192.168.5.0/24 -> tun0/32 portmap tcp/udp 10000:65000
-map tun0 192.168.5.0/24 -> tun0/32<br>
-</pre>
+By using NAT each machine will have a unique (internal) IP address
+but share the one IP address given to me by my ISP. The cost goes down.
+</p>
+
+<br>
+<a name="nat2.3"></a>
+<b>Setup</b>
 
 <p>
-NAT is also able to help you in renumbering.  Say you were assigned a net block 35.8.9.0/22, and your internet provider can no longer
-route these addresses to you, or say you are switching providers.  Your new address block is 192.9.4.0/22, but to switch all 500 devices
-you have on this block would be very time consuming! ipnat provides a feature called bimap:
-<P>
-<PRE>
-bimap xl0 35.8.9.0/22 -> 192.9.4.0/22
-</pre>
-<P>
-This will literally map every computer in 35.8.9.0 to a new address in 192.9.4.0.  The drawback of this feature is that the translation is not
-consistent.  A computer that initiates a connection from 35.8.9.0 will get a random IP address from 192.9.4.0.  A future version of IP Filter
-will allow for one-to-one translation (where 35.8.9.99 will always get mapped to 192.9.4.99).
-<p>
-And of course, there are other potential uses of NAT that are probably beyond the scope of this document.  
-
-<p>
-<h3>Redirecting ports</h3>
+In order to enable NAT on your OpenBSD machine you will need to turn on
+IPF and NAT. This is easily accomplished by editing the files listed
+below (make the changes to the file so it looks like the options below):
 </p>
 
 <p>
-This is another very handy feature of IPNAT. If you have a host on the
-internal network (using private addresses), and you want to let incoming
-connections to it, you just need a simple redirect rule. For example, if you
-have a web server on internal network at 10.2.2.7 listening on port 80, and 
-want it to be accessible from the outside simply redirecting external IP 
-120.2.3.4 on xl0, just add this rule to <kbd>/etc/ipnat.rules:</kbd>
+<b>/etc/rc.conf</b> (this file used to start services at boot time)
+</p>
+
+<ul>
+	ipfilter=YES<br>
+	ipnat=YES
+</ul>
+
+<p>
+<b>/etc/sysctl.conf</b>
+</p>
+
+<ul>
+	net.inet.ip.forwarding=1
+</ul>
+
+<p>
+After these changes are made, the machine is now ready to for the
+configuration of NAT.
+</p>
+
+<br>
+<a name="nat2.4"></a>
+<b>Configuration</b>
+
+<p>
+The first step is to configure the IPF rules file (<i>/etc/ipf.rules</i>).
+For the purposes of this document we will allow traffic to pass
+through this firewall option without any interference. The file
+should look like this:
+</p>
+
+<ul><pre>
+pass in from any to any
+pass out from any to any
+</ul></pre>
+
+<p>
+Again for more information you can read <a href="#6.2">FAQ 6.2</a>
 </p>
 
 <p>
-<pre>
-rdr xl0 120.2.3.4 port 80 -> 10.2.2.7 port 80
-</pre>
+The NAT configuration file (<i>/etc/ipnat.rules</i>) has a very simple syntax.
+For the configuration set forth above, the file should contain the
+following entry:
 </p>
 
-<p>
-When you write rules, it may help to visualize the packet flow.
-</p>
+<ul><pre>
+map pn0 192.168.1.0/24 -> 24.5.0.5/32 portmap tcp/udp 10000:20000
+map pn0 192.168.1.0/24 -> 24.5.0.5/32
+</ul></pre>
 
 <p>
-<pre>
-Internet <--> (xl0 120.2.3.4) OpenBSD (xl1 10.2.2.1) <--> LAN <--> (10.2.2.7 XYZ Web server)
-</pre>
+Here is an explaination for the above lines.
 </p>
 
+<ul>
+<strong>"map"</strong>
 <p>
-One last reminder that you must have net.inet.ip.forwarding=1 or option IPFORWARDING to use
-IP Filter (ipf, ipnat). Also, redirect only
-works for packets that are being routed through the OpenBSD box.  If a web browser from inside the NAT
-(say, from 10.2.2.5 from the example above) tries to connect to port 80 on 120.2.3.4, nothing will happen.
+This is the command you are giving ipnat. It is telling ipnat
+that this entry is an entry to change IP addresses between the LAN
+and the Internet.
+</p>
+</ul>
+
+<ul>
+<strong>"pn0"</strong>
+<p>
+This is the network interface that is connected to the Internet.
+</p>
+</ul>
+
+<ul>
+<b>"192.168.1.0/24"</b>
+<p>
+the IP address and netmask (the netmask is in
+CIDR format). Combined they state "any IP address of value
+192.168.1.1 through 192.168.1.254" should be mapped. If you would
+prefer not to use CIDR notation you can substitute "/24" for
+"/255.255.255.0".
+</p>
+</ul>
+
+<ul>
+<b>"24.5.0.5/32"</b>
+<p>
+This IP address and netmask state the IP address
+that the LAN IP addresses will be mapped to.
+</p>
+</ul>
+
+<ul>
+<b>"portmap tcp/udp 10000:20000"</b>
+<p>
+This maps all tcp/udp packets
+to ports in the range of 10000 to 20000.
+</p>
+</ul>
+
+<p>
+The second line has almost the same entry except for the last portion.
+This tells ipnat to map anything else (not tcp/udp) to whatever port
+it requests (used for unknown protocols and bypassing ipnat). Once this
+is in the file, all that's needed is to run the IPF daemon.
 </p>
 
 <br>
 
+<a name="nat2.5"></a>
+<b>Running</b>
+
 <p>
-<a name= "6.4"></a>
-<h2>6.4 - DHCP</h2>
+Executing NAT is a very simple process also. Once the configuration is
+complete, there are two ways to enable NAT. The first (and best way if
+possible-to test the setup stage) is to reboot your OpenBSD machine.
+This is accomplished with the command "<i>reboot</i>"
 </p>
+
+<p>
+If you would like to run ipnat from the command line, use the following
+commands:
+</p>
+
+<ul><pre>
+# ipf -Fa -f /etc/ipf.rules -E
+# ipnat -CF -f /etc/ipnat.rules
+</ul></pre>
+
+<p>
+The first line is to enable IPF (remember that NAT piggy-backs on IPF
+therefore IPF must be initialized and running before NAT can be loaded).
+The options on the command line "-Fa" clear out any existing entries
+already in effect. "-f /etc/ipf.rules" tells ipf where the rules file
+can be found. "-E" is the switch to enable the IPF daemon.
+</p>
+
+<p>
+The second command line is to enable NAT. "-CF" clears and flushes all
+
+existing entries in the NAT table. "-f /etc/ipnat.rules" tells NAT where
+
+the NAT rules file is at. NAT is now running. It's as simple as that.
+</p>
+
+
+<p>
+<b>Note:</b> in order to reload the NAT settings (in case you edit the file
+but don't want to reboot) just execute the 2nd command over again. The
+settings will be flushed and reloaded.
+</p>
+
+<br>
+<a name="nat3.0"></a>
+<h3><u>NAT KNOWLEDGE BASE</u></h3>
+
+<br>
+<a name="nat3.1"></a>
+<b>Checking NAT Status</b>
+
+<p>
+To find out how NAT is doing or make sure the settings have taken
+effect, you use the "-l" option. This option will list all the
+settings and current sessions that ipnat is running:
+</p>
+
+<ul><pre>
+# <b>ipnat -l</b>
+map pn0 192.168.1.0/24 -> 24.5.0.5/32 portmap tcp/udp 10000:20000
+map pn0 192.168.1.0/24 -> 24.5.0.5/32
+
+List of active sessions:
+MAP 192.168.1.40  2473  <- -> 24.5.0.5  13463 [129.128.5.191 80]
+</ul></pre>
+
+<p>
+The purpose of the first two lines is to confirm the settings that
+were entered in /etc/ipnat.rules earlier. The line(s) below will show
+you a list of the current NAT controlled connections.
+</p>
+
+<ul>
+<b>"MAP 192.168.1.40  2473"</b>
+<p>
+This tells you the IP address of the
+machine on the LAN that is using NAT. The port number used to make
+the connection is displayed afterwards.
+</p>
+</ul>
+
+<ul>
+<b>"&lt;- -&gt;"</b>
+<p>
+This shows that NAT is handling the flow of traffic
+in both directions.
+</p>
+</ul>
+
+<ul>
+<b>"24.5.0.5  13463"</b>
+<p>
+This denotes that the connection is going
+to the Internet via IP address 24.5.0.5 and using port 13463.
+</p>
+</ul>
+
+<ul>
+<b>"129.128.5.191 80"</b>
+<p>
+The IP address and the port being connected
+to are listed last.
+</p>
+</ul>
+
+<a name="nat3.2"></a>
+<b> Limitations of NAT (in FTP)</b>
+
+<p>
+There are a few limitations of NAT. One is with FTP. When a user connects
+to a remote FTP server and requests information or file, the FTP server
+will make a connection to the client and transfer the info. This is done
+on a random free port. This is a problem for users attempting to gain
+access to FTP servers from within the LAN. When the FTP server sends its
+information it sends it to the external NIC at a random port. The NAT
+machine will receive this, but because it has no mappings for the unknown
+packet and doesn't have any mappings for that port, it will drop the
+packet and won't deliver it.
+</p>
+
+<p>
+The solution to this is to place yourself in "passive mode" in your
+FTP client. This will tell the server that you want to connect to the
+server, and not what you just read. Then when you make that connection out
+NAT will correctly handle your connection.
+</p>
+
+<br>
+<a name="nat3.3"></a>
+<b>Redirecting Traffic</b>
+
+<p>
+        At times you may need to redirect incoming or outgoing traffic for
+        a certain protocol or port. A good example of this is if there were a
+        server residing inside the LAN running a web server. Incoming connections
+        to your valid Internet IP will find that unless your NAT box is running
+        a web server, no connection can be made. For this purpose we use the
+        NAT 'rdr' directive in the rules file to instruct where to redirect
+        (or route) a particular connection to.
+</p>
+
+<p>
+
+        For our example, lets say a web server resides on the LAN with IP address
+        of 192.168.1.80. The NAT rules file needs a new directive to handle this.
+        Add the following line to the file:
+</p>
+
+<ul><pre>
+rdr pn0 0.0.0.0/0 port 80 -> 192.168.1.80/32 port 80
+</ul></pre>
+
+<p>
+The reason for each line is this:
+</p>
+
+<ul>
+<b>"rdr"</b>
+<p>
+This is the command you are giving ipnat. It is telling ipnat
+that this entry is an entry to redirect a connection. 
+</p>
+</ul>
+
+
+<ul>
+<b>"pn0"</b>
+<p>
+This is the network interface that is connected to the Internet.
+</p>
+</ul>
+
+<ul>
+<b>"0.0.0.0/0"</b>
+<p>
+This IP address and netmask state 'any packet crossing
+the device pn0'
+</p>
+</ul>
+
+<ul>
+<b>"port 80"</b>
+<p>
+This is the port (80) that should be redirected. The number
+"80" didn't have to be used. You can use "port www" also to specify
+a redirection of port 80. If you would like to use a name instead of
+a number, the service name and corresponding port, must exist in the
+file /etc/services.
+</p>
+</ul>
+
+<ul>
+<b>"192.168.1.80/32"</b>
+<p>
+The IP address and netmask of the LAN machine
+which the packets are redirected to. The netmask is always "/32" so
+the packets can be redirected to a particular machine.
+</p>
+</ul>
+
+<p>
+When the addition is complete reload the NAT rules, and the redirection
+will start immediately.
+</p>
+
+<br>
+<a name="nat3.4"></a>
+<b>NAT versus Proxy</b>
+
+<p>
+The difference between NAT and proxy is that proxy acts and declares
+itself as a "middle-man" between the Internet and the machines connected
+on the LAN. This is fine, however each application you want to run on
+your machine and connect to the Internet through the proxy server MUST
+be proxy-aware (be able to use a proxy server). Not all applications are
+able to do this (especially games). NAT does the middle-man tasks
+transparently to the end-user and the user's applications. In most
+cases this is preferred, but in some cases this can be a problem. The
+main problem is within FTP (see "NAT Limitations" in the Knowledge Base).
+</p>
+
+<a name="nat4.0"></a>
+<b>Links and X-References</b>
+
+<p>
+OpenBSD files:
+<ul>
+<li>/etc/ipnat.rules - NAT rules file
+<li>/etc/rc.conf - need to edit to start up ipnat and ipf at boot time
+<li>/etc/sysctl.conf - need to edit to enable IP forwarding
+<li>/usr/share/ipf/nat.1 - samples of ipnat.rules
+</ul>
+</p>
+
+<p>
+NAT Internet Links:
+<ul>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ipnat&sektion=8">http://www.openbsd.org/cgi-bin/man.cgi?query=ipnat&sektion=8</a>
+<li><a href="http://coombs.anu.edu.au/ipfilter/">http://coombs.anu.edu.au/ipfilter/</a>
+<li><a href="http://www.geektools.com/rfc/rfc1631.txt">http://www.geektools.com/rfc/rfc1631.txt</a>
+</ul>
+<p>
+
+<br>
+
+<p> 
+<a name= "6.4"></a> <h2>6.4 - DHCP</h2> </p>
+
 
 <p>To use the DHCP client <A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=dhclient&apropos=0&sektion=8&format=html">dhclient(8)</a>
 included with OpenBSD, edit /etc/hostname.xl0
@@ -741,7 +1220,7 @@ Sample configurations can be viewed here:
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt= "[back]"></a>
 <a href= "mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq6.html,v 1.28 1999/09/24 17:59:35 ericj Exp $</small>
+<small>$OpenBSD: faq6.html,v 1.29 1999/09/24 20:03:44 ericj Exp $</small>
 </p>
 </body>
 </html>
