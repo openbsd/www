@@ -1,0 +1,457 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF : Exemple #1 : Pare-feu SoHo</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 2003 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
+<p>
+[<a href="authpf.html">Pr&eacute;c&eacute;dent : Authpf: Shell
+Utilisateur pour les Passerelles d'Authentification</a>]
+[<a href="index.html">Index</a>]
+
+<p>
+<h1><font color="#e00000">PF : Exemple #1 : Pare-feu SoHo</font></h1>
+<hr>
+
+<h3>Table des Mati&egrave;res</h3>
+<ul>
+<li><a href="#scenario">Le Scenario</a>
+        <ul>
+        <li><a href="#network">Le R&eacute;seau</a>
+        <li><a href="#objective">Les Objectifs</a>
+        <li><a href="#prep">Pr&eacute;paration</a>
+        </ul>
+<li><a href="#ruleset">Le Jeu de R&egrave;gles</a>
+        <ul>
+        <li><a href="#macros">Macros</a>
+        <li><a href="#options">Options</a>
+        <li><a href="#scrub">Scrub</a>
+        <li><a href="#nat">Traduction d'Adresses R&eacute;seau</a>
+        <li><a href="#rdr">Redirection</a>
+        <li><a href="#filter">R&egrave;gles de Filtrage</a>
+        </ul>
+<li><a href="#allrules">Le Jeu de R&egrave;gles Complet</a>
+</ul>
+
+<hr>
+
+<a name="scenario"></a>
+<h2>Le Scenario</h2>
+Dans cet exemple, PF fonctionne sur une machine OpenBSD jouant le
+r&ocirc;le de pare-feu et de passerelle NAT pour un r&eacute;seau SoHo.
+L'objectif global est de fournir un acc&egrave;s Internet au
+r&eacute;seau local et de fournir un acc&egrave;s limit&eacute; au
+pare-feu depuis Internet. Ce document a pour but de vous montrer comment
+on construit un jeu de r&egrave;gles correspondant &agrave; l'objectif
+pr&eacute;cit&eacute;.
+
+<a name="network"></a>
+<h3>Le R&eacute;seau</h3>
+Le r&eacute;seau est con&ccedil;u de la mani&egrave;re suivante :
+
+<pre>
+    
+  [ COMP1 ]    [ COMP3 ]
+      |            |                               ADSL
+   ---+------+-----+------- fxp0 [ OpenBSD ] ep0 -------- ( Internet )
+             |
+         [ COMP2 ]
+
+</pre>
+
+<p>
+Il y a un certain nombre de machines sur le r&eacute;seau interne. Le
+diagramme en montre trois mais le vrai nombre n'est pas une
+donn&eacute;e utile. Ces machines sont des stations de travail normales
+servant &agrave; surfer sur le web, &eacute;crire des messages
+&eacute;lectroniques, participer &agrave; des forums de discussion en
+ligne, etc. Le r&eacute;seau interne utilise le bloc de r&eacute;seau
+192.168.0.0 / 255.255.255.0.
+
+<p>
+Le routeur OpenBSD est une machine dot&eacute;e d'un Pentium 100 et de
+deux cartes r&eacute;seau : une 3Com 3c509B (<tt>ep0</tt>) et d'une
+Intel EtherExpress Pro/100 (<tt>fxp0</tt>). Le routeur a une connexion
+ADSL vers Internet et utilise la NAT pour partager cette connexion avec
+le r&eacute;seau interne. L'adresse IP de l'interface externe est
+attribu&eacute;e dynamiquement par le Fournisseur d'Acc&egrave;s
+Internet.
+
+<a name="objective"></a>
+<h3>Les Objectifs</h3>
+Les objectifs sont les suivants :
+<ul>
+<li>Fournir un acc&egrave;s Internet sans restriction pour chaque
+    machine du r&eacute;seau interne.
+<li>Utiliser un jeu de r&egrave;gles bloquant tout flux par
+    d&eacute;faut.
+<li>Autoriser les flux entrants suivants sur le pare-feu &agrave; partir
+    d'Internet :
+        <ul>
+        <li>SSH (port TCP 22) : utilis&eacute; pour la maintenance
+            externe du pare-feu.
+        <li>Auth/Ident (port TCP 113): utilis&eacute; par quelques
+            services tels que SMTP et IRC.
+        <li>Messages ICMP "Echo Request" : Le type de paquet ICMP
+            utilis&eacute; par
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ping&amp;sektion=8&amp;manpath=OpenBSD+3.4">ping(8)</a>.
+        </ul>
+<li>Enregistrer des statistiques de filtrage pour l'interface externe.
+<li>Par d&eacute;faut, renvoyer un RST TCP ou un message ICMP
+    "Unreachable" pour les paquets bloqu&eacute;s.
+<li>S'assurer que le jeu de r&egrave;gles est aussi simple et facile
+    &agrave; maintenir que possible.
+</ul>
+
+<a name="prep"></a>
+<h3>Pr&eacute;paration</h3>
+Ce document suppose que le h&ocirc;te OpenBSD a &eacute;t&eacute;
+correctement configur&eacute; pour fonctionner comme routeur :
+configuration r&eacute;seau, connexion Internet,
+<tt>net.inet.ip.forwarding</tt> avec une valeur de "<tt>1</tt>" etc.
+
+<a name="ruleset"></a>
+<h2>Le Jeu de R&egrave;gles</h2>
+Les sections ci-apr&egrave;s d&eacute;taillent la mani&egrave;re dont le
+jeu de r&egrave;gles r&eacute;pondra aux objectifs
+pr&eacute;cit&eacute;s.
+
+<a name="macros"></a>
+<h3>Macros</h3>
+Les macros suivantes sont d&eacute;finies pour rendre la maintenance et
+la lecture du jeu de r&egrave;gles plus faciles :
+<blockquote>
+<tt>
+int_if = "fxp0"<br>
+ext_if = "ep0"<br>
+<br>
+tcp_services = "{ 22, 113 }"<br>
+icmp_types = "echoreq"<br>
+<br>
+priv_nets = "{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"
+</tt>
+</blockquote>
+
+<p>
+Les deux premi&egrave;res lignes d&eacute;finissent les interfaces
+r&eacute;seau sur lesquelles le filtrage sera effectu&eacute;. Les deux
+lignes suivantes listent les num&eacute;ros de port TCP des services
+ouverts depuis Internet (SSH et ident/auth) et les types de paquets ICMP
+qui sont autoris&eacute;s &agrave; parvenir jusqu'a&ugrave; pare-feu. La
+derni&egrave;re ligne d&eacute;finit le r&eacute;seau de loopback et les
+blocs d'adresses
+<a href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a>.
+
+<p>
+<b>Remarque</b> : Si la connexion Internet ADSL n&eacute;cessite
+   l'utilisation de
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pppoe&amp;sektion=8&amp;manpath=OpenBSD+3.4">PPPoE</a>, 
+   le filtrage et la NAT s'effectueront sur l'interface <tt>tun0</tt> au
+   lieu de <tt>ep0</tt>.
+
+<a name="options"></a>
+<h3>Options</h3>
+Les deux options suivantes sp&eacute;cifient la r&eacute;ponse par
+d&eacute;faut fournie par les r&egrave;gles de filtrage <tt>block</tt>
+et activent la collecte de statistiques sur l'interface externe :
+<blockquote>
+<tt>
+set block-policy return<br>
+set loginterface $ext_if
+</tt>
+</blockquote>
+
+<a name="scrub"></a>
+<h3>Scrub</h3>
+Il n'y a aucune raison pour ne pas utiliser la normalisation de paquets
+recommand&eacute;e pour tous les paquets entrants. Il suffit d'utiliser
+la ligne suivante :
+
+<blockquote>
+<tt>
+scrub in all
+</tt>
+</blockquote>
+
+<a name="nat"></a>
+<h3>Traduction d'Adresses R&eacute;seau</h3>
+Pour effectuer la NAT du r&eacute;seau interne, la r&egrave;gle de
+<tt>nat</tt> suivante est utilis&eacute;e :
+
+<blockquote>
+<tt>
+nat on $ext_if from $int_if:network to any -&gt; ($ext_if)
+</tt>
+</blockquote>
+
+<p>
+Vu que l'adresse IP de l'interface externe est attribu&eacute;e
+dynamiquement, des parenth&egrave;ses sont utilis&eacute;s autour de
+l'interface de traduction afin que PF tienne compte automatiquement des
+changements d'adresse IP sur cette interface.
+
+<a name="rdr"></a>
+<h3>Redirection</h3>
+La seule redirection n&eacute;cessaire est pour
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+3.4">ftp-proxy(8)</a> 
+afin de permettre aux clients FTP sur le r&eacute;seau interne de se
+connecter &agrave; des serveurs FTP sur Internet.
+<blockquote>
+<tt>
+rdr on $int_if proto tcp from any to any port 21 -&gt; 127.0.0.1 port 8021
+</tt>
+</blockquote>
+
+<p>
+Il est &agrave; noter que cette r&egrave;gle ne fonctionnera que pour
+les connexions FTP au port 21. Si les utilisateurs se connectent de
+mani&egrave;re r&eacute;guli&egrave;re &agrave; des serveurs FTP sur
+d'autres ports, une liste devra &ecirc;tre utilis&eacute;e pour
+sp&eacute;cifier le port de destination, par exemple : <tt>from any to
+any port { 21, 2121 }</tt>.
+
+<a name="filter"></a>
+<h3>R&egrave;gles de Filtrage</h3>
+D&eacute;taillons maintenant les r&egrave;gles de filtrage. Commencez
+par l'interdiction par d&eacute;faut de tout trafic :
+<blockquote>
+<tt>
+block all<br>
+</tt>
+</blockquote>
+
+<p>
+Avec cette r&egrave;gle, aucun trafic ne sera autoris&eacute; y compris
+le trafic provenant du r&eacute;seau interne. Les r&egrave;gles
+ci-apr&egrave;s vont ouvrir un certain nombre de flux sur le pare-feu
+afin de r&eacute;pondre aux objectifs pr&eacute;cit&eacute;s et d'ouvrir
+toutes les interfaces virtuelles n&eacute;cessaires.
+
+<p>
+Tout syst&egrave;me Unix a une interface de "loopback". C'est une
+interface virtuelle repr&eacute;sentant un r&eacute;seau utilis&eacute;
+par les applications pour &eacute;tablir des canaux de communication
+locaux &agrave; la machine. De mani&egrave;re g&eacute;n&eacute;rale,
+tout le trafic au niveau de l'interface de "loopback" doit &ecirc;tre
+autoris&eacute;. Sous OpenBSD, l'interface de "loopback" est
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=lo&amp;sektion=4&amp;manpath=OpenBSD+3.4">lo(4)</a>.
+<blockquote>
+<tt>
+pass quick on lo0 all
+</tt>
+</blockquote>
+
+<p>
+Ensuite, les adresses
+<a href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a>
+doivent &ecirc;tre bloqu&eacute;es en entr&eacute;e et en sortie de
+l'interface externe. Ces adresses ne doivent jamais appara&icirc;tre sur
+le r&eacute;seau Internet public. Leur filtrage permet de s'assurer que
+le routeur ne divulgue pas les adresses utilis&eacute;es par le
+r&eacute;seau interne et de bloquer tous les paquets entrants avec une
+adresse source appartenant &agrave; l'un de ces r&eacute;seaux.
+<blockquote>
+<tt>
+block drop in &nbsp;quick on $ext_if from $priv_nets to any<br>
+block drop out quick on $ext_if from any to $priv_nets
+</tt>
+</blockquote>
+
+<p>
+Il est &agrave; noter que <tt>block drop</tt> est utilis&eacute; pour
+dire &agrave; PF de ne pas r&eacute;pondre par un paquet TCP RST ou ICMP
+"Unreachable". Vu que les adresses correspondant &agrave; la RFC 1918
+n'existent pas sur Internet, tout paquet envoy&eacute; vers une de ces
+adresses ne sera jamais achemin&eacute; vers sa destination de toute
+fa&ccedil;on. L'option <tt>quick</tt> est utilis&eacute;e pour dire
+&agrave; PF de ne pas &eacute;valuer le reste des r&egrave;gles de
+filtrage si un paquet correspond &agrave; l'une des r&egrave;gles
+ci-dessus; les paquets de et vers les r&eacute;seaux <tt>$priv_nets</tt>
+seront imm&eacute;diatement d&eacute;truits.
+
+<p>
+Maintenant, il faut ouvrir les ports utilis&eacute;s par les services
+r&eacute;seau disponibles depuis Internet :
+<blockquote>
+<tt>
+pass in on $ext_if inet proto tcp from any to ($ext_if) \<br>
+&nbsp;&nbsp;&nbsp;port $tcp_services flags S/SA keep state
+</tt>
+</blockquote>
+
+<p>
+La sp&eacute;cification des ports r&eacute;seau par le biais de la macro
+<tt>$tcp_services</tt> rend l'ouverture de nouveaux services pour des
+connexions provenant d'Internet plus facile dans la mesure o&ugrave; il
+suffira de modifier la macro et recharger le jeu de r&egrave;gles. Des
+services UDP peuvent aussi &ecirc;tre mis &agrave; disposition en
+cr&eacute;ant la macro <tt>$udp_services</tt> et en ajoutant une
+r&egrave;gle de filtrage ad&eacute;quate similaire &agrave; la
+r&egrave;gle de filtrage ci-dessus en sp&eacute;cifiant <tt>proto
+udp</tt>.
+
+<p>
+Le trafic ICMP doit aussi &ecirc;tre permis :
+<blockquote>
+<tt>
+pass in inet proto icmp all icmp-type $icmp_types keep state
+</tt>
+</blockquote>
+
+<p>
+Comme pour la macro <tt>$tcp_services</tt>, la macro
+<tt>$icmp_types</tt> peut facilement &ecirc;tre modifi&eacute;e pour
+changer les types des paquets ICMP qui doivent &ecirc;tre
+autoris&eacute;s &agrave; atteindre le pare-feu. Notez que cette
+r&egrave;gle s'applique &agrave; toutes les interfaces r&eacute;seau.
+
+<p>
+Maintenant, le trafic en provenance du r&eacute;seau interne doit
+&ecirc;tre autoris&eacute;. Nous supposerons que les utilisateurs du
+r&eacute;seau interne savent ce qu'ils font et ne provoqueront pas de
+probl&egrave;me sur Internet. Ce n'est pas n&eacute;cessairement une
+bonne supposition; pour certains environnements, il serait plus
+judicieux d'utiliser un jeu de r&egrave;gles plus restrictif.
+<blockquote>
+<tt>
+pass in on $int_if from $int_if:network to any keep state
+</tt>
+</blockquote>
+
+<p>
+La r&egrave;gle ci-dessus permettra &agrave; n'importe quelle machine
+interne d'envoyer des paquets &agrave; travers le pare-feu; cependant,
+le pare-feu ne sera <i>pas</i> autoris&eacute; &agrave; &agrave; initier
+une connexion vers une machine interne. Est-ce une bonne id&eacute;e ?
+Ceci d&eacute;pendra de certains d&eacute;tails fins de la configuration
+r&eacute;seau. Si le pare-feu est aussi un serveur DHCP, il aurait
+&eacute;ventuellement besoin de v&eacute;rifier la pr&eacute;sence d'une
+adresse ("ping") pour voir si elle est disponible avant de l'attribuer
+&agrave; une machine. Permettre au pare-feu de se connecter au
+r&eacute;seau interne veut dire aussi que quelqu'un qui
+acc&eacute;derait en SSH au pare-feu depuis Internet sera
+autoris&eacute; &agrave; acc&egrave;der aux machines sur le
+r&eacute;seau. Gardez &agrave; l'esprit qu'interdire au pare-feu de
+communiquer directement avec le r&eacute;seau n'est pas d'un grand
+b&eacute;n&eacute;fice du point de vue de la s&eacute;curit&eacute;; si
+quelqu'un acc&egrave;de au pare-feu, il pourra tr&egrave;s probablement
+alt&eacute;rer les r&egrave;gles de filtrage de toute fa&ccedil;on. En
+ajoutant la r&egrave;gle suivante, le pare-feu sera capable d'initier
+des connexions vers le r&eacute;seau interne :
+<blockquote>
+<tt>
+pass out on $int_if from any to $int_if:network keep state
+</tt>
+</blockquote>
+
+<p>
+Notez que si les deux lignes ci-dessus sont utilis&eacute;es, l'option
+<tt>keep state</tt> n'est pas n&eacute;cessaire car il y a une
+r&egrave;gle pour laisser passer les paquets dans les deux directions.
+Cependant, si la ligne <tt>pass out</tt> n'est <i>pas</i>
+utilis&eacute;e, la r&egrave;gle <tt>pass in</tt> <i>doit</i> comporter
+l'option <tt>keep state</tt>. Garder l'&eacute;tat d'une connexion
+permet aussi d'am&eacute;liorer les performances : Les tables
+d'&eacute;tat sont v&eacute;rifi&eacute;es avant l'&eacute;valuation des
+r&egrave;gles, et si un &eacute;tat est trouv&eacute;, le passage du
+paquet &agrave; travers le pare-feu est autoris&eacute; sans que le jeu
+de r&egrave;gles ne soit &eacute;valu&eacute;. Cette m&eacute;thode de
+fonctionnement peut offrir de meilleures performances pour un pare-feu
+tr&egrave;s charg&eacute; bien que pour un syst&egrave;me aussi simple,
+la charge ne sera tr&egrave;s certainement pas assez significative pour
+que cela fasse une diff&eacute;rence.
+
+<p>
+Finalement, il faut laisser le trafic sortir de l'interface externe :
+<blockquote>
+<tt>
+pass out on $ext_if proto tcp all modulate state flags S/SA<br>
+pass out on $ext_if proto { udp, icmp } all keep state
+</tt>
+</blockquote>
+
+<p>
+Le trafic TCP, UDP, et ICMP &agrave; destination d'Internet est
+autoris&eacute; sortir du pare-feu. L'information sur l'&eacute;tat des
+connexions est sauvegard&eacute;e pour permettre aux paquets de retour
+de passer &agrave; leur tour la barri&egrave;re que constitue le
+pare-feu.
+
+<a name="allrules"></a>
+<h2>Le Jeu de R&egrave;gles Complet</h2>
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+# macros
+int_if = "fxp0"
+ext_if = "ep0"
+
+tcp_services = "{ 22, 113 }"
+icmp_types = "echoreq"
+
+priv_nets = "{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"
+          
+# options
+set block-policy return
+set loginterface $ext_if
+
+# scrub
+scrub in all
+
+# nat/rdr
+nat on $ext_if from $int_if:network to any -&gt; ($ext_if)
+rdr on $int_if proto tcp from any to any port 21 -&gt; 127.0.0.1 \
+   port 8021
+
+# r&egrave;gles de filtrage
+block all
+
+pass quick on lo0 all
+
+block drop in  quick on $ext_if from $priv_nets to any
+block drop out quick on $ext_if from any to $priv_nets
+
+pass in on $ext_if inet proto tcp from any to ($ext_if) \
+   port $tcp_services flags S/SA keep state
+
+pass in inet proto icmp all icmp-type $icmp_types keep state
+
+pass in  on $int_if from $int_if:network to any keep state
+pass out on $int_if from any to $int_if:network keep state
+
+pass out on $ext_if proto tcp all modulate state flags S/SA
+pass out on $ext_if proto { udp, icmp } all keep state
+</pre>
+</td></tr>
+</table>
+
+<p>
+[<a href="authpf.html">Pr&eacute;c&eacute;dent : Authpf: Shell
+Utilisateur pour les Passerelles d'Authentification</a>]
+[<a href="index.html">Index</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[back]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: example1.html,v 1.11 ]<br>
+$Translation: example1.html,v 1.1 2003/12/28 21:20:14 saad Exp $<br>
+$OpenBSD: example1.html,v 1.1 2003/12/29 22:13:35 horacio Exp $
+</small>
+
+</body>
+</html> 

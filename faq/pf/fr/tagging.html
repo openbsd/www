@@ -1,0 +1,303 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Balisage de Paquets</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 2003 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
+<p>
+[<a href="../pools.html">Pr&eacute;c&eacute;dent : Ensembles d'Adresses
+("Pools") et Partage de Charge</a>]
+
+[<a href="index.html">Index</a>]
+[<a href="logging.html">Suivant : Journal des Ev&eacute;nements</a>]
+
+<p>
+<h1><font color="#e00000">PF: Balisage de Paquets</font></h1>
+
+<hr>
+
+<h3>Table des Mati&egrave;res</h3>
+<ul>
+<li><a href="#intro">Introduction</a>
+<li><a href="#assign">Affectation de Balises aux Paquets</a>
+<li><a href="#check">V&eacute;rification des Balises
+    Appliqu&eacute;es</a>
+<li><a href="#policy">Filtrage par Politique</a>
+<li><a href="#ethernet">Balisage des Trames Ethernet</a>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Introduction</h2>
+Le balisage de paquets est une m&eacute;thode pour marquer les paquets
+avec un identifiant interne qui peut &ecirc;tre utilis&eacute; comme
+crit&egrave;re dans les r&egrave;gles de filtrage et de traduction
+d'adresses. Gr&acirc;ce au balisage, il est possible de cr&eacute;er des
+paquets dits "de confiance" entre des interfaces et de d&eacute;terminer
+si des paquets ont &eacute;t&eacute; trait&eacute;s par les
+r&egrave;gles de traduction d'adresses. Il est aussi possible de faire
+du filtrage suivant une politique au lieu de faire du filtrage par
+r&egrave;gle.
+
+<a name="assign"></a>
+<h2>Affectation de Balises aux Paquets</h2>
+Pour ajouter une balise &agrave; un paquet, utilisez le mot-cl&eacute;
+<tt>tag</tt> :
+<blockquote>
+<tt>
+pass in on $int_if all tag INTERNAL_NET keep state
+</tt>
+</blockquote>
+
+<p>
+La balise <tt>INTERNAL_NET</tt> sera ajout&eacute;e &agrave; tout paquet
+qui correspondra &agrave; la r&egrave;gle pr&eacute;cit&eacute;e. Il est
+&agrave; noter que le mot-cl&eacute; <tt>keep state</tt> : <tt>keep
+state</tt> (ou <tt>modulate state</tt>/<tt>synproxy state</tt>) doit
+&ecirc;tre utilis&eacute; dans les r&egrave;gles <tt>pass</tt>qui
+affectent des balises aux paquets.
+
+<p>
+L'affectation de balises observe les r&egrave;gles suivantes :
+<ul>
+<li>Les balises sont adh&eacute;rentes ("sticky"). Une fois une balise
+    est appliqu&eacute;e &agrave; un paquet par une r&egrave;gle
+    correspondante, elle n'est jamais supprim&eacute;e. Cependant, elle
+    peut &ecirc;tre remplac&eacute;e par une balise diff&eacute;rente.
+<li>A cause de cette forte adh&eacute;rence d'une balise, un paquet peut
+    avoir une balise m&ecirc;me si la derni&egrave;re r&egrave;gle
+    correspondante n'utilise pas le mot-cl&eacute; <tt>tag</tt>.
+<li>Un paquet ne peut avoir qu'une seule balise &agrave; un moment
+    donn&eacute;.
+<li>Les balises sont des identifiants <i>internal</i>. Elles ne sont pas
+    envoy&eacute;es sur le r&eacute;seau.
+</ul>
+
+<p>
+Prenons le jeu de r&egrave;gles suivant comme exemple :
+<blockquote>
+<tt>
+(1) pass in on $int_if tag INT_NET keep state<br>
+(2) pass in quick on $int_if proto tcp to port 80 tag \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;INT_NET_HTTP keep state<br>
+(3) pass in quick on $int_if from 192.168.1.5 keep state
+</tt>
+</blockquote>
+
+<p>
+<ul>
+<li>Les paquets arrivant sur l'interface <tt>$int_if</tt> se verront
+    attribuer une balise <tt>INT_NET</tt> par la r&egrave;gle #1.
+<li>Les paquets TCP arrivant sur l'interface <tt>$int_if</tt> et
+    destin&eacute;s au port 80 se verront d'abord attribuer une balise
+    <tt>INT_NET</tt> par la r&egrave;gle #1. Cette balise sera ensuite
+    remplac&eacute;e par la balise <tt>INT_NET_HTTP</tt> &agrave; cause
+    de la r&egrave;gle #2.
+<li>Les paquets arrivant sur l'interface <tt>$int_if</tt> et en
+provenance de 192.168.1.5 seront autoris&eacute;s par la r&egrave;gle #3
+car c'est la derni&egrave;re r&egrave;gle qui correspond au filtrage de
+ces paquets. Cependant, ces paquets se verront attribuer la balise
+<tt>INT_NET_HTTP</tt> s'ils sont destin&eacute;s au port TCP 80, sinon
+ils se verront attribuer la balise <tt>INT_NET</tt>.
+</ul>
+
+<p>
+De m&ecirc;me que pour les r&egrave;gles de filtrage, les balises
+peuvent &ecirc;tre appliqu&eacute;es par des r&egrave;gles <tt>nat</tt>,
+<tt>rdr</tt>, et <tt>binat</tt> en utilisant le mot-cl&eacute;
+<tt>tag</tt>.
+
+<a name="check"></a>
+<h2>V&eacute;rification des Balises Appliqu&eacute;es</h2>
+Pour v&eacute;rifier les balises pr&eacute;c&eacute;demment
+appliqu&eacute;es, utilisez le mot-cl&eacute; <tt>tagged</tt> comme dans
+l'exemple suivant :
+<blockquote>
+<tt>
+pass out on $ext_if tagged INT_NET keep state
+</tt>
+</blockquote>
+
+<p>
+Les paquets sortant &agrave; partir de <tt>$ext_if</tt>doivent
+&ecirc;tre balis&eacute;s avec la balise <tt>INT_NET</tt> pour que la
+r&egrave;gle ci-dessus corresponde &agrave; ces paquets. La
+correspondance inverse peut aussi &ecirc;tre r&eacute;alis&eacute;e avec
+l'op&eacute;rateur <tt>!</tt> :
+<blockquote>
+<tt>
+pass out on $ext_if tagged ! WIFI_NET keep state
+</tt>
+</blockquote>
+
+<a name="policy"></a>
+<h2>Filtrage par Politique</h2>
+Le filtrage par politique utilise une approche diff&eacute;rente pour
+l'&eacute;criture d'un jeu de r&egrave;gles. Une politique est
+d&eacute;finie par rapport aux types de trafic : r&egrave;gles pour les
+types de trafic &agrave; passer, r&egrave;gles pour les types de trafic
+&agrave; bloquer. Les paquets sont ensuite classifi&eacute;s au sein de
+la politique selon les crit&egrave;res traditionnels : adresse IP
+source/destination, protocole, etc. Examinez la politique de filtrage
+qui suit : 
+<ul>
+<li>Le trafic provenant du LAN interne et &agrave; destination de la DMZ
+    est autoris&eacute; (LAN_DMZ)
+<li>Le trafic provenant d'Internet et &agrave; destination de serveurs
+    dans la DMZ est autoris&eacute; (INET_DMZ)
+<li>Le trafic provenant d'Internet et redirig&eacute; vers 
+<a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=spamd&amp;sektion=8&amp;manpath=OpenBSD+3.4">spamd(8)</a> 
+    est autoris&eacute; (SPAMD)
+<li>Tout autre trafic est bloqu&eacute;
+</ul>
+
+<p>
+Notez la mani&egrave;re dont la politique couvre <i>all</i> le trafic
+qui transite par le pare-feu. Le mot entre parenth&egrave;ses indique le
+nom de la balise qui sera utilis&eacute;e pour chaque
+&eacute;l&eacute;ment de la politique.
+
+<p>
+Des r&egrave;gles de filtrage et de traduction doivent &ecirc;tre
+&eacute;crites maintenant pour classifier les paquets au sein de la
+politique.
+<blockquote>
+<tt>
+rdr on $ext_if proto tcp from &lt;spamd&gt; to port smtp \<br>
+&nbsp;&nbsp;&nbsp;tag SPAMD -&gt; 127.0.0.1 port 8025<br>
+<br>
+block all<br>
+pass in on $int_if from $int_net tag LAN_INET keep state<br>
+pass in on $int_if from $int_net to $dmz_net tag LAN_DMZ keep state<br>
+pass in on $ext_if proto tcp to $www_server port 80 tag INET_DMZ keep state
+</tt>
+</blockquote>
+
+<p>
+Maintenant les r&egrave;gles qui constituent la politique sont
+d&eacute;finies.
+<blockquote>
+<tt>
+pass in &nbsp;quick on $ext_if tagged SPAMD keep state<br>
+pass out quick on $ext_if tagged LAN_INET keep state<br>
+pass out quick on $dmz_if tagged LAN_DMZ keep state<br>
+pass out quick on $dmz_if tagged INET_DMZ keep state
+</tt>
+</blockquote>
+
+<p>
+Maintenant que le jeu de r&egrave;gles a &eacute;t&eacute;
+param&eacute;tr&eacute;, les modifications futures sont &agrave;
+apporter uniquement dans les r&egrave;gles de classifications. Par
+exemple, si un serveur POP3/SMTP est ajout&eacute; &agrave; la DMZ, il
+sera n&eacute;cessaire d'ajouter des r&egrave;gles de classification
+pour le trafic POP3 et SMTP comme le montre l'exemple suivant :
+<blockquote>
+<tt>
+mail_server = "192.168.0.10"<br>
+...<br>
+pass in on $ext_if proto tcp to $mail_server port { smtp, pop3 } \<br>
+&nbsp;&nbsp;&nbsp;tag INET_DMZ keep state
+</tt>
+</blockquote>
+
+<p>
+Le trafic mail sera autoris&eacute; car il fait partie de la
+classification INET_DMZ.
+
+<p>
+Voici le jeu de r&egrave;gles complet :
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+# macros
+int_if  = "dc0"
+dmz_if  = "dc1"
+ext_if  = "ep0"
+int_net = "10.0.0.0/24"
+dmz_net = "192.168.0.0/24"
+www_server = "192.168.0.5"
+mail_server = "192.168.0.10"
+
+table &lt;spamd&gt; persist file "/etc/spammers"
+
+# classification -- classifier les paquets selon la politique
+# d&eacute;finie
+rdr on $ext_if proto tcp from &lt;spamd&gt; to port smtp \
+    tag SPAMD -&gt; 127.0.0.1 port 8025
+
+block all
+pass in on $int_if from $int_net tag LAN_INET keep state
+pass in on $int_if from $int_net to $dmz_net tag LAN_DMZ keep state
+pass in on $ext_if proto tcp to $www_server port 80 tag INET_DMZ keep state 
+pass in on $ext_if proto tcp to $mail_server port { smtp, pop3 } \
+    tag INET_DMZ keep state 
+
+# filtrage -- autoriser/bloquer suivant la politique.
+pass in  quick on $ext_if tagged SPAMD keep state
+pass out quick on $ext_if tagged LAN_INET keep state
+pass out quick on $dmz_if tagged LAN_DMZ keep state
+pass out quick on $dmz_if tagged INET_DMZ keep state 
+</pre>
+</td></tr>
+</table>
+
+<a name="ethernet"></a>
+<h2>Balisage des Trames Ethernet</h2>
+Le balisage peut &ecirc;tre effectu&eacute; au niveau Ethernet si la
+machine de balisage/filtrage est aussi un pont (
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridge&amp;sektion=4&amp;manpath=OpenBSD+3.4">bridge(4)</a>). 
+En cr&eacute;ant des r&egrave;gles de filtrage pour bridge(4) qui
+utilisent le mot-cl&eacute; <tt>tag</tt>, PF peut filtrer les paquets
+d'apr&egrave;s leur adresse MAC source/destination. Les r&egrave;gles
+pour bridge(4) sont cr&eacute;&eacute;s avec la commande
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=brconfig&amp;sektion=8&amp;manpath=OpenBSD+3.4"
+>brconfig(8)</a>. Exemple :
+<blockquote>
+<tt>
+# brconfig bridge0 rule pass in on fxp0 src 0:de:ad:be:ef:0 \<br>
+&nbsp;&nbsp;&nbsp;tag USER1
+</tt>
+</blockquote>
+
+<p>
+Puis dans <tt>pf.conf</tt>:
+<blockquote>
+<tt>
+pass in on fxp0 tagged USER1
+</tt>
+</blockquote>
+
+<p>
+[<a href="../pools.html">Pr&eacute;c&eacute;dent : Ensembles d'Adresses
+("Pools") et Partage de Charge</a>]
+[<a href="index.html">Index</a>]
+[<a href="logging.html">Suivant : Journal des Ev&eacute;nements</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[back]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: tagging.html,v 1.1 ]<br>
+$Translation: tagging.html,v 1.1 2003/12/28 21:20:14 saad Exp $<br>
+$OpenBSD: tagging.html,v 1.1 2003/12/29 22:13:35 horacio Exp $
+</small>
+
+</body>
+</html> 

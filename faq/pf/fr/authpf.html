@@ -1,0 +1,419 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Authpf : Shell Utilisateur pour les Passerelles
+d'Authentification</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 2003 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
+<p>
+[<a href="ftp.html">Pr&eacute;c&eacute;dent : Probl&egrave;mes avec
+FTP</a>]
+[<a href="index.html">Index</a>]
+[<a href="example1.html">Suivant : Exemple #1 : Pare-feu SoHo </a>]
+
+<h1><font color="#e00000">PF: Authpf : Shell Utilisateur pour les
+    Passerelles d'Authentification</font></h1>
+
+<hr>
+
+<h3>Table des Mati&egrave;res</h3>
+<ul>
+<li><a href="#intro">Introduction</a>
+<li><a href="#config">Configuration</a>
+        <ul>
+        <li><a href="#linkmain">Attacher Authpf au Jeu de R&egrave;gles
+            Principal</a>
+        <li><a href="#loadrules">Configurer les R&egrave;gles
+            Charg&eacute;es</a>
+        <li><a href="#acl">Les Listes de Contr&ocirc;le
+            d'Acc&egrave;s</a>
+        <li><a href="#shell">Attribuer Authpf comme Shell
+            Utilisateur</a>
+        </ul>
+<li><a href="#wholog">Voir Les Personnes Connect&eacute;es</a>
+<li><a href="#moreinfo">Plus d'Information</a>
+<li><a href="#example">Exemple</a>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Introduction</h2>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=authpf&amp;sektion=8&amp;manpath=OpenBSD+3.4">Authpf(8)</a> 
+est un shell utilisateur pour les passerelles d'authentification. Une
+passerelle d'authentification est comme n'importe quelle passerelle
+r&eacute;seau normale (un routeur) except&eacute; que les utilisateurs
+doivent d'abord s'authentifier sur la passerelle avant que celle-ci ne
+permette au trafic g&eacute;n&eacute;r&eacute; par les utilisateurs de
+la traverser. Quand le shell d'un utilisateur est
+<tt>/usr/sbin/authpf</tt> (au lieu que son shell soit
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ksh&amp;sektion=1&amp;manpath=OpenBSD+3.4"
+>ksh(1)</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=csh&amp;sektion=1&amp;manpath=OpenBSD+3.4">csh(1)</a>, 
+etc) et que l'utilisateur se connecte en utilisant SSH, authpf fera les
+modifications n&eacute;cessaires au jeu de r&egrave;gles
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+3.4">pf(4)</a> 
+actif de telle mani&egrave;re &agrave; permettre au trafic
+g&eacute;n&eacute;r&eacute; par l'utilisateur de passer &agrave; travers
+les filtres et/ou d'&ecirc;tre traduit en utilisant la Traduction
+d'Adresses R&eacute;seau ou d'&ecirc;tre redirig&eacute;. Une fois que
+l'utilisateur se d&eacute;connecte ou que sa session est
+termin&eacute;e, authpf supprimera toutes les r&egrave;gles
+charg&eacute;es pour l'utilisateur et enlevera toutes les connexions
+avec maintien d'&eacute;tat que l'utilisateur aura ouvertes. Ainsi, le
+trafic de l'utilisateur ne passera &agrave; travers la passerelle que si
+l'utilisateur garde sa session SSH ouverte.
+
+<p>
+Authpf alt&egrave;re le jeu de r&egrave;gles  
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+3.4">pf(4)</a> 
+en ajoutant des r&egrave;gles &agrave; un 
+<a href="../anchors.html#named">jeu de r&egrave;gles nomm&eacute;</a>
+attach&eacute; &agrave; un 
+<a href="../anchors.html">point d'ancrage</a>. Chaque fois qu'un
+utilisateur s'authentifie, authpf cr&eacute;e un nouveau jeu de
+r&egrave;gles nomm&eacute; et y charge les r&egrave;gles
+<a href="../filter.html">de filtrage</a>, 
+<a href="../nat.html"><tt>nat</tt></a>, 
+<a href="../nat.html#binat"><tt>binat</tt></a>, et 
+<a href="../rdr.html"><tt>rdr</tt></a>. Les r&egrave;gles qu'authpf
+charge peuvent &ecirc;tre configur&eacute;es par utilisateur ou
+globalement.
+
+<p>
+Voici quelques exemples d'utilisation d'authpf :
+<ul>
+<li>Exiger que les utilisateurs s'authentifient avant de permettre un
+    acc&egrave;s &agrave; Internet.
+<li>Permettre &agrave; certains utilisateurs -- tels que les
+    administrateurs -- l'acc&egrave;s &agrave; certaines parties
+    restreintes du r&eacute;seau.
+<li>Permettre uniquement aux utilisateurs connus l'acc&egrave;s au reste
+    du r&eacute;seau ou &agrave; Internet depuis un segment de
+    r&eacute;seau sans fil.
+<li>Permettre &agrave; des travailleurs d'acc&egrave;der &agrave; des
+    ressources du syst&egrave;me d'information de l'entreprise depuis
+    chez eux, lorsqu'ils sont sur la route... Les utilisateurs en dehors
+    des bureaux peuvent avoir acc&egrave;s au r&eacute;seau d'entreprise
+    et aussi &ecirc;tre redirig&eacute;s vers des ressources
+    sp&eacute;cifiques (leur propre station de travail par exemple)
+    selon le nom d'utilisateur qu'ils utilisent pour s'authentifier.
+<li>Dans une configuration telle que celle d'une biblioth&egrave;que ou
+    un autre lieu &eacute;quip&eacute; de terminaux avec un acc&egrave;s
+    Internet public, PF peut &ecirc;tre configur&eacute; pour permettre
+    un acc&egrave;s limit&eacute; &agrave; Internet aux utilisateurs de
+    passage. Authpf peut alors &ecirc;tre utilis&eacute; pour permettre
+    aux utilisateurs connus un acc&egrave;s complet.
+</ul>
+
+<p>
+Authpf enregistre le nom d'utilisateur et l'adresse IP de chaque
+utilisateur qui r&eacute;ussit &agrave; s'authentifier ainsi que le
+d&eacute;but et la fin de leur session. L'enregistrement se fait via
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=syslogd&amp;sektion=8&amp;manpath=OpenBSD+3.4">syslogd(8)</a>. 
+En utilisant cette information, un administrateur peut d&eacute;terminer
+qui s'est connect&eacute; et responsabiliser les utilisateurs par
+rapport &agrave; leur trafic r&eacute;seau.
+
+<a name="config"></a>
+<h2>Configuration</h2>
+La section suivante fournit les &eacute;tapes de base n&eacute;cessaires
+pour configurer authpf. Pour une description compl&egrave;te de la
+configuration d'authpf, veuillez consulter la
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=authpf&amp;sektion=8&amp;manpath=OpenBSD+3.4">page du manuel authpf</a>.
+
+<a name="linkmain"></a>
+<h3>Attacher Authpf au Jeu de R&egrave;gles Principal</h3>
+Authpf peut &ecirc;tre rattach&eacute; au jeu de r&egrave;gles principal
+en utilisant des r&egrave;gles d'ancrage. Ces r&egrave;gles utilisent le
+mot-cl&eacute; <tt>anchor</tt> :
+<blockquote>
+<tt>
+nat-anchor authpf<br>
+rdr-anchor authpf<br>
+binat-anchor authpf<br>
+anchor authpf<br>
+</tt>
+</blockquote>
+
+<p>
+PF "sortira" du jeu de r&egrave;gles principal pour &eacute;valuer les
+r&egrave;gles authpf &agrave; l'endroit o&ugrave; les r&egrave;gles
+<tt>anchor</tt> sont plac&eacute;es dans le jeu de r&egrave;gles. Il
+n'est pas n&eacute;cessaire que les quatre r&egrave;gles <tt>anchor</tt>
+soient pr&eacute;sentes. Par exemple, si authpf ne doit charger aucune
+r&egrave;gle de traduction <tt>nat</tt>, la r&egrave;gle
+<tt>nat-anchor</tt> peut &ecirc;tre omise.
+
+<a name="loadrules"></a>
+<h3>Configurer les R&egrave;gles Charg&eacute;es</h3>
+Authpf charge les r&egrave;gles &agrave; partir d'un des deux fichiers
+suivants : 
+<ul>
+<li><tt>/etc/authpf/users/$USER/authpf.rules</tt>
+<li><tt>/etc/authpf/authpf.rules</tt>
+</ul>
+
+<p>
+Le premier fichier contient des r&egrave;gles qui seront uniquement
+charg&eacute;es lorsque l'utilisateur <tt>$USER</tt> (cette variable
+&eacute;tant &agrave; remplacer par le nom d'utilisateur) se connecte.
+La configuration sp&eacute;cifique par utilisateur est utilis&eacute;e
+lorsqu'un utilisateur donn&eacute; -- un administrateur par exemple --
+n&eacute;cessite un jeu de r&egrave;gles diff&eacute;rent du jeu de
+r&egrave;gles authpf par d&eacute;faut. Le deuxi&egrave;me fichier
+contient les r&egrave;gles par d&eacute;faut qui sont charg&eacute;es
+pour tout utilisateur qui ne poss&egrave;de pas son propre fichier
+<tt>authpf.rules</tt>. Si le fichier sp&eacute;cifique &agrave;
+l'utilisateur existe, il est charg&eacute; au lieu du fichier par
+d&eacute;faut. Au moins un des fichiers doit exister. Autrement authpf
+ne fonctionnera pas.
+
+<p>
+Les r&egrave;gles de filtrage et de traduction ont la m&ecirc;me syntaxe
+que pour n'importe quel autre jeu de r&egrave;gles PF avec une seule
+exception : Authpf permet l'utilisateur de deux macros
+pr&eacute;d&eacute;finies :
+<ul>
+<li><tt>$user_ip</tt> - l'adresse IP de l'utilisateur connect&eacute;
+<li><tt>$user_id</tt> - le nom d'utilisateur de l'utilisateur
+    connect&eacute;
+</ul>
+
+<p>
+Il est recommand&eacute; d'utiliser la macro <tt>$user_ip</tt> pour ne
+permettre que le trafic provenant de la machine de l'utilisateur
+authentifi&eacute;.
+
+<a name="acl"></a>
+<h3>Les Listes de Contr&ocirc;le d'Acc&egrave;s</h3>
+On peut emp&ecirc;cher les utilisateurs d'utiliser authpf en
+cr&eacute;ant un fichier sous le r&eacute;pertoire
+<tt>/etc/authpf/banned/</tt>. Le fichier doit avoir comme nom le nom de
+l'utilisateur banni. Le contenu du fichier sera affich&eacute; &agrave;
+l'utilisateur avant qu'authpf ne le d&eacute;connecte. Cette
+fonctionnalit&eacute; fournit une m&eacute;thode pratique pour notifier
+un utilisateur ou lui dire pourquoi son acc&egrave;s n'est pas
+autoris&eacute; et la personne qu'il doit contacter pour la restauration
+de son acc&egrave;s.
+
+<p>
+Autrement, il est aussi possible d'autoriser uniquement l'acc&egrave;s
+&agrave; des utilisateurs sp&eacute;cifiques en mettant leur nom
+d'utilisateur dans le fichier <tt>/etc/authpf/authpf.allow</tt>. Si le
+fichier <tt>/etc/authpf/authpf.allow</tt> n'existe pas ou contient
+"<tt>*</tt>", authpf permettra l'acc&egrave;s &agrave; n'importe quel
+utilisateur qui a r&eacute;ussi &agrave; se connecter via SSH et qui
+n'est pas explicitement banni.
+
+<p>
+Si authpf n'est pas capable de d&eacute;terminer s'il doit autoriser ou
+interdire l'acc&egrave;s &agrave; un utilisateur, il affichera un
+message bref et d&eacute;connectera l'utilisateur. Une entr&eacute;e
+dans le fichier <tt>/etc/authpf/banned/</tt> est toujours prise en
+compte avant une entr&eacute;e dans le fichier
+<tt>/etc/authpf/authpf.allow</tt>.
+
+<a name="shell"></a>
+<h3>Attribuer Authpf comme Shell Utilisateur</h3>
+Afin qu'authpf fonctionne, il doit &ecirc;tre attribu&eacute; &agrave;
+l'utilisateur en tant que shell de connexion ("login shell"). Lorsque
+l'utilisateur s'authentifie selon les m&eacute;canismes offerts par
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sshd&amp;sektion=8&amp;manpath=OpenBSD+3.4">sshd(8)</a>, 
+authpf sera execut&eacute; comme shell de l'utilisateur. Authpf
+v&eacute;rifiera ensuite si l'utilisateur est autoris&eacute; &agrave;
+utiliser authpf, chargera les r&egrave;gles &agrave; partir du fichier
+appropri&eacute;, etc.
+
+<p>
+Il existe plusieurs m&eacute;thodes pour attribuer authpf &agrave; un
+utilisateur comme shell de connexion :
+<ol>
+<li>Manuellement pour chaque utilisateur en utilisant 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=chsh&amp;sektion=1&amp;manpath=OpenBSD+3.4"
+>chsh(1)</a>, 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vipw&amp;sektion=8&amp;manpath=OpenBSD+3.4"
+>vipw(8)</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=useradd&amp;sektion=8&amp;manpath=OpenBSD+3.4"
+>useradd(8)</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=usermod&amp;sektion=8&amp;manpath=OpenBSD+3.4"
+>usermod(8)</a>, etc.
+<li>En affectant les utilisateurs &agrave; une classe de connexion et en
+    changeant l'option <tt>shell</tt> dans
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=login.conf&amp;sektion=5&amp;manpath=OpenBSD+3.4"
+><tt>/etc/login.conf</tt></a>.
+</ol>
+
+<a name="wholog"></a>
+<h2>Voir Les Personnes Connect&eacute;es</h2>
+Une fois l'utilisateur connect&eacute; et les r&egrave;gles
+charg&eacute;es par authpf, ce dernier changera son nom de processus
+pour indiquer le nom d'utilisateur et l'adresse IP de l'utilisateur
+connect&eacute; :
+<pre>
+    # ps -ax | grep authpf
+    23664 p0  Is+     0:00.11 -authpf: charlie@192.168.1.3 (authpf)
+</pre>
+
+<p>
+Dans l'exemple ci-dessus, <tt>charlie</tt> est connect&eacute; depuis la
+machine 192.168.1.3. En envoyant un signal SIGTERM au processus authpf,
+on peut d&eacute;connecter l'utilisateur. Authpf supprimera aussi toute
+r&egrave;gle charg&eacute;e pour l'utilisateur et supprimer toutes les
+connexions &agrave; &eacute;tat que l'utilisateur aura ouvert.
+<pre>
+    # kill -TERM 23664
+</pre>
+
+<a name="moreinfo"></a>
+<h2>Plus d'Information</h2>
+Pour une description compl&egrave;te du fonctionnement d'authpf,
+veuillez vous r&eacute;f&eacute;rer &agrave; la
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=authpf&amp;sektion=8&amp;manpath=OpenBSD+3.4"
+>page du manuel authpf</a>.
+
+<a name="example"></a>
+<h2>Exemple</h2>
+Dans cet exemple, authpf est utilis&eacute; sur une  passerelle  OpenBSD
+pour authentifier des utilisateurs sur un r&eacute;seau sans fil faisant
+partie  d'un  r&eacute;seau  de  campus  plus  grand.   Une   fois   les
+utilisateurs authentifi&eacute;s, et en supposant  qu'ils  ne  font  pas
+partie de la liste des utilisateurs bannis, ils seront  autoris&eacute;s
+&agrave; &eacute;tablir des sessions SSH vers l'ext&eacute;rieur  et  de
+naviguer   sur   le   web    (y    compris    sur    les    sites    web
+s&eacute;curis&eacute;s). De plus, ils pourront acc&eacute;der  &agrave;
+un des serveurs DNS du campus.
+
+<p>
+Le fichier <tt>/etc/authpf/authpf.rules</tt> contient les r&egrave;gles
+suivantes :<br>
+<br>
+
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+wifi_if = "wi0"
+dns_servers = "{ 10.0.1.56, 10.0.2.56 }"
+
+pass in quick on $wifi_if proto udp from $user_ip to $dns_servers \
+   port domain keep state
+pass in quick on $wifi_if proto tcp from $user_ip to port { ssh, http, \
+   https } flags S/SA keep state
+</pre>
+</td></tr>
+</table>
+
+<p>
+L'administrateur <tt>charlie</tt> devra &ecirc;tre capable
+d'acc&eacute;der aux serveurs SMTP et POP3 du campus en plus des droits
+d'acc&egrave;s pr&eacute;cit&eacute;s. Les r&egrave;gles suivantes font
+partie du fichier <tt>/etc/authpf/users/charlie/authpf.rules</tt> :<br>
+<br>
+
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+wifi_if = "wi0"
+smtp_server = "10.0.1.50"
+pop3_server = "10.0.1.51"
+dns_servers = "{ 10.0.1.56, 10.0.2.56 }"
+
+pass in quick on $wifi_if proto udp from $user_ip to $dns_servers \
+   port domain keep state
+pass in quick on $wifi_if proto tcp from $user_ip to $smtp_server \
+   port smtp flags S/SA keep state
+pass in quick on $wifi_if proto tcp from $user_ip to $pop3_server \
+   port pop3 flags S/SA keep state
+pass in quick on $wifi_if proto tcp from $user_ip to port { ssh, http, \
+   https } flags S/SA keep state
+</pre>
+</td></tr>
+</table>
+
+<p>
+Voici le contenu du jeu de r&egrave;gles principal figurant dans le
+fichier <tt>/etc/pf.conf</tt> :<br>
+<br>
+
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+# macros
+wifi_if = "wi0"
+ext_if  = "fxp0"
+
+scrub in all
+
+# filtrage
+block drop all
+
+pass out quick on $ext_if proto tcp from $wifi_if:network flags S/SA \
+   modulate state
+pass out quick on $ext_if proto { udp, icmp } from $wifi_if:network \
+   keep state
+
+pass in quick on $wifi_if proto tcp from $wifi_if:network to $wifi_if \
+   port ssh flags S/SA keep state
+
+anchor authpf in on $wifi_if
+</pre>
+</td></tr>
+</table>
+
+<p>
+Le jeu de r&egrave;gles est tr&egrave;s simple :
+<ul>
+<li>Bloquer tout par d&eacute;faut.
+<li>Autoriser les trafics TCP, UDP et ICMP sortants sur l'interface
+    externe en provenance du r&eacute;seau sans fil.
+<li>Autoriser le trafic SSH entrant en provenance du r&eacute;seau sans
+    fil et destin&eacute; &agrave; la passerelle. Cette r&egrave;gle est
+    n&eacute;cessaire pour permettre aux utilisateurs de s'authentifier.
+<li>Cr&eacute;er le point d'ancrage "authpf" pour le trafic entrant sur
+    l'interface sans fil.
+</ul>
+
+<p>
+Le jeu de r&egrave;gles par d&eacute;faut est utilis&eacute; pour
+bloquer tout trafic non strictement n&eacute;cessaire pour le
+fonctionnement de l'architecture. Le trafic sortant de l'interface
+externe est autoris&eacute;. Cependant le trafic en entr&eacute;e de
+l'interface sans fil est interdit. Une fois l'utilisateur
+authentifi&eacute;, leur trafic est autoris&eacute; &agrave; traverser
+l'interface sans fil et &agrave; acc&eacute;der au reste du
+r&eacute;seau. Le mot-cl&eacute; <tt>quick</tt> est utilis&eacute; un
+peu partout afin que PF n'&eacute;value pas tous les jeux de
+r&egrave;gles nomm&eacute;s quand une nouvelle connexion traverse la
+passerelle.
+
+<p>
+[<a href="ftp.html">Pr&eacute;c&eacute;dent : Probl&egrave;mes avec
+FTP</a>]
+[<a href="index.html">Index</a>]
+[<a href="example1.html">Suivant : Exemple #1 : Pare-feu SoHo </a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[back]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: authpf.html,v 1.4 ]<br>
+$Translation: authpf.html,v 1.1 2003/12/28 21:20:14 saad Exp $<br>
+$OpenBSD: authpf.html,v 1.1 2003/12/29 22:13:35 horacio Exp $
+</small>
+
+</body>
+</html> 
