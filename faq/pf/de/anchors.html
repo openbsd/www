@@ -1,7 +1,7 @@
 <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
 <html>
 <head>
-<title>PF: Anker und Benannte Regelsätze</title>
+<title>PF: Anker</title>
 <link rev="made" href="mailto:www@openbsd.org">
 <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
 <meta name="resource-type" content="document">
@@ -12,7 +12,7 @@
 </head>
 
 <!--
-Copyright (c) 2003, 2004 Joel Knight <enabled@myrealbox.com>
+Copyright (c) 2003-2005 Joel Knight <enabled@myrealbox.com>
 
 Permission to use, copy, modify, and distribute this documentation for
 any purpose with or without fee is hereby granted, provided that the
@@ -41,14 +41,14 @@ please, use a max of 72 chars per line -->
 [<a href="queueing.html">Weiter: Paket-Queueing und Priorisierung</a>]
 
 <p>
-<h1><font color="#e00000">PF: Anker und benannte Regelsätze</font></h1>
+<h1><font color="#e00000">PF: Anker</font></h1>
 
 <hr>
 
 <h3>Inhaltsverzeichnis</h3>
 <ul>
 <li><a href="#intro">Einführung</a>
-<li><a href="#named">Benannte Regelsätze</a>
+<li><a href="#anchors">Anker</a>
 <li><a href="#options">Anker-Optionen</a>
 <li><a href="#manip">Anker manipulieren</a>
 </ul>
@@ -82,21 +82,24 @@ Filter</a>regeln dem Anker <i><tt>name</tt></i> zu
 <tt>rdr</tt></a>-Regeln dem Anker <i><tt>name</tt></i> zu
 </ul>
 
-<tt>anchor</tt>-Regeln werden relativ zu dem Anker zugewiesen, in welchem
-sie geladen werden. Zum Beispiel werden <tt>anchor</tt>-Regeln im
-Hauptregelsatz Ankeranhänge erzeugen, die auf den Hauptregelsatz als
-ihre Eltern zeigen und <tt>anchor</tt> Regeln, die aus Dateien mit der
-<tt>load anchor</tt> Direktive geladen worden sind, werden Ankerpunkte
-mit diesen Ankern als ihre Eltern erzeugen.
+Anker können verschachtelt werden, was es ermöglicht, dass
+Unterregelsätze in Reihe zusammengeschlossen werden können.
+Anker-Regeln werden relativ zu dem Anker zugewiesen, in
+welchem sie geladen werden.
+Zum Beispiel werden im Hauptregelsatz befindliche Anker-Regeln
+Anker-Anhänge erzeugen, die auf den Hauptregelsatz als Eltern
+verweisen und Anker-Regeln, die von Dateien mit der
+<tt>load anchor</tt>-Direktive geladen wurden, werden
+Anker-Punkte mit eben jenem Anker als Eltern-Anker erstellen.
 
-<a name="named"></a>
+<a name="anchors"></a>
 <h2>Anker</h2>
 Ein Anker ist eine Kollektion von Filter- und/oder Übersetzungsregeln,
 Tabellen und anderen Ankern, denen ein Name zugewiesen wurde.
 Wenn PF auf eine <tt>anchor</tt>-Regel im Hauptregelsatz trifft, wird
-es die Regeln, die in diesem <tt>anchor</tt>-Punkt liegen, genauso
-wie die Regeln im Hauptregelsatz zuweisen. Die Verarbeitung wird dann
-mit dem Hauptregelsatz weitergesetzt, außer das Paket trifft auf eine
+es die Regeln, die in diesem Anker liegen, genauso wie die Regeln
+im Hauptregelsatz zuweisen. Die Verarbeitung wird dann mit
+dem Hauptregelsatz weitergesetzt, außer das Paket trifft auf eine
 Filterregel, die die <tt>quick</tt>-Option gesetzt hat, oder auf eine
 Übersetzungsregel innerhalb des Ankers zu, so dass in diesem Fall die
 Übereinstimmung als final angesehen wird und in einem Abbruch der
@@ -131,18 +134,16 @@ verwenden
 
 <p>
 Die <tt>load</tt>-Regel sorgt dafür, dass <tt>pfctl</tt> den angegebenen
-Anker und benannten Regelsatz durch das Lesen von Regeln aus einer Textdatei
-anlegt. Beispiel:
+Anker durch das Lesen von Regeln aus einer Textdatei anlegt. Die
+<tt>load</tt>-Regel muss nach der <tt>anchor</tt>-Regel angegeben
+werden.
+Beispiel:
 <blockquote>
 <tt>
-load anchor goodguys:ssh from "/etc/anchor-goodguys-ssh"
+anchor goodguys
+load anchor goodguys from "/etc/anchor-goodguys-ssh"
 </tt>
 </blockquote>
-
-<p>Wenn der Hauptregelsatz geladen ist, werden die Regeln, die in der Datei
-<tt>/etc/anchor-goodguys-ssh</tt> aufgelistet sind, in den benannten
-Regelsatz <tt>ssh</tt> geladen, welcher an den <tt>goodguys</tt>-Anker
-angehängt ist.
 
 <p>
 Um Regeln unter Verwendung von <tt>pfctl</tt> einem Anker hinzuzufügen,
@@ -150,15 +151,9 @@ kann der folgende Befehlstyp verwendet werden:
 <blockquote>
 <tt>
 # echo "pass in proto tcp from 192.0.2.3 to any port 22" \<br>
-&nbsp;&nbsp;&nbsp;| pfctl -a goodguys/ssh -f -
+&nbsp;&nbsp;&nbsp;| pfctl -a goodguys -f -
 </tt>
 </blockquote>
-
-<p>
-Dies fügt eine <tt>pass</tt>-Regel dem Anker namens <tt>ssh</tt> hinzu,
-welcher dem <tt>goodguys</tt>-Anker angehängt wurde. PF wird nun diese
-Regel berücksichtigen (und jede andere Filterregel, die hinzugefügt wird),
-wenn es die <tt>anchor "goodguys/*"</tt>-Zeile im Hauptregelsatz erreicht.
 
 <p>
 Regeln können ebenfalls in eine Textdatei gespeichert und geladen werden:
@@ -168,35 +163,50 @@ Regeln können ebenfalls in eine Textdatei gespeichert und geladen werden:
 pass in proto tcp from 192.0.2.3 to any port 80<br>
 pass in proto tcp from 192.0.2.4 to any port { 80 443 }<br>
 <br>
-# pfctl -a goodguys:www -f /etc/anchor-goodguys-www<br>
+# pfctl -a goodguys -f /etc/anchor-goodguys-www<br>
 </tt>
 </blockquote>
 
 <p>
-Dies lädt die Regeln aus der <tt>/etc/anchor-goodguys-www</tt>-Datei
-in den benannten Regelsatz <tt>www</tt> im <tt>goodguys</tt>-Anker.
-
-<p>
 Filter- und Übersetzungsregeln können unter Verwendung der gleichen
-Syntax und Optionen in einen benannten Regelsatz wie Regeln in den
+Syntax und Optionen in einen Anker wie Regeln in den
 Hauptregelsatz geladen werden.
 Ein Haken jedoch ist, dass jegliche <a href="macros.html">Makros</a>,
-die verwenden werden, ebenfalls im benannten Regelsatz definiert
-werden müssen; Makros, die im Hauptregelsatz definiert worden sind,
-sind von benannten Regelsätzen aus <i>nicht</i> sichtbar.
+die verwenden werden, ebenfalls im Anker definiert
+werden müssen; Makros, die im Eltern-Regelsatz definiert worden sind,
+sind von Ankern aus <i>nicht</i> sichtbar.
 
 <p>
-Jeder benannte Regelsatz, wie auch der Hauptregelsatz, existiert separat
+Da Anker verschachtelt werden können, ist es möglich anzugeben, dass
+alle ,child'-Anker innerhalb eines angegebenen Ankers verarbeitet
+werden:
+
+<blockquote>
+<tt>
+anchor "spam/*"
+</tt>
+</blockquote>
+
+<p>
+Diese Syntax sorgt dafür, dass alle Regeln innerhalb eines jeden
+Ankers, der an den <tt>spam</tt>-Anker angehängt wurde, ausgewertet
+werden.
+Die ,child'-Anker werden in alphabetischer Reihenfolge ausgewertet,
+aber verlieren sich nicht in Rekursivitäten.
+Anker werden immer relativ zu dem Anker, in welchem sie definiert
+wurden, ausgewertet.
+
+<p>
+Jeder Anker, wie auch der Hauptregelsatz, existiert separat
 neben anderen Regelsätzen. Operationen, die in einem Regelsatz ausgeführt
 werden, wie zum Beispiel die Regeln zu ,flush'en, haben keine Auswirkung
 auf andere. Ebenfalls wird das Entfernen eines Ankerpunktes aus dem
-Hauptregelsatz keinen Anker oder irgendeinen benannten Regelsatz
-zerstören, die diesem Anker angehängt worden sind. Ein benannter Regelsatz
+Hauptregelsatz keinen Anker oder irgendeinen ,child'-Anker
+zerstören, die diesem Anker angehängt worden sind. Ein Anker
 wird nicht zerstört, bis er von allen Regeln unter Verwendung von
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.6"
->pfctl(8)</a>
-ge,flush't wird. Sobald einem Ankerpunkt kein benannter Regelsatz mehr
-angehängt ist, wird er ebenfalls zerstört.
+>pfctl(8)</a> ge,flush't wird und sich kein ,child'-Anker mehr in
+diesem Anker befindet.
 
 <a name="options"></a>
 <h2>Anker-Optionen</h2>
@@ -223,7 +233,7 @@ verarbeitet, die für den Port 22 bestimmt sind und über
 <tt>anchor</tt> angehängt:
 <blockquote>
 <tt>
-# echo "pass in from 192.0.2.10 to any" | pfctl -a ssh/allowed -f -
+# echo "pass in from 192.0.2.10 to any" | pfctl -a ssh -f -
 </tt>
 </blockquote>
 
@@ -240,11 +250,10 @@ Es kann verwendet werden, um Regeln einem Anker hinzuzufügen oder zu
 löschen, ohne den Hauptregelsatz neuzuladen.
 
 <p>
-Um alle Regeln in dem Anker namens <tt>allowed</tt> aufzulisten, der
-dem <tt>ssh</tt>-Anker angehängt ist:
+Um alle Regeln in dem Anker namens <tt>ssh</tt> aufzulisten:
 <blockquote>
 <tt>
-# pfctl -a ssh/allowed -s rules
+# pfctl -a ssh -s rules
 </tt>
 </blockquote>
 
@@ -253,7 +262,7 @@ dem <tt>ssh</tt>-Anker angehängt ist:
 Um alle Filterregeln von dem gleichen Anker zu ,flush'en:
 <blockquote>
 <tt>
-# pfctl -a ssh/allowed -F rules
+# pfctl -a ssh -F rules
 </tt>
 </blockquote>
 
@@ -274,10 +283,10 @@ Für eine vollständige Liste der Kommandos, siehe bitte
 <br>
 <small>
 <!--
-Originally [OpenBSD: anchors.html,v 1.15 ]
-$Translation: anchors.html,v 1.6 2005/01/18 14:33:46 paldium Exp $
+Originally [OpenBSD: anchors.html,v 1.16 ]
+$Translation: anchors.html,v 1.7 2005/02/07 12:39:02 paldium Exp $
 -->
-$OpenBSD: anchors.html,v 1.6 2005/01/18 17:18:10 jufi Exp $
+$OpenBSD: anchors.html,v 1.7 2005/02/08 13:59:02 jufi Exp $
 </small>
 
 </body>
