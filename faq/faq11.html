@@ -1,0 +1,362 @@
+<html>
+<head>
+<title>OpenBSD FAQ: 11.0 - Performance Tuning</title>
+<link rev= "made" href= "mailto:www@openbsd.org">
+<meta name= "resource-type" content= "document">
+<meta name= "description"   content= "the OpenBSD FAQ page">
+<meta name= "keywords"      content= "openbsd,faq">
+<meta name= "distribution"  content= "global">
+<meta name= "copyright"     content= "This document copyright 1998,1999 by OpenBSD.">
+</head>
+
+<body bgcolor= "#ffffff" text= "#000000" link= "#23238E">
+
+<img alt="[OpenBSD]" height=30 width=141 src="../images/smalltitle.gif">
+<p>
+<h2><font color=#e00000>11.0 - Performance Tuning</font><hr></h2>
+</p>
+
+<p>
+<ul><h3>Table of Contents</h3>
+<li><a href="#11.1">11.1 - Networking</a></li>
+<li><a href="#11.2">11.2 - Disk I/O</a></li>
+<li><a href="#11.3">11.3 - Tuning kmem</a></li>
+<li><a href="#11.4">11.4 - Hardware Choices</a></li>
+<li><a href="#11.5">11.5 - Why aren't we using async mounts?</a></li>
+</ul>
+</p> 
+<hr>
+
+<p>
+<a name= "11.1">
+<h2>11.1 - Networking</h2>
+</a>
+</p>
+
+<p>
+If you run a busy server, gateway or firewall, you should make sure to prevent 
+memory starvation to various parts of the kernel described below.
+</p>
+
+<P>
+The <A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=options&apropos=0&sektion=4&format=html">options(4)</a> man page talks about the options presented.
+<p>
+
+<p>
+An option you may need to change for a busy server, gateway or firewall is
+NMBCLUSTERS.  This controls the size of the kernel mbuf cluster map.
+On your computer, if you get messages like "mb_map full",
+you need to increase this value.  If traffic on a networking interface stops
+for no apparent reason, this may also be a sign that you need to increase
+this value.  A reasonable value on the i386 port with most 100Mbps
+ethernet interfaces (no matter how many the machine has) is 8192.  
+</p>
+
+<ul>
+<strong>
+option NMBCLUSTERS=8192<BR>
+</strong>
+</ul>
+<br>
+
+<p>
+<a name= "11.2">
+<h2>11.2 - Disk I/O</h2>
+</a>
+</p>
+
+<p>
+Disk I/O speed is a significant factor in the overall speed of your
+computer.  It becomes increasingly important when your computer
+is hosting a multi-user environment (users of all kinds, from those
+who log-in interactively to those who see you as a file-server or a web-server.)
+Data storage constantly needs attention, especially when your partitions run
+out of space and when your disks fail.  OpenBSD has several options
+to increase the speed of your disk operations and provide fault tolerance.
+</p>
+
+<H3>CCD</H3><UL>
+<p>
+The first option is the use of <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ccd&apropos=0&sektion=4&format=html">ccd(4)</a>, the Concatenated Disk Driver.
+This allows you to join several partitions into one virtual disk (and thus,
+you can make several disks look like one disk).  This concept is
+similar to that of LVM (logical volume management), which is found in many commercial Unix flavors.
+<P>
+If you are running GENERIC, ccd is already enabled.  If not, you may
+need to add it to your kernel configuration.
+To start the setup of ccd, you need to add support for it in your kernel. A
+line such as:
+</p>
+
+<p>
+<UL>
+<pre>
+<strong>pseudo-device   ccd     4       # concatenated disk devices</strong>
+</pre>
+</UL>
+</p>
+
+<p>
+The above example gives you up to 4 ccd devices (virtual disks).
+Now you need to figure out what partitions on your real disks that you want
+to dedicate to ccd.  Use disklabel to mark these partitions as type 'ccd'.
+On some architectures, disklabel may not allow you to do this.  In this case,
+mark them as 'ffs'.
+<p>
+If you are using ccd to gain performance by striping, note that you will
+not get optimum performance unless you use the same model of disks with
+the same disklabel settings.
+<P>
+Edit /etc/ccd.conf to look something like this:
+(for more information on configuring ccd, look at
+<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=ccdconfig&apropos=0&sektion=8&format=html">ccdconfig(8)</a>)
+<UL>
+<PRE>
+# Configuration file for concatenated disk devices
+#
+# ccd   ileave  flags   component devices
+ccd0   16      none    /dev/sd2e /dev/sd3e
+</PRE></UL>
+To make your changes take effect, run
+<UL><PRE># ccdconfig -C
+</PRE></UL>
+As long as /etc/ccd.conf exists, ccd will automatically configure itself
+upon boot.
+Now, you have a new disk, ccd0, a combination of /dev/sd2e and /dev/sd3e.
+Just use disklabel on it like you normally would to make the partition 
+or partitions you want to use.  Again, don't use the 'c' partition as
+an actual partition that you put stuff on.
+Make sure your useable partitions are at least one cylinder off from the beginning
+of the disk.
+</p>
+</UL>
+<br>
+<H3>RAID</H3>
+<UL>
+<p>
+Another solution is <a href= "http://www.openbsd.org/cgi-bin/man.cgi?query=raid&apropos=0&sektion=4&format=html">raid(4)</a>
+which will have you use <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=raidctl&apropos=0&sektion=8&format=html">raidctl(8)</a>
+to control your raid devices.  OpenBSD's RAID is based upon
+Greg Oster's <A HREF="http://www.cs.usask.ca/staff/oster/raid.html">NetBSD port</a>
+of the CMU
+<A HREF="http://www.pdl.cs.cmu.edu/RAIDframe/">RAIDframe</a> software.
+OpenBSD has support for RAID levels
+of 0, 1, 4, and 5.<P> With raid, as with ccd, support must be in the KERNEL.
+Unlike ccd, support for RAID is not found in GENERIC, it must be compiled 
+into your kernel (RAID support adds some 500K to the size of an i386 kernel!)
+</p>
+
+<p>
+<UL>
+<pre>
+<strong>pseudo-device   raid   4       # RAIDframe disk device</strong>
+</pre>
+</UL>
+<P>
+Setting up RAID on some operating systems is confusing and
+painful to say the least.  Not so with RAIDframe.
+Read the <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=raid&apropos=0&sektion=4&format=html">raid(4)</a> and
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=raidctl&apropos=0&sektion=8&format=html">raidctl(8)</a>
+man pages to get full details. There are many
+options and possible configurations, a detailed explanation is beyond the scope of this document.
+</UL>
+<BR>
+<H3>Filesystem Buffer</H3>
+<UL>
+For fileservers with memory to spare, you can increase BUFCACHEPERCENT.
+That is, what percentage of your RAM should you use as a file system buffer.
+This option may change when the Unified Buffer Cache is completed
+and is part of OpenBSD.  In the mean time, to increase BUFCACHEPERCENT,
+you should add a line to your kernel configuration like this:
+</p>
+
+<p>
+<UL>
+<strong>option	BUFCACHEPERCENT=30</strong><BR>
+</UL>
+</p>
+<p>
+Of course you can make it as low as 5 percent (the default) or as high
+as 50 percent (or more.)
+</p>
+</UL>
+<br>
+<H3>Soft updates</H3><UL>
+Another tool that can be used to speed up your system is softupdates.  One of the 
+slowest operations in the traditional BSD file system is updating metainfo
+(which happens, among other times, when you create or delete files and
+directories.) Softupdates
+attempts to update metainfo in RAM instead of writing
+to the hard disk each and every single metainfo update.  Another 
+effect of this is that the metainfo on disk should always be complete,
+although not always up to date.  So, a system crash should not require
+fsck upon boot up, but simply a background version of fsck that makes
+changes to the metainfo in RAM (a la softupdates).
+This means rebooting a server is much faster, because you don't
+have to wait for fsck!  (OpenBSD does not have this feature yet.) You can read
+more about softupdates in the <a href="faq14.html#14.5">softupdates FAQ</a> entry.
+If you use softupdates, you will most certainly want to take
+advantage of the Tuning kmem section below.
+</UL>
+</p>
+<BR>
+<p>
+<a name= "11.3">
+<h2>11.3 - Tuning kmem</h2>
+</a>
+</p>
+
+<P>
+If you start using the performance tuning measures above, you may start
+running out of kernel memory.  If you start getting
+panics like "out of space in kmem_map" then you need to try
+<UL>
+<strong>
+option NKMEMCLUSTERS=8192<BR>
+</strong>
+</UL>
+Note that 8192 is valid for the i386 architecture, but may be too
+little or too much for others. Look at /usr/include/machine/param.h
+to see more information.
+<P>
+You may also want to increase the number of static kernel maps and entries.
+The default value for these options is architecture dependent and is specified
+in /sys/vm/vm_map.h. If you are using soft updates, the following values should 
+keep you going!
+<UL>
+<strong>
+option MAX_KMAP=120<BR>
+option MAX_KMAPENT=6000<BR>
+</strong>
+</ul>
+
+<br>
+<p>
+<a name= "11.4">
+<h2>11.4 - Hardware choices</h2>
+</a>
+</p>
+<i>(Note- this section is heavily centered around the i386, or PC, architecture.
+That is to say... other architectures don't give you quite as many choices!)</i>
+<P>
+The performance of your applications depends heavily on your OS and the
+facilities it provides.  This 
+may be part of the reason that you are using OpenBSD.
+The performance of your applications also depends heavily on your hardware.
+For many folks, the Price/Performance ratio of a brand new PC with
+a Intel Pentium III or AMD Athlon processor is much better then the
+Price/Performance ratio of a Sun UltraSparc 60!
+And, the price of OpenBSD can't be beat.
+<P>
+If you are shopping for a new PC, whether you are buying it
+piece by piece or completely pre-built, you want to make sure first
+that you are buying reliable parts.  In the PC world, this is not easy.
+<b>Bad or otherwise unreliable or mismatched parts can
+make OpenBSD run poorly and crash often</b>.  The best advice
+we can give is to be careful,
+buy brands and parts that have been reviewed by an authority you trust.
+Sometimes, when you skimp on the price of a PC, you lose in quality!
+<P>
+There are certain things that will help bring
+out the maximum performance of your hardware:
+<UL>
+<LI>Use multiple disks.
+<P>Instead of buying one 20GB disk, buy multiple 4GB or 9GB disks.  While this
+may cost more, distributing the load over multiple spindles will decrease
+the amount of time necessary to access data on the disks.  And, with more 
+spindles, you will get more reliability and faster data access with RAID.
+<p>
+<LI>Use SCSI where you can.
+<P>If you are building a server, and you need more then 10GB of disk space,
+the SCSI architecture is the best choice.  IDE limits you to two disks per controller.
+Wide SCSI limits you to 15 per controller!  While SCSI costs more, the flexibility and
+performance can justify these costs.
+IDE was not designed for use in a multi-user, multi-tasking environment.
+<P>
+<li>Use SDRAM.
+<P>
+This option applies mainly to PCs.  Most other architectures don't give
+you a choice of what kind of RAM you can use.  Several PCs still do.
+Avoid SIMMs, as there are not many companies manufacturing them anymore,
+and in some cases they cost more then equivalent SDRAM!
+<P>
+<li>Use ECC or parity RAM.
+<P>
+Parity adds some functionality to see if the data in RAM has been
+corrupted.  ECC extends this functionality and attempts to correct
+some bit corruption errors on the fly.
+This option applies mainly to PCs.  Most other architectures
+simply require parity or ECC capable RAM.  Several non-PC computers won't
+even boot with non-parity RAM. 
+If you aren't using ECC/parity RAM, you may get data corruption and
+other abnormalities. Several manufacturers
+of "cheap PC RAM" don't even make an ECC variety!  This will help you
+avoid them!  PC manufacturers often sell several product lines, 
+divided around "servers" and "workstations."  The servers will incorporate
+ECC RAM into their architecture.  Unix workstation manufacturers have been
+using parity (and now ECC) for several years in all of their product lines.
+<P>
+<LI>Avoid ISA devices.
+<P>
+While most folks avoid ISA devices, because they are generally hard to configure
+and out of date, there are still plenty in existence.  If you are using the ISA
+bus for your disk or network controllers, (or even worse, for both) remember
+that the ISA bus itself can be a performance bottleneck.  If you need speed,
+look to PCI.  Of course, there are still several ISA bus cards that work
+just fine.  Unfortunately, most of these are sound cards and serial port cards.
+</ul>
+<P>
+<br>
+<p>
+<a name= "11.5">
+<h2>11.5 - Why aren't we using async mounts?</h2>
+</a>
+<p>
+Question: "I simply do "mount -u -o async /" which makes one package I use 
+(which insists on touching a few hundred things from time to time) useable.
+
+Why is async mounting frowned upon and not on by default (as it is in some
+other unixen) ? Surely it is much simpler and therefore a safer way of
+improving performance in some applications ?"
+</p>
+<p>
+Answer: "Async mounts is indeed faster then sync mounts, but they are also 
+less safe. What happens in case of a power failure? Or a hardware problem?
+The quest for speed should not sacrifice the reliabilty and the stability of 
+the system. Check the manpage for 
+<a href= "http://www.openbsd.org/cgi-bin/man.cgi?query=mount&apropos=0&sektion=8&format=html">mount(8)</a>."
+</p>
+<pre>
+	     async   All I/O to the file system should be done asynchronously.
+		     This is a dangerous flag to set since it does not guaran-
+		     tee to keep a consistent file system structure on the
+		     disk.  You should not use this flag unless you are pre-
+		     pared to recreate the file system should your system
+		     crash.  The most common use of this flag is to speed up
+		     restore(8) where it can give a factor of two speed in-
+		     crease.
+</pre>
+<p>
+On the other hand, when you are dealing with temp data that you can recreate 
+from scratch after a crash, you could gain speed by using a separate 
+partition, used for that data only, mounted async. If you don't mind
+risking the loss of all the data in the partition when something goes
+wrong...
+</p>
+
+<p>
+<font color= "#0000e0">
+<a href= "index.html">[Back to Main Index]</a>
+<a href= "faq10">[To Section 10.0 - System Administration]</a>
+</font>
+</p>
+
+<p>
+<hr>
+<a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt="[back]"></a>
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>$OpenBSD: faq11.html,v 1.1 1999/09/24 01:46:14 ericj Exp $</small>
+</p>
+</body>
+</html>

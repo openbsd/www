@@ -1,6 +1,6 @@
 <html>
 <head>
-<title>OpenBSD FAQ: 14 - Using IPsec in OpenBSD</title>
+<title>OpenBSD FAQ: 14 - Working With Disks in OpenBSD</title>
 <link rev= "made" href= "mailto:www@openbsd.org">
 <meta name= "resource-type" content= "document">
 <meta name= "description"   content= "the OpenBSD FAQ page">
@@ -10,49 +10,687 @@
 </head>
 
 <body bgcolor= "#ffffff" text= "#000000" link= "#23238E">
+
+<img alt="[OpenBSD]" height=30 width=141 src="../images/smalltitle.gif">
 <p>
-<font color= "#0000e0">
-<a href= "index.html">[Back to Main Index]</a>
-<a href= "faq13.html">[To Section 13.0 - For Advanced Users]</a>
-<a href= "faq15.html">[To Section 15.0 - Using Disks in OpenBSD]</a>
-</font>
+<h2><font color=#e00000>14.0 - Working with disks in OpenBSD</font><hr></h2>
 </p>
 
 <p>
-<h1>14.0 - Using IPsec in OpenBSD</h1>
+<ul><h3>Table of Contents</h3>
+<li><a href="#14.1">14.1 - Using OpenBSD's Disklabel</a></li>
+<li><a href="#14.2">14.2 - Using OpenBSD's fdisk</a></li>
+<li><a href="#14.3">14.3 - Adding extra disks in OpenBSD</a></li>
+<li><a href="#14.4">14.4 - How to swap to a file</a></li>
+<li><a href="#14.5">14.5 - Soft-updates</a></li>
+<li><a href="#14.6">14.6 - When I boot after installation of OpenBSD/i386, it says
+"partition 3 id 0".</a></li>
+<li><a href="#14.7">14.7 - How do I get a dmesg from a boot floppy?</a></li>
+<li><a href="#14.8">14.8 - Installing Bootblocks - i386 specific</a></li>
+</ul>
+</p> 
 <hr>
+
+<p>
+<a name="14.1">
+<h2>14.1 - Using the OpenBSD disklabel</h2>
 </p>
 
 <p>
-<a name="14.1"> 
+Be sure to check the <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=disklabel&sektion=8&format=html">disklabel(8)</a> man page! 
+</p>
+
+<p>
+Disklabel is used to identify disks and/or partitions. The main idea behind
+them is abstraction of disk hardware, since there exists several partitioning
+tables. A <b>disklabel</b> is a universal partitioning table. These
+labels tell the system everything about the disk, but most of it is irrelevant.
+The important parts of the label are both the part that tells the disk
+geometry and also the part that actually defines what partitions
+exist on your disk.  This label resides on the beginning of the disk, this is to
+help bootstrap code use them (since most ROM based booting reads the first sectors of the first disk). 
+Disklabel can, on some systems, be used to install bootstrap code.
+</p>
+
+<p>
+As an additional gain, using disklabel helps overcome architecture limitations
+on disk partitioning. For example, on i386, you can only have 4 primary
+partitions.  (Partitions that other operating systems, such as Windows NT
+or DOS can see.)  With <b>disklabel</b>, you use one of these
+'primary' partitions to store *all* of your OpenBSD partitions
+(eg. 'swap', '/', '/usr' and '/var'). And you still have 3 more partitions
+available for other OSs!
+</p>
+
+<p>
+You can think of them as 'subpartitions' for installation purposes. But they
+are a necessity for kernel disk access based on geometry. And remember to use
+'b' for the swap label, and 'a' for root filesystem (default names in kernel).
+(Note also that in other FAQ documents we usually refer to these OpenBSD
+'subpartitions' as partitions.  Most architectures do not have two layers
+of partitions like the i386 does.)
+</p>
+
+<p>
+To just view the current disklabel for your disk just do:<br>
+
+<ul><pre>
+# <Strong>disklabel &lt;disk-device name&gt;</strong><br>
+</pre></ul>
+This will give output similar to this:<br>
+</p>
+
+<ul><pre>
+# using MBR partition 3: type A6 off 64 (0x40) size 16777152 (0xffffc0)
+# /dev/rwd0c:
+type: ESDI
+disk: 
+label: TOSHIBA MK2720FC
+flags:
+bytes/sector: 512
+sectors/track: 63
+tracks/cylinder: 16
+sectors/cylinder: 1008
+cylinders: 2633
+total sectors: 2654064
+rpm: 3600
+interleave: 1
+trackskew: 0
+cylinderskew: 0
+headswitch: 0           # milliseconds
+track-to-track seek: 0  # milliseconds
+drivedata: 0 
+
+16 partitions:
+#        size   offset    fstype   [fsize bsize   cpg]
+  a:  2071440    65583    4.2BSD     1024  8192    16   # (Cyl.   65*- 2120)
+  b:    65520       63      swap                        # (Cyl.    0*- 65)
+  c:  2654064        0    unused        0     0         # (Cyl.    0 - 2632)
+  j:   512001  2137023    4.2BSD     1024  8192    16   # (Cyl. 2120*- 2627*)
+</PRE></ul>
+
+<p> 
+In this example, there are 4 labels - A, B, C, J. A is one main partition, B is swap, and J is another
+partition. C in all cases represents the full disk. This is helpful in showing what values in size, cyl, etc you have
+to work with. But with this command you cannot change any values, you can just view. 
+</p>
+
+<p>
+To be able to edit your label's interactively you would use the <b>-E</b> flag.<br>
+Example:
+</p>
+
+<ul><pre>
+# <strong>disklabel -E wd0</strong>
+# using MBR partition 3: type A6 off 64 (0x40) size 16777152 (0xffffc0)
+
+Treating sectors 64-16777216 as the OpenBSD portion of the disk.
+You can use the 'b' command to change this.
+
+Initial label editor (enter '?' for help at any prompt)
+> <Strong>?</strong>
+Available commands:
+        p [unit]  - print label.
+        M         - show entire OpenBSD man page for disklabel.
+        e         - edit drive parameters.
+        a [part]  - add new partition.
+        b         - set OpenBSD disk boundaries.
+        c [part]  - change partition size.
+        d [part]  - delete partition.
+        m [part]  - modify existing partition.
+        r         - recalculate free space.
+        u         - undo last change.
+        s [path]  - save label to file.
+        w         - write label to disk.
+        q         - quit and save changes.
+        x         - exit without saving changes.
+        ? [cmnd]  - this message or command specific help.
+Numeric parameters may use suffixes to indicate units:
+        'b' for bytes, 'c' for cylinders, 'k' for kilobytes, 'm' for megabytes,
+        'g' for gigabytes or no suffix for sectors (usually 512 bytes).
+        Non-sector units will be rounded to the nearest cylinder.
+Entering '?' at most prompts will give you (simple) context sensitive help.
+> <strong>p</strong>
+device: /dev/rwd0c
+type: ESDI
+disk: 
+label: TOSHIBA MK2720FC
+bytes/sector: 512
+sectors/track: 63
+tracks/cylinder: 16
+sectors/cylinder: 1008
+cylinders: 2633
+total sectors: 2654064
+free sectors: 14193711
+rpm: 3600
+
+16 partitions:
+#        size   offset    fstype   [fsize bsize   cpg]
+  a:  2071440    65583    4.2BSD     1024  8192    16   # (Cyl.   65*- 2120)
+  b:    65520       63      swap                        # (Cyl.    0*- 65)
+  c:  2654064        0    unused        0     0         # (Cyl.    0 - 2632)
+  j:   512001  2137023    4.2BSD     1024  8192    16   # (Cyl. 2120*- 2627*)
+> <strong>q</strong>
+No changes.
+</pre></ul>
+
+<p> 
+In this example we get into disklabel's interactive mode. From here we can issue the command "?" asking for help. This
+gives us many commands we can use to add, delete, edit existing labels.  
+</p> 
+
+<p> 
+There is a new feature on disklabel, to help installation. The '-f' flag writes a 'fstab' like file, if
+given a mount point for a label. This is only used at installation. 
+</p>
+
+<p> 
+To see an example install involving disklabel check <a href="log25.txt">log25.txt</a> </p>
+<br>
+
+<p>
+<a name="14.2">
+<h2>14.2 - Using fdisk</h2>
 </p>
 <p>
-IPSec is partially documented in the 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vpn&apropos=0&sektion=0&format=html">vpn(8)</a>
-man page.  There are various files in <A HREF="http://www.openbsd.org/cgi-bin/cvsweb/src/share/ipsec/">/usr/share/ipsec/</a>
-directory which can also assist you.  The manual pages for
-<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=ipsec&apropos=0&sektion=4&format=html">ipsec(4)</a>,
-<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=ipsecadm&apropos=0&sektion=8&format=html">ipsecadm(8)</a>,
-<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=photurisd&apropos=0&sektion=8&format=html">photurisd(8)</a>,
-<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=startkey&apropos=0&sektion=1&format=html">startkey(1)</a>,
-<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd&apropos=0&sektion=8&format=html">isakmpd(8)</a> and
-<a HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd.conf&apropos=0&sektion=5&format=html">isakmpd.conf(5)</a>
-are also available!
+First be sure to check the fdisk main page. 
+<a href= "http://www.openbsd.org/cgi-bin/man.cgi?query=fdisk&apropos=0&sektion=8&format=html">fdisk(8)</a>
+</p>
+<p>
+Fdisk is a program to help with the maintenance of your partitions. This
+program is used at install time to set up your OpenBSD partition (this
+partition can contain <u>several</u> labels, each with filesystems/swap/etc.).
+It can divide space on your drives and set one active. This program will
+usually be used in Single User Mode ( boot -s ). Fdisk also sets the MBR on
+your various hard disks.
+</p>
+
+<p>
+For installation purposes, most times you'll only need <b>ONE</b> Openbsd
+partition, and then using disklabel to put a swap and a filesystem on it.
+</p>
+
+<p>
+To just view your partition table using fdisk just use:<br>
+<ul>
+<pre># <strong>fdisk fd0</strong><br>
+</pre>
+</ul>
+
+Which will give an output similar to this:
+</p>
+
+<ul>
+<pre>
+         Disk: fd0       geometry: 80/2/18 [2880 sectors]
+         Offset: 0       Signatures: 0xAA55,0x0
+                  Starting        Ending
+          #: id  cyl  hd sec -  cyl  hd sec [     start -       size]
+----------------------------------------------------------------------
+         *0: A6    0   0   1 -   79   1  18 [         0 -       2880] OpenBSD
+          1: 00    0   0   0 -    0   0   0 [         0 -          0] unused
+          2: A7    0   0   2 -   79   1  18 [         1 -       2879] NEXTSTEP
+          3: 00    0   0   0 -    0   0   0 [         0 -          0] unused
+</pre>
+</ul>
+
+<p>
+In this example we are viewing the fdisk output of floppy drive. We can
+see the OpenBSD partition (A6) and its size. The * tells us that the
+OpenBSD partition is a bootable partition.
+</p>
+
+<p>
+In the previous example we just viewed our information. What if we want to
+edit our partition table? Well, to do so we must use the <b>-e</b> flag.
+This will bring up a command line prompt to interact with fdisk.
+</p>
+
+<ul>
+<PRE>
+# <strong>fdisk -e wd0</strong>
+Enter 'help' for information
+fdisk: 1> <strong>help</strong>
+        help            Command help list
+        manual          Show entire OpenBSD man page for fdisk
+        reinit          Re-initialize loaded MBR (to defaults)
+        disk            Edit current drive stats
+        edit            Edit given table entry
+        flag            Flag given table entry as bootable
+        update          Update machine code in loaded MBR
+        select          Select extended partition table entry MBR
+        print           Print loaded MBR partition table
+        write           Write loaded MBR to disk
+        exit            Exit edit of current MBR, without saving changes
+        quit            Quit edit of current MBR, saving current changes
+        abort           Abort program without saving current changes
+fdisk: 1> 
+</PRE>
+</ul>
+
 </p>
 <p> 
-You should also check <a href="http://www.codetalker.com/greenbox/docs/vpn-24-minifaq.html">Codetalker</a> which has an FAQ
-for setting up an IPSec VPN with OpenBSD.  It explains some basic IPSec concepts and how to apply them to a VPN setup.
+It is perfectly safe in fdisk to go in and explore, just make sure to answer <Strong>N</strong> to saving
+the changes and *DON'T* use the <strong>write</strong> command.
+</p>
+
+<p>Here is an overview of the commands you can use when you choose the <b>-e</b> flag.<br>
+<ul>
+<li><strong>help</strong>    Display a list of commands that fdisk understands in the interactive edit mode.</li>
+<li><strong>reinit</strong>  Initialize the currently selected, in-memory copy of the boot block.</li>
+<li><strong>disk</strong>    Display the current drive geometry that fdisk has probed. You are given a chance to edit it if you wish.</li>
+<li><strong>edit</strong>    Edit a given table entry in the memory copy of the current boot block.  You may edit either in BIOS geometry mode, or in sector offsets and sizes.</li>
+<li><strong>flag</strong>    Make the given partition table entry bootable. Only one entry can be marked bootable. If you 
+wish to boot from an extended partition, you will need to mark the partition table entry for the extended partition as bootable.</li>
+<li><strong>update</strong>  Update the machine code in the memory copy of the currently selected boot block.</li>
+<li><strong>select</strong>  Select and load into memory the boot block pointed to by the extended partition table entry in the current boot block.</li>
+<li><strong>print</strong>   Print the currently selected in-memory copy of the boot block and its MBR table to the terminal.</li>
+<li><strong>write</strong>   Write the in-memory copy of the boot block to disk. You will be asked to confirm this operation.</li>
+<li><strong>exit</strong>    Exit the current level of fdisk, either returning to the previously selected in-memory copy of a boot block, or exiting the program if there is none.</li>
+<li><strong>quit</strong>    Exit the current level of fdisk, either returning to the previously selected
+in-memory copy of a boot block, or exiting the program if there is none.  Unlike exit it does write the modified block out.</li>
+<li><strong>abort</strong>   Quit program without saving current changes.</li>
+</ul>
+</p>
+<br>
+
+<p>
+<a name="14.3">
+<h2>14.3 - Adding extra disks in OpenBSD</h2>
+</p>
+
+<p>
+Well once you get your disk installed <strong>PROPERLY</strong> you need to use
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fdisk&apropos=0&sektion=8&format=html">fdisk(8)</a>
+(<i>i386 only</i
+>) and 
+<a href= "http://www.openbsd.org/cgi-bin/man.cgi?query=disklabel&apropos=0&sektion=8&format=html">
+disklabel(8)</a> to set
+ up your
+disk in OpenBSD.
+<P>
+For i386 folks, start with fdisk.  Other architectures can ignore this.
+<UL><PRE>
+# <Strong>fdisk -i sd2</strong>
+</ul></pre>
+This will initialize the disk's "real" partition table for exclusive use
+by OpenBSD.
+Next you need to create a disklabel for it.  This will seem confusing.
+<UL><PRE>
+# <strong>disklabel -e sd2</strong>
+
+<i>(screen goes blank, your $EDITOR comes up)</i>
+type: SCSI
+<i>...bla...</i>
+sectors/track: 63
+total sectors: 6185088
+<i>...bla...</i>
+16 partitions:
+#        size   offset    fstype   [fsize bsize   cpg]
+  c:  6185088        0    unused        0     0         # (Cyl.    0 - 6135)
+  d:  1405080       63    4.2BSD     1024  8192    16   # (Cyl.    0*- 1393*)
+  e:  4779945  1405143    4.2BSD     1024  8192    16   # (Cyl. 1393*- 6135)
+</PRE></ul>
+First, ignore the 'c' partition, it's always there and is for
+programs like disklabel to function! 
+For normal operations, fsize should always be 1024, bsize should always be 8192,
+and cpg should always be 16.  Fstype is 4.2BSD.  Total sectors is
+the total size of the disk.
+Say this is a 3 gigabyte disk.  Three gigabytes in disk manufacturer
+terms is 3000 megabytes.  So divide 6185088/3000 (use bc(1)).  You get 2061.
+So to make up partition sizes for a, d, e, f, g, ... just multiply X*2061
+to get X megabytes of space on that partition.   The offset for your
+first new partition should be the same as the "sectors/track" reported
+earlier in disklabel's output.  For us it is 63.  The offset for each
+partition afterwards should be a combination of the size of each partition
+and the offset of each partition (Except the C partition, since it has no
+play into this equation.)
+<P>
+Or, if you just want one partition on the disk, say you will use the
+whole thing for web storage or a home directory or something,
+just take the total size of the disk and subtract the sectors per track from it.
+6185088-63 = 6185025.  Your partition is
+<UL><PRE>
+    d:  6185025       63    4.2BSD     1024  8192    16 
+</PRE></UL>
+<P>
+<b>If all this seems needlessly complex, you can just use disklabel -E to get
+the same partitioning mode that you got on your install disk!</b>
+There, you can just use "96M" to specify "96 megabytes".  (Or, if you have a disk
+big enough, 96G for 96 gigs!) Unfortunately,
+the -E mode uses the BIOS disk geometry, not the real disk geometry,
+and often times the two are not the same.  To get around this limitation,
+type 'g d' for 'geometry disk'.  (Other options are 'g b' for 'geometry bios'
+and 'g u' for geometry user, or simply, what the label said before
+disklabel made any changes.)
+<P>
+That was a lot.  But you are not finished.  
+Finally, you need to create the filesystem on that disk using <a href=
+"http://www.openbsd.org/cgi-bin/man.cgi?query=newfs
+&apropos=0&sektion=8&format=html">newfs(8)</a>.
+</p>
+
+<p>
+<ul><pre>
+bsd# <strong>newfs wd1a </strong></ul></pre>
+</p>
+
+<p>
+Or whatever your disk was named as per OpenBSD's disk numbering scheme.  (Look at the
+output from dmesg(1) to see what your disk was named by OpenBSD.)
+</p>
+
+<p>
+Now figure out where you are going to mount this new partition you just created.
+Say you want to put it on /u.  First, make the directory /u.  Then, mount it.
+</p>
+
+<UL><PRE>
+mount /dev/wd1a /u
+</PRE></UL>
+
+<P>
+Finally, add it to /etc/fstab
+</p>
+<UL><PRE>/dev/wd1a /u ffs rw 1 1</PRE></UL>
+
+<p>
+What if you need to migrate an existing directory like /usr/local? You should mount 
+the new drive in /mnt and use cpio -pdum to copy /usr/local to the /mnt directory.
+Edit the /etc/fstab file to show that the /usr/local partition is now /dev/wd1a
+(your freshly formatted partition.) 
+Example:
+</p>
+
+<ul>
+<strong>/dev/wd1a /usr/local ffs rw 1 1</strong>
+</ul>
+
+<p>
+Reboot into single user mode..<strong>boot -s</strong> Move the existing
+/usr/local to /usr/local-backup (or delete it if you feel lucky) and create an
+empty directory /usr/local. Then reboot the system, and whala!! the files are there!
 </p>
 
 <br>
- 
-<b>Section Under Work</b>
+
+<p>
+<a name="14.4">
+<h2>14.4 - How to swap to a file</h2>
+</p>
+
+<p>
+(Note: if you are looking to swap to a file because you are getting
+&quot;virtual memory exhausted&quot; errors, you should try raising
+the per-process limits first with 
+csh's <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=unlimit&sektion=1&format=html">unlimit(1)</a>,
+or
+sh's <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ulimit&sektion=1&format=html">ulimit(1)</a>.)
+</p>
+
+<p>
+With OpenBSD 2.5 came the introduction of <a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=swapctl&sektion=8&format=h
+tml">swapctl(8)</a>, 
+which made dealing with swap devices much easier. Swapping to a file doesn't require a 
+custom built kernel, although that can still be done, this faq will show you how to add 
+swap space both ways.
+</p>
+
+<p>
+To swap to a file permanently, first make a kernel with vnd0c as swap. If you 
+have wd0a as root filesystem, wd0b is the previous swap, use this line in the 
+kernel configuration file (refer to compiling a new kernel if in doubt):
+</p>
+
+<ul>
+<pre>
+config          bsd     root on wd0a swap on wd0b and vnd0c dumps on wd0b
+</pre>
+</ul>
+
+<p>
+Second make the file for swap. If you want a 32MB swapfile named /newswap do:
+</p>
+
+<ul>
+<strong># dd if=/dev/zero of=/newswap bs=1k count=32768</strong>
+</ul>
+
+<p>
+Add a line to your /etc/fstab file to indicate where the new swap will be.
+</p>
+
+<ul>
+<strong>/dev/vnd0c none swap sw 0 0</strong>
+</ul>
+
+<p>
+Now boot with the new kernel. Then create the vnd0 device to use that file
+as a device:
+</p>
+
+<ul>
+<strong># vnconfig -c -v vnd0 /newswap</strong>
+</ul>
+
+<p>
+And add it now to swap:
+</p>
+
+<ul>
+<strong># swapon /dev/vnd0c</strong>
+</ul>
+
+<p>
+You can now see if it is working with:
+</p>
+
+<ul>
+<strong># pstat -s</strong>
+</ul>
+
+<p>
+<a name="14.5">
+<h2>14.5 - Soft-updates</h2>
+</p>
+
+<p>
+<strong>
+Softupdates are experimental and are NOT recomended for regular users.
+</strong>
+</p>
+
+<p>
+Over the last few years Kirk McKusick has been working on something called
+"soft updates". This is based on an idea proposed by Greg Ganger and Yale
+Patt that imposing a partial ordering on the buffer cache opertions would
+permit the requirement for synchronous writing of directory entries to be
+removed from the FFS code. Thus, a large performance increase of disk
+writing performance.
+</p>
+
+<p>
+To enable Softupdates your kernel must have option
+</p>
+
+<p>
+<strong>option FFS_SOFTUPDATES</strong>
+</p>
+
+<p>
+then you need to boot into single-user mode:
+</p>
+
+<ul>
+<strong>
+<pre>
+        boot>boot -s
+        [snip]
+        bsd# tunefs -s enable &lt;raw device&gt;
+        bsd# reboot -n
+</pre>
+</strong>
+</ul>
+
+<p>
+GOOD LUCK. Please direct all problem reports with as MUCH information as
+possible (kernel coredumps, tracebacks, etc) to <a href="mailto:csapuntz@openbsd.org">Costa</a>. 
+Do not waste his time with any other questions or incomplete problem
+reports.
+</p>
+
+<p>
+<a name="14.6">
+<h2>14.6 -  When I boot after installation of OpenBSD/i386, it says "partition 3 id 0".</h2>
+</p>
+<p>
+This means that your MBR (Master Boot Record) was not installed properly
+or that your BIOS is not compatible with your current MBR. To solve this
+first try to reinstall the OpenBSD boot blocks. To do so use
+<a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=installboot&sektion=8&format=html">installboot(8)</a>.
+For example, the most common usage is:
+</p>
+
+<p>
+<ul>
+<li>Boot from the OpenBSD bootdisk</li>
+<ul>
+<li># <strong>fsck /dev/rwd0a && mount /dev/wd0a /mnt </li></strong>
+<li># <strong>cp /usr/mdec/boot /mnt/boot</li></strong>
+<li># <strong>/usr/mdec/installboot -v /mnt/boot /usr/mdec/biosboot wd0</li></strong>
+</ul>
+<li>Here substitute your disk devices for rwd0a & wd0a. This will install the boot blocks again.</li>
+<li>Then Reboot.</li>
+</ul>
+</p>
+
+<p>
+If this doesn't work you still have a few more options. So, luck hasn't
+run out yet. The first is to use a bootloader such as OS-BS. The OpenBSD
+cd has the os-bs bootloader included in the tools directory. If you didn't
+purchase a CD-ROM, you can download os-bs from any of the OpenBSD ftp
+sites.
+</p>
+
+<p>
+<kbd>pub/OpenBSD/2.5/tools/osbs135.exe</kbd>
+</p>
+
+<p>
+and take some time to look through the web pages at
+<a href= "http://www.prz.tu-berlin.de/~wolf/os-bs.html">
+          http://www.prz.tu-berlin.de/~wolf/os-bs.html</a>
+</p>
+
+<p>
+There are also other commercial bootloaders or lilo that you can use for
+multi-booting.
+</p>
+
+<p>
+Here is a simple outline of how to get lilo onto your system.
+</p>
+
+<p>
+<ul>
+<li>Boot a DOS floppy and do a fdisk /MBR. Make sure you do that on the
+drive you'll be booting from.</li>
+<li>Boot from a linux disk and install LILO & chain it to your OpenBSD
+boot block.</li>
+</ul>
+</p>
+
+<p>
+For further instructions read <a href="INSTALL.linux">INSTALL.linux</a>
+</p>
+
+<br>
+
+<p>
+<a name="14.7">
+<h2>14.7 - How do I get a dmesg from a boot floppy?</h2>
+</p>
+<p>
+RAMDISK images (boot floppies) do not ship with the <i>dmesg</i> utility.
+They do, however, have the <code>/kern</code> filesystem mounted. To copy 
+the dmesg information to a file, do a:
+</p>
+
+<pre><ul>
+# <strong>cat /kern/msgbuf >mydmesg</strong>
+</pre></ul>
+<P>
+Boot disks also have 'more' to page through the output:
+<pre><ul>
+# <strong>more /kern/msgbuf</strong>
+</ul></pre>
+
+Also check with <a href= "faq4.html#4.7">section 4.7</a>
+
+<p>
+<a name="14.8">
+<h2>14.8 - Installing Bootblocks - i386 specific</h2>
+</p>
+
+<p>
+Older versions of MS-DOS can only deal with disk geometries of 1024 cylinders
+or less.  Since virtually all modern disks have more than 1024
+cylinders, most SCSI BIOS chips (which come on the SCSI controller card)
+and IDE BIOS (which is part of the rest of the PC BIOS)
+have an option (sometimes the default) to "translate" the real disk
+geometry into something that fits within MS-DOS' ability.
+However, not all BIOS chips "translate" the geometry in
+the same way.  If you change your BIOS (either with a new motherboard
+or a new SCSI controller), and the new one uses a
+different "translated" geometry, you will be unable to load the
+second stage boot loader (and thus unable to load the kernel).
+(This is because the first stage boot loader contains a list of the blocks
+that comprise /boot in terms of the original "translated" geometry.)
+If you are using IDE disks, and you make changes to your BIOS settings,
+you can (unknowingly) change its translation also (most IDE BIOS offer 3 different
+translations.) To fix your boot block so that you can boot normally,
+just put a boot floppy in your hard drive, and at the boot prompt,
+type "b hd0a:/bsd" to force it to boot from the first hard disk (and not the
+floppy).  Your machine should come up normally.  You now need
+to update the first stage boot loader to see the new geometry
+(and re-write the boot block accordingly).
+<br>
+Our example will assume your boot disk is sd0 (but for IDE it would be wd0, etc..):
+</p>
+<ul>
+<pre>
+# <strong>cd /usr/mdec; ./installboot /boot biosboot sd0</strong>
+</pre>
+</ul>
+<p>
+If installboot complains that it is unable to read the BIOS geometry, at
+the boot> prompt you may issue the &quot;machine diskinfo&quot; (or
+&quot;ma di&quot; for short) command to print the information you need.
+Feed the &quot;heads&quot; and &quot;secs&quot; values to installboot's -h
+and -s flags, respectively, so that the modified installboot command is
+the following:
+</p>
+<ul><pre>
+#<strong> cd /usr/mdec; ./installboot -h &lt;heads&gt; -s &lt;secs&gt; /boot biosboot sd0</strong>
+</pre></ul>
+
+<p>
+If a newer version of bootblocks are required, you will need to compile these yourself. To do so simply.
+</p>
+
+<ul><pre>
+# <strong>cd /sys/arch/i386/stand/</strong>
+# <strong>make && make install </strong>
+# <strong>cd /usr/mdec; cp ./boot /boot</strong>
+# <strong>./installboot /boot biosboot sd0</strong> (or whatever device your hard disk is)
+</pre></ul>
 
 <p>
 <font color= "#0000e0">
 <a href= "index.html">[Back to Main Index]</a>
-<a href= "faq13.html">[To Section 13.0 - For Advanced Users]</a>
-<a href= "faq15.html">[To Section 15.0 - Using Disks in OpenBSD]</a>
+<a href= "faq13.html">[To Section 13.0 - IPsec]</a>
 </font>
 </p>
 
@@ -61,7 +699,8 @@ for setting up an IPSec VPN with OpenBSD.  It explains some basic IPSec concepts
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq14.html,v 1.2 1999/09/15 13:44:59 ericj Exp $</small>
+<small>$OpenBSD: faq14.html,v 1.3 1999/09/24 01:46:14 ericj Exp $</small>
 </p>
 </body>
 </html>
+

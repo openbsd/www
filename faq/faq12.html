@@ -1,6 +1,6 @@
 <html>
 <head>
-<title>OpenBSD FAQ: 12.0 - Performance Tuning</title>
+<title>OpenBSD FAQ: 12 - For Advanced Users</title>
 <link rev= "made" href= "mailto:www@openbsd.org">
 <meta name= "resource-type" content= "document">
 <meta name= "description"   content= "the OpenBSD FAQ page">
@@ -10,339 +10,152 @@
 </head>
 
 <body bgcolor= "#ffffff" text= "#000000" link= "#23238E">
+
+<img alt="[OpenBSD]" height=30 width=141 src="../images/smalltitle.gif">
 <p>
-<font color= "#0000e0">
-<a href= "index.html">[Back to Main Index]</a>
-<a href= "faq11-2.4.html">[To Section 11.0 - OpenBSD 2.4 Specific Information]</a>
-</font>
+<h2><font color=#e00000>12.0 - For Advanced Users</font><hr></h2>
 </p>
 
 <p>
-<h1>12.0 - Performance Tuning</h1>
+<ul><h3>Table of Contents</h3>
+<li><a href="#12.1">12.1 - Using OpenBSD's new PCI-IDE code</a>
+</ul>
+</p> 
 <hr>
-</p>
+
+<br>
 
 <p>
 <a name= "12.1">
-<h2>12.1 - Networking</h2>
+<h2>12.1 - Using OpenBSD's new PCI-IDE code</h2>
 </a>
-</p>
 
 <p>
-If you run a busy server, gateway or firewall, you should make sure to prevent 
-memory starvation to various parts of the kernel described below.
-</p>
-
+If you have a current source tree that was last updated after July 25th, you
+will notice that OpenBSD has PCI-IDE code enabled by default, a big win on
+performance
+for anyone using an IDE controller!  The PCI-IDE code introduces new PCI and ISA IDE
+code, and both PCI and ISA versions have DMA (or Direct Memory Access) capability.
+DMA allows the IDE controller to transfer data right from disk to your memory
+instead of running it through the CPU.  This lowers the overall utilization
+of your CPU,  keeping disk access fast and clean.
+(Note that OpenBSD has implemented the pciide code from NetBSD.)
 <P>
-The <A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=options&apropos=0&sektion=4&format=html">options(4)</a> man page talks about the options presented.
-<p>
-
-<p>
-An option you may need to change for a busy server, gateway or firewall is
-NMBCLUSTERS.  This controls the size of the kernel mbuf cluster map.
-On your computer, if you get messages like "mb_map full",
-you need to increase this value.  If traffic on a networking interface stops
-for no apparent reason, this may also be a sign that you need to increase
-this value.  A reasonable value on the i386 port with most 100Mbps
-ethernet interfaces (no matter how many the machine has) is 8192.  
-</p>
-
-<ul>
-<strong>
-option NMBCLUSTERS=8192<BR>
-</strong>
-</ul>
-<br>
-
-<p>
-<a name= "12.2">
-<h2>12.2 - Disk I/O</h2>
-</a>
-</p>
-
-<p>
-Disk I/O speed is a significant factor in the overall speed of your
-computer.  It becomes increasingly important when your computer
-is hosting a multi-user environment (users of all kinds, from those
-who log-in interactively to those who see you as a file-server or a web-server.)
-Data storage constantly needs attention, especially when your partitions run
-out of space and when your disks fail.  OpenBSD has several options
-to increase the speed of your disk operations and provide fault tolerance.
-</p>
-
-<H3>CCD</H3><UL>
-<p>
-The first option is the use of <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ccd&apropos=0&sektion=4&format=html">ccd(4)</a>, the Concatenated Disk Driver.
-This allows you to join several partitions into one virtual disk (and thus,
-you can make several disks look like one disk).  This concept is
-similar to that of LVM (logical volume management), which is found in many commercial Unix flavors.
+<UL><TT>
+Date: Mon, 19 Jul 1999 18:07:40 -0700 (PDT)<BR>
+From: Constantine Sapuntzakis &lt;<A HREF="mailto:csapuntz@stanford.edu">csapuntz@stanford.edu</a>&gt;<BR>
+To: tech@openbsd.org<BR>
+Subject: New ATA/IDE stuff in OpenBSD<BR>
 <P>
-If you are running GENERIC, ccd is already enabled.  If not, you may
-need to add it to your kernel configuration.
-To start the setup of ccd, you need to add support for it in your kernel. A
-line such as:
-</p>
-
-<p>
-<UL>
-<pre>
-<strong>pseudo-device   ccd     4       # concatenated disk devices</strong>
-</pre>
-</UL>
-</p>
-
-<p>
-The above example gives you up to 4 ccd devices (virtual disks).
-Now you need to figure out what partitions on your real disks that you want
-to dedicate to ccd.  Use disklabel to mark these partitions as type 'ccd'.
-On some architectures, disklabel may not allow you to do this.  In this case,
-mark them as 'ffs'.
-<p>
-If you are using ccd to gain performance by striping, note that you will
-not get optimum performance unless you use the same model of disks with
-the same disklabel settings.
+This weekend, I started integrating the IDE code from NetBSD-current
+to OpenBSD-current. It should be considered a work-in-progress.
 <P>
-Edit /etc/ccd.conf to look something like this:
-(for more information on configuring ccd, look at
-<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=ccdconfig&apropos=0&sektion=8&format=html">ccdconfig(8)</a>)
+I'm sending out this e-mail for three reasons: to tell you about the
+new stuff, to ask for help in porting this across all the platforms
+with IDE, and to ask for help in testing this new feature.
+<P>
+The code from NetBSD supports DMA, UltraDMA, PCI IDE, better error
+recovery, etc. It's also faster too. The code has been extensively
+tested in NetBSD but not in OpenBSD. The usual warnings apply: 
+the new drivers might cause data loss.
+<P>
+The new code also has a different way of handling ATAPI devices (like
+IDE CD ROMs, IDE tape drives, etc.). ATAPI devices talk the SCSI
+packet protocol and the new ATAPI layer acts like a SCSI adapter. As
+such, your ATAPI CD will now appear as SCSI CD (cd*), your ATAPI tape
+drive as a SCSI tape drive (st*), your ATAPI zip drive like a SCSI
+drive (sd*), etc. (note: some older ZIP drives are not ATAPI devices)
+<P>
+Many ATAPI devices are NOT entirely SCSI-I and SCSI-II compliant.  As
+such, our SCSI device drivers may not work with your CD/tape drive/ZIP
+drive. Integrating ATAPI device support into our SCSI devices is a
+high priority so this shouldn't stay broken for long.  However, in the
+interim, you might get SCSI errors to the console if you try to use
+the devices. Under no condition should your machine hang or panic.  If
+your machine does hang/panic, please send me mail, describing the
+steps leading up to the hang and providing a dmesg dump.
+<P>
+For the best hard disk performance, you should not have an ATAPI
+device on the same chain as a hard disk.
+<P>
+Currently, the ATA stuff is only integrated into the i386 port.  I am
+willing to do the integration work on other platforms, but I need an
+account on such a machine to do compiles and your help in testing the
+resulting kernel.
+<P>
+To enable this feature on i386, you are going to have to edit some files.
+Comments directing what edits to do appear in the following files:
+<P>
+1) arch/i386/conf/files.i386 (don't forget to uncomment pciide_machdep.c)<BR>
+2) conf/files<BR>
+3) dev/isa/files.isa<BR>
+4) dev/pci/files.pci<BR>
+<P>
+In addition, look at
+<P>
+5) arch/i386/conf/NEWATA for how to configure the new stuff
+<P>
+If you boot the new stuff, I'd appreciate it if you sent me a dmesg dump.
+Once you've got a new kernel, if anything goes wrong, please send me mail.
+<P>
+Feel free to provide positive feedback too. ;)
+<P>
+Thanks,<BR>
+-Costa<BR>
+</UL></tt>
+<p>
+With the PCI IDE code, your chipset may not be known.  If so, you will
+get a message like:
 <UL>
 <PRE>
-# Configuration file for concatenated disk devices
-#
-# ccd   ileave  flags   component devices
-ccd0   16      none    /dev/sd2e /dev/sd3e
+pciide0: bus-master DMA support present, used without full driver support
+</PRE>
+</UL>
+If you get this message, you can try and force DMA mode by
+using 'flags 0x0001' on your pciide entry in your kernel config file.
+That would look something like this:
+<UL><PRE>
+pciide* at pci ? dev ? function ? flags 0x0001
+</PRE></ul>
+After doing this, the pciide code will try to use DMA mode regardless of
+whether or not it actually knows how to do so with your chipset.  If this 
+works, and your system makes it through fsck and startup, it is likely
+that this will work for good.  If this does not work, and the system hangs
+or panics after booting, then you can't use DMA mode (yet, until support
+is added for your chipset).  Note that if you find the documentation
+for your PCI-IDE controller's chipset, this is a good start to fully
+supporting your chipset within the PCI-IDE code.  You can look on the
+manufacturer's website or call them.  If your PCI-IDE controller is part
+of your motherboard, figure out who manufactures the chipset and pursue their
+resources!
+<P>
+Note that you will know that DMA support has been enabled if you see this
+message:
+<UL><PRE>
+pciide0:0:0: using DMA data transfers
 </PRE></UL>
-To make your changes take effect, run
-<UL><PRE># ccdconfig -C
-</PRE></UL>
-As long as /etc/ccd.conf exists, ccd will automatically configure itself
-upon boot.
-Now, you have a new disk, ccd0, a combination of /dev/sd2e and /dev/sd3e.
-Just use disklabel on it like you normally would to make the partition 
-or partitions you want to use.  Again, don't use the 'c' partition as
-an actual partition that you put stuff on.
-Make sure your useable partitions are at least one cylinder off from the beginning
-of the disk.
-</p>
-</UL>
-<br>
-<H3>RAID</H3>
-<UL>
-<p>
-Another solution is <a href= "http://www.openbsd.org/cgi-bin/man.cgi?query=raid&apropos=0&sektion=4&format=html">raid(4)</a>
-which will have you use <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=raidctl&apropos=0&sektion=8&format=html">raidctl(8)</a>
-to control your raid devices.  OpenBSD's RAID is based upon
-Greg Oster's <A HREF="http://www.cs.usask.ca/staff/oster/raid.html">NetBSD port</a>
-of the CMU
-<A HREF="http://www.pdl.cs.cmu.edu/RAIDframe/">RAIDframe</a> software.
-OpenBSD has support for RAID levels
-of 0, 1, 4, and 5.<P> With raid, as with ccd, support must be in the KERNEL.
-Unlike ccd, support for RAID is not found in GENERIC, it must be compiled 
-into your kernel (RAID support adds some 500K to the size of an i386 kernel!)
-</p>
-
-<p>
-<UL>
-<pre>
-<strong>pseudo-device   raid   4       # RAIDframe disk device</strong>
-</pre>
-</UL>
-<P>
-Setting up RAID on some operating systems is confusing and
-painful to say the least.  Not so with RAIDframe.
-Read the <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=raid&apropos=0&sektion=4&format=html">raid(4)</a> and
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=raidctl&apropos=0&sektion=8&format=html">raidctl(8)</a>
-man pages to get full details. There are many
-options and possible configurations, a detailed explanation is beyond the scope of this document.
-</UL>
-<BR>
-<H3>Filesystem Buffer</H3>
-<UL>
-For fileservers with memory to spare, you can increase BUFCACHEPERCENT.
-That is, what percentage of your RAM should you use as a file system buffer.
-This option may change when the Unified Buffer Cache is completed
-and is part of OpenBSD.  In the mean time, to increase BUFCACHEPERCENT,
-you should add a line to your kernel configuration like this:
-</p>
-
-<p>
-<UL>
-<strong>option	BUFCACHEPERCENT=30</strong><BR>
-</UL>
-</p>
-<p>
-Of course you can make it as low as 5 percent (the default) or as high
-as 50 percent (or more.)
-</p>
-</UL>
-<br>
-<H3>Soft updates</H3><UL>
-Another tool that can be used to speed up your system is softupdates.  One of the 
-slowest operations in the traditional BSD file system is updating metainfo
-(which happens, among other times, when you create or delete files and
-directories.) Softupdates
-attempts to update metainfo in RAM instead of writing
-to the hard disk each and every single metainfo update.  Another 
-effect of this is that the metainfo on disk should always be complete,
-although not always up to date.  So, a system crash should not require
-fsck upon boot up, but simply a background version of fsck that makes
-changes to the metainfo in RAM (a la softupdates).
-This means rebooting a server is much faster, because you don't
-have to wait for fsck!  (OpenBSD does not have this feature yet.) You can read
-more about softupdates in the <a href="faq15.html#15.5">softupdates FAQ</a> entry.
-If you use softupdates, you will most certainly want to take
-advantage of the Tuning kmem section below.
-</UL>
-</p>
-<BR>
-<p>
-<a name= "12.3">
-<h2>12.3 - Tuning kmem</h2>
-</a>
-</p>
-
-<P>
-If you start using the performance tuning measures above, you may start
-running out of kernel memory.  If you start getting
-panics like "out of space in kmem_map" then you need to try
-<UL>
-<strong>
-option NKMEMCLUSTERS=8192<BR>
-</strong>
-</UL>
-Note that 8192 is valid for the i386 architecture, but may be too
-little or too much for others. Look at /usr/include/machine/param.h
-to see more information.
-<P>
-You may also want to increase the number of static kernel maps and entries.
-The default value for these options is architecture dependent and is specified
-in /sys/vm/vm_map.h. If you are using soft updates, the following values should 
-keep you going!
-<UL>
-<strong>
-option MAX_KMAP=120<BR>
-option MAX_KMAPENT=6000<BR>
-</strong>
+This means that pciide0, channel 0, drive 0 is using DMA data transfers.
 </ul>
-
-<br>
-<p>
-<a name= "12.4">
-<h2>12.4 - Hardware choices</h2>
-</a>
-</p>
-<i>(Note- this section is heavily centered around the i386, or PC, architecture.
-That is to say... other architectures don't give you quite as many choices!)</i>
-<P>
-The performance of your applications depends heavily on your OS and the
-facilities it provides.  This 
-may be part of the reason that you are using OpenBSD.
-The performance of your applications also depends heavily on your hardware.
-For many folks, the Price/Performance ratio of a brand new PC with
-a Intel Pentium III or AMD Athlon processor is much better then the
-Price/Performance ratio of a Sun UltraSparc 60!
-And, the price of OpenBSD can't be beat.
-<P>
-If you are shopping for a new PC, whether you are buying it
-piece by piece or completely pre-built, you want to make sure first
-that you are buying reliable parts.  In the PC world, this is not easy.
-<b>Bad or otherwise unreliable or mismatched parts can
-make OpenBSD run poorly and crash often</b>.  The best advice
-we can give is to be careful,
-buy brands and parts that have been reviewed by an authority you trust.
-Sometimes, when you skimp on the price of a PC, you lose in quality!
-<P>
-There are certain things that will help bring
-out the maximum performance of your hardware:
-<UL>
-<LI>Use multiple disks.
-<P>Instead of buying one 20GB disk, buy multiple 4GB or 9GB disks.  While this
-may cost more, distributing the load over multiple spindles will decrease
-the amount of time necessary to access data on the disks.  And, with more 
-spindles, you will get more reliability and faster data access with RAID.
-<p>
-<LI>Use SCSI where you can.
-<P>If you are building a server, and you need more then 10GB of disk space,
-the SCSI architecture is the best choice.  IDE limits you to two disks per controller.
-Wide SCSI limits you to 15 per controller!  While SCSI costs more, the flexibility and
-performance can justify these costs.
-IDE was not designed for use in a multi-user, multi-tasking environment.
-<P>
-<li>Use SDRAM.
-<P>
-This option applies mainly to PCs.  Most other architectures don't give
-you a choice of what kind of RAM you can use.  Several PCs still do.
-Avoid SIMMs, as there are not many companies manufacturing them anymore,
-and in some cases they cost more then equivalent SDRAM!
-<P>
-<li>Use ECC or parity RAM.
-<P>
-Parity adds some functionality to see if the data in RAM has been
-corrupted.  ECC extends this functionality and attempts to correct
-some bit corruption errors on the fly.
-This option applies mainly to PCs.  Most other architectures
-simply require parity or ECC capable RAM.  Several non-PC computers won't
-even boot with non-parity RAM. 
-If you aren't using ECC/parity RAM, you may get data corruption and
-other abnormalities. Several manufacturers
-of "cheap PC RAM" don't even make an ECC variety!  This will help you
-avoid them!  PC manufacturers often sell several product lines, 
-divided around "servers" and "workstations."  The servers will incorporate
-ECC RAM into their architecture.  Unix workstation manufacturers have been
-using parity (and now ECC) for several years in all of their product lines.
-<P>
-<LI>Avoid ISA devices.
-<P>
-While most folks avoid ISA devices, because they are generally hard to configure
-and out of date, there are still plenty in existence.  If you are using the ISA
-bus for your disk or network controllers, (or even worse, for both) remember
-that the ISA bus itself can be a performance bottleneck.  If you need speed,
-look to PCI.  Of course, there are still several ISA bus cards that work
-just fine.  Unfortunately, most of these are sound cards and serial port cards.
-</ul>
-<P>
-<br>
-<p>
-<a name= "12.5">
-<h2>12.5 - Why aren't we using async mounts?</h2>
-</a>
-<p>
-Question: "I simply do "mount -u -o async /" which makes one package I use 
-(which insists on touching a few hundred things from time to time) useable.
-
-Why is async mounting frowned upon and not on by default (as it is in some
-other unixen) ? Surely it is much simpler and therefore a safer way of
-improving performance in some applications ?"
 </p>
 <p>
-Answer: "Async mounts is indeed faster then sync mounts, but they are also 
-less safe. What happens in case of a power failure? Or a hardware problem?
-The quest for speed should not sacrifice the reliabilty and the stability of 
-the system. Check the manpage for 
-<a href= "http://www.openbsd.org/cgi-bin/man.cgi?query=mount&apropos=0&sektion=8&format=html">mount(8)</a>."
+Some notes:
 </p>
+<p>
+DMA is not supported on wdc* unless a DMA channel (drq) is
+specified. I'm not sure what the "standard" drqs are for hard disk
+controllers. To enable
 <pre>
-	     async   All I/O to the file system should be done asynchronously.
-		     This is a dangerous flag to set since it does not guaran-
-		     tee to keep a consistent file system structure on the
-		     disk.  You should not use this flag unless you are pre-
-		     pared to recreate the file system should your system
-		     crash.  The most common use of this flag is to speed up
-		     restore(8) where it can give a factor of two speed in-
-		     crease.
+wdc0	at isa? port 0x1f0 irq 14 flags 0x00
 </pre>
-<p>
-On the other hand, when you are dealing with temp data that you can recreate 
-from scratch after a crash, you could gain speed by using a separate 
-partition, used for that data only, mounted async. If you don't mind
-risking the loss of all the data in the partition when something goes
-wrong...
+Non-ultra DMA does not necessarily lead to higher bandwidth vs PIO. 
+However, it decreases the CPU load significantly.
 </p>
 
 <p>
 <font color= "#0000e0">
 <a href= "index.html">[Back to Main Index]</a>
-<a href= "faq11-2.4.html">[To Section 11.0 - OpenBSD 2.4 Specific Information]</a>
+<a href= "faq11.html">[To Section 11.0 - Performance Tuning]</a>
+<a href= "faq13.html">[To Section 13.0 - IPsec]</a>
 </font>
 </p>
 
@@ -351,7 +164,7 @@ wrong...
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq12.html,v 1.19 1999/09/15 05:16:23 ericj Exp $</small>
+<small>$OpenBSD: faq12.html,v 1.20 1999/09/24 01:46:14 ericj Exp $</small>
 </p>
 </body>
 </html>
