@@ -27,6 +27,7 @@
 <li><A href= "#6.6">6.6 - Tuning networking parameters</a>
 <li><a href= "#6.7">6.7 - Using NFS</a>
 <li><a href= "#6.8">6.8 - Domain Name Service  - DNS, BIND, and named</a>
+<li><a href= "#6.9">6.9 - Setting up a PPTP connection in OpenBSD</a>
 </ul>
 </p>
 <hr>
@@ -2244,6 +2245,118 @@ Blocking AXFR queries adds an extra level of privacy, but can hinder useful DNS 
 There's a lot we didn't tell you, for example, how to set up DNS so that queries for intranet domains that aren't visible from the root of the domain hierarchy get relayed to servers within your enterprise. Read the <a href="#6.8.1.1">documents we recommended</a> for more information on DNS. 
 </p>
 
+<a name="6.9"></a>
+<h2>6.9 - Setting up a PPTP connection in OpenBSD</h2>
+
+<p>
+<strong>NOTE:</strong> This does not apply to <strong>ALL</strong> ADSL providers, but much information can be gleamed from the setup here. This is known to work for <a href="http://www.inode.at">Inode</a>, an ADSL provider in Austria.
+</p>
+
+<p>
+To start off, you need to install pptp. A port was added to the OpenBSD ports tree AFTER the release of OpenBSD 2.8 and works fine with with the OpenBSD 2.8 ports tree. The port is located at <i>/ports/net/pptp</i>. Read <a href="faq8.html#8.6">FAQ 8.6</a> for more information on the OpenBSD ports tree.
+</p>
+
+<p>
+Because of a conflict between the In-Kernel <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=gre&apropos=0&sektion=0&manpath=OpenBSD+Current&arch=i386&format=html">gre(4)</a> support and pptp, you will need to re-compile your kernel, removing support for gre(4).
+</p>
+
+<ul>Patch to remove GRE(4) support.
+<pre>
+Index: sys/conf/GENERIC
+===================================================================
+RCS file: /cvs/src/sys/conf/GENERIC,v
+retrieving revision 1.66
+diff -u -r1.66 GENERIC
+--- sys/conf/GENERIC    2000/10/13 04:21:14     1.66
++++ sys/conf/GENERIC    2000/12/26 19:55:31
+@@ -97,6 +97,6 @@
+ pseudo-device  ksyms   1	# kernel symbols device
+ pseudo-device  bridge  2	# network bridging support
+ #pseudo-device vlan    2	# IEEE 802.1Q VLAN
+-pseudo-device  gre     1	# GRE encapsulation interface
++#pseudo-device gre     1	# GRE encapsulation interface
+
+ option		BOOT_CONFIG     # add support for boot -c
+</pre></ul>
+
+<p>
+To recompile your kernel, check out OpenBSD 2.8-stable via cvs (refer to <a href="../stable.html">OpenBSD Stable</a> web page for more information), apply the following patch, and rebuild your kernel as per <a href="faq5.html#5.3">FAQ 5.3</a>.
+</p>
+
+<p>
+After you have the <b>pptp</b> package installed and a new kernel, you need to edit a few files to setup for your connection. This packages uses the in-house OpenBSD 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ppp&apropos=0&sektion=0&manpath=OpenBSD+Current&arch=i386&format=html">ppp(8)</a>, so if you are familiar with ppp(8), much of the setup is the same. Also, refer to <a href="#6.5">FAQ 6.5</a>.
+</p>
+
+<ul>
+<li>1 - /etc/ppp/options
+<li>2 - /etc/ppp/pap-secrets
+</ul>
+
+<p>
+For the <i>/etc/ppp/options</i> file, a setup like below will most likely
+do all that you need:
+</p>
+
+<ul><pre>
+# <strong>cat /etc/ppp/options</strong>
+name "LOGINNAME"
+noauth
+noipdefault
+defaultroute
+debug
+</pre></ul>
+
+<p>
+<tt>LOGINNAME</tt> should be replaced with your User-ID.
+</p>
+
+<p>
+The <i>/etc/ppp/pap-secrets</i> a line like:
+
+<ul><pre>
+# <strong>cat /etc/ppp/pap-secrets</strong>
+LOGINNAME 10.0.0.138 PASSWORD
+</pre></ul>
+
+<p>
+Where LOGINNAME is your User-ID and PASSWORD is your password. 10.0.0.138 is the IP assigned to your MODEM in the case that you are using ADSL, etc. Make sure this file stays readonly by root (mode 600).
+</p>
+
+<h3>6.9.1 - Assigning an address to your Network Interface</h3>
+
+<p>
+In the above example, our modem came with a preconfigured interface of 10.0.0.138. We now need to assign an address to OUR interface, It's best to pick an IP close to the one given by your MODEM, or use the static IP assigned to you. Read more about setting up interfaces in <a href="#6.1">FAQ 6.1</a>.
+</p>
+
+<p>
+Once your interface is setup, you should be able to create a pptp connection with the command.
+
+<ul><pre>
+# <strong>/usr/local/sbin/pptp 10.0.0.138 &</strong>
+</pre></ul>
+
+<p>
+Since this uses the in-house OpenBSD ppp(8), two processes are started. You can kill pptp by killing both these processes:
+</p>
+
+<ul><pre>
+# <strong>kill -9 [pid of pppd]</strong>
+% <strong>kill -9 [pid of pptp]</strong>
+</pre></ul>
+
+It is recommended to open <tt>/var/log/messages</tt> in a extra terminal window, to recognize possible problems.
+
+<ul>
+<pre>
+# <strong>tail -f /var/log/message</strong>
+</pre></ul>
+</p>
+
+<p>
+We also suggest that you put the startup command in <i>/etc/rc.local</i> so that you automatically connect on reboot.
+</p>
+
 <p>
 <font color= "#0000e0">
 <a href= "index.html">[Back to Main Index]</a>
@@ -2257,9 +2370,7 @@ There's a lot we didn't tell you, for example, how to set up DNS so that queries
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt= "[back]"></a>
 <a href= "mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq6.html,v 1.85 2000/12/26 17:06:36 ericj Exp $</small>
+<small>$OpenBSD: faq6.html,v 1.86 2000/12/26 20:07:04 ericj Exp $</small>
 </p>
 </body>
 </html>
-
-
