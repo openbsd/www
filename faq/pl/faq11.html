@@ -1,0 +1,620 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<!-- saved from url=(0051)http://openbsdpl.sourceforge.net/www/faq/faq11.html -->
+<HTML><HEAD>
+<meta name="translated_by" content="Pawel 'Stygmat' Baranowski">
+<TITLE>11 - Dostrajanie wydajności</TITLE>
+<META http-equiv=Content-Type content="text/html; charset=iso-8859-2"><LINK 
+rev=made href="mailto:www@openbsd.org">
+<META content=document name=resource-type>
+<META content="the OpenBSD FAQ page" name=description>
+<META content=openbsd,faq name=keywords>
+<META content=global name=distribution>
+<META content="This document copyright 1998-2003 by OpenBSD." name=copyright>
+</HEAD>
+<BODY text=#000000 bgColor=#ffffff><IMG height=30 alt=[OpenBSD] 
+src="../../images/smalltitle.gif" width=141> 
+<P>
+<font color="#0000e0">
+<a href="index.html">[Spis treści]</a>
+<a href="../faq10.html">Sekcja 10 - Administracja systemem</a>
+<a href="faq12.html">Sekcja 12 - Dla zaawansowanych</a>
+</font>
+<H1><font color="#e00000">11 - Dostrajanie wydajności</font></h1>
+<hr>
+
+<P>
+<H3>Tablica zawartości</H3>
+<UL>
+<LI><A href="#Network">11.1 - Sieć</A> 
+<LI><A href="#Disk">11.2 - Optymalizacja operacji dyskowych</A> 
+<!-- li> <a href="#kmem">11.3 - Tuning kmem</a></li -->
+<LI><A href="#HW">11.4 - Wybór sprzętu</A> 
+<LI><A href="#Async">11.5 - Dlaczego nie używać asynchronicznego montowania dysków? </A> 
+<LI><A href="#XF86">11.6 - Dostrajanie rozdzielczości ekranu pod XFree86</A>
+</UL>
+<HR>
+
+<P>Jeżeli zamierzasz uruchomić wydajny serwer, bramę sieciową lub firewall, 
+to w celu uzyskania optymalnej wydajności będziesz być może potrzebował zmienić 
+niektóre z domyślnych parametrów jądra. O opcjach kernela opisanych poniżej przeczytasz 
+na stronach podręcznika ekranowego man pod hasłem 
+<A href="http://www.openbsd.org/cgi-bin/man.cgi?query=options&amp;sektion=4">options(4)</A>. 
+Opcje te umieszcza się w pliku konfiguracyjnym kernela przed rozpoczęciem 
+kompilacji własnego jądra systemu. Więcej informacji na ten temat uzyskasz w 
+rozdziale <A href="faq5.html">FAQ 5</A>. 
+
+<P>
+<A name=Network></A>
+<A name=11.1></A>
+<H2>11.1 - Sieć</H2>
+<!-- XXXchanges - changes with OpenBSD 3.3 -->
+
+<P>
+Parametrem, który możesz zmienić w jądrze obciążonego serwera, bramy czy 
+firewalla jest NMBCLUSTERS. Kontroluje on rozmiar mbuf cluster map jądra systemu. Jeśli w 
+trakcie pracy sytemu otrzymasz komunikat "mb_map full&quot; lub podobny, oznacza to, 
+że potrzebne jest zwiększenie wartości tego parametru. Innym powodem do 
+zwiększenia wartości parametru NMBCLUSTERS jest sytuacja, w której ruch sieciowy na 
+karcie sieciowej zatrzymuje się z niewiadomej przyczyny. Sensowną wartością dla platwormy i386, 
+dla większości kart sieciowych o szybkości 100Mbps jest 8192 
+(bez względu na fakt ile kart zainstalowanych jest w maszynie). 
+<BLOCKQUOTE><STRONG>option NMBCLUSTERS=8192 </STRONG></BLOCKQUOTE>
+
+<P>
+Domyślna wartość parametru NMBCLUSTERS zależy z jaką platformą sprzętową mamy 
+do czynienia i waha się od 256 do 2048. Parametr ten jest ustawiony w jednym z 
+plików nagłówkowych danej platformy, chyba że zostanie on nadpisany linią 
+zamieszczoną w pliku konfiguracyjnym kernela. 
+
+<P>
+Parametr NMBCLUSTERS może być ustawione przy użyciu 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=config&sektion=8">config(8)</a>, 
+co zapobiega konieczności kompilacji kernela w celu zmiany tego parametru:
+
+<blockquote><pre>
+# <b>config -e -o bsd.new /bsd</b>
+OpenBSD 3.3 (GENERIC) #44: Sat Mar 29 13:22:05 MST 2003
+  deraadt@i386.openbsd.org:/usr/src/sys/arch/i386/compile/GENERIC
+Enter 'help' for information
+ukc> <b>nmbclust</b>
+nmbclusters = 2048
+ukc> <b>nmbclust 8192</b>
+nmbclusters = 8192
+ukc> <b>quit</b>
+Saving modified kernel.
+</pre></blockquote>
+
+Wykonanie powyższych czynności spowoduje utworzenie w bieżącym katalogu nowego kernela, <tt>bsd.new</tt>, 
+<i>oraz</i> ustawi parametr NMBCLUSTERS działającego 
+jądra.  Jeśli wszystko się powiedzie, nie zapomnij skopiować <tt>bsd.new</tt> na
+<tt>bsd</tt> przed ponownym rozruchem komputera.
+
+<P>
+<A name=Disk></A><A name=11.2></A>
+<H2>11.2 - Optymalizacja operacji dyskowych</H2>
+
+
+<P>Szybkość operacji wejścia/wyjścia systemów dyskowych ma znaczący wpływ na 
+całkowitą wydajność komputera. Ma to szczególne znaczenie wtedy, gdy twój 
+komputer pracuje w środowisku wielodostępnym (z systemu korzysta wielu 
+użytkowników różnego rodzaju, tacy którzy loguję się do niego interaktywnie, 
+tacy którzy korzystają z niego jako serwera plików albo serwera www). Dane 
+przechowywane wymagają ciągłej uwagi, szczególnie wtedy, gdy na partycjach 
+zaczyna brakować miejsca lub wtedy, gdy dysk ulegnie uszkodzeniu. OpenBSD 
+posiada wiele mechanizmów na zwiększenie szybkości systemów dyskowych czy też 
+zapewniających odporność na uszkodzenia.<p>Oto one:</p>
+<UL>
+<LI><A href="#ccd">CCD</A> - Driver dysków połączonych. 
+<LI><A href="#raid">RAID</A> 
+<LI><A href="#buf">Filesystem Buffer</A> - bufor systemu plików 
+<LI><A href="#softu">Soft Updates</A> 
+<LI><A href="#maxvnodes">Rozmiar pamięci podręcznej namei()</A>
+</UL>
+
+<P>
+<A name=ccd></A>
+<H3>11.2.1 - CCD</H3>
+<BLOCKQUOTE>Pierwszą możliwością jest użycie 
+<A href="http://www.openbsd.org/cgi-bin/man.cgi?query=ccd&amp;sektion=4">ccd(4)</A>, 
+czyli sterownika dysków połączonych. Pozwala to na połączenie wielu partycji 
+w jeden wirtualny dysk (czyli spowodujesz, że wiele dysków widziane jest jako 
+jeden). Jest to podobne do LVM (logical volume management) rozwiązanie, 
+które zaimplementowane jest w wielu komercyjnych wersjach Unixa.
+
+<P>
+Jeśli twój system pracuje na jądrze GENERIC, sterownik ccd jest w nim zawarty (w pliku 
+<TT>/usr/src/sys/conf/GENERIC</TT>). Jeśli jednak przebudowałeś kernel, być 
+może będziesz potrzebował włączyć odpowiednią opcję w pliku konfiguracyjnym. 
+Innymi słowy, w pliku konfiguracyjnym musi znaleźć się wpis wyglądający w 
+następujący sposób:
+<PRE>     <STRONG>pseudo-device   ccd     4       # concatenated disk devices</STRONG>
+</PRE>
+
+<P>
+Powyższa linia daje Ci możliwość utworzenia maksymalnie 4 urządzeń ccd 
+(dysków wirtualnych, logicznych). Teraz musisz zdecydować, które partycje 
+z zainstalowanych w systemie dysków włączysz do urządzenia ccd. 
+Następną czynnością jest użycie narzędzia disklabel, w celu oznaczenia 
+tych partycji jako dostępnych dla ccd. Na niektórych platformach sprzętowych, 
+narzędzie disklabel może nie zezwolić na wykonanie tej czynności. 
+W tym wypadku oznacz je jako ffs. 
+
+<P>
+Jeśli używasz ccd w celu zwiększenia wydajności poprzez zastosowanie 
+striping'u, zwróć uwagę na fakt, że optymalną wydajność uzyskasz 
+tylko wtedy, gdy zastosujesz te same modele dysków z identycznymi 
+ustawieniami wprowadzonymi programem disklabel. 
+
+<P>
+Plik /etc/ccd.conf powinien wyglądać podobnie do tego: 
+(więcej informacji o konfiguracji ccd znajdziesz w podręczniku 
+man pod hasłem 
+<A href="http://www.openbsd.org/cgi-bin/man.cgi?query=ccdconfig&amp;sektion=8">ccdconfig(8)</A>) 
+
+<BLOCKQUOTE>
+<PRE># Configuration file for concatenated disk devices
+#
+# ccd   ileave  flags   component devices
+ccd0   16      none    /dev/sd2e /dev/sd3e
+</PRE>
+</BLOCKQUOTE>
+
+
+<P>
+Aby zastosować wprowadzone ustawienia wykonaj następujące polecenie 
+<BLOCKQUOTE>
+<PRE># ccdconfig -C
+</PRE>
+</BLOCKQUOTE>
+
+<P>
+Tak długo jak istnieje plik /etc/ccd.conf, tak długo ccd będzie automatycznie 
+konfigurować się podczas startu systemu. Od tego momentu masz w systemie nowy 
+dysk nazwany ccd będący kombinacją urządzeń /dev/sd2e oraz /dev/sd3e. Wystarczy 
+ponownie użyć polecenia disklabel na urządzeniu ccd0, jak zwykle wtedy, 
+gdy tworzysz partycję lub partycje, które chcesz używać. Nie używaj partycji 'c' 
+jako aktualnej partycji tworzonej na nowym urządzeniu. Upewnij się, że początek 
+nowo tworzonej partycji rozpoczyna się co najmniej 1 cylinder za początkiem dysku.
+</BLOCKQUOTE>
+
+<P>
+<A name=raid></A>
+<H3>11.2.2 - RAID</H3>
+
+<BLOCKQUOTE>Innym rozwiązaniem jest 
+<A href="http://www.openbsd.org/cgi-bin/man.cgi?query=raid&amp;sektion=4">raid(4)</A>. 
+Aby kontrolować macierze RAID użyj narzędzia 
+<A href="http://www.openbsd.org/cgi-bin/man.cgi?query=raidctl&amp;sektion=8">raidctl(8)</A>. 
+System macierzy dyskowych RAID w systemie OpenBSD bazuje na oprogramowaniu Grega Ostera CMU 
+<A href="http://www.pdl.cmu.edu/RAIDframe/">RAIDframe</A>, porcie znanym z systemu NetBSD (zobacz 
+<A href="http://www.cs.usask.ca/staff/oster/raid.html">NetBSD port</A>). OpenBSD 
+wspiera następujące poziomy RAID: 0, 1, 4, oraz 5.
+
+<P>
+Możliwość użycia RAID, podobnie jak i ccd, definiuje się w pliku konfiguracyjnym kernela. Niestety 
+jądro GENERIC nie wspiera systemu RAID, dlatego też musi on być wkompilowany w jądro. 
+(obsługa RAID zwiększa rozmiar jądra o około 500K na platformie i386)
+
+<BLOCKQUOTE>
+<PRE><STRONG>pseudo-device   raid   4       # RAIDframe disk device</STRONG>
+</PRE>
+</BLOCKQUOTE>
+
+<P>
+W przypadku niektórych systemów operacyjnych, konfiguracja RAID jest nużąca 
+i trudna do przedstawienia. Ale nie jest tak w przypadku RAIDframe. Więcej 
+informacji uzyskasz, jeśli przeczytasz następujące tematy, 
+<A href="http://www.openbsd.org/cgi-bin/man.cgi?query=raid&amp;sektion=4">raid(4)</A> 
+
+oraz <A href="http://www.openbsd.org/cgi-bin/man.cgi?query=raidctl&amp;sektion=8">raidctl(8)</A>, 
+w podręczniku man. Podsystem RAID posiada wiele opcji konfiguracyjnych, 
+a szczegółowe przedstawienie wszystkich wykracza poza ramy tego dokumentu.
+</BLOCKQUOTE>
+
+<P>
+<A name=buf></A>
+<H3>11.2.3 - Filesystem Buffer</H3>
+
+<BLOCKQUOTE>W przypadku maszyn z dużą ilością pamięci pracujących jako serwer 
+plików, dobrym rozwiązaniem jest zwiększenie parametru BUFCACHEPERCENT. Mówi on, 
+jaki procent pamięci RAM ma być używana na bufor systemu plikowego. Opcję tą może
+zmienić sam system operacyjny wtedy, kiedy Unified Buffer Cache zostanie zapełniony.
+Aby samemu zwiększyć parametr BUFCACHEPERCENT, powinieneś dodać następującą linię 
+do pliku konfiguracyjnego kernela: 
+</BLOCKQUOTE>
+
+<BLOCKQUOTE>
+<STRONG>option BUFCACHEPERCENT=30</STRONG><BR>
+</BLOCKQUOTE>
+
+<BLOCKQUOTE>
+Oczywiście możesz ustawić ten parametr na niską wartość 5 procent (wartość 
+domyślna) lub też wysoką np. 50 procent (lub więcej).
+</BLOCKQUOTE>
+
+<blackquote>
+Opcję BUFCACHEPERCENT można ustawić za pomocą 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=config&sektion=8">config(8)</a>,
+<a href="#Network">(zobacz wyżej)</a>, co eliminuje potrzebę rekompilacji jądra po każdej 
+zmianie tego parametru.
+</blackquote>
+
+<P>
+<A name=softu></A>
+<H3>11.2.4 - Soft updates</H3>
+
+<BLOCKQUOTE>Innym narzędziem, które może być użyte do poprawienia wydajności 
+twojego systemu są softupdates'y. Jedną z najwolniejszych operacji w tradycyjnym
+systemie plików systemu BSD jest uaktualnianie informacji metainfo (co ma miejsce 
+między innymi wtedy, gdy kasujesz lub tworzysz&nbsp; pliki/katalogi). Softupdates 
+próbują uaktualnić informacje metainfo w pamięci RAM zamiast zapisywać na dysk 
+każde pojedyncze uaktualnienie. Innym efektem tego działanie jest fakt, że 
+informacje metainfo zapisane na dysku powinny zawsze być kompletne, jednakże 
+nie oznacza to iż są one najbardziej aktualne. Tak więc po padzie systemu, 
+system nie powinien uruchomić 
+<A href="http://www.openbsd.org/cgi-bin/man.cgi?query=fsck&amp;sektion=8">fsck(8)</A> 
+w trakcie ponownego startu, wymaga tylko aby fsck dokonał zmian metainfo w 
+RAM'ie (przy pomocy softupdates). Skutkuje to szybszym startem serwera po 
+awarii, jako że nie musi on czekać na zakończenie fsck. (OpenBSD nie posiada 
+jeszcze zaimplementowanych softupdates'ów.) Więcej możesz dowiedzieć się 
+czytając o softupdates'ach w 
+<A href="../faq14.html#SoftUpdates">Softupdates FAQ</A>.
+</BLOCKQUOTE>
+
+<P>
+<A name=maxvnodes></A>
+<H3>11.2.5 - Rozmiar pamięci podręcznej namei()</H3>
+<DL>
+<DD>
+Uwaga: do niedawna, strony podręcznika man 
+(<A href="http://www.openbsd.org/cgi-bin/man.cgi?query=options&amp;sektion=4">options(4)</A>) 
+zalecały stosowanie opcji <TT>NVNODE=integer</TT> w pliku konfiguracyjnym 
+kernela. Obecnie nie zaleca się stosować takiego rozwiązania; powinieneś 
+używać w tym celu komendy 
+<A href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=8">sysctl(8)</A>. 
+
+<P>
+Rozmiar pamięci podręcznej konwersji name-inode ( znanej także jako, namei()) 
+determinuje szybkość translacji ścieżek do inode'ów 
+(<A href="http://www.openbsd.org/cgi-bin/man.cgi?query=inode&amp;sektion=5">inode(5)</A>). 
+Domyślnie, pamięć ta ma <TT>NPROC * (80 + NPROC / 8)</TT> wpisów. <TT>NPROC</TT> 
+ustawione jest na wartość <TT>20 + 16 * MAXUSERS</TT>; aby uzyskać więcej 
+informacji na temat parametru MAXUSERS zobacz co napisane jest w sekcji 
+<A href="http://www.openbsd.org/cgi-bin/man.cgi?query=config&amp;sektion=8">config(8)</A> 
+podręcznika man. Mały rozmiar tej pamięci podręcznej skutkuje dużą ilością 'cache misses', 
+którą można odczytać za pomocą odpowiednich narzędzi np. 
+<A href="http://www.openbsd.org/cgi-bin/man.cgi?query=systat&amp;sektion=1">systat(1)</A>. 
+Odczyt aktualnej wartości parametru (<TT>kern.maxvnodes</TT>) odpowiadającego 
+za wielkość pamięci podręcznej name-inode można dokonać programem 
+<A href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=8">sysctl(8)</A>. 
+Również tym programem można dokonać zmiany tego parametru. Po zmianie należy 
+obserwować wydajność komputera. Jeżeli zmiany są 
+satysfakcjonujące możemy ustawić ten parametr na stałe tak, aby był stosowany 
+przy każdym starcie systemu. W tym celu należy w pliku 
+<A href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl.conf&amp;sektion=5">sysctl.conf(5)</A> 
+dodać odpowiedni wpis.
+</DD>
+</DL>
+
+<P>
+<!-- a name= "kmem"></a>
+<a name= "11.3"></a>
+<h2>11.3 - Tuning kmem</h2>
+This was moved to the <a href="faq11-2.5.html#11.2">OpenBSD 2.5 information section</a>.
+<br>
+<p -->
+
+
+<A name=HW></A>
+<A name=11.4></A>
+<H2>11.4 - Wybór sprzętu</H2>
+
+<P><I>(Uwaga: Ta część przeznaczona jest szczególnie dla użytkowników platform 
+i386 lub PC. Generalnie mówiąc ... inne architektury sprzętowe nie oferują 
+takiego wyboru sprzętu jak i386/PC!)</I>
+
+<P>Wydajność aplikacji ściśle zależy od systemu operacyjnego oraz udogodnień 
+jakich on dostarcza. Może być to przyczyną do zastosowania systemu operacyjnego OpenBSD. 
+Wydajność aplikacji zależy również od hardware'u jakiego używasz. Dla 
+wielu osób współczynnik Cena/Wydajność nowych komputerów PC z procesorem 
+Intel Pentium IV lub AMD Athlon jest o wiele lepszy niż ten współczynnik 
+dla platformy Sun UltraSparc 60! Jest rzeczą oczywistą, iż cena systemu OpenBSD 
+jest nie do pobicia. 
+
+<P>
+Jeśli kupujesz nowy komputer PC, niezależnie od tego czy składasz go z 
+podzespołów, czy też kupujesz już złożony, musisz upewnić się, że kupujesz 
+części sprawdzone i niezawodne. Nie jest to zadanie łatwe do zrealizowania. <B>
+Uszkodzone, zawodne lub źle dobrane komponenty mogą spowodować, że system 
+OpenBSD będzie pracował, delikatnie mówiąc, kiepsko, a nawet często wieszał się. </B>
+Najlepsza radą, jaką możemy Ci dać to bycie ostrożnym oraz kupowanie podzespołów 
+znanych producentów i z pewnego źródła. Czasami zyskując niewiele na cenie, 
+tracisz więcej na jakości!<P>Oto ustalone normy, które mogą pomóc w uzyskaniu 
+maksymalnej wydajności z twojego hardware'u:
+
+<UL>
+<LI><B>Używaj wielu dysków.</B> Zamiast kupować jeden dysk o dużej pojemności, 
+kup kilka mniejszych dysków. Mimo, iż może być to rozwiązanie droższe, rozłożenie 
+obciążenia pomiędzy wiele talerzy jednego dysku obniży ilość czasu potrzebną 
+na dostęp do danych. W przypadku wielu dysków, uzyskasz pewniejszy i szybszy 
+dostęp do danych stosując systemy RAID.
+<p>
+<LI><B>Używaj dysków SCSI, jeśli potrzebujesz bardzo wysokiej wydajności 
+operacji wejścia/wyjścia.</B> Dyski IDE pracują z prędkością wirowania talerzy 
+do 7200 obr/min. Nawet używając dysków IDE wysokiej jakości, jest rzeczą 
+niemożliwą oczekiwanie transferu przekraczającego 15-20 Mbytes/s (throughput) 
+z jednego dysku. Używając wysokiej klasy dysków SCSI (droższe, 10k-15k RPM), 
+możesz uzyskać lepszą wydajność od dysków IDE. Z drugiej strony patrząc, przy 
+użyciu dysków SCSI średniej lub niskiej klasy marnujesz pieniądze, gdyż dobre 
+dyski IDE mają podobne parametry jeśli nie lepsze.
+<P>
+Budując serwer i planujesz wyposażyć go w wiele dysków,  
+powinieneś rozważyć użycie urządzeń SCSI. Kontrolery IDE ograniczają ilość do dwóch 
+urządzeń na kontroler (kanał kontrolera, przyp. tłum.). Równoczesny dostęp do dwóch 
+urządzeń wpiętych na jeden kanał może negatywnie wpłynąć na wydajność operacji 
+wejścia/wyjścia tych urządzeń. Wide SCSI ogranicza liczbę urządzeń do 15 na 
+kontroler (kanał, przyp. tłum.), ponadto posiadają one lepsze wsparcie dla 
+równoczesnego dostępu niż urządzenia IDE. Mimo, iż urządzenia SCSI są droższe, 
+to ich uniwersalność oraz wydajność usprawiedliwia zwiększenie nakładów 
+finansowych w poważniejszych zastosowaniach.
+<P>
+<LI><B>Używaj pamięci SDRAM zamiast DRAM.</B> Odnosi się to głównie do 
+komputerów klasy PC. Wiele innych platform nie daje możliwości wyboru co do 
+rodzaju instalowanej pamięci. W większości PC'tów nadal masz możliwość wyboru. 
+Nie osiągniesz wyższej wydajności stosując DRAM (moduły SIMM) w porównaniu z 
+zastosowaniem SDRAM. Jeśli twój system wspiera zastosowanie pamięci RDRAM, DDR 
+lub innego, nowszego typu pamięci RAM, będziesz nawet nieco naprzód... 
+(obecnie pamięci DDR powoli wypierają SDRAM, przyp. tłum.)
+<P>
+<LI><b>Używaj pamięci ECC lub pamięci z kontrolą parzystości.</b> Parzystość 
+dodaje możliwość wykrycia, czy dane w pamięci nie zostały uszkodzone. Większą 
+funkcjonalność oferuje pamięć ECC, która umożliwia korekcję w locie 
+pojedynczego bitu, który uległ uszkodzeniu. Punkt ten odnosi się głównie do 
+architektury PC. Większość platform sprzętowych wymaga zastosowania pamięci z 
+parzystością bądź pamięci ECC. Większość komputerów nie będących PC'tami nie 
+wystartuje z pamięcią bez obsługi parzystości. Jeśli nie wykorzystujesz w 
+systemie pamięci ECC/parity RAM możesz narazić się na uszkodzenie danych lub inne anormalne 
+zachowanie systemu. Wielu producentów tanich pamięci nie oferuje nawet 
+modeli pamięci ECC! Wystrzegaj się ich! Producenci komputerów klasy PC oferują 
+w sprzedaży kilka linii produktów, podzielonych na serwery (servers) i stacje 
+robocze (workstation). Linie serwerowe zawierają ECC RAM w swojej 
+architekturze. Producenci unixowych stacji roboczych stosują pamięci z 
+kontrolą parzystości (obecnie z ECC) od lat we wszystkich swoich liniach 
+produkcyjnych.
+<P>
+<LI><B>Wystrzegaj się urządzeń ISA.</B> Podczas, gdy większość użytkowników 
+wystrzega się stosowania urządzeń ISA, ponieważ są one generalnie 
+trudniejsze w konfiguracji oraz delikatnie mówiąc nie najnowszej daty, jest 
+jeszcze w użyciu wiele takich urządzeń. (obecnie raczej nie można już kupić nowych 
+urządzeń ISA, przyp. tłum.) Używając urządzeń podłączanych przy pomocy 
+magistrali ISA (np. kontrolerów IDE/SCSI lub kart sieciowych), pamiętaj, iż 
+mogą one stanowić &quot;wąskie gardło&quot; całego systemu. O wiele wydajniejsze są 
+urządzenia oparte o magistrale PCI. Oczywiście jest wiele kart rozszerzeń 
+opartych o magistralę ISA, które pracują wydajnie. W większości jednak są to 
+karty graficzne oraz karty dźwiękowe.
+<P>
+<LI><B>Nie stosuj tanich kart sieciowych PCI.</B> OpenBSD wspiera obsługę 
+wielu tanich kart sieciowych. Karty te sprawdzają się nieźle w zastosowaniach 
+domowych, ale w poważniejszych zastosowaniach mogą one nie być wystarczająco 
+wydajne. Jeśli jednak potrzebujesz wyższej wydajności przy niskim obciążeniu 
+serwera, lepszym rozwiązaniem będzie zakup markowej karty sieciowej. Niestety, 
+niektóre z droższych, markowych kart sieciowych (takich jak 3Com serii XL) nie 
+są o wiele lepsze niż te tanie. Jedną z dobrych kart LAN o szybkości 10/100Mbs 
+jest Intel EtherExpress PRO/100. 
+</UL>
+
+<P>
+<A name=Async></A><A name=11.5></A>
+<H2>11.5 - Dlaczego nie używać asynchronicznego montowania dysków?</H2>
+
+<P>
+Pytanie: "Robię tak "mount -u -o async /", co powoduje, 
+że używana przeze mnie paczka (oprogramowanie przyp. tłum.)
+(które posiada od czasu do czasu dostęp do różnych danych) jest w dalszym ciągu zdatna do użycia.
+Dlaczego montowanie asynchroniczne nie jest zalecane 
+i nie jest włączone domyślnie (jak to jest w innych unix'ach)? 
+Czyż nie jest to prostsze oraz nie zwiększa wydajności niektórych aplikacji?
+
+<P>
+Odpowiedź: "W rzeczy samej, asynchroniczne montowanie jest szybsze niż synchroniczne, 
+lecz jest mniej bezpieczne. Co stanie się w przypadku zaniku zasilania? Czy też problemu z hardwarem? 
+Dążenie do uzyskanie większej szybkości nie powinno być okupione kosztem integralności i stabilności 
+systemu. Przeczytaj opis polecenia 
+<A href="http://www.openbsd.org/cgi-bin/man.cgi?query=mount&amp;sektion=8">mount(8)</A> w podręczniku man." 
+
+<PRE>	async    Wszystkie operacje wejścia/wyjścia w systemie plików 
+        	 powinny być wykonane asynchronicznie. Jest to niebezpieczne,
+	     	 ponieważ nie gwarantuje to spójności struktury systemu plików 
+		 na dysku. Nie powinieneś używać tej opcji, chyba, że jesteś 
+		 przygotowany do ponownego utworzenia systemu plików w przypadku
+		 awarii systemu. Najczęściej używa się tej flagi w celu przyśpieszenia 
+		 przywracania systemu plików poleceniem restore(8), co może przyczynić się
+		 do nawet dwukrotnego przyśpieszenia operacji dyskowych.
+</PRE>
+
+<P>
+Z innej strony, kiedy masz do czynienia z danymi tymczasowymi, które możesz odtworzyć 
+po awarii systemu, możesz zwiększyć szybkość używając odrębnej, asynchronicznie montowanej partycji
+tylko i wyłącznie dla tego typu danych. Rób to jednak <I>tylko jeśli</I> nie poniesiesz straty wszystkich danych 
+w przypadku, gdy coś pójdzie nie tak jak byś się tego spodziewał. W tym celu, partycje <A 
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=mfs&amp;sektion=8">mfs(8)</A> 
+są montowane asynchronicznie, jako że są one czyszczone i ponownie tworzone po każdym reboocie systemu.
+
+<P>
+<A name=XF86></A><A name=11.6></A>
+<H2>11.6 - Dostrajanie rozdzielczości ekranu pod XFree86</H2>
+
+<P>
+Ustawienie optymalnej rozdzielczości na większości monitorów typu multi-sync
+jest możliwe. Ktokolwiek próbowałby zrobić to przy pomocy standardowych narzędzi 
+xf86config or XF86Setup, prawdopodobnie nie osiągnie najlepszych, możliwych 
+do osiągnięcia rezultatów. Jedną z bardziej uciążliwych rzeczy jest zbyt niskie 
+odświeżanie (72-75 Hz) (częstotliwość odświeżania pionowego VSYNC, przyp. tłum) 
+przy preferowanej rozdzielczości ekranu, co powoduje, że drażniące oczy migotanie 
+jest jedynie mniej widoczne dla ludzi. A co jeśli spróbujesz ustawić ten parametr 
+na bardzo niską wartość? Możesz zobaczyć to przy ustawieniu VSYNC na 50 Hz, tak byś 
+mógł zapisać obraz na video bez migotania, ale metody te nie są tak oczywiste 
+jak standardowe narzędzia z XFree86 oraz dokumentacja.
+
+<P>
+Obecnie, w oferowanych przez niedrogie monitory rozdzielczościach 
+(800x600, 1024x768, 1152x900, 1280x1024), których normalnie używa większość 
+ludzi, możliwe jest uzyskanie VSYNC na poziomie 85Hz lub więcej, co powoduje,
+iż obraz jest czysty i stabilny. XFree86 X serwer posiada mechanizm (ModeLine) 
+pozwalający opisać szczegółowo tryb graficzny którego zamierzasz używać. 
+Mechanizm ten składa się z czterech części, pierwsza z nich to częstotliwość rysowania pixela 
+(pixel clock), następna część - cztery liczby - to takty synchronizacji poziomej, 
+kolejna - cztery liczby - takty synchronizacji pionowej, wreczcie ostatnia, opcjonalna część
+zawierająca listę dodatkowych parametrów (np. Interlace, DoubleScan ..).
+Więcej informacji na ten temat znajdziesz w sekcji XF86Config(5) podręcznika man.
+
+<P>
+Utworzenie ModeLine'a jest czarną magią... Na szczęście, jest kilka skryptów, 
+które zrobią to za Ciebie. Jendnym z nich jest 
+<A href="http://www-sop.inria.fr/cgi-bin/koala/nph-colas-modelines">Colas XFree86 ModeLine Generator</A>. 
+Kolejny to 
+<A href="http://xtiming.sourceforge.net/">The XFree86 Modeline Generator</A> 
+umieszczony na witrynie SourceForge, inne znajdziesz na witrynie 
+<a href="http://freshmeat.net/search/?q=modeline">Freshmeat</A>. Zanim zaczniesz ich używać, 
+musisz dowiedzieć się w jakich zakresach VSYNC i HSYNC pracuje Twój monitor.
+Jest to często udokumentowane w instrukcji lub na witrynie www producenta.
+Jeśli nie możesz tego znaleźć, przeszukaj sieć www podając producenta i model monitora. 
+Niektóre osoby podają te dane na swoich stronach.
+
+<P>
+Na przykład, powiedzmy, że masz monitor Dell D1226H. Dowiedziałeś się, że 
+pracuje on przy następujących wartościach parametrów HSYNC 30-95 kHz oraz 
+VSYNC 50-160 Hz. Odwiedź teraz stronę ModeLine generator i wprowadź te informacje. 
+Potem wprowadź minimalną wartość VSYNC, jakiej chcesz użyć.  
+Powyżej 72 Hz migotanie obrazu nie powinno być widoczne. Im wyższa ta wartość 
+tym czystszy i stabilniejszy staje się obraz.
+
+<P>
+Przy pomocy tych informacji, skrypt wygeneruje ModeLine'y dla w każdej możliwej
+rozdzielczości przy proporcjach ekranu 4x3, przy odświeżaniu powyżej minimalnej, 
+wprowadzonej wcześniej wartości VSYNC. Skrypt ten wygeneruje następujące wpisy: 
+
+<PRE>ModeLine "320x240" 20.07 320 336 416 448 240 242 254 280 #160Hz
+ModeLine "328x246" 20.86 328 344 424 456 246 248 260 286 #160Hz
+...
+ModeLine "816x612" 107.39 816 856 1056 1136 612 614 626 652 #145Hz
+ModeLine "824x618" 108.39 824 864 1064 1144 618 620 632 658 #144Hz
+ModeLine "832x624" 109.38 832 872 1072 1152 624 626 638 664 #143Hz
+...
+ModeLine "840x630" 109.58 840 880 1080 1160 630 632 644 670 #141Hz
+ModeLine "848x636" 110.54 848 888 1088 1168 636 638 650 676 #140Hz
+...
+ModeLine "1048x786" 136.02 1048 1096 1336 1432 786 788 800 826 #115Hz
+ModeLine "1056x792" 136.58 1056 1104 1344 1440 792 794 806 832 #114Hz
+ModeLine "1064x798" 137.11 1064 1112 1352 1448 798 800 812 838 #113Hz
+...
+ModeLine "1432x1074" 184.07 1432 1496 1816 1944 1074 1076 1088 1114 #85Hz
+ModeLine "1576x1182" 199.86 1576 1648 2008 2152 1182 1184 1196 1222 #76Hz
+ModeLine "1584x1188" 198.93 1584 1656 2016 2160 1188 1190 1202 1228 #75Hz
+</PRE>
+
+<P>
+Wiemy, iż monitor pracuje w rodzileczości 1600x1200 @ 75 Hz,
+a skrypt tego nie podał. Z tego powodu, jeśli chcemy pracować w rozdzielczości
+1600x1200, musimy obniżyć minimalny VSYNC do 70Hz. Po tych zmianach skrypt 
+zwróci następujące wyniki:
+
+<PRE>ModeLine "1592x1194" 197.97 1592 1664 2024 2168 1194 1196 1208 1234 #74Hz
+ModeLine "1600x1200" 199.67 1600 1672 2032 2176 1200 1202 1214 1240 #74Hz
+ModeLine "1608x1206" 198.65 1608 1680 2040 2184 1206 1208 1220 1246 #73Hz
+ModeLine "1616x1212" 197.59 1616 1688 2048 2192 1212 1214 1226 1252 #72Hz
+ModeLine "1624x1218" 199.26 1624 1696 2056 2200 1218 1220 1232 1258 #72Hz
+ModeLine "1632x1224" 198.15 1632 1704 2064 2208 1224 1226 1238 1264 #71Hz
+ModeLine "1640x1230" 199.81 1640 1712 2072 2216 1230 1232 1244 1270 #71Hz
+ModeLine "1648x1236" 198.64 1648 1720 2080 2224 1236 1238 1250 1276 #70Hz
+</PRE>
+
+<P>
+Teraz widzimy ,iż monitor pracuje naprawdę w rozdzielczości 1600x1200 @ 74 Hz 
+co jest spowodowane maksymalną wartością szerokości pasma (200 MHz). 
+Ustaw tę wartość stosownie do parametrów monitora.
+
+<P>
+Po wygenerowaniu własnych ModeLine'ów, należy umieścić je w pliku /etc/XF86Config. 
+Ponadto należy zakomentować stare ModeLine'y, na wypadek gdybyś musiał ich ponownie użyć,
+co może mieć miejsce, gdy nowo dodane nie chcą działać. Następnie należy ustawić rozdzielczość ekranu, przy której zamierzasz pracować. Po pierwsze, sprawdź czy system X 
+pracuje w trybie z akceleracją (co jest normalne dla większości kart graficznych),
+więc już wiesz, którą sekcję <TT>"Screen"</TT> pliku XF86Config należy zmienić. 
+Inną możliwością jest zmiana wszystkich sekcji Screen. 
+<PRE>Section "Screen"
+   Driver          "Accel"
+   Device          "Primary Card"
+   Monitor         "Primary Monitor"
+   DefaultColorDepth 32
+   SubSection "Display"
+      Depth        32
+      Modes        "1280x1024" "1024x768"
+   EndSubSection
+</PRE>
+
+<P>
+Pierwsza rozdzielczość, którą widzisz po słowie "Modes" jest rozdzielczością, 
+w której system X wystartuje. Poprzez wciśnięcie kombinacji CTRL-ALT-KEYPAD MINUS 
+lub or CTRL-ALT-KEYPAD PLUS, możesz przełączać się pomiędzy rozdzielczościami 
+z tej listy. System X będzie próbował wystartować w trybie 32-bitowego koloru 
+(zgodnie z derektywą DefaultColorDepth, bez której wystartowałby w trybie 8-bitowym).
+Pierwszą rozdzielczością, którą system X będzie próbował użyć jest 1280x1024 
+(zgodnie z kolejnością wpisów w linii Modes). Zauważ, iż "1280x1024" jest etykietą
+wartości zdefiniowanych w ModeLine'ach. 
+
+<P>
+Ponadto skrypt 'ModeLine generator' posiada opcje do regulacji taktowania (timings) dla starszych 
+czy też mniejszych monitorów, dodatkowo posiada także możliwość tworzenia ModeLine'ów 
+dla nietypowych rozdzielczości. W zależności od typu sprzętu jaki posiadasz może nie być 
+prostym zadaniem używanie skryptu z domyślnymi przy zastosowaniu opcji 
+domyślnych. Jeśli obraz jest zbyt 
+wysoki, zbyt szeroki, zbyt mały przesunięty w pionie lub poziomie, a manipulacja 
+ustawieniami monitora nie umożliwia korekcji tych zniekształceń, możesz użyć 
+xvidtune(1) w celu lepszego dostosowania taktowania (timings) monitora.
+
+<P>
+W większości nowoczesnych monitorów nie ma ustalonego limitu pasma, 
+tak więc nie podaje się go w parametrach technicznych. Jedynym objawem przekroczenia
+tego parametru jest to, iż im bardziej go przekraczasz, tym bardziej niewyraźny 
+staje się obraz. Tak więc możesz uważać za stosowne określenie tego paramertu dla swojej karty
+(inaczej nazywany jest "dotclock") w celach testowych (nie można w ten sposób uszkodzić monitora), 
+a po odpowiednim obniżeniu tej wartości otrzymasz wyraźny obraz.
+
+<P>
+Może wydawać Ci się to zbyt skomplikowane, ponieważ tak jest w rzeczywistości. 
+XFree86 4.0 sam wyznacza ten parametr, co upraszcza proces odkąd posiada wiele 
+wbudowanych trybów i jest zdolny odczytać możliwości monitorów "plug and play" 
+poprzez DDC oraz DDC2. 
+
+<P>
+Możesz pobrać skrypt Colas XFree86 ModeLine Generator z <A 
+href="http://koala.ilog.fr/ftp/pub/Klone/">http://koala.ilog.fr/ftp/pub/Klone/</A>. 
+Potrzebne będzie pobranie 'Klone interpreter' i jego kompilacja. Znajduje się on w portach 
+pod pozycją <TT>lang/klone</TT>. Skrypty umieszczone są w strukturze katalogów dystybucji 
+Klone'a. (Port ten instaluje te skrypty w /usr/local/lib/klone/scripts.) 
+
+<P>
+Są tam załączone dwie wersje, pierwsza oparta o CGI identyczna z tą na stronie. 
+Druga, nie CGI, analizuje plik XF86Config , dekoduje parametry monitora wpisane w 
+xf86config/XF86Setup (Teraz pomyśl, czy aktualnie wpisałeś specyfikacje swojego monitora, 
+czy użyłeś domyślnego pliku?), i koryguje jak należy istniejące ModeLine'y.
+
+<P>
+<FONT color=#0000e0>
+<A href="index.html">[Spis treści]</A>
+<A href="../faq10.html">[Sekcja 10 - Administracja systemem]</A>
+<A href="faq12.html">[Sekcja 12 - Dla zaawansowanych]</A>
+</FONT>
+
+<P>
+<HR>
+<A href="index.html"><IMG height="24"  src="../../images/back.gif" width="24" border="0" alt="[back]"></A> 
+<A href="mailto:www@openbsd.org">www@openbsd.org</A> 
+<BR>
+<SMALL>
+Originally [ OpenBSD: faq11.html,v 1.40 ]<BR>
+$Translation: faq11.html,v 1.1 2003/05/04 11:54:15 tomasz Exp $<BR>
+$OpenBSD: faq11.html,v 1.1 2003/05/04 13:10:20 jufi Exp $
+</SMALL>
+</BODY>
+</HTML>

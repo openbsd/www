@@ -1,0 +1,3395 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>6.0 - Sieć</title>
+<link rev= "made" href= "mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-2">
+<meta name= "resource-type" content= "document">
+<meta name= "description"   content= "the OpenBSD FAQ page">
+<meta name= "keywords"      content= "openbsd,faq">
+<meta name= "distribution"  content= "global">
+<meta name= "copyright"     content= "This document copyright 1998-2003 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- passes validator.w3.org, please keep it this way -->
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../images/smalltitle.gif">
+<p>
+<h2><font color="#e00000">6.0 - Sieć</font></h2>
+<hr>
+
+<p>
+<h3>Spis Treści</h3>
+<ul>
+<li><a href= "#Intro" >6.0.1 - Wprowadzenie</a>
+<li><a href= "#Setup" >6.1 - Inicjalizacja sieci</a>
+<li><a href= "#PF"    >6.2 - Filtr pakietów (Packet Filter - PF)</a>
+<li><a href= "#NAT"   >6.3 - Translacja adresów sieciowych (Network Address Translation)</a>
+<li><a href= "#DHCP"  >6.4 - Konfiguracja DHCP</a>
+<li><a href= "#PPP"   >6.5 - Protokół PPP</a>
+<li><a href= "#Tuning">6.6 - Tuning parametrów sieciowych</a>
+<li><a href= "#NFS"   >6.7 - Korzystanie z NFS</a>
+<li><a href= "#DNS"   >6.8 - Usługi rozwiązywania nazw - DNS, BIND i named</a>
+<li><a href= "#PPTP"  >6.9 - Konfiguracja połączenia PPTP</a>
+<li><a href= "#Bridge">6.10 - Konfiguracja bridge`a w OpenBSD</a>
+</ul>
+
+<hr>
+
+<p>
+<a name="Intro"></a>
+<a name="6.0.1"></a>
+<h2>6.0.1 - Wprowadzenie</h2>
+
+<p>
+Dla zrozumienia większości z tego dokumentu, zalecane jest zapoznanie się
+i zrozumienie sekcji 5 FAQ <a href="faq5.html">konfiguracja i instalacja jądra</a>, 
+działania narzędzi
+<a href= "http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8">
+ifconfig(8)</a> oraz
+<a href= "http://www.openbsd.org/cgi-bin/man.cgi?query=netstat&amp;sektion=1">
+netstat(1)</a> na podstawie odpowiadających im stron manuala.
+
+<p>
+Jeśli administrujesz siecią i zajmujesz się konfiguracją protokołów rutowania
+używając do tego celu maszyny z OpenBSD jako rutera i chcesz zagłębić się
+bardziej w sieci IP, powinieneś przeczytać poniższy znakomity dokument 
+<a href="http://www.3com.com/corpinfo/en_US/technology/tech_paper.jsp?DOC_ID=135">Understanding
+IP Addressing</a>.
+Dokument ten zawiera fundamentalne informacje na temat sieci IP, jest przydatny 
+zwłaszcza gdy opiekujesz się wieloma sieciami.
+
+<p>
+Jeśli zajmujesz się administrowaniem takimi usługami jak serwery www,
+ftp czy też pocztowymi możesz dowiedzieć się wielu interesujących rzeczy
+o ich działaniu czytając odpowiednie
+<a href="http://the.rfceditor.org/rfc.html">dokumenty RFC</a>
+opisujące szczegółowo protokoły oraz działanie tych usług.
+Oczywiście nie przeczytasz ich wszystkich - zajmij się tymi, którymi
+jesteś najbardziej zainteresowany lub których używasz w swojej sieci. Dokumenty
+RFC definiują tysiące standardów opisujących protokoły sieciowe, 
+ich działanie oraz sposób w jaki powinne zostać realizowane.
+
+<p>
+<a name="Setup"></a>
+<a name="6.1"></a>
+<h2>6.1 - Inicjalizacja Sieci</h2>
+
+<p>
+<a name="Setup.1"></a>
+<a name="6.1.1"></a>
+<h3>6.1.1 - Identyfikacja i konfiguracja interfejsów sieciowych</h3>
+
+<p>
+Aby zacząć musisz zidentyfikować swoje interfejsy sieciowe. W OpenBSD nazywane
+są one według typu sterownika a nie typu połączenia (jak ma to miejsce np. w 
+Linuksie). Możesz zobaczyć w jaki sposób system wykrył Twoją kartę podczas 
+procesu uruchamiania lub później korzystając z polecenia
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dmesg&amp;sektion=8">dmesg(8)</a>.
+Aktualną konfigurację interfejsów sieciowych możesz zobaczyć przy pomocy 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8">ifconfig(8)</a>.
+Dla przykładu, oto co wyświetlone zostało przez komendę dmesg w przypadku karty sieciowej
+Intel Fast Ethernet, używającej nazwy fxp.
+
+<blockquote><pre>
+fxp0 at pci0 dev 10 function 0 "Intel 82557" rev 0x0c: irq 5, address 00:02:b3:2b:10:f7
+inphy0 at fxp0 phy 1: i82555 10/100 media interface, rev. 4
+</pre></blockquote>
+
+<p>
+Jeśli nie wiesz jak nazywa się Twoje urządzenie sieciowe przejżyj 
+<a href="../../plat.html">listę urządzeń wspieranych przez OpenBSD</a> dla odpowiedniej platformy.
+Znajdziesz tam spis wielu popularnych kart sieciowych oraz odpowiedniki
+ich nazw w OpenBSD. Pełna nazwa urządzenia w systemie składa się z tego
+właśnie synonimu (jak fxp) oraz numeru przyznanego urządzeniu przez jądro systemu 
+(np. fxp0).
+
+<p>
+Sprawdzenia jakie interfejsy sieciowe zostały zidentyfikowane przez system
+możesz dokonać korzystając z narzędzia
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8">ifconfig(8)</a>.
+Poniższa komenda wyświetli wszystkie interfejsy w systemie. W tym przykładzie
+widać tylko jeden fizyczny interfejs ethernetowy
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fxp&amp;sektion=4">fxp(4)</a>.
+</p>
+
+<blockquote><pre>
+$ <strong>ifconfig -a</strong>
+lo0: flags=8049&lt;UP,LOOPBACK,RUNNING,MULTICAST&gt; mtu 33224
+        inet6 fe80::1%lo0 prefixlen 64 scopeid 0x4
+        inet6 ::1 prefixlen 128
+        inet 127.0.0.1 netmask 0xff000000 
+lo1: flags=8008&lt;LOOPBACK,MULTICAST&gt; mtu 33224
+fxp0: flags=8843&lt;UP,BROADCAST,RUNNING,SIMPLEX,MULTICAST&gt; mtu 1500
+        media: Ethernet autoselect (100baseTX full-duplex)
+        status: active
+        inet 10.0.0.38 netmask 0xffffff00 broadcast 10.0.0.255
+        inet6 fe80::202:b3ff:fe2b:10f7%fxp0 prefixlen 64 scopeid 0x1
+pflog0: flags=0&lt;&gt; mtu 33224
+sl0: flags=c010&lt;POINTOPOINT,LINK2,MULTICAST&gt; mtu 296
+sl1: flags=c010&lt;POINTOPOINT,LINK2,MULTICAST&gt; mtu 296
+ppp0: flags=8010&lt;POINTOPOINT,MULTICAST&gt; mtu 1500
+ppp1: flags=8010&lt;POINTOPOINT,MULTICAST&gt; mtu 1500
+tun0: flags=10&lt;POINTOPOINT&gt; mtu 3000
+tun1: flags=10&lt;POINTOPOINT&gt; mtu 3000
+enc0: flags=0&lt;&gt; mtu 1536
+bridge0: flags=0&lt;&gt; mtu 1500
+bridge1: flags=0&lt;&gt; mtu 1500
+vlan0: flags=0&lt;&gt; mtu 1500
+vlan1: flags=0&lt;&gt; mtu 1500
+gre0: flags=8010&lt;POINTOPOINT,MULTICAST&gt; mtu 1450
+gif0: flags=8010&lt;POINTOPOINT,MULTICAST&gt; mtu 1280
+gif1: flags=8010&lt;POINTOPOINT,MULTICAST&gt; mtu 1280
+gif2: flags=8010&lt;POINTOPOINT,MULTICAST&gt; mtu 1280
+gif3: flags=8010&lt;POINTOPOINT,MULTICAST&gt; mtu 1280
+</pre></blockquote>
+
+<p>
+Jak widzisz,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8">ifconfig(8)</a> 
+dostarcza nam wielu użytecznych w tym momencie informacji, między
+innymi widać tutaj interfejs, który w powyższym przykładzie jest już skonfigurowany.
+Oczywistym jest że sieć IP dostępna jest poprzez interfejs fxp0, stąd
+wartości &quot;inet 10.0.0.38 netmask 0xffffff00 broadcast 10.0.0.255&quot;.  
+Ponadto flagi <strong>UP</strong> i <strong>RUNNING</strong> są ustawione.
+
+<p>
+Oprócz fxp0 widoczne są również domyślnie udostępnione inne interfejsy.
+Są to urządzenia wirtualne pełniące w systemie rozmaite funkcje.
+Ich szczegółowy opis znajdziesz na stronach manuala:
+
+<ul>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=lo&amp;sektion=4">lo</a>
+ - interfejs pętli zwrotnej (Loopback Interface) 
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflog&amp;sektion=4&amp;manpath=OpenBSD+3.2">pflog</a>
+ - interfejs logowania filtra pakietów (Packet Filter Logging Interface)
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sl&amp;sektion=4">sl</a>
+ - interfejs szeregowego łącza IP (SLIP)
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ppp&amp;sektion=4">ppp</a>
+ - interfejs protokołu PPP (Point to Point Protocol)
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tun&amp;sektion=4">tun</a>
+ - programowy interfejs tunelu (Tunnel Network Interface)
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=enc&amp;sektion=4">enc</a>
+ - opakowujący pseudointerfejs pętli zwrotnej (Encapsulating Interface)
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridge&amp;sektion=4">bridge</a>
+ - interfejs bridge`a ethernetowego (Ethernet Bridge Interface)
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vlan&amp;sektion=4">vlan</a>
+ - interfejs sieci wirtualnych budowanych na urządzeniach zgodnych z IEEE 802.1Q 
+ <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=gre&amp;sektion=4">gre</a>
+ - interfejs tunelu IP korzystający z protokołów GRE/MobileIP
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=gif&amp;sektion=4">gif</a>
+ - interfejs tunelu IPv4/IPv6 (Generic IPv4/IPv6 Tunnel Interface)
+</ul>
+
+<p>
+Jeśli Twój interfejs sieciowy nie jest skonfigurowany, pierwszym co powinieneś zrobić,
+jest stworzenie pliku <i>/etc/hostname.xxx</i>. W miejsce xxx umieść nazwę interfejsu
+którego dany plik ma dotyczyć. Dla powyższego przykładu, plik ten powinien mieć
+nazwę <i>/etc/hostname.fxp0</i>. Składnia pliku jest prosta:<br>
+
+<blockquote><pre>
+address_family address netmask broadcast [other options]
+</pre></blockquote>
+
+(Znaczenie oraz więcej szczegółów odnośnie formatu tego pliku znajdziesz w manualu pod
+hasłem
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hostname.if&amp;sektion=5">hostname.if(5)</a>.)
+
+<p>
+Typowy plik interfejsu sieciowego skonfigurowanego do współpracy z adresami IPv4
+może wyglądać następująco:
+
+<blockquote><pre>
+$ <strong>cat /etc/hostname.fxp0</strong>
+inet 10.0.0.38 255.255.255.0 NONE
+</pre></blockquote>
+
+<p>
+Wprowadzając dodatkowe opcje możesz skonfigurować typ Ethernetu i dla przykładu:
+jeśli chcesz aby karta pracowała w trybie 100baseTX full-duplex, plik konfiguracyjny
+będzie wyglądał następująco:
+
+<blockquote><pre>
+inet 10.0.0.38 255.255.255.0 NONE media 100baseTX mediaopt full-duplex
+</pre></blockquote>
+
+<p>
+Oczywiście nie powinieneś nigdy ustawiać trybu z którym nie potrafi współpacować
+drugi koniec połączenia. Jeśli nie ma ku temu wyraźnych powodów nie jest zalecane 
+stosowanie dodatkowych opcji ustalających tryb pracy.
+
+<p>
+Możesz zauważyć, że w przypadku konfigurowania różnych typów interfejsów
+i przypisywania im specyficznych dla nich opcji format pliku pozostaje niemal identyczny!
+
+<blockquote><pre>
+$ <strong>cat /etc/hostname.vlan0</strong>
+inet 172.21.0.0 255.255.255.0 NONE vlan 2 vlandev fxp1
+</pre></blockquote>
+
+<p>
+Następnym krokiem jest ustalenie domyślnej bramki (trasy rutowania). 
+Jedyne co musisz zrobić to umieścić adres IP swojej bramki w pliku
+<i>/etc/mygate</i>. Dzięki temu Twoj system będzie poinformowany 
+o bramie domyślnej przy każdorazowym uruchamianiu. Teraz kolej na 
+ustalenie serweów nazw i edycję pliku <i>/etc/hosts</i> (zobacz
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hosts&amp;sektion=5">hosts(5)</a>). 
+Do poinformowania systemu z których serwerów nazw powinien korzystać,
+musisz stworzyć (o ile jeszcze nie istnieje) plik <i>/etc/resolv.conf</i>. 
+Więcej na temat formatu tego pliku możesz dowiedzieć się ze stony manuala
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=resolv.conf&amp;sektion=5">resolv.conf(5)</a>. 
+Poniżej zamieszczony został przykład dla standardowych przypadków użycia,
+zakładamy w nim, że serwery nazw mają adresy 125.2.3.4 i 125.2.3.5 
+oraz należysz do domeny &quot;yourdomain.com&quot;.
+
+<blockquote><pre>
+$ <strong>cat /etc/resolv.conf</strong>
+search yourdomain.com
+nameserver 125.2.3.4
+nameserver 125.2.3.5
+lookup file bind
+</pre></blockquote>
+
+<p>
+W tej chwili, aby zainicjować sieć na swojej konfiguracji możesz uruchomić
+ponownie komputer, bądź uruchomić skrypt <strong>/etc/netstart</strong>. 
+Możesz to zrobić w prosty sposób (jako użytkownik root):
+
+<blockquote><pre>
+# <strong>sh /etc/netstart</strong>
+writing to routing socket: File exists
+add net 127: gateway 127.0.0.1: File exists
+writing to routing socket: File exists
+add net 224.0.0.0: gateway 127.0.0.1: File exists
+</pre></blockquote>
+
+<p>
+Zauważ że uruchomienie skryptu spowodowało wystąpienie kilku błędów.
+Jest to spowodowane zainicjalizowaniem rekonfiguracji systemu już
+skonfigurowanego. Dla przykładu, niektóre trasy rutowania istniały już
+w tablicy rutingu jądra. Od tej chwili obsługa sieci w Twoim systemie powinna być już
+skonfigurowana. Aby upewnić się że wszystkie interfejsy zostały skonfigurowane
+tak jak planowałeś posłuż się narzędziem 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8">ifconfig(8)</a>.
+Trasy rutowania możesz obejrzeć korzystając z 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=netstat&amp;sektion=1">netstat(1)</a>
+lub <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=route&amp;sektion=8">route(8)</a>.
+Poniżej znajdują się przykłady użycia obu tych narzędzi.
+
+<blockquote><pre>
+$ <strong>netstat -rn</strong>
+Routing tables
+
+Internet:
+Destination        Gateway            Flags     Refs     Use    Mtu  Interface
+default            10.0.0.1           UGS         0       86      -  fxp0
+127/8              127.0.0.1          UGRS        0        0      -  lo0
+127.0.0.1          127.0.0.1          UH          0        0      -  lo0
+10.0.0/24          link#1             UC          0        0      -  fxp0
+10.0.0.1           aa:0:4:0:81:d      UHL         1        0      -  fxp0
+10.0.0.38          127.0.0.1          UGHS        0        0      -  lo0
+224/4              127.0.0.1          URS         0        0      -  lo0
+
+Encap:
+Source             Port  Destination        Port  Proto SA(Address/SPI/Proto)
+
+$ <strong>route show</strong>
+Routing tables
+
+Internet:
+Destination      Gateway            Flags
+default          10.0.0.1           UG
+127.0.0.0        LOCALHOST          UG
+localhost        LOCALHOST          UH
+10.0.0.0         link#1             U
+10.0.0.1         aa:0:4:0:81:d      UH
+10.0.0.38        LOCALHOST          UGH
+BASE-ADDRESS.MCA LOCALHOST          U
+</pre></blockquote>
+
+<p>
+<a name="Setup.2"></a>
+<a name="6.1.2"></a>
+<h3>6.1.2 - Konfiguracja komputera z OpenBSD jako rutera</h3>
+
+<p>
+Poniżej zamieszczone są podstawowe informacje z którymi powinieneś zapoznać
+się, chcąc skonfigurować maszynę z OpenBSD jako bramkę (ruter). Jeśli komputer
+ma stanowić bramkę do Internetu, zalecane jest przeczytanie instrukcji 
+dotyczących konfiguracji filtra pakietów (Packet Filter) aby móc blokować
+potencjalnie niebezpieczny ruch. Ponadto, biorąc pod uwagę niewielką
+przestrzeń adresów 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ip&amp;sektion=4">IPv4</a>
+przydzielaną przez dostawców usług internetowych możesz zechcieć skorzystać
+z informacji o translacji adresów sieciowych (NAT - Network Address Translation)
+aby rozsądniej wykorzystać przyznaną Ci pulę adresów IP.
+
+<p>
+Standardowe (GENERIC) jądro ma możliwość przekazywania pakietów IP (IP Forwarding),
+do działania, wymaga ono jednak inicjalizacji. Powinieneś do tego celu skorzystać z 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=8">sysctl(8)</a>.
+Aby maszyna zawsze startowała z włączonym przekazywaniem pakietów powinieneś wyedytować
+plik <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl.conf&amp;sektion=5">/etc/sysctl.conf(5)</a>
+Jedyne co musisz zrobić, to dodać poniższą linijkę do tego pliku.
+
+<blockquote><pre>
+net.inet.ip.forwarding=1
+</pre></blockquote>
+
+<p>
+Aby uzyskać ten efekt bez restartu maszyny, możesz skorzystać bezpośrednio
+z narzędzia <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=8">sysctl(8)</a>
+Pamiętaj, że po ponownym uruchomieniu komputera, jeśli nie wyedytujesz pliku 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl.conf&amp;sektion=5">/etc/sysctl.conf(5)</a>
+jak zostało to pokazane powyżej, zmiana ta nie będzie obowiązywać. Do wykonania poniższej
+komendy musisz mieć uprawnienia root`a.
+
+<blockquote><pre>
+# <strong>sysctl -w net.inet.ip.forwarding=1</strong>
+net.inet.ip.forwarding: 0 -&gt; 1
+</pre></blockquote>
+
+<p>
+Teraz jedyne co Ci pozostaje to ustawienie tras rutingu na hostach po obu
+stronach Twojego rutera. Istnieje wiele możliwości wykorzystania OpenBSD
+jako rutera korzystając z takich narzędzi jak
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=routed&amp;sektion=8">routed(8)</a>,
+<a href="http://www.gated.org">gated</a>, <a href="http://www.mrtd.net">mrtd</a>,
+i <a href="http://www.zebra.org">zebra</a>. OpenBSD wspiera oprogramowanie
+takie jak zebra, gated czy mrtd poprzez system portów. Potrafi także współpracować
+z rozmaitymi interfejsami takimi jak T1, HSSI, ATM, FDDI, Ethernet oraz połączeniami
+poprzez linie szeregowe (PPP/SLIP).
+
+<p>
+<a name="Setup.3"></a>
+<a name="6.1.3"></a>
+<h3>6.1.3 - Ustawianie aliasów na interfejsach sieciowych</h3>
+
+<p>
+OpenBSD posiada prosty mechanizm nadawania aliasów IP na interfejsy. 
+Jedyne co musisz zrobić, to odpowiednio wyedytować plik
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hostname.if&amp;sektion=5"><i>/etc/hostname.&lt;if&gt;</i></a>.
+Plik ten, z informacjami o konfiguracji interfejsu, jest czytany
+w momencie uruchamiania się systemu przez skrypt
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rc&amp;sektion=8">/etc/rc(8)</a>,
+który jest elementem procedury startowej (<a href="../faq10.html#rc">rc startup
+hierarchy</a>). Dla przykładu zakładamy, że użytkownik posiada interfejs
+<b>dc0</b> i znajduje się w sieci 192.168.0.0. Pozostałe istotne 
+informacje:
+
+<ul>
+<li>adres IP: 192.168.0.2
+<li>maska sieciowa (NETMASK): 255.255.255.0
+</ul>
+
+<p>
+Kilka uwag na temat aliasów. W OpenBSD używasz tylko jednej nazwy
+interfejsu. Nie ma w tym przypadku żadnej różnicy pomiędzy pomiędzy
+pierwszym a drugim aliasem. W przeciwieństwie do innych systemów operacyjnych
+OpenBSD nie odnosi się do kolejnych aliasów kolejno je numerując,
+jak np.: dc0:0, dc0:1. Jeśli odnosisz się do konkretnego 'aliasowanego'
+adresu IP poprzez ifconfig, lub dodajesz alias, bądź uważny i pamiętaj
+o składni "<tt>ifconfig int alias</tt>" zamiast "<tt>ifconfig int</tt>".
+Dowolny alias możesz usunąć poleceniem "<tt>ifconfig int delete</tt>".
+
+<p>
+Zakładając że używasz wielu adresów IP które należą do tej samej 
+podsieci jako aliasy, maska sieciowa dla każdego z nich przyjmuje
+wartość 255.255.255.255. Nie musissz powielać w każdym przypadku 
+maski pierwszego adresu IP przypisanego do interfejsu. W poniższym
+przykładzie, plik <i>/etc/hostname.dc0</i>, zawiera definicje dwóch 
+aliasów do interfejsu dc0 skonfigurowanego początkowo jako
+192.168.0.2 z maską 255.255.255.0.
+
+<blockquote><pre>
+# <b>cat /etc/hostname.dc0</b>
+inet 192.168.0.2 255.255.255.0 media 100baseTX
+inet alias 192.168.0.3 255.255.255.255
+inet alias 192.168.0.4 255.255.255.255
+</pre></blockquote>
+
+<p>
+Po wyedytowaniu pliku, jedyne co musisz zrobić to uruchomić ponownie
+komputer, aby wprowadzić powyższe zmiany w konfiguracji. Naturalnie, możesz
+także nadać aliasy ręcznie, bez potrzeby restartowania systemu, używając
+narzędzia <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8">ifconfig(8)</a>. 
+Do uaktywnienia pierwszego aliasu z powyższego przykładu powinieneś 
+posłużyć się komendą:
+
+<blockquote><pre>
+# <b>ifconfig dc0 inet alias 192.168.0.3 netmask 255.255.255.255</b>
+</pre></blockquote>
+
+<p>
+Do wyświetlenia aliasów skorzystaj z polecenia:
+
+<blockquote><pre>
+$ <b>ifconfig -A</b>
+dc0: flags=8863&lt;UP,BROADCAST,NOTRAILERS,RUNNING,SIMPLEX,MULTICAST&gt;
+        media: Ethernet manual
+        inet 192.168.0.2  netmask 0xffffff00 broadcast 192.168.0.255
+        inet 192.168.0.3 netmask 0xffffffff broadcast 192.168.0.3
+</pre></blockquote>
+
+
+<p>
+<a name="6.2"></a>
+<a name="PF"></a>
+<h2>6.2 - Filtr pakietów (Packet Filter - PF)</h2>
+
+<p>
+<h4>Uwaga:  W OpenBSD 3.2, funkcje jakie pełnił plik <i>/etc/nat.conf</i>
+zostały przeniesione do <i>/etc/pf.conf</i>.  
+</h4>
+
+<p>
+Nowy
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5"><i>/etc/pf.conf</i></a>
+składa się z czterech części:
+
+<ul>
+<li><b>Opcje:</b> Rozmaite opcje określające w jaki sposób PF ma działać.
+<li><b>Normalizacja (Scrub):</b> Przetwarzanie przesłanych pakietów w celu
+ich normalizacji i dostosowania do standardów.
+<li><b><a href="#NAT">Translacja zdresów (NAT) i reguły przekierowujące:</a></b> 
+NAT pozwala na dostęp do Internetu wielu komputerom, wykorzystując 
+do tego jeden adres IP. Dzięki przekierowaniom, można przekazać ruch
+do innych maszyn znajdujących się za NAT`em.
+<li><b>Reguły filtrujące:</b> Zezwalają na selektywne filtrowanie lub
+blokowanie pakietów pojawiających się na którymkolwiek z interfejsów.
+</ul>
+
+Nie jest wymagane istnienie każdej z tych sekcji, jednak te które występują,
+powinny pojawić się w wymienionej kolejności.
+
+<p>
+Filtr pakietów jest podsystemem stworzonym do dwóch głównych zadań,
+przekazywania pakietów na podstawie określonych praw i reguł oraz mapowania
+adresów hostów/podsieci na adresy zewnętrzne. Plikiem konfiguracyjnym dla 
+wszystkich tych usług jest 
+<i><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+3.2">/etc/pf.conf(5)</a></i>. 
+
+<p>
+Po pierwsze, aby zacząć pracować z filtrem pakietów, musisz wyedytować plik
+<i><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rc.conf&amp;sektion=8">/etc/rc.conf(8)</a></i>
+dodając w nim wiersz:
+
+<blockquote><pre>
+pf=YES
+</pre></blockquote>
+
+<p>
+Jeśli zamierzasz korzystać z NAT, zapewne zechcesz przy pomocy
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=8">sysctl(8)</a>
+wartość <tt>net.inet.ip.forwarding</tt> na 1, aby umożliwić przekazywanie
+pakietów. Możesz zrobić to także poprzez odkomentowanie bądź edytowanie odpowiedniej
+linijki w pliku
+<i><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl.conf&amp;sektion=5">/etc/sysctl.conf(5)</a></i>
+oraz ponowne uruchomienie maszyny.
+
+<p>
+Jeśli masz filtr pakietów wkompilowany w jądro, ale nie jest on jeszcze
+uaktywniony w pliku 
+<i><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rc.conf&amp;sektion=8">/etc/rc.conf(8)</a></i>
+możesz włączyć go bezpośrednio bez konieczności ponownego uruchamiania systemu
+dzięki poleceniu
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.2">pfctl(8)</a>.
+
+<blockquote><pre>
+# <b>pfctl -f /etc/pf.conf</b>
+# <b>pfctl -e</b>
+</pre></blockquote>
+
+<p>
+Pierwszy z powyższych wierszy ustala odpowiednie reguły filtrowania oraz NAT
+na podstawie <i>/etc/pf.conf</i> natomiast kolejny aktywuje Twoj filtr pakietów.
+
+<p>
+Można to zrobić zgrabniej w jednej komendzie:
+
+<blockquote><pre>
+# <strong>pfctl -f /etc/pf.conf -e</strong>
+</pre></blockquote>
+
+<p>
+Jeśli dokonałeś zmian w <i>/etc/pf.conf</i> po wystartowaniu filtra pakietów,
+możesz przeładować aktualną konfigurację na nową w prosty sposób:
+
+<blockquote><pre>
+# <b>pfctl -f /etc/pf.conf</b>
+</pre></blockquote>
+
+<p>
+Poniższy dokument odsłoni kilka podstawowych możliwości konfiguracji
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+3.2">pf.conf(5)</a>.
+Możesz także przyjżeć się wynikowemu
+<a href="#sample_pf.conf">zestawowi reguł</a> który zawiera wszystkie elementy
+konfiguracji poruszane poniżej. Dodatkowe informacje na temat filtra pakietów
+możesz znaleźć na jego oficjalnej stronie
+<a href="http://www.benzedrine.cx/pf.html">Packet Filter web site</a> 
+oraz w następującym HOWTO
+<a href="http://www.inebriated.demon.nl/pf-howto/">Packet Filter HOWTO</a>. 
+
+<p>
+<h3>Filtr pakietów (Packet Filter - PF)</h3>
+
+<p>
+Jak zostało to już powiedziane powyżej, aby uaktywnić PF przy starcie systemu,
+musisz ustawić w pliku <i>/etc/rc.conf</i> wartość zmiennej <tt>pf=YES</tt>.  
+Filtr pakietów kontrolowany jest przez plik konfiguracyjny <i>/etc/pf.conf</i>, 
+wczytywany przy starcie systemu. Szczegółowe wyjaśnienia tego tematu znajdziesz
+na stronach manuala
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+3.2">pf.conf(5)</a>. 
+W poniższym przykładzie <tt>fxp0</tt> reprezentuje zewnętrzny interfejs podłączony
+do internetu. Regułki które zaraz zobaczysz zakładają ciągłe podłączenie do
+internetu tak jak ma to miejsce w przypadku np. serwera www.
+
+<p>
+Reguły PF przetwarzane są sekwencyjnie z góry w kierunku dołu, pomaga
+to w wizualizacji faktu że każdy pakiet przechodzi przez kolejne regułki
+zanim osiągnie swój cel.
+
+<p>
+Dla przykładu, domyślny zestaw reguł zezwala wszystkim pakietom na zarówno
+opuszczanie systemu jak i przybywanie do niego:
+
+<blockquote><pre>
+pass out all 
+pass in all
+</pre></blockquote>
+
+<p>
+Jest to skrót dla:
+
+<blockquote><pre>
+pass in from any to any
+pass out from any to any
+</pre></blockquote>
+
+<p>
+co możemy odczytać jako &quot;przepuść wszystkie przychodzące pakiety
+pochodzące z jakiegokolwiek źródła i zmierzające do jakiegokolwiek celu&quot;,
+dodatkowo zakładane jest &quot;przez jakikolwiek interfejs (co zakładane jest
+zawsze gdy nie wyszczególnimy interfejsu jawnie) dla jakiejkolwiek rodziny
+adresów
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=inet&amp;sektion=4">inet (v4)</a> lub <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=inet6&amp;sektion=4">inet6 (v6)</a>&quot;.
+
+<p>
+Naturalnie w takiej konfiguracji nie jest to żaden filtr :-). Bardziej użyteczne
+reguły bazują na rodzinie adresów (IPv4, IPv6), protokole oraz numerze
+portu usługi którą zamierzasz filtrować. Do twozenia reguł wykorzystać
+możesz każdy z protokołów znajdujących się w 
+<i><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=protocols&amp;sektion=5">/etc/protocols(5)</a></i>
+wyrażając go jako nazwę bądź numer. W tej chwili skoncentrujemy się na 
+najpopularniejszych protokołach
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tcp&amp;sektion=4">tcp(4)</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=udp&amp;sektion=4">udp(4)</a> oraz
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=icmp&amp;sektion=4">icmp(4)</a>.
+
+<p>
+Do dzieła, powiedzmy że nie chcemy zezwalać na żadne połączenia IPv4 do
+portu 3306 warstwy TCP (MySQL), ponieważ baza danych powinna być 
+dostępna tylko z lokalnego hosta. Nasz zbiór regułek powinien wyglądać
+następująco:
+
+<blockquote><pre>
+pass out all
+pass in all
+block in on fxp0 inet proto tcp from any to any port 3306
+</pre></blockquote>
+
+<p>
+Co oznacza &quot;zablokuj wszystkie przychodzące pakiety IPv4 pochodzące
+z jakiegokolwiek źródła przeznaczone do jakiegokolwiek celu pod port TCP 3306&quot;.
+Zauważ że w przypadku gdy reguła filtrująca opiera się na porównaniu 
+numeru portu, musisz jawnie sprecyzować jakiego protokołu warstwy transportowej 
+ma dotyczyć a także zaleca się podanie rodziny adresów.
+Dla usług zdefiniowanych w pliku 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=services&amp;sektion=5">/etc/services(5)</a>
+możesz stosować ich nazwy symboliczne zamiast numerów portów, jak dla przykładu
+<em>www</em> lub <em>mysql</em>.
+
+Pakiet adresowany do portu 3306 wchodzący poprzez interfejs <tt>fxp0</tt>
+po przejściu przez pierwszą regułkę &quot;pass in&quot; zostanie oznaczony jako
+pakiet do przepuszczenia, natomiast regułka &quot;block in port 3306&quot; spowoduje
+zaznaczenie pakietu jako przeznaczonego do odrzucenia. Jeśli odwrócisz kolejność
+tych reguł:
+
+<blockquote><pre>
+pass out all
+block in on fxp0 inet proto tcp from any to any port 3306
+pass in all
+</pre></blockquote>
+
+<p>
+wtedy pakiet przeznaczony do portu 3306 TCP zostanie przepuszczony, ponieważ 
+ostatnia regułka do której pakiet pasuje pozwala mu przejść. Bardzo ważene
+jest abyś przy tworzeniu swojego filtra pamiętał o zasadzie:
+<b>Ostatnia pasująca regułka decyduje</b>.
+
+<p>
+Oczywiście od każdej zasady są wyjątki. Słowo kluczowe <em>quick</em> 
+pozwala na wykonanie danej akcji na pakiecie natychmiast po napotkaniu
+regułki do której pasuje. Spójrzmy na zmodyfikowany powyższy przykład,
+co stanie się gdy dodamy <em>quick</em> do reguły $quot;block in&quot;:
+
+<blockquote><pre>
+pass out all
+block in quick on fxp0 inet proto tcp from any to any port 3306
+pass in all
+</pre></blockquote>
+
+<p>
+Pakiet przeznaczony do portu 3306 TCP będzie pasował do regułki 
+&quot;block in quick&quot; i dzięki temu słowu kluczowemu zostanie
+natychmiast odrzucony. Wszystkie pakiety przeznaczone do innych 
+portów lub protokołów będą dalej przetwarzane dopóki nie dotrą
+regułki &quot;pass in&quot; do której będą pasować i która zezwoli
+im na przejście.
+
+<p>
+<b>Domyślne odrzucanie pakietów.</b>
+<p>
+Najbezpieczniejsza polityka filtrowania powinna mówić o domyślnym
+odrzucaniu pakietów, zgodnie z zasadą mówiącą że każdy ruch który nie jest 
+dozwolony jest zabroniony. Taka polityka jest znacznie bezpieczniejsza 
+niż polegająca na kolejnym zabranianiu dostępu do kolejnych strzeżonych usług,
+powoduje znaczne zmniejszenie liczby regułek oraz chroni przed przypadkowo 
+opuszczonymi konfiguracjami regułek dla usług stającymi się w ten sposób
+dostępnymi bez ograniczeń.
+
+<p>
+Spójrzmy na kolejny przykładowy zestaw regułek oraz spróbujmy go wyjaśnić
+wiersz po wierszu. Mamy tutaj przypadek serwera www z domyślną polityką
+odrzucania pakietów, zezwala się jedynie na połączenia ssh (dla administracji)
+oraz połączenia http (port 80) i https (port 443).
+
+<blockquote><pre>
+block in on fxp0 all
+pass  in on fxp0 inet proto tcp from any to any port 22
+pass  in on fxp0 inet proto tcp from any to any port 80
+pass  in on fxp0 inet proto tcp from any to any port 443
+pass out on fxp0 all
+</pre></blockquote>
+
+<p>
+Powyższe regułki przepuszczają ruch przychodzący z jakiegokolwiek
+źródła do portów 22 (ssh), 80 (http) oraz 443 (https) warstwy TCP.
+Wszystkie inne próby połączeń przychodzących zostaną odrzucone,
+natomiast przepuszczamy cały ruch wychodzący.
+To całkiem szczelny zestaw regułek, ale co w przypadku gdy chcemy
+zezwolić na połączenie ssh tylko z hostów sieci wewnętrznej o adresie
+1.1.1.0, natomiast ruch http i https powinien być dostępny z każdego
+miejsca ? Oto rozwiązanie:
+
+<blockquote><pre>
+block in on fxp0 all
+pass  in on fxp0 inet proto tcp from 1.1.1.0/24 to any port 22
+pass  in on fxp0 inet proto tcp from any to any port 80
+pass  in on fxp0 inet proto tcp from any to any port 443
+pass out on fxp0 all
+</pre></blockquote>
+
+<p>
+Całkiem nieźle, a jak wyglądałyby regułki gdybyśmy chcieli zezwolić
+tylko jednemu komputerowi (o adresie 1.1.1.1) na zdalne administrowanie 
+systemem ? W takim przypadku zmienimy regułkę:
+
+<blockquote><pre>
+pass  in on fxp0 inet proto tcp from 1.1.1.0/24 to any port 22
+</pre></blockquote>
+
+<p>
+na następującą:
+
+<blockquote><pre>
+pass  in on fxp0 inet proto tcp from 1.1.1.1/32 to any port 22
+</pre></blockquote>
+
+<p>
+<b>Przykładowe regułki</b>
+<p>
+Poniżej znajdziesz kilka dobrych dla każdego regułek (oczywiście zakładając
+że interfejs fxp0 jest podłączony do sieci zewnętrznej np. internetu). Po
+pierwsze zapewnimy prostą ochronę przed podszywaniem się pod adresy IP (spoofing).
+Poniższe adresy niepowinny (normalnie) pojawiać się w Internecie, więc jeśli
+nasz filtr pakietów je zobaczy nakażemu mu aby odrzucał połączenia z tych
+adresów.
+
+<blockquote><pre>
+block in quick on fxp0 inet from { 127.0.0.0/8, 192.168.0.0/16, \
+172.16.0.0/12, 10.0.0.0/8 } to any
+block out quick on fxp0 inet from any to { 127.0.0.0/8, 192.168.0.0/16, \
+172.16.0.0/12, 10.0.0.0/8 }
+</pre></blockquote>
+
+<p>
+Teraz nasz zestaw zaczyna wyglądać porządniej, gdy zbierzemy wszystko w całość
+będzie to wyglądać następująco:
+
+<blockquote><pre>
+# nie zezwalaj na podszywanie się pod nieprawidłowe dla Internetu adresy
+block in quick on fxp0 inet from { 127.0.0.0/8, 192.168.0.0/16, \
+172.16.0.0/12, 10.0.0.0/8 } to any
+block out quick on fxp0 inet from any to { 127.0.0.0/8, 192.168.0.0/16, \
+172.16.0.0/12, 10.0.0.0/8 }
+
+# zezwalaj na połączenia ssh tylko z komputera administratora
+pass in quick on fxp0 inet proto tcp from 1.1.1.1/32 to any port 22
+
+# oraz wszystkim na połączenia http i https 
+pass in quick on fxp0 inet proto tcp from any to any port 80
+pass in quick on fxp0 inet proto tcp from any to any port 443
+
+# domyślną akcją dla wszystkich innych połączeń przychodzących jest ich odrzucenie
+block in quick on fxp0 from any to any
+
+# natomiast zezwalamy na wszystkie połączenia wychodzące
+pass out on fxp0 from any to any
+</pre></blockquote>
+
+<p>
+<b>Logowanie pakietów</b>
+<p>
+Jest nieźle, ale mogłoby być jeszcze lepiej. Co zrobić aby wszystkie nieudane
+próby połączenia z portem 22 (ssh) zostały zalogowane ? Służy do tego słowo
+kluczowe <em>log</em>:
+
+<blockquote><pre>
+pass in quick on fxp0 inet proto tcp from 1.1.1.1/32 to any port 22
+block in log quick on fxp0 inet proto tcp from any to any port 22
+</pre></blockquote>
+
+<p>
+Pierwsza regułka zezwoli na połączenie z komputera administratora pod port 22,
+druga  odrzuci i zaloguje wszystkie inne próby połączeń.
+
+<p>
+Logowane pakiety przesyłane są do interfejsu pflog0, który monitorowany jest
+przez
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+3.2">pflogd(8)</a>,
+zwykle logujący pakiety do <i>/var/log/pflog</i> w binarnym formacie 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tcpdump&amp;sektion=8&amp;manpath=OpenBSD+3.2">tcpdump(8)</a>
+pflogd(8) uruchamiany jest domyślnie przez
+<i><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rc&amp;sektion=8">/etc/rc(8)</a></i>
+jeśli pf jest włączony w
+<i><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rc.conf&amp;sektion=8">/etc/rc.conf(8)</a></i>.
+Pliki z logami możesz przeczytać korzystając z poniższej komendy:
+
+<blockquote><pre>
+# <b>tcpdump -n -e -ttt -r /var/log/pflog</b>
+</pre></blockquote>
+
+<p>
+Jedna przestroga - używając tcpdump`a do przeglądania plików pflog
+pamiętaj że NIE SĄ one wyświetlane w czasie rzeczywistym (mechanizm buforowania).
+Jeśli oczekujesz pracy w czasie rzeczywistym musisz skorzystać z tego
+polecenia:
+
+<blockquote><pre>
+# <b>tcpdump -i pflog0</b>
+</pre></blockquote>
+
+<p>
+Możesz także skorzystać ze składni tcpdump`a dla zawężenia wyświetlanych
+wyników aby zwiększyć ich czytelność:
+
+<blockquote><pre>
+# <b>tcpdump -e -i pflog0 port 80</b>
+</pre></blockquote>
+
+<p>
+Takie działanie NIE wpływa na to co zostanie zapisane w pliku
+<i>/var/log/pflog</i>.  
+
+<p>
+Podczas analizowania logów, uwagę należy zwracać na szczegółowe dekodowanie 
+protokołów przez tcpdump (tryb verbose aktywowany opcją -v). Dekoder 
+tcpdump`a nie ma zbyt chwalebnej przeszłości jeśli chodzi o bezpieczeństwo.
+Przynajmniej teoretycznie możliwe jest przeprowadzenie opóźnionego ataku
+poprzez wysyłanie pakietów mających zostać zalogowanymi.
+
+<p>
+Dodatkowa uwaga powinna być zwrócona na dostęp do tych logów. Pflogd przechwytuje
+96 bajtów pakietu i loguje je. Dostęp do takich zalogowanych informacji 
+może umożliwić niepowołanym osobom dostęp do maszyny poprzez analizę
+protokołów oraz logowań poprzez 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=telnet&amp;sektion=1">telnet(1)</a> lub
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp&amp;sektion=1">ftp(1)</a>).
+
+<p>
+<b>Logowanie pakietów przez syslog</b>
+<p>
+W wielu przypadkach dobrze jest mieć logi naszej ściany ogniowej
+w formacie ASCII i/lub przesłać je do serwera logującego. Zadania te mogą
+być załatwione przez 2 proste skrypty powłoki z minimalnymi smianami 
+w plikach konfiguracyjnych OpenBSD.
+
+<p>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=syslogd&amp;sektion=8&amp;manpath=OpenBSD+3.2">Syslogd(8)</a>
+jest standardowym demonem odpowiedzialnym za logowanie, przechowuje pliki
+z logami w formacie ASCII oraz umożliwia wysyłanie ich do zdalnego serwera.
+
+<p>
+Pierwsze co musimy zrobić to utworzenie użytkownika <em>pflogger</em> bez
+dostępu do powłoki (.nologin. shell). Najprościej zrobić to poleceniem
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=adduser&amp;sektion=8&amp;manpath=OpenBSD+3.2">adduser(8)</a>.
+
+<p>
+Po dodaniu użytkownika <em>pflogger</em> należy stworzyć dwa mastępujące skrypty:
+
+<p>
+<i>/etc/pflogrotate</i>
+
+<blockquote><pre>
+FILE=/home/pflogger/pflog5min.$(date "+%Y%m%d%H%M")
+kill -ALRM $(cat /var/run/pflogd.pid)
+if [ $(ls -l /var/log/pflog | cut -d " " -f 8) -gt 24 ]; then
+        mv /var/log/pflog $FILE
+        chown pflogger $FILE
+        kill -HUP $(cat /var/run/pflogd.pid)
+fi
+</pre></blockquote>
+
+
+<p>
+<i>/home/pflogger/pfl2sysl</i>
+
+<blockquote><pre>
+#!/bin/sh
+# feed rotated pflog file(s) to syslog
+for logfile in /home/pflogger/pflog5min* ; do
+        tcpdump -n -e -ttt -r $logfile | logger -t pf -p local0.info
+        rm $logfile
+done
+</pre></blockquote>
+
+<p>
+Wyedytować crontab użytkownika <em>root</em>
+
+<blockquote><pre>
+# <b>crontab -u root -e</b>
+</pre></blockquote>
+
+<p>
+poprzez dodanie dwóch poniższych linii:
+
+<blockquote><pre>
+# rotate pf log file every 5 minutes
+0-59/5 *       *       *       *       /bin/sh /etc/pflogrotate
+</pre></blockquote>
+
+<p>
+Następnym krokiem jest stworzenie crontab`a dla użytkownika <em>pflogger</em>
+
+<blockquote><pre>
+# <b>crontab -u pflogger -e</b>
+</pre></blockquote>
+
+<p>
+oraz dodanie do niego linii:
+
+<blockquote><pre>
+# feed rotated pflog file(s) to syslog
+0-59/5 *       *       *       *       /bin/sh /home/pflogger/pfl2sysl
+</pre></blockquote>
+
+<p>
+Teraz dodaj do pliku <i>/etc/syslog.conf</i> wiersz:
+
+<blockquote><pre>
+local0.info    /var/log/pflog.txt
+</pre></blockquote>
+
+<p>
+Jeśli chcesz przechowywać logi na zdalnym serwerze, dodaj również poniższą
+linijkę:
+
+<blockquote><pre>
+local0.info    @syslogger
+</pre></blockquote>
+
+<p>
+i upewnij się że host <i>syslogger</i> jest zdefiniowany w pliku
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hosts&amp;sektion=5&amp;manpath=OpenBSD+3.2">
+/etc/hosts(5)</a>.
+
+<p>
+Teraz wszystkie zalogowane pakiety przesłane zostają do <i>/var/log/pflog.txt</i>.
+Jeśli dodałeś też informacje o zdalnym logowaniu na hoście <i>syslogger</i> to 
+syslogd wykona również i to zadanie.
+
+<p>
+<i>/etc/pflogrotate</i> przetwarza i kasuje <i>/var/log/pflog</i>
+więc rotacja <i>pflog</i> przez
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=newsyslog&amp;sektion=8&amp;manpath=OpenBSD+3.2">
+newsyslogd(8)</a> nie jest nam dłużej potrzebne i może zostać wyłączona.
+Jednakże <i>/var/log/pflog.txt</i> zastępuje <i>/var/log/pflog</i> i jego rotacja
+powinna być aktywna.
+Zmień <i>/etc/newsyslog.conf</i> jak poniżej:
+
+<blockquote><pre>
+#/var/log/pflog        600     3       250     *       ZB      /var/run/pflogd.pid
+/var/log/pflog.txt     600     7       *       24
+</pre></blockquote>
+
+<p>
+W tej chwili PF będzie zostawiać logi w formacie ASCII w pliku /var/log/pflog.txt
+oraz na zdalnym serwerze jeśli jest takie zadanie w pliku  <em>/etc/syslog.conf</em>.
+Logowanie nie jest natychmiastowe, może upłynąć ok. 5 - 6 minut (interwał cron`a)
+zanim zalogowane pakiety zaczną pojawiać się w pliku.
+
+<p>
+<b>Różne protokoły</b>
+<p>
+W jaki sposób zezwolić na ustanawianie połączeń do usług wykorzystujących 
+wiele protokołów, jak dla przykładu bind, który korzysta zarówno z TCP
+jak i UDP ? Filtr pakietów zezwala na łączenie ze sobą parametrów w zbiory
+(więcej na ten temat znajdziesz dalej):
+
+<blockquote><pre>
+# przepuść zapytania DNS dla BIND`a
+pass in quick on fxp0 inet proto { tcp, udp } from any to any port 53
+</pre></blockquote>
+
+<p>
+Zwróć uwagę na spacje po obu stronach '{ }'. To elegantszy sposób
+zapisu niż alternatywny którego mógłbyś użyć:
+
+<blockquote><pre>
+pass in quick on fxp0 inet proto tcp from any to any port 53
+pass in quick on fxp0 inet proto udp from any to any port 53
+</pre></blockquote>
+
+<p>
+<a name="normalization"></a>
+<b> Normalizacja Pakietów</b>
+<p> 
+Normalizacja pakietów oznacza ponowne przetwarzanie nagłówków pakietów 
+pofragmentowanych oraz usuwanie nieprawidłowości z opcji IP. Niektóre systemy 
+operacyjne mają problemy z niewłaściwie pofragmentowanymi pakietami i 
+generalnie jest to dobry pomysł aby mieć znormalizowane pakiety przed 
+przetwarzaniem ich przez regułki filtrujące oraz przed przesłaniem
+ich do hostów docelowych.
+Do normalizacji służy słówko kluczowe <b>scrub</b> używane tak jak poniżej:
+
+<blockquote><pre>
+scrub in all
+</pre></blockquote>
+
+<p>
+Powoduje to niewielkie zwiększenie wykorzystania zasobów systemowych oraz
+wymaga więcej pamięci aby móc buforować pofragmentowane pakiety. Zaleca
+się stosowanie normalizacji, ponieważ zazwyczj jej wartość jest zwykle
+większa niż koszty które się za nią płaci.
+
+<p>
+<b>Opcje IP</b>
+<p>
+Domyślnie PF blokuje pakiety z ustawionymi opcjami IP. Dzięki temu można
+utrudnić, przeznaczonym do tego programom takim jak nmap, wykrywanie systemu 
+operacyjnego na zdalnym hoście (&quot;OS fingerprinting&quot;).  
+Jeśli korzystasz z programów wymagających takich pakietów do poprawnej pracy,
+np. wykorzystujących multicasting lub IGMP, możesz użyć dyrektywy 
+<b>allow-opts</b>:
+
+<blockquote><pre>
+pass in quick on fxp0 all allow-opts
+</pre></blockquote>
+
+<p>
+<b>Flagi TCP, połączenia nawiązane oraz utrzymywanie stanu</b>
+<p>
+Filtr pakietów potrafi także analizować flagi TCP oraz specjalnie
+obsługiwać połączenia nawiązane oraz stan połączeń. Zalecane jest
+aby użytkownicy którzy zamierzają filtrować pakiety na podstawie
+flag TCP rozumieli jaką odgrywaja one rolę. Dla przykładu, jeśli
+chciałbyś zablokować pakiety z ustawionymi flagami FIN, URG i PSH
+(np. aby utrudnić wykrycie systemu operacyjnego takim narzędziom 
+jak nmap) możesz użyć poniższej regułki:
+
+<blockquote><pre>
+block in quick on fxp0 inet proto tcp from any to any flags FUP/FUP
+</pre></blockquote>
+
+<p>
+(Dzięki <a href="mailto:halogen@nol.net">Kyle Hargraves</a> za podpowiedź)
+
+<p>
+Następną interesującą możliwością udostępnianą przez PF jest umiejętność
+utrzymywania stanu połączeń. Dzięki temu, jeśli dane połączenie
+przejdzie przez fazę inicjalizacyjną i zostanie ustanowione,
+pakiety należące do tego połączenia nie będą już przechodzić 
+przez reguły filtrujące. To potężny mechanizm znacznie upraszczający
+tworzenie skutecznej i bezpiecznej zapory ogniowej.
+
+<p>
+Spójrzmy na przykład który obrazuje jak PF akceptuje nawiązane
+połączenia na podstawie rozpoznanego stanu. W przykładzie
+zezwalamy na dostęp do ssh (port 22) z naszej sieci klasy C
+oraz dostęp zarówno z zewnątrz jak i od wewnątrz do portu 80 (http)
+oraz 443 (https). Każdy inny ruch zostaje zablokowany. Zastanówmy
+się co należałoby zrobić w przypadku gdybym chciał dla przykładu
+skorzystać z 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ssh&amp;sektion=1">ssh(1)</a>
+i nawiązać połączenie na zewnątrz z naszego sewrera www, lub
+przeglądarki 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=lynx&amp;sektion=1">lynx(1)</a> 
+aby poszukać czegoś w FAQ? W powyższych przykładach byłoby to niemożliwe,
+ponieważ zablokowaliśmy wszystkie pakiety przychodzące z zewnątrz
+za wyjątkiem tych które przeznaczone są do wyszczególnionych przez
+nas portów naszych serwerów. Skorzystamy z najbezpieczniejszej
+metody rozwiązania naszego problemu. Poprzez dodanie słów kluczowych
+<em>keep state</em> do regułki &quot;pass out&quot;, automatycznie
+zezwolimy na wejście pakietom przychodzącym w odpowiedzi na połączenia
+które zainicjowaliśmy, jak dla przykładu gdy korzystamy z przeglądarki
+stron www. Pamiętaj, do utrzymywania stanu musisz wyspecyfikować 
+protokół którego regułka ma dotyczyć.
+
+<blockquote><pre>
+block in  on fxp0 inet proto tcp all
+pass  in  on fxp0 inet proto tcp from 1.1.1.0/24 to any port 22 keep state
+pass  in  on fxp0 inet proto tcp from any to any port 80 keep state
+pass  in  on fxp0 inet proto tcp from any to any port 443 keep state
+pass  out on fxp0 inet proto tcp all keep state
+</pre></blockquote>
+
+<p>
+Ta mała zmiana znacznie zwiększy elastyczność oraz bezpieczeństwo
+naszego zestawu regułek: dla wyjaśnienia, w powyższych regułkach
+zezwalamy na ruch TCP do portu 80 &amp; 443. Możemy zaostrzyć 
+regułki odpowiadające za to nawet bardziej. Aby połączenie TCP
+zostało poprawnie zainicjowane, musimy zezwolić tylko na przejście
+pierwszego pakietu rozpoczynającego trójfazowe ustanawianie 
+połączenia; następnie możemy zablokować inny ruch przeznaczony do tego
+portu oraz zezwolic naszej regułce utrzymującej stan (&quot;keep state
+&quot;) aby opiekowała się pakietami należacymi do tego ustanawiającego
+sie połączenia. Aby umożliwić poprawne nawiązanie połączenia TCP
+możemy przepuszczać jedynie pakiety z ustawioną flagą SYN oraz
+wyzerowana flagą ACK. Przez przepuszczanie tylko tych pakietów,
+zabezpieczymy się przed różnymi formami skanowania portów jak np. 
+skanowanie pakietami z flagą FIN (FIN ssanning). Flagi S/SA oznaczają:
+z flag S (SYN) i A (ACK) tylko SYN musi być ustawiona. Inne nie są brane
+pod uwagę. Nasze regułki wyglądają teraz jak poniżej:
+
+<blockquote><pre>
+block in  on fxp0 inet proto tcp all
+pass  in  on fxp0 inet proto tcp from 1.1.1.0/24 to any port 22 \
+	flags S/SA keep state
+pass  in  on fxp0 inet proto tcp from any to any port 80 \
+	flags S/SA keep state
+pass  in  on fxp0 inet proto tcp from any to any port 443 \
+	flags S/SA keep state
+block out on fxp0 inet proto tcp all
+pass  out on fxp0 inet proto tcp all flags S/SA keep state
+</pre></blockquote>
+
+<p>
+Spróbujmy teraz połączyć wszystkie nasze dotychczasowe regułki
+w jeden zestaw. Jest on przeznaczony dla protokołu IPv4, ma domyślną
+polityke odrzucania pakietów, zezwala na połączenia ssh tylko 
+z sieci wewnętrznej oraz na nawiązywanie połączeń zarówno
+z zewnątrz jak i wewnątrz do portów 80 (http) i 443 (https).
+Nasz zestaw zapewnia także ochronę przed podszywaniem się pod 
+nierutowalne adresy IP oraz odkłada pakiety które są zbyt pofragmentowane
+aby je przetwarzać. Oto jak mógłby wyglądać <i>/etc/pf.conf</i>:
+
+<blockquote><pre>
+# Wyczyść oraz znormalizuj pofragmentowane i niestandardowe pakiety
+scrub in all
+
+# nie zezwalaj na podszywanie się pod nierutowalne adresy
+block in quick on fxp0 inet from { 127.0.0.0/8, 192.168.0.0/16, \
+172.16.0.0/12, 10.0.0.0/8 } to any
+block out quick on fxp0 inet from any to { 127.0.0.0/8, 192.168.0.0/16, \
+172.16.0.0/12, 10.0.0.0/8 }
+
+
+# domyślnie blokujemy wszystkie przychodzące pakiety za wyjątkiem 
+# tych na które jawnie zezwalamy w naszych regułkach
+block in on fxp0 all
+
+# zezwalamy wszystkim na ustanawianie połączeń http i https
+pass in on fxp0 inet proto tcp from any to any port 80 \
+	flags S/SA keep state
+pass in on fxp0 inet proto tcp from any to any port 443 \
+	flags S/SA keep state
+
+# oraz zezwalamy pakietom na opuszczanie naszej maszyny, jednocześnie
+# przechowując informacje o stanie połączeń protokołów TCP, UDP i ICMP
+# tak aby pakiety należące do inicjowanego przez nas połączenia były
+# automagicznie akceptowane - np odpowiedzi na nasze zapytania DNS
+# przesyłane protokołem UDP
+block out on fxp0                 all
+pass  out on fxp0 inet proto tcp  all flags S/SA keep state
+pass  out on fxp0 inet proto udp  all            keep state
+pass  out on fxp0 inet proto icmp all            keep state
+</pre></blockquote>
+
+<p>
+Teraz nasz <i>pf.conf</i> wygląda całkiem przyzwoicie, ale możemy
+zrobić kilka rzeczy aby łatwiej było wprowadzać zmiany i zarządzać
+naszym PF w przyszłości.
+
+<p>
+<b>Zbiory</b>
+<p>
+Dzięki zbiorom, tworzenie regułek jest prostsze i przejrzystsze.
+Dla przykładu, chcemy zaakceptować ruch przeznaczony do usługi
+pracującej w kilku protokołach, jak BIND korzystający z TCP i UDP,
+oto przykład rozwiązania:
+
+<blockquote><pre>
+pass in quick on fxp0 inet proto { tcp, udp } from any to any port 53
+</pre></blockquote>
+
+<p>
+Zauważ spacje które znajdują się po obu stronach '{ }'.
+
+<p>
+Grupy adresów IP mogą być łączone razem w zestawy, które mogą być
+użyte wszędzie tam gdzie mogły być użyte pojedyncze adresy IP.
+Przeanalizuj następujący przykład:
+
+<blockquote><pre>
+# zablokuj możliwość podszywania się pod nierutowalne adresy
+block in quick on fxp0 inet from { 127.0.0.0/8, 192.168.0.0/16, \
+172.16.0.0/12, 10.0.0.0/8 } to any
+block out quick on fxp0 inet from any to { 127.0.0.0/8, 192.168.0.0/16, \
+172.16.0.0/12, 10.0.0.0/8 }
+</pre></blockquote>
+
+<p>
+<b>Zmienne</b>
+<p>
+Problemem w powyższym pliku <i>pf.conf</i> jest to, że gdybyś zechciał 
+zmienić swój interfejs sieciowy lub jeden z adresówm IP musiałbyś
+wprowadzić te zemiany we wszystkich linijkach w których są występują
+zmieniane przez Ciebie wartości. W takich przypadkach poręcznie jest
+skorzystać ze zmiennych:
+
+<blockquote><pre>
+NoRouteIPs="{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"
+ExtIF="fxp0"
+block in quick on $ExtIF from $NoRouteIPs to any
+block out quick on $ExtIF from any to $NoRouteIPs
+</pre></blockquote>
+
+<p>
+<a name="sample_pf.conf"></a>
+<b>Składamy wszystko w całość</b>
+<p>
+Spróbujmy połączyć wszystkie nasze dotychczasowe regułki i omawiane
+rozwiązania w jeden plik:
+
+<blockquote><pre>
+# definicje używanych zmiennych
+ExtIF="fxp0"              # interfejs zewnętrzny
+IntNet="1.1.1.0/24"       # nasza sieć wewnętrzna
+NoRouteIPs="{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"
+Services="{ www, https }"
+
+# porządkowanie pofragmentowanych i niestandardowych pakietów
+scrub in all
+
+# zabezpieczenie przed próbami podszywania się pod nierutowalne adresy
+block in  quick on $ExtIF from $NoRouteIPs to any
+block out quick on $ExtIF from any to $NoRouteIPs
+
+# domyślnie wszystke wejściowe pakiety są blokowane za wyjątkiem
+# tych którym pozwolimy na przejście poniżej
+block in on $ExtIF all
+
+# zezwalamy na korzystanie z http i https
+pass  in on $ExtIF inet proto tcp from any to any port $Services \
+	flags S/SA keep state
+
+# oraz wypuszczamy na zewnątrz ruch utrzymując stan nawiązanych połączeń
+# wypuszczamy wszystkie protokoły, TCP, UDP i ICMP, zapamiętujemy także
+# stan połączeń tak, że zewnętrzny serwer DNS może odpowiedzieć na nasze
+# zapytanie (protokół UDP)
+block out on $ExtIF                 all
+pass  out on $ExtIF inet proto tcp  all flags S/SA keep state
+pass  out on $ExtIF inet proto udp  all            keep state
+pass  out on $ExtIF inet proto icmp all            keep state
+</pre></blockquote>
+
+<p>
+Jeśli zauważasz jakieś problemy, możesz zechcieć logować pakiety
+pasujące do wybranych regułek:
+
+<blockquote><pre>
+pass in log quick on fxp0 proto tcp from 1.1.1.0/24 to any port 22
+</pre></blockquote>
+
+<p>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+3.2">pflogd(8)</a> zaloguje pakiety do <i>/var/log/pflog</i>.
+Pamiętaj że <i>/var/log/pflog</i> jest plikiem binarnym i czytany być może przez<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tcpdump&amp;sektion=8&amp;manpath=OpenBSD+3.2">tcpdump(8)</a>.
+
+<p>
+Jeśli zmieniasz coś w swojej konfiguracji PF nie zapomnij skorzystać z
+<b>pfctl -R /etc/pf.conf</b> aby PF wiedział o poczynionych przez Ciebie 
+modyfikacjach.
+
+<a name="6.3"></a>
+<a name="NAT"></a>
+<h2>6.3 - NAT</h2>
+
+<p>
+<h4>Uwaga: W OpenBSD 3.2 i późniejszych, regułki dotyczące NAT przechowywane
+są w pliku <i>/etc/pf.conf</i>, a nie oddzielnym <i>/etc/nat.conf</i>
+jak OpenBSD 3.0 i 3.1</h4>
+
+<p>
+<a name="nat1.0"></a>
+<h3><u>6.3.1 Wprowadzenie do NAT</u></h3>
+
+<a name="nat1.1"></a>
+
+<p>
+Na podstawie 
+<a href="http://www.geektools.com/rfc/rfc1631.txt">RFC 1631</a>, 
+NAT umożliwia łatwe mapowanie wewnętrznych sieci do pojedynczego
+rutowalnego ("rzeczywistego") adresu internetowego. To bardzo
+użyteczne w przypadku gdy nie masz oficjalnie przyznanego adresu IP
+dla każdego z hostów znajdująych się w Twojej wewnętrznej sieci.
+Gdy konfigurujesz swoją wewnętrzną sieć możesz skorzystać do tego z 
+zarezerwowanych bloków adresów (opis w
+<a href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a>), 
+jak np.:
+
+<p>
+10.0.0.0/8 (10.0.0.0 - 10.255.255.255)<br>
+172.16.0.0/12 (172.16.0.0 - 172.31.255.255)<br>
+192.168.0.0/16 (192.168.0.0 - 192.168.255.255)
+
+<p>
+Zakładamy że posiadasz zainstalowane i skonfigurowane OpenBSD
+na komputerze z dwoma kartami sieciowymi z których jedna podłączona
+jest do Internetu, a druga do sieci wewnętrznej.
+
+<p>
+<a name="nat1.3"></a>
+<b>Konfiguracja</b>
+
+<p>
+Jeśli Twój system jest skonfigurowany jak opisane to zostało powyżej,
+możemy zabrać się do roboty. Gdy Twoja konfiguracja różni się od
+powyższej bądź ostrożny wprowadzając swoje zmiany w taki sposób
+aby system zachowywał się tak jak tego oczekujesz.
+
+<blockquote>
+<b>Urządzenia sieciowe: </b>
+<pre>
+Intel EtherExpress Pro/100 <b>fxp0</b>
+podłączona do zewnętrznej sieci LAN (lub WAN)
+<b>Adres IP: </b>24.5.0.5
+<b>Maska sieciowa: </b>255.255.255.0
+
+Compaq Netelligent 10/100Mb <b>tl0</b>
+podłączona do sieci wewnętrznej
+<b>Adres IP: </b>192.168.1.1
+<b>Maska sieciowa: </b>255.255.255.0
+</pre>
+</blockquote>
+
+<blockquote>
+<b>Konfiguracja dostępu do Internetu (dostarczona przez Twojego dostawcę
+Internetu, w tym przypadku urządzeniem dostępowym jest  modem kablowy)<br></b>
+<pre>
+<b>Adres IP: </b>24.5.0.5
+<b>Maska sieciowa: </b>255.255.255.0
+<b>Bramka: </b>24.5.0.1
+</pre>
+</blockquote>
+
+<blockquote>
+<b>Sieć lokalna (LAN)</b><br>
+W tym przykładowym środowisku, komputery w sieci wewnętrznej korzystają
+z adresów IP w postaci 192.168.1.xxx (gdzie xxx to unikatowy numer).
+W seci mogą znajdować się rozmaite systemu operacyjne jak Windows 98,
+WIndows NT, OpenBSD, Linux, jednak rodzaj systemu operacyjnego klientów
+nie wpływa na działanie NAT. Dla przykładu, klient w sieci wewnętrznej 
+może mieć przypisany adres 192.168.1.40.
+</blockquote>
+
+<blockquote>
+<b>Diagram of Configuration</b>
+<pre>
++-----+              +---------+          +----------+
+| Hub |--------- tl0 |   NAT   | fxp0 ----| Internet |
++-----+              +---------+          +----------+
+| |
+| +-- Klient A
++---- Inni 
+
+		      +--------------------------+
+		      |          LEGENDA         |
+		      +--------------------------+
+		      |  NIC fxp0 - 24.5.0.5     |
+		      |  NIC tl0  - 192.168.1.1  |
+		      | Klient A  - 192.168.1.35 |
+		      +--------------------------+
+
+</pre>
+</blockquote>
+
+<p>
+<a name="nat2.0"></a>
+<h3><u>6.3.2 Translacja adresów sieciowych (Network Address Translation - NAT)</u></h3>
+
+<p>
+<a name="nat2.1"></a>
+<b>Wprowadzenie do NAT</b>
+
+<p>
+Każdy element Internetu wymaga posiadanie unikatowego adresu IP.
+W wersji czwartej protokołu IP (IPv4) liczba adresów jest dość
+mocno ograniczona. Większość "tanich" dostawców Internetu dostarcza
+niewielką pulę 1 - 30 adresów dla swoich klientów. Większe organizacje
+mogłyby zechcieć korzystać zwiększej puli adersów, aby móc przypisać
+je każdemu komputerowi z osobna, co daje niewiele korzyści, a zmniejsza
+bezpieczeństwo i integralność całej sieci.
+
+<p>
+Translacja adresów sieciowych (Network Address Translation - NAT,
+znana także jako maskowanie IP (&quot;IP Masquerading&quot;) 
+w Linuksie) zezwala na dostęp do Internetu wielu komputerom 
+umieszczonym za jednym (lub kilkoma) adresami IP. Każdy z komputerów
+ma przypisany indywidualny, niezarejestrowany  adres IP w sieci 
+wewnętrznej, (<a href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a>), 
+natomiast wszystkie korzystają z tego samego, zewnętrznego adresu IP
+jednocześnie.
+
+<p>
+Sposób w jaki pracuje NAT jest prosty. Gdy klient z sieci LAN zechce
+połączyć się z komputerem poprzez Internet, wysyła pakiet TCP z
+żądaniem połączenia. Wewnątrz nagłówka TCP (a właściwie IP) znajduje się
+adres IP klienta (np. 192.168.1.40) i adres hosta do którego pakiet ma
+dotrzeć (np. 123.45.67.89). Komputer który wykonuje NAT przechwytuje
+pakiet TCP klienta i zmienia jego adres IP z 192.168.1.40 na adres IP
+interfejsu podłączonego do Internetu (np. 24.5.0.5). Tyle wystarczy
+aby zmylić komputer docelowy, będzie on uważał że połączenie pochodzi 
+od komputera wykonuącego NAT a nie właściwej maszyny wysyłającej
+żądanie. Wysyła on następnie potwierdzenie do komputera z NAT, który
+następnie rozpoznaje odpowiedź, szybko zmienia adres docelowy z 
+własnego na adres IP swojego klienta i wysyła pakiet. Klient
+nie wie dokładnie w jaki sposób wygląda wymiana pakietów, wszystkie
+te operacje są przezroczyste dla każdej aplikacji pracującej na 
+komputerze klienta.
+
+<p>
+Poniższy przykład może conieco rozjaśnić:
+
+<blockquote><pre>
+Klient ----------------- tl0 [ NAT ] fxp0 ---------- Host w Internecie
+192.168.1.35 --- 192.168.1.1 [ NAT ] 24.5.0.5 --- 123.45.67.89
+
+WYCHODZĄCY Pakiet TCP                     WYCHODZĄCY Pakiet TCP
+Od: 192.168.1.35  &gt;&gt;=== NAT ===&gt;&gt;  Od: 24.5.0.5
+Do: 123.45.67.89                           Do: 123.45.67.89
+
+PRZYCHODZĄCY Pakiet TCP                  PRZYCHODZĄCY Pakiet TCP
+Od: 123.45.67.89 			Od: 123.45.67.89
+Do:   192.168.1.40  &lt;&lt;=== NAT ===&lt;&lt;     Do: 24.5.0.5
+</pre></blockquote>
+
+<p>
+<a name="nat2.2"></a>
+<b>Dlaczego chciałbyś używać NAT?</b>
+
+<p>
+W przykładzie z modemem kablowym pojawił się jeszcze jeden problem.
+W jaki sposób udostępnić dostęp do Internetu dla moich współlokatorów
+gdy modem znajduje się w moim pokoju? Jest kilka rozwiązań które mogłem
+zastosować, takie jak uzyskanie większej ilości adresów IP, konfiguracja
+serwera proxy lub konfiguracja NAT. (Nie myśl że przykład z modemem
+kablowym jest dziecinny, NAT jest na tyle potężny aby maskować ogromne 
+sieci z setkami a nawet tysiącami pracującymi w nich komputerów!)
+
+<p>
+Jest naprawdę wiele powodów dla których chciałem wykorzystać do tego
+NAT. Pierwszym z nich jest oszczędność pieniędzy. Mieszkam z dwoma
+współlokatorami i perspektywa dzielenia kosztów dostępu do Internetu 
+jest dość atrakcyjna.
+Idąc dalej, każdy z współlokatorów ma swój PC, ja mam trzy, co daje
+pięć komputerów, natomiast nasz dostawca Internetu dostarczył
+tylko trzy adersy IP. Oznacza to, że nie ma wystarczającej ilości
+adresów aby umożliwić wszystkim komputerom jednoczesny dostęp
+do Internetu.
+
+<p>
+Dzięki NAT każda maszyna może mieć unikatowy adres IP w sieci 
+wewnętrznej oraz współdzielić jeden zewnętrzny adres IP przyznany
+przez naszego dostawcę. 
+
+<p>
+<a name="nat2.4"></a>
+<b>Inicjalizacja</b>
+
+<p>
+Aby udostępnić NAT na komputerze z OpenBSD musisz uruchomić PF (Packet
+Filter). Możesz to zrobić w łatwy sposób edytując pliki wyszczególnione
+poniżej:
+
+<p>
+<b>/etc/rc.conf</b> (ten plik używany jest do startowania usług 
+podczas uruchamiania komputera)
+
+<blockquote><pre>
+pf=YES<br>
+</pre></blockquote>
+
+<p>
+<b>/etc/sysctl.conf</b>
+
+<blockquote><pre>
+net.inet.ip.forwarding=1
+</pre></blockquote>
+
+<p>
+Po tych zmianach komputer jest gotowy do konfiguracji NAT>
+
+<p>
+<a name="nat2.5"></a>
+<b>Konfiguracja</b>
+
+<p>
+Pierwszym krokiem jest edycja pliku konfiguracyjnego PF
+(<i><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+3.2">/etc/pf.conf</a></i>).
+Dla potrzeby tego dokumentu zezwolimy na przepuszczanie przez
+firewall całego ruchu wychodzącego oraz przychodzącego na każdym
+z interfejsów. Plik powinien wyglądać w ten sposób:
+
+<blockquote><pre>
+pass in all
+pass out all
+</pre></blockquote>
+
+<p>
+Więcej informacji możesz znaleźć w podrozdziale <a href="#PF">Filtr pakietów FAQ 6</a>
+
+<p>
+Regułki odpowiadające za NAT w pliku konfiguracynym 
+(<i><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=nat.conf&amp;sektion=5&amp;manpath=OpenBSD+3.2">/etc/pf.conf</a></i>)
+mają bardzo prostą składnię. Dla konfiguracji przedstawionej 
+powyżej, plik powinien zawierać taki wpis:
+
+<blockquote><pre>
+nat on fxp0 from 192.168.1.0/24 to any -&gt; 24.5.0.5
+</pre></blockquote>
+
+<p>
+A oto wyjaśnienie powyższej linijki.
+
+<dl>
+<dt>"nat"
+<dd>To oznacza że dodajesz regułkę NAT.
+</dl>
+
+<dl>
+<dt>"fxp0"
+<dd>Interfejs sieciowy który podłączony jest do Internetu.
+</dl>
+
+<dl>
+<dt>"192.168.1.0/24"
+<dd>Adres IP oraz maska (maska sieciowa w formacie CIDR). Razem
+oznacza to że "każdy adres IP o zakresie od 192.168.1.1 do 192.168.1.254
+" powinien zostać zmapowany (zamaskowany).
+</dl>
+
+<dl>
+<dt>"24.5.0.5"
+<dd>Zewnętrzny adres IP na który mapowane (zmieniane) będą adresy IP
+sieci wewnętrznej.
+</dl>
+
+<p>
+<a name="nat2.6"></a>
+<b>Uruchamianie</b>
+
+<p>
+Teraz, gdy konfiguracja jest zakończona istnieją dwa sposoby aby 
+uruchomić NAT. Pierwszym z nich (i najlepszym) jest ponowne uruchomienie
+komputera. Możesz to zrobić komendą "<i>reboot</i>". 
+
+<p>
+Jeśli chciałbyś uruchomić NAT bez restartu możesz skorzystać z 
+poniższych poleceń:
+
+<blockquote><pre>
+# <b>pfctl -f /etc/pf.conf</b>
+# <b>pfctl -e</b>
+</pre></blockquote>
+
+<p>
+Pierwsza linijka ładuje zestaw regułek NAT do filtra pakietów PF (oraz
+czyści istniejące regułki), druga uruchamia PF. Jeszcze raz, restart
+systemu jest najlepszą metodą na to aby przekonać się że po ponownym
+uruchomieniu wszystko działa tak jak tego się spodziewałeś.
+
+<p>
+<b>Uwaga:</b> aby przeładować ustawienia NAT (gdy edytujesz plik, ale
+nie chcesz ponownego uruchamiania systemu) poprostu skorzystaj
+jeszcze raz z pierwszej komendy. Aktualne ustawienia zostaną usunięte
+oraz załadowane świeże.
+
+<p>
+<a name="nat3.0"></a>
+<h3><u>6.3.3 NAT - podstawowe informacje</u></h3>
+
+<p>
+<a name="nat3.1"></a>
+<b>Sprawdzanie stanu NAT</b>
+
+<p>
+Aby dowiedzieć się w jaki sposób pracuje teraz NAT lub aby upewnić
+się że zmiany w konfiguracji zaszły tak jak zamierzałeś, skorzystaj
+z opcji "-ss". Dzięki niej wyświetlone zostaną wszystkie sesje które
+obsługuje w tej chwili NAT:
+
+<blockquote><pre>
+# pfctl -ss
+TCP  192.168.1.35:2132 -&gt; 24.5.0.5:53136 -&gt; 65.42.33.245:22       TIME_WAIT:TIME_WAIT
+TCP  192.168.1.35:2492 -&gt; 24.5.0.5:55011 -&gt; 65.42.33.245:22       ESTABLISHED:ESTABLISHED
+UDP  192.168.1.35:2491 -&gt; 24.5.0.5:60527 -&gt; 24.2.68.33:53       2:1
+</pre></blockquote>
+
+<p>
+Wyjaśnienie (pierwszej linijki, pozostałe są podobne):
+
+<dl>
+<dt>"192.168.1.35:2132"
+<dd>To adres IP komputera w nieci LAN który używa NAT (192.168.1.35).
+Widoczny jest również numer portu z którego pochodzi połączenie (2132).
+</dl>
+
+<dl>
+<dt>"24.5.0.5:53136"
+<dd>Połączenie trafia do Internetu poprzez adres 24.5.0.5 i używa portu
+53136.
+</dl>
+
+<dl>
+<dt>"65.42.33.245:22"
+<dd>Adres IP drugiego końca połączenia.
+</dl>
+
+<dl>
+<dt>"TIME_WAIT:TIME_WAIT"
+<dd>Stan połączenia TCP rozpoznany przez PF.
+</dl>
+
+<p>
+<a name="nat3.2"></a>
+<b>Współpraca NAT i FTP</b>
+
+<p>
+Korzystając z NAT należy mieć na uwadze kilka ograniczeń, najczęściej
+spotykanym jest to związane z FTP. Możesz korzystać z FTP w dwojaki
+sposób, używając trybu pasywnego lub aktywnego. Z tej dwójki, pasywny
+uważany jest ogólnie za bezpieczniejszy.
+
+<p>
+W trybie aktywnym, gdy użytkowniki podłącza się do zdalnego serwera
+FTP i wysyła żądanie informacji lub pliku, klient FTP wysyła do 
+serwera losowy numer portu do którego ma podłączyć się serwer 
+i wykonać do niego transfer danych. Jest to problem dla użytkowników
+chcących korzystać ze swojej sieci LAN z zewnętrznego serwera FTP.
+Gdy serwer FTP chce wysłać dane, próbuje nawiązać połączenie do 
+zewnętrznego interfejsu pod losowy port. Maszyna która wykonuje NAT
+odbiera pakiet inicjujący połączenie, ale ponieważ nic nie wie o tym
+połączeniu (wie o nim klient z sieci LAN) odrzuca pakiet i niedoręcza
+go pod właściwy adres.
+
+<p>
+W trybie pasywnym FTP (domyślnym w kliencie
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp&amp;sektion=1">ftp(1)</a>
+w OpenBSD), to klient żąda aby serwer wybrał losowy numer portu i na nim
+oczekiwał na połączenie i transfer danych klienta. Serwer informuje
+klienta o numerze portu który wybrał, klient łączy się ze wskazanym 
+portem i następuje transfer danych. Niestety nie zawzse jest to możliwe.
+ftp(1) używa tego trybu domyślnie; aby wymusić aktywny tryb FTP, 
+skorzystaj z flagi -A, lub użyj komendy 
+
+<blockquote><pre>
+passive off
+</pre></blockquote>
+
+<p>
+po znaku zachęty ftp&gt;
+
+<p>
+Filtr pakietów dostarcza pewne rozwiązanie dla takiej sytuacji, 
+przekierowując ruch FTP przez serwer proxy FTP, proces ten "prowadzi"
+Twój ruch FTP przez filtr. FTP proxy używany w OpenBSD i przez PF to
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+3.2">ftp-proxy(8)</a>.
+Aby go aktywować, dodaj linijkę analogiczną do poniższej w swoim 
+pliku <i>/etc/pf.conf</i>:
+
+<blockquote><pre>
+rdr on tl0 proto tcp from any to any port 21 -&gt; 127.0.0.1 port 8021
+</pre></blockquote>
+
+<p>
+Krótkie wyjaśnienie tej linijki, "ruch do portu TCP 21 na wewnętrznym
+interfejsie jest przekierowany do serwera proxy uruchomionego na tej
+maszynie nasłuchującego na porcie 8021".
+
+<p>
+Oczywiście, serwer proxy musi być uruchomiony, dokonuje się zwykle tego
+poprzez dodanie poniższej linijki w pliku <i>/etc/inetd.conf</i>:
+
+<blockquote><pre>
+127.0.0.1:8021 stream tcp nowait root /usr/libexec/ftp-proxy ftp-proxy
+</pre></blockquote>
+
+<p>
+oraz ponowne uruchomienie komputera, lub wysłanie sygnału 'HUP' do 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=inetd&amp;sektion=8">inetd(8)</a>.
+Jedną z komend którymi można wysłać sygnał 'HUP' jest:
+
+<blockquote><pre>
+kill -HUP `cat /var/run/inetd.pid`
+</pre></blockquote>
+
+<p>
+Zauważysz teraz że ftp-proxy nasłuchuje na porcie 8021, tym samym pod
+który wysyła ruch nasza regułka przekierowująca (rdr) ruch wysyłany
+do serwerów FTP. Wybór portu 8021 jest dobry, ponieważ nie jest on 
+przypisany żadnej inej aplikacji.
+
+<p>
+<a name="nat3.3"></a>
+<b>Przekierowywanie ruchu</b>
+
+<p>
+Niekiedy może się zdażyć że będziesz potrzebował przekierować 
+przychodzący lub wychodzący ruch dla pewnego protokołu i/lub portu do
+maszyny będącej za filtrem pakietów. Przykładem może być komputer
+w sieci wewnętrznej, na którym pracuje serwer www, który powinien być
+widoczny z zewnątrz (lub przed chwilą dyskutowany ftp-proxy(8)).
+Połączenia przychodzące pod właściwy Internetowy adres IP, dopóki
+Twoja maszyna wykonująca NAT sama nie będzie pracowała jako
+serwer www, nie mogą zostać ustanowione. Z tego powodu, używamy
+dyrektywy 'rdr' w regułkach NAT aby poinformować system w jaki 
+sposób mają być dokonywane przekierowania.
+
+<p>
+Dla przykładu, załóżmy że serwer www znajduje się w sieci LAN pod
+adresep 192.168.1.80. Regułki NAT wymagają zastosowania nowej dyrektywy
+aby przekierować do neigo ruch. Do Twojego pliku  <i>/etc/pf.conf</i>
+powinienes wówczas dodać analogiczną regułkę:
+
+<blockquote><pre>
+rdr on fxp0 proto tcp from any to any port 80 -&gt; 192.168.1.80 port 80
+</pre></blockquote>
+
+<p>
+Wytłumaczymy każdy z jej elementów:
+
+<dl>
+<dt>"rdr"
+<dd>To komenda która wydajesz Twojemu NAT. Mówi mu ona, że ten wpis
+dotyczy przekierowywania ruchu.
+</dl>
+
+<dl>
+<dt>"on fxp0"
+<dd>Interfejs sieciowy który jest podłączony do Internetu.
+</dl>
+
+<dl>
+<dt>"from any to any"
+<dd>Wyszczególnia adresy IP które powinny ulec przekierowaniu
+(połączenia pochodzące z jakiegokolwiek adresu IP przeznaczone
+do jakiegokolwiek adresu docelowego)
+</dl>
+
+<dl>
+<dt>"port 80"
+<dd>Oto port (80) do którego połączenia powinny zostać przekierowywane.
+Jako taki numer "80" nie musi zostać użyty. Możesz skożystać z wpisu
+"port www". Jeśli wolisz korzystać z nazwy zamiast numeru, upewnij 
+się że podana przez Ciebie nazwa znajduje się w pliku
+<i>/etc/services</i>.
+</dl>
+
+<dl>
+<dt>"192.168.1.80 port 80"
+<dd>Adres IP oraz port maszyny do której ma zostać przekierowany ruch.
+Zauważ że port docelowy do którego przekierowujemy połączenie nie musi 
+być identyczny z tym do którego pakiet został początkowo przeznaczony.
+
+Dla przykładu, poniższa regułka jest poprawna, a nawet w niektórych
+przypadkach użyteczna:
+<pre>
+rdr on fxp0 proto tcp from any to any port 8080 -&gt; 192.168.1.35 port 80
+</pre>
+Przekierowuje ona cały ruch przychodzący do portu 8080 do serwera
+www uruchomionego na komputerze w wewnętrznej sieci na "standardowym"
+porcie 80.
+</dl>
+
+<p>
+Gdy zakończysz wprowadzanie zmian, przeładuj regułki NAT a
+przekierowanie ruchu rozpocznie się automatycznie.
+
+<p>
+<b>Negacje</b>
+<p>
+Czsami, możesz zechcieć wprowadzić pewne wyjątki do przekierowujących 
+regułek NAT. Oto przykład. Komunikator AOL robi tak nieprzyjemne 
+rzeczy jak usiłowanie wyjścia przez firewall przez każdy możliwy
+port. Można zauważyć że czasami dochodzi do konfliktu z naszym ftp-proxy
+gdy komunikator AOL stara się nawiązać połączenie do portu 21.
+Gdy uznasz że nie podobają Ci się takie praktyki AOL (wielu ludzi
+spędza sporo czasu próbując go zablokować), możesz zechcieć
+wykluczyć adres IP wykorzystywany przez serwery AOL z naszej 
+regułki przekierowującej:
+
+<blockquote><pre>
+rdr on tl0 proto tcp from any to ! 64.12.163.199 port 21 -&gt; 127.0.0.1 port 8021
+</pre></blockquote>
+
+<p>
+Interpretacja: Przekieruj ruch wchodzący na interfejs tl0 i wychodzący
+do portu 21 za wyjątkiem adresu docelowego 64.12.163.199 (serwer AOL
+z którym użytkownicy mają problemy) do localhost`a pod port 8021
+(gdzie nasłuchuje nasz ftp-proxy). Jakkolwiek istnieje wiele serwerów
+AOL, więc jeśli ten problem naprawdę nie daje Ci spać rozważ zablokowanie
+adresów IP podsieci 64.12.0.0/16, uważaj ponieważ prawdopodobnie w tym
+zakresie znajdują się również zupełnie przypadkowe serwery.
+
+
+<p>
+<a name="nat3.4"></a>
+<b>NAT kontra Proxy</b>
+
+<p>
+Różnica pomiędzy NAT a oprogramowaniem typu proxy jest wyraźna. Aplikacje
+proxy są wyraźnym ogniwem łączącym Internet z komputerami w sieci LAN.
+Nie wszystkie aplikacje zdolne są o współpracy z oprogramowaniem proxy,
+szczególnie gry. Po prostu - nie istnieją serwery proxy dla wszystkich
+aplikacji korzystających z sieci Internet.
+NAT jest tworem transparentnym, mapuje wewnętrzne adresy sieciowe tak, 
+aby umożliwić hostom lokalnym dostęp do Internetu. Aplikacje pracujące
+po stronie klienta nie zdają sobie tak naprawdę spraw z tego że w sieci
+pracuje host wykonujący NAT. Jedynym plusem wynikającym z zastosowania 
+proxy jest możliwość zwiększenia bezpieczeństwa, poprzez filtrowanie
+ruchu i wychwytywanie wirusów i robaków na które podatne są Windows, 
+ochronę przed przepełnieniami buforów w oprogramowaniu klienta
+i wiele innych. Konfiguracja tego typu filtrów to trudna i poważna
+praca.
+
+<p>
+<a name="nat3.5"></a>
+<b>Refleksje na temat przekierowań</b>
+
+<p>
+Często regułki przekierowujące używane są do przekazywania przychodzących
+połączeń z Internetu do serwera umieszczonego w sieci LAN i nie posiadającego
+publicznego adresu IP:
+
+<pre>
+rdr on $ext_if proto tcp from any to $ext_if port 80 -&gt; $server port 80
+</pre>
+
+<p>
+Jednak w przypadku gdy testujemy regułkę z komputera w naszej sieci lookalnej,
+zauważamy że nie działa. Przyczyną jest to że regułka przekierowująca
+określa interfejs wejściowy dla pakietów ($ext_if - zewnętrzny interfejs).
+Połączenie z zewnętrznym adresem komputera z firewallem z komputera
+w sieci lokalnej wcale nie oznacza że pakiety muszą wędrować przez zewnętrzny
+interfejs.
+Stos TCP/IP firewalla porównuje adres przeznaczenia przychodzących pakietów
+z własnymi adresami oraz ich aliasami, wykrywając w ten sposób do siebie samego
+w momencie gdy przeszły tylko przez wewnętrzny interfejs. Takie pakiety fizycznie 
+nie wędrują przez zewnętrzny interfejs a stos TCP/IP nie symuluje w żaden
+sposób takiej sytuacji. PF nigdy nie widział tych pakietów na zewnętrznym
+interfejsie i dlatego właśnie regułka przekierowująca, wyłapująca pakiety
+wędrujące do zewnętrznego interfejsu nie akceptuje połączeń pochodzących
+z sieci LAN.
+
+<p>
+Dodanie drugiej regułki przekierowującej nie rozwiąże w tym przypadku naszego
+problemu. Gdy klient z sieci lokalnej łącze się z zewnętrznym adresem IP 
+firewalla pakiet inicjujący połączenie TCP dochodzi do maszyny z firewallem
+przez wewnętrzny interfejs.
+Nowa regułka przekierowująca ajceptuje ten pakiet i adres docelowy zostaje
+zastąpiony adresem lokalnego serwera.
+Pakiet zostaje przekierowany ponownie na wewnętrzny interfejs i dociera
+do serwera. Jednak nie został przetłumaczony adres źródłowy i zawiera
+on adres klienta, więc serwer odeśle odpowiedź bezpośrednio do niego.
+Firewall nigdy nie dostanie odpowiedzi od serwera która mógłby poprawnie
+przesłać z powrotem do klienta, co spowoduje że klient otrzyma pakiet TCP
+ze źródła którego się nie spodziewał i go odrzuci, nawiązywanie połączenia
+nie powiedzie się.
+
+<p>
+Często jest pożądane, aby hosty w sieci LAN mogły łączeć się z tym samym
+serwerem lokalnym tak jak hosty z zewnątrz, transparentnie (bez dodatkowej 
+wiedzy o faktycznym adresie oraz położeniu serwera).
+Oto kilka rozwiązań które mogą pomóc rozwiązać ten problem:
+
+<p>
+<b>Konfiguracja serwera DNS</b>
+<p>
+Możliwe jest skonfigurowanie serwera DNS tak, aby odpowiadał na zapytania
+z sieci lokalnej inaczej niż na zapytania z zewnątrz, tak więc klient
+w sieci lokalnej może otrzymać od serwera nazw adres lokalny serwera.
+Połączy się wtedy z nim bezpośrednio, bez zaangażowania w tę operację
+firewalla. Zredukuje to ruch, ponieważ pakiety nie będą niepotrzebnie
+wędrowały przez firewall.
+
+<p>
+<b>Przeniesienie serwera do odseparowanej sieci lokalnej</b>
+<p>
+Dołączenie dodatkowego interfejsu sieciowego do komputera z firewallem
+i przeniesienie serwera do takiej sieci dedykowanej (DMZ) pozwoli na 
+przekierowywanie połączeń od lokalnych klientów w taki sam sposób
+jak klientom z zewnątrz. Wykorzystanie odseparowanej sieci ma kilka
+innych zalet, włączając zwiększenie bezpieczeństwa poprzez odseparowanie
+serwera także od klientów lokalnych. Jednakże należy pamiętać o tym 
+że w takim przypadku nasz serwer nie będzie miał bezpośredniego dostępu
+do hostów lokalnych - wszystkie połączenia będą musiały przejść przez 
+firewall.
+
+<p>
+<b>TCP proxy</b>
+<p>
+TCP proxy może być skonfigurowany na hoście na którym pracuje firewall,
+nasłuchując na porcie który ma zostać przekierowany oraz przechwytując 
+połączenia z interfejsu lokalnego i przekiwrowywać je do portu na którym
+nasłuchuje. Gdy okalny klient łączy się z firewallem, proxy akceptuje
+połączenie otwierając drugie połączenie z serwerem i przekierowując
+ruch pomiędzy ustanowionymi połączeniami.
+
+<p>
+Proste proxy można stworzyć korzystając z 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=inetd&amp;sektion=8">inetd(8)</a>
+lub
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=nc&amp;sektion=1">nc(1)</a>.
+Poniższy wpis w <i>/etc/inetd.conf</i> tworzy gniazdo przypisane do 
+interefjsu loopback i portu 5000. Połączenia są przekierowywane do 
+portu 80 serwera o adresie 192.168.1.10.
+
+<pre>
+127.0.0.1:5000 stream tcp wait nobody /usr/bin/nc nc -w 20 192.168.1.10 80
+</pre>
+
+<p>
+Poniższa regułka PF przekierowuje ruch portu 80 na wewnętrznym interfejsie
+do proxy:
+
+<pre>
+rdr on $int_if proto tcp from $int_net to $ext_if port 80 -&gt; 127.0.0.1 port 5000
+</pre>
+
+<p>
+<b>Współpraca RDR (przekierowania) i NAT</b>
+<p>
+Można również uzyskać translację adresu źródłowego poprzez wprowadzenie 
+dodatkowej regułki NAT dotyczącej wewnętrznego interfejsu.
+
+<pre>
+rdr on $int_if proto tcp from $int_net to $ext_if port 80 -&gt; $server
+no nat on $int_if proto tcp from $int_if to $int_net
+nat on $int_if proto tcp from $int_net to $server port 80 -&gt; $int_if
+</pre>
+
+<p>
+Spowoduje to, że inicjalizujący połączenie pakiet pochodzący od klienta,
+zostanie ponownie poddany NAT w chwili gdy zostanie przekierowany na
+zewnętrzny interfejs, adres źródłowy kleinta zostanie zamieniony na adres 
+inetrfejsu wewnętrznego serwera. Serwer prześle swoją odpowiedź do firewalla,
+który potrafi zamienić regułkę RDR na NAT gdy klientem jest host w sieci
+loaklnej. Taka konstrukcja jest dość złożona dzięki tem że tworzy
+dwa oddzielne stany dla każdego połączenia.
+Trzeba zwrócić uwagę na odpowiednią konfigurację NAT w taki sposób, aby 
+regułki nie akceptowały innych pakietów niż te które dopuszczasz, dla
+przykładu, połączenia pochodzące od hostów z poza naszej sieci lub samego
+firewalla. Zauważ że regułka rdr powyżej, spowoduje że stos TCP/IP będzie 
+widział pakiety przychodzące do wewnętrznego interfejsu z adresem docelowym
+naszej sieci lokalnej. Aby zapobiec generowaniu informacji o przekierowaniach 
+ICMP przez stos (mówiących klientowi że serwer jest dostępny lokalnie)
+wyłącz przekierowania na gateway`u:
+
+<pre>
+# <strong>sysctl -w net.inet.ip.redirect=0</strong>
+</pre>
+
+Dla większości przypadków, rozwiązania omawiane powyżej są w zupełności
+wystarczające.
+
+<p>
+<a name="nat4.0"></a>
+<b>6.3.4 Linki i inna dokumentacja</b>
+
+<p>
+Pliki OpenBSD:
+<ul>
+<li>/etc/pf.conf - plik z regułkami PF/NAT
+<li>/etc/rc.conf - tutaj należy dokonać edycji aby uruchomić NAT i PF przy starcie systemu
+<li>/etc/sysctl.conf - w tym miejscu zezwalamy na przekazywanie pakietów IP
+</ul>
+
+<p>
+Inne linki o NAT:
+
+<ul>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+3.2">strona man o pf.conf</a>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.2">strona man o pfctle</a>
+<li><a href="http://www.geektools.com/rfc/rfc1631.txt">http://www.geektools.com/rfc/rfc1631.txt</a>
+</ul>
+
+
+<p> 
+<a name= "DHCP"></a>
+<a name= "6.4"></a> 
+<h2>6.4 - DHCP</h2> 
+
+<p>
+<h3>6.4.1 Klient DHCP</h3>
+
+<p>
+Aby skorzystać z klienta DHCP
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dhclient&amp;sektion=8">dhclient(8)</a>
+dołączonego standardowo do OpenBSD, wyedytuj plik /etc/hostname.xl0 (oczywiście
+jeśli taki posiadasz, lub analogiczny plik dla Twojej własnej konfiguracji 
+sprzętowej). Wszystko czego potrzebujesz to umieścicć w tym pliku wpis 'dhcp'
+<pre>
+# <strong>echo dhcp &gt;/etc/hostname.xl0</strong>
+</pre>
+
+<p>
+Dzięki temu OpenBSD automatycznie uruchomi klienta DHCP przy starcie dla wskazanego
+interefejsu. Pobrany zostanie adres IP, domyślna bramka, oraz serwery DNS.
+
+<p>
+Jeśli chcesz skonfigurować swój interfejs poprzez dhcp z linii poleceń, upewnij się
+że masz plik /etc/dhclient.conf, a następnie wykonaj: 
+
+<pre>
+# <strong>dhclient fxp0</strong>
+</pre>
+
+<p>
+Gdzie fxp0 powinieneś wstawić nazwę własnego posiadanego interfejsu.
+
+<p>
+Nieważne w jaki sposób uruchamiasz dhclient, zawsze możesz wyedytować 
+/etc/dhclient.conf aby np. <b>nie</b> uaktualniać swojej konfiguracji serwerów 
+DNS poprzez odkomentowanie linii 'request' (poniżej znajdziesz przykładowe
+domyślne opcje, które musisz odkomentować i dokonać spośród nich wyboru.)
+
+<pre>
+request subnet-mask, broadcast-address, time-offset, routers,
+      domain-name, domain-name-servers, host-name, lpr-servers, ntp-servers;
+</pre>
+
+<p>
+a następnie <b>unsunąć</b> domain-name-servers. Oczywiście możesz usunąć też każdy
+z pozostałych wpisów.
+
+<p>
+<h3>6.4.2 Serwer DHCP</h3>
+
+<p>
+Jeśli chcesz aby Twój OpenBSD pracował w sieci jako serwer DHCP
+<A href="http://www.openbsd.org/cgi-bin/man.cgi?query=dhcpd&amp;sektion=8">dhcpd(8)</a>,
+wyedytuj /etc/rc.conf poprzez ustawienie dhcpd_flags="-q" zamiast domyślnego
+dhcpd_flags=NO. Umieść interfejs na którym serwer ma <b>nasłuchiwać</b> w pliku
+/etc/dhcpd.interfaces.
+
+<pre>
+     # <b>echo xl1 xl2 xl3 &gt;/etc/dhcpd.interfaces</b>
+</pre>
+
+<p>
+A następnie zabierz się za konfigurację serwera poprzez plik  /etc/dhcpd.conf.
+Znaczenie poniższych opcji jest chyba jasne.
+
+<pre>
+        option  domain-name "xyz.mil";
+        option  domain-name-servers 192.168.1.3, 192.168.1.5;
+
+        subnet 192.168.1.0 netmask 255.255.255.0 {
+                option routers 192.168.1.1;
+
+                range 192.168.1.32 192.168.1.127;
+        }
+</pre>
+
+<p>
+Twój serwer DHCP powie klientowi że należy do domeny "xyz.mil" oraz że serwery DNS dla tej
+domeny to 192.168.1.3 i 192.168.1.5. Hosty znajdujące się w tej samej sieci co adres 
+interefjsu OpenBSD na którym nasłuchuje DHCP, należący do sieci 192.168.1.0/24,
+otrzymają adresy z zakresu 192.168.1.32 - 192.168.1.127. Otrzymają też informację
+aby jako domyślną bramkę wykorzystywały host 192.168.1.1.
+
+<p>
+Jeśli chcesz uruchomić dhcpd(8) z linii komend po edycji /etc/dhcpd.conf, użyj:
+
+<pre>
+     # <b>dhcpd -q fxp0</b>
+</pre>
+
+<p>
+Gdzie <tt>fxp0</tt> jest interfejsem na którym serwer DHCP ma nasłuchiwać.
+Opcja <tt>-q</tt> mówi dhpcpd(8), aby zachowywał się trochę ciszej niż
+standardowo.
+
+<p>
+Jeśli serwujesz informacje DHCP klientowi Windows, możesz zechcieć, aby
+dhcpd(8) podał temu klientowi adres serwera 'WINS'. Wystarczy dodać analogiczną
+do poniższej linijkę do /etc/dhcpd.conf:
+
+<pre>
+     option    netbios-name-servers    192.168.92.55;
+</pre>
+
+<p>
+(gdzie zamiast <tt>192.168.92.55</tt> powinieneś wstawić swój adres IP serwera Windows 
+lub Samba.)
+Zobacz <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dhcp-options&amp;sektion=5">dhcp-options(5)</a> aby dowiedzieć się jakie inne informacje możesz dostarczyć klientom.
+
+<p>
+<a name="PPP"></a>
+<a name="6.5"></a>
+<h2>6.5 - PPP </h2>
+
+<p>
+Protokół Punkt-Punkt (Point-to-Protocol - PPP) najczęściej wykorzystywany jest w przypadkach
+gdy łączysz się ze swoim dostawcą Internetu poprzez modem. W OpenBSD możesz to zrobić
+na dwa sposoby poprzez:
+
+<ul>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pppd&amp;sektion=8">pppd(8)</a>
+ - który jest demonem ppp działającym w przestrzeni jądra.
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ppp&amp;sektion=8">ppp(8)</a>
+ - działającym w przestrzeni użytkownika. 
+</ul>
+
+<p>
+Zaczniemy od konfiguracji demona PPP który mógł będzie być uruchamiany
+przez zwykłych użytkowników. Aby rozpocząć potrzebujesz trochę informacji od
+swojego dostawcy. Oto lista rzeczy które powinieneś wiedzieć nim przystąpimy do pracy:
+
+<ul>
+<li>Numer dialup Twojego dostawcy.
+<li>Adres serwera nazw.
+<li>Twoja nazwa użytkownika i hasło.
+<li>Adres Twojej bramki.
+</ul>
+
+<p>
+Bez części z nich możesz się obejść, ale wygodniej będzie jeśli będziesz 
+dysponował powyższymi informacjami. Demon PPP pracujący w przestrzeni użytkownika
+korzysta z pliku konfiguracyjnego 
+<a href="http://www.openbsd.org/cgi-bin/cvsweb/src/etc/ppp/ppp.conf.sample">/etc/ppp/ppp.conf</a>.
+W katalogu <i>/etc/ppp</i> znajdziesz kilka pomocnych plików, które mogą 
+definiować różne konfiguracje dla różnych specyficznych sytuacji. Zalecane
+jest abyś się z nimi zapoznał.
+
+<p>
+Ponadto, w przypadku gdy używasz własnoręcznie skompilowanego jądra (zamiast
+domyślnego GENERIC), że poniższy wiersz znajduje się w pliku konfiguracji:
+
+<blockquote><pre><strong>
+pseudo-device   tun             2
+</strong></pre></blockquote>
+
+<p>
+<h3>Podstawowa konfiguracja PPP(8)</h3>
+
+<p>
+Podstawowej konfiguracji działającego w przestrzeni użytkownika demona PPP
+polega na edycji pliku <i>/etc/ppp/ppp.conf</i>. Domyślnie tego pliku nie 
+ma w Twoim systemie, ale znajduje się plik <i>/etc/ppp/ppp.conf.sample</i>,
+z którego możesz skorzystać tworząc swój plik <i>ppp.conf</i>. Poniżej opisana
+zostanie najbardziej podstawowa i typowa konfiguracja. Oto przykładowy plik
+<i>ppp.conf</i> który pozwoli Ci na połączenie się z Twoim dostawcą Internetu,
+a także ustawi domyślną trasę rutowania i serwer nazw (DNS). Wszystko czego 
+potrzebujesz aby ten plik działał to numer Twojego dostawcy, Twoja nazwa
+użytkownika oraz hasło.
+
+<blockquote>
+<pre>
+default:
+set log Phase Chat LCP IPCP CCP tun command     
+set device /dev/cua01                           
+set speed 115200     
+set dial "ABORT BUSY ABORT NO\\sCARRIER TIMEOUT 5 \"\" AT OK-AT-OK ATE1Q0 OK\\dATDT\\T TIMEOUT 40 CONNECT"
+</pre>
+</blockquote>
+
+<p>
+Sekcja poniżej <tt>default:</tt> będzie przetważana przy każdym uruchomieniu 
+demona. Umieszczamy w niej wszystkie niezbędne informacje. Korzystając 
+z &quot;set log&quot; konfigurujemy poziomy logowania. Możesz zmienić te 
+ustawienia, aby dowiedzieć się więcej na temat ustawienia poziomów logowania
+zajrzyj do 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ppp&amp;sektion=8">ppp(8)</a>.
+Wyboru urządzenia pod którym jest nasz modem dokonujemy w sekcji &quot;set device&quot;,
+w tym przypadku modem podłączony jest do drugiego portu szeregowego, port 
+pierwszy to urządzenie <i>/dev/cua00</i>. Korzystając z &quot;set speed&quot;
+ustalamy prędkość połączenia a w &quot;set dial&quot; podajemy parametry 
+naszego połączenia. Można zdefiniować w tym miejscu inny 'timeout' dla naszego
+połączenia itp. Podana linijka jest dość dobra i raczej nie wymaga zmian.
+
+<p>
+Teraz możemy przejść do sekcji w których podamy informacje specyficzne dla
+dostawcy Internetu (ISP). Informacje te podajemy w sekcjach umiejscowionych 
+poniżej nagłówka <b>default:</b>. Nagłówek nowej sekcji może mieć dowolny tytuł,
+np. nazwę Twojego ISP. Tutaj skorzysamy z nazwy <b>myisp:</b>, poniżej tego nagłówka
+znajdziesz wszystkie informacje niezbędne do tego aby połączenie zostało poprawnie
+zainicjowane.
+
+<blockquote>
+<pre>
+myisp:
+set phone 1234567   
+set login "ABORT NO\\sCARRIER TIMEOUT 5 ogin:--ogin: ppp word: ppp"
+set timeout 120   
+set ifaddr 10.0.0.1/0 10.0.0.2/0 255.255.255.0 0.0.0.0
+add default HISADDR 
+enable dns
+</pre>
+</blockquote>
+
+<p>
+Oto podstawowa konfiguracja potrzebna do tego aby połączyć się z konkretnym 
+ISP. Opcja &quot;set phone&quot; ustala numer dialup naszego ISP. 
+Kolejna, &quot;set login&quot;, pozwala na wprowadzenie opcji niezbędnych
+do poprawnego zalogowania się. Umieściliśmy tutaj timeout na 5 sekund, co
+oznacza że nasza próba zalogowania się zostanie przerwana po 5 sekundach 
+bez sygnału połączenia. W innym przypadku będziemy czekać na &quot;login:&quot;
+oraz wysłane zostanie Twoja nazwa użytkownika oraz hasło. W powyższym przypadku
+nazwa użytkownika (Username) = ppp oraz hasło (Password) = ppp. Te wartości
+będziesz musiał zmienić (&quot;od tłumacza: chyba że korzystasz z usług TPSA&quot;).
+Wiersz &quot;set timeout&quot; ustala "jałowy" (idle) czas dla całego połączenia
+na 120 sekund. Opcja &quot;set ifaddr&quot; wymaga dłuższego wyjaśnienia.
+
+<blockquote><pre>
+set ifaddr 10.0.0.1/0 10.0.0.2/0 255.255.255.0 0.0.0.0
+</pre></blockquote>
+
+<p>
+W powyższej linii korzystamy z ustawienia adresu w formacie &quot;<b>set ifaddr
+[myaddr[/nn] [hisaddr[/nn] [netmask [triggeraddr]]]]</b>&quot;. 
+Czyli pierwszym adresem IP jest ten jaki chcemy aby został nam pzypisany.
+Jeśli dostajesz statyczny adres od swojego ISP powinieneś umieścić go właśnie
+tutaj. W tym przykładzie dodaliśmy /0 aby zaznaczyć że żaden z bitów tego 
+adresu nie wymaga dopasowania i może on zostać całkowicie zmieniony przez
+ISP podczas transakcji rozpoczynającej połączenie. Drugi adres IP to adres 
+IP dostawcy. Jeśli go znasz, umieść go właśnie w tym miejscu, jeśli nie
+zrób tak jak w naszym przypadku - umieść na końcu /0. Trzecia opcja to nasza
+maska sieciowa, w tym przypadku ustawiona na 255.255.255.0. Jeśli triggeraddr
+jest ustawiony, używany jest do zastąpienia myaddr podczac rozpoczęcia
+negocjacji IPCP. Jakkolwiek tylko adres z zakresu myaddr zostanie zaaakceptowany.
+Ta opcja użyteczna jest w przypadkach gdy niektóre implementacje PPP podczas
+negocjacji połącznia nie przyznają adresu IP dopuki nie zarządasz ``0.0.0.0.0''.
+
+<p>
+Nastepna opcja &quot;add default HISADDR&quot; ustala domyślną trasę
+rutowania na adres ISP. Dzięki takiemu wpisowi jesteś uniezależniony
+od adresu IP Twojego dostawcy - za każdym razem będzie on automatycznie
+uaktualniony w przypadku zmiany. Dzięki opcji &quot;enable dns&quot;
+mówimy naszemu ISP aby 'zalegalizował' adresy naszych serwerów nazw.
+UWAGA: nie rówb tego jeśli masz uruchomiony lokalny serwer DNS, ponieważ
+ppp obejdzie to poprzez dopisanie kilku linijek nameserver w pliku 
+<i>/etc/resolv.conf</i>.
+
+<p>
+<h3>Używanie PPP(8)</h3>
+
+<p>
+Mamy wreszcie nasz plik <i>ppp.conf</i> z konfiguracją połącznia, teraz
+możemy spróbować połączyć się z naszym ISP. Opisanych zostanie kilka najczęściej
+używanych parametrów ppp.
+
+<ul>
+<li><tt>ppp -auto myisp</tt> - Uruchamia ppp, konfiguruje interfejs, łączy się z 
+ISP a następnie przechodzi do pracy w tle.
+<li><tt>ppp -ddial myisp</tt> - Podobne do -auto, ale w przypadku gdy połącznie
+zostanie utracone, zostaną podjęte próby przywrócenia go.
+</ul>
+
+<p>
+Używanie <i>/usr/sbin/ppp</i> bez opcji spowoduje pracę w trybie interaktywnym.
+Możesz wtedy ręcznie ustanawiać połącznie rozmawiając ze swoim modemem, ta opcja
+(a w zasadzie brak żadnych opcji) jest użyteczna gdy Twój <i>ppp.conf</i> nie działa
+tak jak powinien.
+
+<p>
+<h3>dodatki do ppp(8)</h3>
+
+<p>
+W niektórych sytuacjach może zajść potrzeba wykonania jakiejś czynności w momencie
+gdy połączenia zostaje utracone lub nawiązane. Do tego typu zadań wykorzystuje się
+dwa pliki: <i>/etc/ppp/ppp.linkup</i> i <i>/etc/ppp/ppp.linkdown</i>.
+Przykładowe konfiguracje znajdziesz poniżej:
+
+<ul>
+<li><a href="http://www.openbsd.org/cgi-bin/cvsweb/src/etc/ppp/ppp.linkup.sample">ppp.linkup</a>
+<li><a href="http://www.openbsd.org/cgi-bin/cvsweb/src/etc/ppp/ppp.linkdown.sample">ppp.linkdown</a>
+</ul>
+
+<p>
+Dodatkowe informacje możesz znaleźć pod adresem
+<a href="http://www.freebsd.org/doc/en_US.ISO8859-1/books/handbook/userppp.html">FreeBSD 
+Handbook entry on User PPP</a>. 
+
+
+<p>
+<a name="Tuning"></a>
+<a name="6.6"></a>
+<h2>6.6 - Tuning parametrów sieciowych</h2>
+
+<p>
+<h3>6.6.1 - Jak zmusić jądro aby stosowało wiekszą liczbę ponowień
+i dłuższe czasy timeout dla sesji TCP ?</h3>
+
+<p>
+Zmiana tych standardowych ustawień może byc pomocna w przypadku problemów
+z połączeniem i rutingiem. Oczywiście, aby zmiany te działały efektywnie
+powinny z nich korzystać obie strony połączenia.
+
+<p>
+Do zmiany tych wartości użyj <tt>sysctl</tt> i powiększ wartości:
+
+<pre>
+net.inet.tcp.keepinittime
+net.inet.tcp.keepidle
+net.inet.tcp.keepintvl
+</pre>
+
+<p>
+Korzystając z sysctl -a, możesz obejrzeć aktualne ustawienia tych 
+(i wielu innych) parametrów jądra. Aby zmienić jeden z nich, skorzystaj
+z <tt>sysctl -w</tt>, jak np. <tt>sysctl -w net.inet.tcp.keepidle=28800</tt>.
+
+<p>
+<h3>6.6.2 - W jaki sposób uruchomić directed broadcasts?</h3>
+
+<p>
+W normalnej sytuacji nie powinieneś tego robić. Zezwala to bowiem komuś na
+wysłanie pakietów pod adres(y) brozdcast Twoich sieci w przypadku gdy używasz
+OpenBSD jako routera. Istnieje kilka przypadków w zamkniętych sieciach gdy
+może być to użyteczne, zwłaszcza korzystając ze starszych implementacji 
+protokołu NetBIOS. Wykorzystujemy do tego celu kolejny sysctl: 
+<tt>sysctl -w net.inet.ip.directed-broadcast=1</tt>. Jeśli chcesz wiedzieć
+dlaczego domyślnie jest ta opcja wyłączona poczytaj o 
+<a href="http://www.netscan.org">smurf attacks</a>.
+
+<p>
+<h3>6.6.3 - Nie chcę aby jądro dynamicznie przydzielało pewne porty.</h3>
+
+<p>
+Także do tej konfiguracji służy sysctl. Czytając w
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=8">sysctl(8)</a>:
+
+<pre>
+Decydowanie o liście zarezerwowanych portów TCP które nie powinny być
+alokowane przez jądro dynamicznie. Możesz wykorzystać tę opcję aby
+nie zezwalać demonom na "podkradanie" portów z których korzystają
+inne programy. Elementy listy oddzielony mogą być przecinkami i/lub
+znakami białymi.
+
+ #  <strong>sysctl -w  net.inet.tcp.baddynamic=749,750,751,760,761,871</strong>
+
+Moażna także dodać bądź usunąć któryś z wpisów aktualnej listy.
+
+ #  <strong>sysctl -w net.inet.tcp.baddynamic=+748</strong>
+ #  <strong>sysctl -w net.inet.tcp.baddynamic=-871</strong>
+</pre>
+
+
+<p>
+<a name="NFS"></a>
+<a name="6.7"></a>
+<h2>6.7 - Proste wykorzystanie NFS</h2>
+
+<p>
+NFS, sieciowy system plików (Network File System) wykorzystywany jest do
+współdzielenia systemów plików w sieci. Przed przystąpieniem do konfiguraci
+NFS powinieneś zapoznać się z kilkoma stronami manuala:
+
+<ul>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=nfsd&amp;sektion=8">nfsd(8)</a>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mountd&amp;sektion=8">mountd(8)</a>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=exports&amp;sektion=5">exports(5)</a>
+</ul>
+
+<p>
+Dzięki temu rozdziałowi w prosty sposób dowiesz się jak skonfigurować
+NFS. Omawiamy wszystko na przykładzie serwera pracującego w sieci LAN
+oraz klientów którzy wykorzystują w tej sieci NFS. W sekcji tej nie 
+będziemy poruszać zagadnień związanych z bezpieczeństwem, zakładamy
+że masz już skonfigurowany swój filtr pakietów lub inną ochronę typu
+firewall aby uniemożliwić dostęp osobom z zewnątrz. Jeśli zamierzasz 
+zezwolić na dostęp do NFS z zewnątrz w celu wymiany poufnych 
+danych które nie powinny trafić w niepowołane ręce, rekomendowane jest
+wykorzystanie <a href="../faq13.html">IPsec</a>. W innym przypadku możliwe
+jest podsłuchanie całego ruchu który wymieniany jest przez NFS. Innym 
+sposobem na niepowołane dostanie się do serwera jest podmienienie
+adresu IP na taki któremu zezwalasz na dostęp. Istnieje jeszcze kilka
+metod ataku na NFS, jednak prawidłowo skonfigurowany IPsec stanowi skuteczną
+ochronę.
+
+<p>
+Jeszcze jedna uwaga związana z bezpieczeństwem. Nie dodawaj samych
+systemów plików do <i>/etc/exports</i> bez listy hostów które mogą
+mieć dostęp do zasobów. Jeśli nie wyszczególnisz który z nich może
+montować odpowiedni katalog, każdy kto będzie mógł ustanowić z Twoim
+serwerem połączenie będzie mógł montować wszystkie eksportowane
+przez Ciebie katalogi.
+
+<p>
+NFS korzysta z 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=portmap&amp;sektion=8">portmap(8)</a>
+i musi być on uruchomiony jako pierwszy. Portmap(8) w wersjach 
+OpenBSD 3.2 i późniejszych jest domyślnie wyłączony, aby to zmienić
+wyedytuj <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rc.conf&amp;sektion=8">rc.conf(8)</a>
+zmieniając linijkę <tt>portmap</tt> w następujący sposób:
+
+<blockquote><pre>
+portmap=YES
+</pre></blockquote>
+i uruchom ponownie system. 
+
+<p>
+W naszym przykładzie serwer ma adres ip <b>10.0.0.1</b>. Będzie on udostępniał
+NFS tylko klientom znajdującym się w swojej sieci. Pierwszym krokiem 
+w koniguracji jest edycja pliku <i>/etc/exports</i>. Umieścisz w nim
+zasoby które chciałbyś udostępnić klientom oraz zdefiniujesz kto 
+powinien mieć dostęp do poszczególnych. W pliku <i>/etc/exports</i> możesz
+użyć naprawdę wielu opcji, aby zapoznać się ze wszystkimi możliwościami 
+przeczytaj <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=exports&amp;sektion=5">exports(5)</a>
+W tej chwili mamy <i>/etc/exports</i> wyglądający w ten sposób:
+
+<blockquote><pre>
+#
+# NFS exports Database
+# See exports(5) for more information.  Be very careful, misconfiguration
+# of this file can result in your filesystems being readable by the world.
+/work -alldirs -ro -network 10.0.0 -mask 255.255.255.0
+</pre></blockquote>
+
+<p>
+Powyższy wpis oznacza że przez NFS dostępny będzie system plików <tt>/work</tt>.
+Opcja <tt>-alldirs</tt> że klienci będą mogli montować każdy katalog
+znajdujący się na ssytemie plików <tt>/work</tt>. Opcja <tt>-ro</tt>
+oznacza że zezwalamy na montowanie w trybie tylko do odczytu. Ostatnie 
+dwa argumenty mówią że tylko hosty z sieci 10.0.0.0 o masce 255.255.255.0
+mogą mieć dostęp do tego zasobu, co jest istotne w przypadku gdy serwery
+pracują czasami w kilku różnych sieciach.
+
+<p>
+Gdy Twój plik <i>/etc/exports</i> jest już odpowiednio skonfigurowany, możesz
+przejść do konfiguracji serwera. Upewnij się czy Twoje jądro zostało skompilowane
+z opcją NFSSERVER oraz NFSCLIENT (standardowe jądra tak mają). Następnym krokiem
+jest ustawienie wartości <tt>nfs_server=YES</tt> w pliku <i>/etc/rc.conf</i>.
+Spowoduje to automatyczne uruchomienie nfsd(8) i mountd(8) za każdym razem
+gdy uruchomisz ponownie komputer. W tej chwili możesz uruchomić te demony
+ręcznie, aby to zrobić musisz być rootem oraz portmap(8) musi być już 
+uruchomiony. Oto przykła uruchomienia nfsd(8) pracującego na protokołach
+TCP i UDP korzystając z 4 demonów. Powinieneś ustalić tę liczbę wg własnych
+potrzeb, aby określić maksymalną ilość jednocześnie obsługiwanych klientów.
+
+<blockquote><pre>
+# <strong>/sbin/nfsd -tun 4</strong>
+</pre></blockquote>
+
+<p>
+Wystartowanie nfsd(8) nie jest ostatnią zcynnością, oprócz tego potrzebujesz 
+uruchomić jeszcze mountd(8). Demon ten obsługuje żądania montowania NFS.
+Aby go uruchomić, upewnij się że istnieje pusty plik mountdtab, a następnie
+uruchom demona:
+
+<blockquote><pre>
+# <strong>echo -n &gt;/var/db/mountdtab</strong>
+# <strong>/sbin/mountd</strong>
+</pre></blockquote>
+
+<p>
+Jeśli w trakcie pracy wprowadzisz jakieś zmiany w /etc/exports, musisz 
+poinformować o tym mountd! Wystarczy sygnał HUP:
+
+<blockquote><pre>
+# <strong>kill -HUP `cat /var/run/mountd.pid`</strong>
+</pre></blockquote>
+
+<p>
+<h3>Statystyki NFS</h3>
+
+<p>
+W tej chwili możesz sprawdzić czy wystartowane przez Ciebie demony pracują
+i są zarejestrowane w RPC. Skorzystaj z rpcinfo(8).
+
+<blockquote><pre>
+$ <strong>rpcinfo -p 10.0.0.1</strong>
+   program vers proto   port
+    100000    2   tcp    111  portmapper
+    100000    2   udp    111  portmapper
+    100005    1   udp    633  mountd
+    100005    3   udp    633  mountd
+    100005    1   tcp    916  mountd
+    100005    3   tcp    916  mountd
+    100003    2   udp   2049  nfs
+    100003    3   udp   2049  nfs
+    100003    2   tcp   2049  nfs
+    100003    3   tcp   2049  nfs
+</pre></blockquote>
+
+<p>
+Podczas zwykłago użytkowania, istnieje jeszcze kilka innych narzędzi 
+pozwalających zobaczyć co dzieje się z NFSem. Jedną z nich jest:
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=showmount&amp;sektion=8">showmount(8)</a>, 
+dzięki któremu możesz dowiedzieć się jakie zasoby są aktualnie zamontowane
+i przez kogo. Jest jeszcze nfsstat(8), który wyświetla kilka dodatkowych 
+informacji. Przykładowe wywołanie showmount(8) wygląda następująco:
+
+<blockquote><pre>
+$ <strong>/usr/bin/showmount -a 10.0.0.1</strong>
+All mount points on 10.0.0.1:
+10.0.0.37:/work
+</pre></blockquote>
+
+<p>
+<h3>Montowanie systemu plików NFS</h3>
+
+<p>
+NFS powinien być montowany poleceniem mount(8), lub w bardziej specyficzny
+dla neigo sposób korzystając z 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mount_nfs&amp;sektion=8">mount_nfs(8)</a>.
+Do zamontowania systemu plików <i>/work</i> znajdującego się na hoście 
+10.0.0.1 do lokalnego katalogu <i>/mnt</i> skorzystaj z poniższej składni
+(możesz zamiast adresu IP użyć nazwy hosta):
+
+<blockquote><pre>
+# <strong>mount -t nfs 10.0.0.1:/work /mnt</strong>
+</pre></blockquote>
+
+<p>
+Jeśli chcesz aby montowanie przebiegało w momencie uruchamiania systemu,
+dodaj linijkę analogiczną do poniższej w pliku <i>/etc/fstab</i>:
+
+<blockquote><pre>
+10.0.0.1:/work /mnt nfs rw 0 0
+</pre></blockquote>
+
+<p>
+Ważne jest abyś jako dwa ostatnie wpisy w tej linii umieścił <tt>0 0</tt>
+aby Twój komputer nie próbował sprawdzać systemu plików programem fsck 
+przy starcie! Inne standardowe opcje zwiększające bezpieczeństwo takie
+jak noexec, nodev i nosuid powinny być także użyte gdy to możliwe:
+
+<blockquote><pre>
+10.0.0.1:/work /mnt nfs rw,nodev,nosuid 0 0
+</pre></blockquote>
+
+<p>
+W ten sposób, mount nie będzie interpretował urządzeń specjalnych i unieważni
+bity suid dzięki czemu programy na serwerze nie będą mogły wykonywać
+niebezpiecznych operacji na kliencie NFS. Jeśli nie montujesz żadnych 
+programów których chciałbyś używać przez NFS, powinieneś dodać także opcję 
+noexec.
+
+<p>
+<a name="DNS"></a>
+<a name="6.8"></a>
+<h2>6.8 - System nazw domenowych (Domain Name Service)  - DNS, BIND i named</h2>
+
+<p>
+<h3>6.8.1 Co to jest DNS?</h3>
+
+<p>
+System nazw domenowych (Domain Name Service) jest własnością zezwalającą
+na odwzorowywanie adresów IP na domeny i odwrotnie. Domyślna instalacja OpenBSD
+skonfigurowana jest jako klient DNS, ale nie jako serwer. Oznacza to, że
+Twój system potrafi wysłać zapytanie o adres IP przypisany do danej
+domeny, ale nie potrafi sam udzielić odpowiedzi na takie pytanie wysłane
+z innej maszyny dopóki nie zostanie w tym celu odpowiednio skonfigurowany.
+
+<p>
+Mój OpenBSD aktualnie podłączony do Internetu poprzez mojego ISP, więc mogę
+skorzystać z 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=nslookup&amp;sektion=8">nslookup(8)</a>
+aby wykonać zapytanie DNS:
+
+<blockquote><pre>
+$ <strong>nslookup www.openbsd.org</strong>
+Server:  ns4.us.prserv.net
+Address:  165.87.201.244
+
+Non-authoritative answer:
+Name:    www.openbsd.org
+Address:  129.128.5.191
+</pre></blockquote>
+
+<p>
+<b>165.87.201.244</b> jest adresem serwera który udzielił odpowiedzi, ponieważ
+taki właśnie został mi przydzielony przez mojego ISP i który został wpisany w 
+pliku
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=resolv.conf&amp;sektion=5">/etc/resolv.conf</a>.
+Uzyskana odpowiedź nie jest jednak autorytatywna. Do uzyskania takiej
+odpowiedzi musimy poszukać autorytatywnego serwera DNS dla domeny
+<i>openbsd.org</i> i jego spytać o adres <i>www.openbsd.org</i>:
+
+<blockquote><pre>
+# Identyfikacja serwerów nazw domeny openbsd.org
+# uzyskana z pomocą serwera nazw mojego ISP
+$ <strong>nslookup -type=NS openbsd.org</strong>
+Server:  ns4.us.prserv.net
+Address:  165.87.201.244
+
+Non-authoritative answer:
+openbsd.org     nameserver = cvs.openbsd.org
+openbsd.org     nameserver = gandalf.sigmasoft.com
+openbsd.org     nameserver = cs.colorado.edu
+openbsd.org     nameserver = ns.appli.se
+openbsd.org     nameserver = zeus.theos.com
+
+Authoritative answers can be found from:
+cvs.openbsd.org internet address = 199.185.137.3
+gandalf.sigmasoft.com   internet address = 198.144.202.98
+cs.colorado.edu internet address = 128.138.243.151
+ns.appli.se     internet address = 194.198.196.230
+zeus.theos.com  internet address = 199.185.137.1
+
+# Wykorzystanie uzyskanych informacji dla uzyskania
+# autorytatywnej odpowiedzi z serwera zeus.theos.com.
+$ <strong>nslookup www.openbsd.org zeus.theos.com</strong>
+Server:  zeus.theos.com
+Address:  199.185.137.1
+
+Name:    www.openbsd.org
+Address:  129.128.5.191
+</pre></blockquote>
+
+<p>
+<i>zeus.theos.com</i> jest, jak można przypuszczać, komputerem
+z OpenBSD oraz skonfigurowany jest aby mógł pracować jako serwer
+DNS dla domeny <i>openbsd.org</i>.
+
+<p>
+<a name="DNS.1.1"></a>
+<a name="6.8.1.1"></a>
+<h3>6.8.1.1 Skąd dowiedzieć się więcej o DNS i jego implementacji
+w OpenBSD?</h3>
+
+<ul>
+<li>Przeczytaj RFC <a href="http://www.faqs.org/rfcs/rfc1033.html">1033</a>, 
+<a href="http://www.faqs.org/rfcs/rfc1034.html">1034</a> oraz 
+<a href="http://www.faqs.org/rfcs/rfc1035.html">1035</a> dla uzyskania
+większej wiedzy na temat Internetowego systemu domen.
+<li>Przeczytaj książkę wydawnictwa O'Reilly Associates <i><a href="../../books.html#6">DNS
+and BIND</a> </i>.
+<li>Odwiedź także <a href="http://www.openbsd.org/cgi-bin/man.cgi">Manual OpenBSD</a> a zwłaszcza
+strony
+  <ul>
+  <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dig&amp;sektion=1">dig(1)</a>
+  <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=nslookup&amp;sektion=8">nslookup(8)</a>
+  <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=gethostbyname&amp;sektion=3">gethostbyname(3)</a>
+  <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=named&amp;sektion=8">named(8)</a>
+  <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=resolver&amp;sektion=3">resolver(3)</a>
+  <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=resolver&amp;sektion=5">resolver(5)</a>
+  </ul>
+</ul>
+
+<p>
+Komenda
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dig&amp;sektion=1">dig(1)</a>
+jest bardzo użyteczna, ponieważ potrafi wykonywać zapytania oraz wyświetlać
+wyniki w stylu niemal identycznym z formatem plików konfiguracyjnych BINDa.
+Możesz użyć
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dig&amp;sektion=1">dig(1)</a>
+aby sprawdzić konfigurację znanych Ci serwerów nazw.
+
+<p>
+<h3>6.8.2 Czy mój komputer musi być serwerem nazw?</h3>
+
+<p>
+Jeśli nie jesteś pewien czy Twój komputer powinien pełnić rolę 
+serwera DNS, odpowiedź brzmi najprawdopodobniej - nie. Domyślna
+instalacja nie konfiguruje Twojego systemu aby pracował w taki 
+właśnie sposób, aczkolwiek wszystkie niezbędne pliki są już zainstalowane.
+Dla większości stacji roboczych wystarczy edycja pliku
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hosts&amp;sektion=5">/etc/hosts</a>
+do nadania nazw lokalnym adresom IP oraz
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=resolv.conf&amp;sektion=5">/etc/resolv.conf</a>
+dla umieszczenia informacji o tym które serwery DNS powinny być
+używane do rozwiązywania nazw intranetu i Internetu.
+
+<p>
+Z drugiej strony, możesz potrzebować skonfigurowania Twojego systemu
+jako serwera nazw:
+
+<ul>
+<li>Jeśli posiadasz sieć LAN w której nie chciałbyś kopiować pliku "hosts"
+do każdej maszyny, możesz soknfigurować OpenBSD aby pracował jako 
+lokalny serwer DNS i serwowwał adresy IP komputerom w Twojej sieci.
+  <ul>
+  <li><b>Uwaga:</b> Praktycznie nie ma maksymalnej liczby serwerów DNS
+  w sieci LAN. Każdy (lub nawet wszystkie) komputery w sieci LAN mogą
+  oferować usługi DNS jeśli są tylko do tego odpowiednio skonfigurowane.
+  To czy któryś z tych serwerów jest autorytatywny na zewnątrz sieci LAN
+  (lub jest wogóle widziany nazewnątrz) jest czynnikiem który zwykle
+  kontrolowany jest przez wyższy poziom w hierarchii Twojej domeny.
+  </ul>
+<li>Jeśli posiadasz sieć LAN w której znajdują się komputery które
+powinne być dostępne przez zapytania DNS komputerów z innej
+sieci LAN lub WAN.
+<li>Jeśli masz problemy z rozwiązywaniem lokalnej nazwy hosta do adresu IP
+lub nazw innych hostów nawet gdy masz poprawnie skonstruowany plik <i>/etc/hosts</i>
+i <i>/etc/resolv.conf</i> (Netscape w OpenBSD może czasami mieć takie problemy
+ponieważ kożysta z własnej implementacji resolvera zamias korzystać 
+z funkcji <i>gethostbyname(3)</i>.)
+</ul>
+
+<p>
+Innym przypadkiem wartym rozważenia jest prędkość działania. Ponieważ
+rozwiązywanie nazwy hosta jest procesem interaktywnym, w którym serwer 
+nazw odpytuje inne serwery, operacja zamiany nazwy na adres może potrwać
+jeśli masz modemowe połąćzenie do Internetu i wysyłasz zapytanie do 
+własnego serwera DNS o adres zewnętrzny (Twój serwer zacznie odpytywać
+inne serwery poprzez modem), powinieneś korzystać z serwera nazw Twojego
+ISP (który prawdopodobnie ma szybsze połączenie do innych serwerów).
+
+<p>
+<h3>6.8.3 Z jakich komponentów składa się serwer DNS?</h3>
+
+<ul>
+<li>named <i>("name daemon")</i>
+<li>Pliki konfiguracyjne znajdują się w drzewie katalogów <i>/var/named/</i>
+</ul>
+
+<p>
+<h4>6.8.3.1 Które wersje BIND są wspierane?</h4>	
+
+<p>
+BIND jest nazwą specyfikacji serwera nazw domenowych. Komponenty
+serwera nazw wspólnie tworzą system BIND.
+
+<p>
+Są trzy wersje specyfikacji BIND:
+
+<ol>
+<li>BIND 4
+<li>BIND 8
+<li>BIND 9
+</ol>
+
+<p>
+W OpenBSD demon <b>named</b> wspiera BIND w wersji 4.x.
+
+<p>
+<h4>6.8.3.2 Jakie są alternatywy udostępniania DNS korzystając
+z innych wersji implementacji BIND?</h4>
+
+<ul>
+<li>BIND w wersji 9.x możesz znaleźć w <i>/usr/ports/net/bind9</i>.(Zobacz
+<a href="../../pl/ports.html">ports</a>)
+</ul>
+
+<p>
+<h5>6.8.3.2.1 <u>Bezpieczeństwo</u> - uwagi</h5>
+
+<p>
+Jeśli korzystasz z alternatywnych implementacji BIND, pamiętaj że robisz to
+na własne ryzyko i świadomie rezygnujesz z oprogramowania które przeszło
+testy bezpieczeństwa 
+<a href="http://www.openbsd.org/security.html">security-audit</a>
+- demona <b>named</b> ze standardowej instalacji.
+<p>
+
+<h3>6.8.4 Co muszę zainstalować?</h3>
+
+<p>
+W zasadzie nic - jeśli podczas konfiguracji sieci w trakcie instalacji 
+systemu nie popełniłeś żadnych błędów, wszystkie potrzebne składniki
+masz juz zainstalowane w systemie. Jedyne co Ci pozostaje to skonfigurowanie
+demona nazw ("<tt>named</tt>").
+
+<p>
+<h3>6.8.5 Jak skonfigurować DNS?</h3>
+
+<p>
+W OpenBSD konfigurujesz DNS poprzez edycję i/lub tworzenie plików konfiguracyjnych
+demona <tt>named</tt>. Zwykle znajdują się one w katalogu <i>/var/named</i> i jego
+podkatalogach, w szczególności plik <i>/var/named/named.boot</i> który jest
+plikiem inicjalizacyjnym dla <b>named</b>. Ponadto w katalogu <i>/etc</i> musisz
+wykonać kilka innych operacji konfiguracyjnych.
+
+<p>
+W tym przykładzie skonfigurujemy demona nazw na <i>nemo.yewtopia.com</i>
+tak aby był podstawowym serwerem nazw dla (bardzo małej!) domeny
+<i>yewtopia.com</i>. Adres <i>nemo.yewtopia.com</i> to <i>192.168.1.9</i>.
+Dwa ine komputery w podsieci to <i>crater.yewtopia.com</i> mający adres
+192.168.1.1 i <i>earhart.yewtopia.com</i> z adresem 192.168.1.2.
+
+<p>
+<h4>6.8.5.1 Konfiguracja w katalogu <i>/var/named</i></h4>
+
+<p>
+<h5>6.8.5.1.1 <i>/var/named/named.boot</i></h5>
+
+<blockquote><pre>
+; tell what subdir has the lookup database files
+directory       /namedb
+
+; type    domain   source host/file backup file
+cache     .	   root.cache
+primary   0.0.127.IN-ADDR.ARPA  localhost.rev
+
+; example primary server config:
+primary  yewtopia.com yewtopia
+primary  1.168.192.IN-ADDR.ARPA yewtopia.rev
+</pre></blockquote>
+
+<p>
+Powyższy fragment mówi procesowi inicjalizującemu w którym podkatalogu
+i pod jakimi nazwami ma szukać plików konfiguracyjnych dla <i>yewtopia.com</i>.
+
+<p>
+<h5>6.8.5.1.2 <i>/var/named/namedb/localhost.rev</i></h5>
+
+<blockquote><pre>
+; Reverse lookup for localhost interface
+@       IN      SOA     nemo.yewtopia.com.  your_id.nemo.yewtopia.com.  (
+                                14      ; Serial
+                                3600    ; Refresh
+                                900     ; Retry
+                                3600000 ; Expire
+                                3600 )  ; Minimum
+        IN      NS      nemo.yewtopia.com.
+1       IN      PTR     localhost.yewtopia.com.
+</pre></blockquote>
+
+<p>
+<h5>6.8.5.1.3 <i>/var/named/namedb/yewtopia</i></h5>
+
+<blockquote><pre>
+; yewtopia.com domain database
+@      IN      SOA     nemo.yewtopia.com.  your_id.nemo.yewtopia.com.  (
+                                14      ; Serial
+                                3600    ; Refresh
+                                900     ; Retry
+                                3600000 ; Expire
+                                3600 )  ; Minimum
+                     IN      NS      nemo.yewtopia.com.
+
+; Addresses
+localhost.yewtopia.com.      IN A    127.0.0.1
+crater.yewtopia.com.         IN A    192.168.1.1
+earhart.yewtopia.com.        IN A    192.168.1.2
+nemo.yewtopia.com.           IN A    192.168.1.9
+</pre></blockquote>
+
+<p>
+<h5>6.8.5.1.4 <i>/var/named/namedb/yewtopia.rev</i></h5>
+
+<blockquote><pre>
+; yewtopia domain reverse lookup database
+@      IN      SOA     nemo.yewtopia.com.  your_id.nemo.yewtopia.com.  (
+                                14      ; Serial
+                                3600    ; Refresh
+                                900     ; Retry
+                                3600000 ; Expire
+                                3600 )  ; Minimum
+1.168.192.in-addr.arpa. IN      NS      nemo.yewtopia.com.
+
+; Addresses
+1.1.168.192.in-addr.arpa. IN PTR crater.yewtopia.com.
+2.1.168.192.in-addr.arpa. IN PTR earhart.yewtopia.com.
+9.1.168.192.in-addr.arpa. IN PTR nemo.yewtopia.com.
+</pre></blockquote>
+
+<p>
+<h4>6.8.5.2 Konfiguracja w katalogu <i>/etc</i></h4>
+
+<p>
+<h5>6.8.5.2.1 <i>/etc/resolv.conf</i></h5>
+
+<p>
+Upewnij się że plik <i>/etc/resolv.conf</i> zawiera informacje o domenie
+lokalnej komputera (zamiast np. serwera nazw Twojego ISP) czyli nazwy 
+domeny którą aktualnie konfigurujesz aby była serwowana przez <b>named</b>.
+
+<blockquote><pre>
+domain yewtopia.com
+lookup file bind
+</pre></blockquote>
+
+<p>
+<h4>6.8.5.2.2 <i>/etc/hosts</i></h4>
+
+<p>
+Jeśli wcześniej dodawałeś wpisy o innych komputerach do pliku 
+<i>/etc/hosts</i> możesz teraz skrócić go do domyślnej zawartości:
+
+<blockquote><pre>
+# Host addresses
+127.0.0.1       localhost       localhost.localdomain
+192.168.1.9     nemo            nemo.yewtopia.com
+</pre></blockquote>
+
+<p>
+Teraz <b>named</b> nie będzie korzystał z (mogących być już nieaktualnymi)
+adresów w pliku <i>/etc/hosts</i>. <u>Upewnij się czy posiadasz w <i>/etc/hosts</i>
+przynajmniej wpis <i>localhost</i></u>. Jest on niezbędny do poprawnego 
+zainicjowania sieci! Także nazwa <i>nemo</i> powinna się pojawić w swoim własnym
+pliku hostów, w przeciwnym razie ujżysz serię błędów podczas uruchamiania
+systemu gdy <i>/etc/netstart</i> wywołuje
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=route&amp;sektion=8">route(8)</a>
+aby dodać wpis <i>nemo</i> (który pojawia się w <i>/etc/myname</i>).
+
+<p>
+<h4>6.8.5.3 Korzystanie z  <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dig&amp;sektion=1">dig(1)</a>
+ do wyświetlenia wyników konfiguracji.</h4>
+
+<blockquote><pre>
+$ <strong>dig @nemo.yewtopia.com yewtopia.com any any</strong>
+
+; &lt;&lt;&gt;&gt; DiG 2.2 &lt;&lt;&gt;&gt; @nemo.yewtopia yewtopia any any
+; (1 server found)
+;; res options: init recurs defnam dnsrch
+;; got answer:
+;; -&gt;&gt;HEADER&lt;&lt;- opcode: QUERY, status: NOERROR, id: 59904
+;; flags: qr rd ra; Ques: 1, Ans: 2, Auth: 0, Addit: 1
+;; QUESTIONS:
+;;      yewtopia.com, type = ANY, class = ANY
+
+;; ANSWERS:
+yewtopia.com.   3600    SOA    nemo.yewtopia.com.  your_id.nemo.yewtopia.com. (
+                        14      ; serial
+                        3600    ; refresh (1 hour)
+                        900     ; retry (15 mins)
+                        3600000 ; expire (41 days 16 hours)
+                        3600 )  ; minimum (1 hour)
+yewtopia.com.   3600    NS      nemo.yewtopia.com.
+
+;; ADDITIONAL RECORDS:
+nemo.yewtopia.com.  3600    A       192.168.1.9
+
+;; Total query time: 4 msec
+;; FROM: nemo to SERVER: nemo.yewtopia.com  192.168.1.9
+;; WHEN: Tue May  2 23:47:19 2000
+;; MSG SIZE  sent: 25  rcvd: 102
+</pre></blockquote>
+
+<p>
+<h3>6.8.6 Jak i kiedy uruchamiać i zatrzymywać?</h3>
+
+<p>
+<h4>6.8.6.1 Uruchamianie DNS</h4>
+
+<p>
+Demon <b>named</b> uruchamiany powinien być w momencie uruchamiania systemu przez
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rc&amp;sektion=8">/etc/rc</a>
+jeśli poniższy wiersz znajduje się domyślnie w 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rc.conf&amp;sektion=8">/etc/rc.conf</a>.
+
+<blockquote><pre>
+named_flags=NO          # for normal use: ""
+</pre></blockquote>
+
+<p>
+i jest zmodyfikowany do postaci
+
+<blockquote><pre>
+named_flags=""          # for normal use: ""
+</pre></blockquote>
+
+<p>
+Ponadto zwróć uwagę na inne linie w /etc/rc.conf:
+
+<blockquote><pre>
+named_user=named                # Named nie powinien być uruchamiany i pracować z uprawnieniami roota
+named_chroot=/var/named         # Gdzie zamknąć (chroot) named`a
+</pre></blockquote>
+
+<p>
+Te domyślne opcje będą dobre dla większości konfiguracji.
+
+<p>
+Aby uruchomić <b>named</b> "z palca" skorzystaj z komendy 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ndc&amp;sektion=8">ndc(8)</a>.
+Dla przykładu:
+
+<blockquote><pre>
+# <strong>ndc start</strong>
+          lub
+# <strong>ndc restart</strong>
+</pre></blockquote>
+
+<p>
+<h4>6.8.6.2 Zatrzymywanie DNS</h4>
+
+<p>
+Najlepszą metodą na zatrzymanie demona nazw jest użycie
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ndc&amp;sektion=8">ndc(8)</a>. 
+Przykład:
+
+<blockquote><pre>
+# <strong>ndc stop</strong>
+</pre></blockquote>
+
+<p>
+Jeśli to nie zadziała, znajdź id procesu named i użyj polecenia
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=kill&amp;sektion=1">kill(1)</a>
+aby zakończyć ten proces. Numer PID dla demona <i>named</i> gdy jest on
+uruchomiony znajduje się w pliku
+<i>/var/named/named.pid</i>
+
+<blockquote><pre>
+# <strong>cat /var/named/named.pid</strong>
+4608
+named -t /var/named -u named
+# <strong>kill -KILL 4608</strong>
+</pre></blockquote>
+
+<p>
+<h4>6.8.6.3 Restartowanie DNS z uaktualnioną konfiguracją</h4>
+
+<p>
+Aby zmusić uruchomionego named`a do restartu i ponownego przeczytania 
+plików konfiguracyjnych wyślij do niego sygnał "hangup":
+
+<blockquote><pre>
+# <strong>kill -HUP 4608</strong> 
+</pre></blockquote>
+
+<p>
+lub użyj komendy
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ndc&amp;sektion=8">ndc(8)</a> 
+w poniższy sposób:
+
+<blockquote><pre>
+# <strong>ndc reload</strong>
+</pre></blockquote>
+
+<p>
+<h3>6.8.7 Jak blokować zapytania AXFR? </h3>
+
+<p>
+przykład:
+
+<blockquote><pre>
+garden:/home/jeremy$<strong>  host -l openssh.com</strong>
+openssh.com.            NS      zeus.theos.com.
+openssh.com.            NS      cvs.openbsd.org.
+openssh.com.            NS      gandalf.sigmasoft.com.
+openssh.com.            NS      cs.colorado.edu.
+openssh.com.            NS      ns.appli.se.
+openssh.com.            A       199.185.137.4
+cvs.openssh.com.        A       199.185.137.4
+localhost.openssh.com.  A       127.0.0.1
+</pre></blockquote>
+
+<p>
+Ta informacja użyteczna jest w przyadku debugowania swojej konfiguracji
+DNS, w kilku przypadkach możesz nie chcieć publikowania tych informacji 
+publicznie. Jeśli używasz bezklasowej zwrotnej delegacji in-addr (rfc2317),
+host -l może wyświetlić informacje o każdej domenie którą Twój host utrzymuje!
+Możesz zaradzić temu w bardzo prosty sposób - dodając opcję 'allow-transfer'
+w Twoich pliku stref.
+
+<br><br>
+
+Jeśli używasz BIND`a 8 musisz wyspecyfikować kosty, którym chcesz zzwolić
+na transfer stref indywidualnie w plikach stref:
+
+<blockquote><pre>
+zone "foo.com" in {
+        type master;
+        file "directory/zonefile";
+        allow-transfer {
+          127.0.0.1;
+          10.0.0.6;
+          10.0.255.12;
+        };
+};
+</pre></blockquote>
+
+<p>
+Możesz także zablokować transfer dla wszystkich domen, poprzez edycję 
+/var/named.conf i dodać parametr 'allow-transfer' w sekcji 'options'
+pliku konfiguracyjnego:
+
+<blockquote><pre>
+   options {
+        allow-transfer { 127.0.0.1; };
+    };
+</pre></blockquote>
+
+<p>
+Ta metoda działa również w implementacji BIND 9.<br>
+Jeśli korzystasz z BIND 4 (domyślny w OpenBSD), możesz wyedytować 
+/var/named/named.boot i skorzystać z opcji 'xfrnets'.
+
+<blockquote><pre>
+xfrnets 209.142.221.5 12.7.96.7
+; type    domain                source host/file                backup file
+cache     .                                                     root.cache
+primary   0.0.127.IN-ADDR.ARPA  localhost.rev
+</pre></blockquote>
+
+<p>
+BIND 4 zezwala na transfer stref ze wszystkich klas, więc nie działa
+to dokładnie tak samo. Zazwyczaj, jedynymi hostami które powinny mieć
+możliwość transferu są Twoje zapasowe (slave) serwery DNS oraz hosty
+z których zamierzasz debugować konfigurację (np. 127.0.0.1). Zablokowanie
+zapytań AXFR dodaje dodatkowy poziom prywatności, ale może przeszkadzać
+w uzyskiwaniu informacji debugujących. (Dzięki
+<a href="mailto:ntang@nachtwache.org">Nicholas Tang</a> za tę podpowiedź)
+
+<p>
+<h3>6.8.8 Czego jeszcze nie wiem o konfiguracji DNS?</h3>
+
+<p>
+Naprawdę całej masy rzeczy, dla przykładu, w jaki sposób skonfigurować DNS
+tak, aby zapytania o domenę intranetową, która nie jest widzialna z głównej
+hierarchii domenowej zostały przekierowane do serwerów wewnątrz Twojego
+przedsiębiorstwa. Przeczytaj
+<a href="#DNS.1.1">rekomendowane dokumenty</a> aby znaleźć więcej informacji o DNS.
+
+
+<p>
+<a name="PPTP"></a>
+<a name="6.9"></a>
+<h2>6.9 - Konfigurowanie połączenia  PPTP w OpenBSD</h2>
+
+<p>
+<strong>UWAGA:</strong> Poniższe informacje nie będą odpowiednie dla połączeń
+do <strong>WSZYSTKICH</strong> providerów ADSL, aczkolwiek większość informacji
+i ustawień jest podobnych. Konfiguracja ta stworzona została i działa dla 
+<a href="http://www.inode.at">Inode</a>, dostawcy ADSL w Austrii.
+
+<p>
+Aby rozpocząć, musisz zainstalować pptp. Odpowiedni port znajdziesz w
+<i>/usr/ports/net/pptp</i>. Przeczytaj <a href="../faq8.html#Ports">FAQ 8, 
+Porty</a> dla zdobycia więcej informacji o drzewie portów w OpenBSD.
+
+<p>
+Ponieważ istnieje konflikt pomiędzy obsługą
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=gre&amp;sektion=4">gre(4)</a>
+w jąrze a pptp, będziesz musiał przekompilować swoje jądro, usuwając
+wsparcie dla gre(4).
+
+<blockquote>Patch to remove GRE(4) support.
+<pre>
+Index: GENERIC
+===================================================================
+RCS file: /cvs/src/sys/conf/GENERIC,v
+retrieving revision 1.86
+diff -u -r1.86 GENERIC
+--- GENERIC     14 Mar 2002 00:42:25 -0000      1.86
++++ GENERIC     17 May 2002 01:52:17 -0000
+@@ -87,7 +87,7 @@
+ pseudo-device  enc     1       # option IPSEC needs the encapsulation interface
+ pseudo-device  bridge  2       # network bridging support
+ pseudo-device  vlan    2       # IEEE 802.1Q VLAN
+-pseudo-device  gre     1       # GRE encapsulation interface
++#pseudo-device gre     1       # GRE encapsulation interface
+ #pseudo-device strip   1       # Starmode Radio IP interface
+
+ pseudo-device  pty     64      # pseudo-terminals
+</pre></blockquote>
+
+<p>
+Aby przekompilować jądro, zajrzyj do źródeł OpenBSD przez cvs (jeśli
+nie czujesz się pewnie z cvs zajrzyj na stronę
+<a href="../../pl/anoncvs.html">AnonCVS</a> po więcej informacji), nałóż
+podany patch i przekompiluj jądro tak jak zostało to opisane w 
+<a href="faq5.html#Building">FAQ 5, Budowanie jądra</a>.
+
+<p>
+Gdy masz już zainstalowene <b>pptp</b> oraz nowe jądro, możesz przystąpić
+do edycji plików konfiguracyjnych dla swojego połączenia. Pakiet ten jest
+podobny do powszechnie używanego w OpenBSD
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ppp&amp;sektion=8">ppp(8)</a>,
+więc jeśli nie jesteś obeznany z ppp(8), po więcej informacji zgłoś się do
+<a href="#PPP">FAQ 6, PPP</a>.
+
+<ul>
+<li>1 - /etc/ppp/options
+<li>2 - /etc/ppp/pap-secrets
+</ul>
+
+<p>
+Jeśli chodzi o plik <i>/etc/ppp/options</i>, poniższa konfiguracja będzie
+odpowiednia dla większości przypadków:
+
+<blockquote><pre>
+# <strong>cat /etc/ppp/options</strong>
+name "LOGINNAME"
+noauth
+noipdefault
+defaultroute
+debug
+</pre></blockquote>
+
+<p>
+W miejsce <tt>LOGINNAME</tt> wpisz swoje dane.
+
+<p>
+Plik <i>/etc/ppp/pap-secrets</i> powinien zawierać linię podobną do tej:
+
+<blockquote><pre>
+# <strong>cat /etc/ppp/pap-secrets</strong>
+LOGINNAME 10.0.0.138 PASSWORD
+</pre></blockquote>
+
+<p>
+Gdzie LOGINNAME to Twoja nazwa użytkownika przyznana przez dostawcę ADSL,
+a PASSWORD to hasło odpowiadające loginowi. 10.0.0.138 to adres IP
+przydzielony Twojemu MODEMOWI. Upewnij się aby ten plik miał prawo odczytu
+tylko dla użytkownika root (tryb 600).
+
+<p>
+<h3>6.9.1 - Przypisywanie adresu do interfejsu sieciowego</h3>
+
+<p>
+W powyższym przykładzie, nasz modem miał prekonfigurowany interfejs
+adresem 10.0.0.138. Teraz, musimy przypisać adres NASZEMU interfejsowi,
+nejlepiej użyć adresu blisiego adresowi modemu, lub skorzystać ze statycznego
+IP przydzielonego Tobie. Więcej o konfiguracji interfejsów dowiesz się z
+<a href="#Setup">FAQ 6, Setup</a>.
+
+<p>
+Gdy interfejs jest już aktywny, powinno udać się utworzyć połączenie pptp
+komendą:
+
+<blockquote><pre>
+# <strong>/usr/local/sbin/pptp 10.0.0.138 &amp;</strong>
+</pre></blockquote>
+
+<p>
+Ponieważ wykorzystuje ona OpenBSD ppp(8), uruchomione zostają dwa procesy,
+możesz zakończyć pptp w poniższy sposób:
+
+<blockquote><pre>
+# <strong>kill -9 [pid of pppd]</strong>
+$ <strong>kill -9 [pid of pptp]</strong>
+</pre></blockquote>
+
+<p>
+Jeśli wystąpiły jakieś problemy, otwórz <tt>/var/log/messages</tt> i spróbuj
+je zlokalizować.
+
+<blockquote>
+<pre>
+# <strong>tail -f /var/log/messages</strong>
+</pre></blockquote>
+
+<p>
+Możesz także umieścić komendę startująca pptp w pliku <i>/etc/rc.local</i>
+aby łączyć się automatycznie przy starcie.
+
+
+<a name="Bridge"></a>
+<h2>6.10 - Konfiguracja sieciowego bridge`a w OpenBSD</h2>
+
+<p>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridge&amp;sektion=4">Bridge</a>
+jest pomostem łączącym dwie lub więcej odseparowanyh od siebie sieci.
+W przeciwieństwie do routera, bridge jest logicznie "niewidzialny", 
+dwa segmenty sieci myślą że tworzą jeden segment z hostami po drugiej
+stronie bridge`a. Bridge będzie jedynie przekazywał pakiety pomiędzy 
+segmentami sieci i umożliwia łatwy i bezpośredni dostęp do zasobów 
+pomiędzy hostami znajdującymi się w odrębnych segmentach sieci.
+
+<p>
+Pamiętaj, że ze względy na swój "niewidzialny" charakter działania,
+interfejs sieciowy bridge`a może posiadać (lub nie) indywidualny
+adres IP. Jeśli tak, interfejs ma dwa typy pracy, jeden jako bridge, 
+drugi jako zwykły standardowy interfejs sieciowy. Jeśli interfejs nie posiada
+adresu IP, bridge będzie przekazywał pakiety, jednak nie będzie 
+dostępny z zewnątrz.
+
+<p>
+<h3>Przykład bridge`a</h3>
+
+<p>
+Posiadam zbiór starych systemów komputerowych, żaden z nich nie ma wbudowanego
+interfejsu 10BASE-TX. Posiadają natomiast łącza AUI lub AAUI. Jedną z maszyn
+jest terminal serwerowy z OpenBSD, mający stałe szybkie połączenie z taką
+samą siecią. Dodanie kolejnego interfejsu z portem coax pozwoli na wykorzystanie
+tej maszyny jako bridge`a pomiędzy sieciami coax.
+
+<p>
+System ten, posiada dwa interfejsy, Intel EtherExpress/100
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fxp&amp;sektion=4"><tt>fxp0</tt></a>)
+i kartę 3c590-Combo  
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ep&amp;sektion=4"><tt>ep0</tt></a>)
+dla portu coax. <tt>fxp0</tt> jest interfejsem podłączonym do pozostałej
+części sieci, a zatem będzie mieć przypisany adres IP, <tt>ep0</tt>
+będzie tworzyć bridge bez przypisanego adresu IP. Hosty podłączone
+do segmentu coax będą mogły się ze sobą komunikować tak jakby były 
+w drugiej części sieci. Jak do tego dojdziemy?
+
+<p>
+Plik <tt>hostname.fxp0</tt> zawiera konfigurację interfejsu <tt>fxp0</tt>.
+Korzysta on z informacji dostarczanych przez DHCP, więc plik wygląda 
+w poniższy sposób:
+
+<blockquote>
+<pre>
+$ <b>cat /etc/hostname.fxp0</b>
+dhcp NONE NONE NONE NONE
+</pre>
+</blockquote>
+
+<p>
+Bez niespodzianek.
+
+<p>
+Karta <tt>ep0</tt> posiada nieco inną konfigurację:
+
+<blockquote>
+<pre>
+$ <b>cat /etc/hostname.ep0</b>
+up media 10base2
+</pre>
+</blockquote>
+
+<p>
+Instruujemy system, aby aktywował interfejs korzystając z 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8">ifconfig(8)</a>
+i ustawił tryb pracy na 10BASE-2 (coax). Nie przypisujemy do interfejsu
+adresu IP, ani żadnych podobnych informacji. Opcje kart <tt>ep</tt>
+znajdziesz w <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ep&amp;sektion=4">man page</a>.
+
+<p>
+Teraz musimy uruchomić bridge. Inicjalizujemy go, poprzez plik konfiguracyjny
+nazwany w stylu
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridgename.if&amp;sektion=5"><tt>bridgename.bridge0</tt></a>. 
+A oto i jego przykładowa zawartość:
+
+<blockquote>
+<pre>
+$ <b>cat /etc/bridgename.bridge0</b>
+add fxp0
+add ep0
+up
+</pre>
+</blockquote>
+
+<p>
+Oto cała filozofia tworzenia bridge`a składającego się z dwóch interfejsów
+sieciowych fxp0 i ep0 oraz jego aktywacji. Czy jest istotna kolejność w 
+jakiej to robimy ? Nie, należy bowiem pamiętać, że bridge jest symetryczny - 
+pakiety wędrują w obu kierunkach.
+
+<p>
+To już wszystko! Uruchom ponownie system i ciesz się funkcjonalnością
+swojego bridge`a.
+
+<p>
+<h3>Filtrowanie pakietów w systemie z bridge`m</h3>
+Często, nawet podczas używania tak prostego bridge`a jak ten, może zajść
+potrzeba zrobienia CZEGOKOLWIEK z pakietami wędrującego przez niego.
+Jak pewnie się domyślasz, <a href="#PF">Filtr Pakietów</a> potrafi
+doskonale sobie z tym radzić i kontrolować ruch wędrujący poprzez
+bridge.
+
+<p>
+Uważaj, pamiętając o dwukierunkowej naturze bridge`a, o tym że część
+danych wędruje poprzez dwa interfejsy, tak więc wystarczy, gdy będziesz
+je filtrował na jednym z nich. Twóje domyślne regułki "Pass all" mogą
+wyglądać w ten sposób:
+
+<blockquote>
+<pre>
+pass in  on ep0  all
+pass out on ep0  all
+pass in  on fxp0 all
+pass out on fxp0 all
+</pre>
+</blockquote>
+
+<p>
+Teraz, powiedzmy że chciałbym filtrować ruch wędrujący z/do starych maszyn,
+które wymieniłem powyżej. Chcę zezwolić im na korzystanie jedynie z usług www
+oraz SSH. W tym przypadku, zezwalamy na przemieszczanie się pakietów w obu kierunkach
+poprzez interfejs ep0, natomiast filtrowania dokonujemy na interfejsie fxp0,
+używając opcji keep state do przechwytywania powracających danych:
+
+<blockquote>
+<pre>
+# Przepuść cały ruch przez ep0
+pass in quick on ep0 all
+pass out quick on ep0 all
+
+# Zablokuj cały ruch na interfejsie fxp0
+block in  on fxp0 all
+block out on fxp0 all
+
+pass in quick on fxp0 proto tcp from any to any port {22, 80} \
+     flags S/SA keep state
+</pre>
+</blockquote>
+
+<p>
+Zauważ że ten zestaw regułek, zablokuje wszystko za wyjątkiem ruchu HTTP i SSH
+przed dotarciem zarówno do naszego bridge`a jak i każdego hosta "za nim".
+Inne rezultaty możesz osiągnąć filtrując ruch na drugim interfejsie.
+
+<p>
+Do monitorowania i kontrolowania utworzonego bridge`a, korzystaj z 
+komendy
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=brconfig&amp;sektion=8">brconfig(8)</a>
+która może być również używana do stworzenia bridge`a.
+
+<p>
+<h3>Uwagi na temat bridge`a</h3>
+
+<ul>
+<li>Jest BARDZO zalecane, abyś filtrując pakiety, robił to na tylko
+jednym interefjsie. Jeśli uważasz że musisz filtrować dwa interfejsy,
+upewnij się że naprawdę rozumiesz to co robisz.
+
+<li>Poprzez użycie opcji<i>blocknonip</i> komendy 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=brconfig&amp;sektion=8">brconfig(8)</a>
+lub podanie jej w 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridgename.if&amp;sektion=5">bridgename.bridge0</a>,
+możesz zablokować każdy ruch za wyjątkiem IP (jak nt IPX czy NETBEUI)
+przed przedostanie się przez Twój filtr. Może to być bardzo pomocne
+w kilku przypadkach, pamięraj bowiem że bridge pracuje z każdym protokołem
+nie tylko IP.
+
+<li>Bridge wymaga aby interefjsy sieciowe pracowały w trybie "promiscuous"
+-- nasłuchują każdy ruch w sieci, nie tylko ten przeznaczony do nich samych.
+Powoduje to większe obciążenie procesora i magistrali systemowej.
+Niektóre karty mają problemy z pracą w tym trybie, dla przykładu
+chipy TI ThunderLAN - 
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tl&amp;sektion=4">tl(4)</a>)
+są przykładem urządzenia które nie może pracować jako część bridge`a. 
+</ul>
+
+
+<p>
+<font color="#0000e0">
+<a href="index.html">[Powrót do głównego Indexu]</a>
+<a href="faq5.html">[Do Sekcji 5.0 - Konfiguracja jądra i dysków]</a>
+<a href="faq7.html">[Do Sekcji 7.0 - Klawiatura]</a>
+</font>
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a>
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Orginally [OpenBSD: faq6.html,v 1.159 ]<br>
+$Translation: faq6.html,v 1.1 2003/05/04 11:54:15 tomasz Exp $<br>
+$OpenBSD: faq6.html,v 1.1 2003/05/04 13:10:20 jufi Exp $
+</small>
+
+</body>
+</html>
