@@ -58,23 +58,23 @@ function dump() {
 	print "<TR>"
 	print "<TD BGCOLOR=\"White\">" 
 		if (indv != "")
-			print "Name: " indv "<BR>" 
+			print "<i>" indv "</i><br>" 
 		if (org != "")
-			print "Organization: " org "<BR>" 
+			print "<b>" org "</b><br>" 
 		if (addr != "")
-			print "Address: " addr "<BR>"
+			print addr "<br>"
 		if (city != "") {
-			print "City: " city
+			print city
 			if (prov != "")
 				print ", " prov
 			if (zip != "")
 				print " " zip
-			print "<BR>"
+			print "<br>"
 		}
 		if (phone != "")
-			print "Phone: " phone "<BR>" 
+			print "Phone: " phone "<br>" 
 		if (fax != "")
-			print "FAX: " fax "<BR>" 
+			print "FAX: " fax "<br>"
 		if (email != "")
 			print "Email: <A HREF=\"mailto:" email "\">" email "</A>" "<BR>"
 		if (url != "")
