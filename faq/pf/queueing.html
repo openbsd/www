@@ -641,41 +641,40 @@ pass  out on dc0 from any to $bob queue bob_in
 <h2>Example #2: Company Network</h2>
 <pre>
 
-  ( IT Dept )  [ WWW ]
+  ( IT Dept )  [ Boss's PC ]
        |          |                                   T1
-     --+---+------+----+----- dc0 [ OpenBSD ] fxp0 -------- ( Internet )
-           |           |  
-     ( Sales Dept )  [ Boss's PC ]
+     --+----+-----+---------- dc0 [ OpenBSD ] fxp0 -------- ( Internet )
+            |                         fxp1
+         [ COMP1 ]    [ WWW ]         /
+                         |           / 
+                       --+----------' 
 
 </pre>
-In this network the OpenBSD host is the gateway to the Internet for a
-company network. The gateway is performing packet filtering duties.
-The company runs a WWW server on their network where
-their customers upload their websites via FTP.  The company has also
-segregated their IT and Sales departments into their own sub networks.
-The boss has a PC on his desk connected to the network so he can surf
-the web. The connection to the Internet is via a T1 line running at
-1.5Mbps in both directions.
+
+<p>
+In this example, the OpenBSD host is acting as a firewall for a company
+network. The company runs a WWW server in the DMZ portion of their
+network where customers upload their websites via FTP. The IT department
+has their own subnet connected to the main network, and the boss has a PC
+on his desk that's used for email and surfing the web. The connection to
+the Internet is via a T1 line running at 1.5Mbps in both directions. All
+other network segments are using Fast Ethernet (100Mbps).
 
 <p>
 The network administrator has decided on the following policy:
 <ul>
-<li>Limit total traffic to and from the WWW server to a maximum of
-500Kbps in each direction.
-	<ul>
-	<li>Limit FTP traffic going to the WWW server to 250Kbps. FTP
-	traffic should be able to borrow bandwidth when it's available.
-	<li>Limit all other traffic going to the WWW server to 250Kbps. It
-	should also be able to borrow bandwidth and have a higher priority
-	than the FTP traffic.
-	</ul>
-<li>Limit traffic destined for the Sales Dept network to a maximum of
-200Kbps as they are known to be bandwidth hogs.
+<li>Limit traffic between the WWW server and the Internet to 500Kbps in
+each direction.
+<li>No bandwidth limit on traffic between the WWW server and the
+internal network.
+<li>Give HTTP traffic between the WWW server and the Internet a higher
+priority than other traffic between the WWW server and the Internet
+(such as FTP uploads).
 <li>Reserve 500Kbps for the IT Dept network so they can download the
 latest software updates in a timely manner. They should be able to use
 more than 500Kbps when extra bandwidth is available.
-<li>Give traffic to and from the boss's PC a higher priority than
-regular traffic.
+<li>Give traffic between the boss's PC and the Internet a higher
+priority than other traffic to/from the Internet.
 </ul>
 
 <p>
@@ -692,82 +691,112 @@ present -- <a href="nat.html">NAT</a>, <a href="rdr.html">RDR</a>,
 # to the Internet. use the cbq scheduler so that the bandwidth use of
 # each queue can be controlled. the max outgoing bandwidth is 1.5Mbps.
 
-altq on fxp0 cbq bandwidth 1.5Mb queue { std_out, wwwserv_out, boss_out }
+altq on fxp0 cbq bandwidth 1.5Mb queue { std_ext, www_ext, boss_ext }
 
 # define the parameters for the child queues.
-# std_out      - the standard queue. any filter rule below that does not
-#                explicitly specify a queue will have its traffic added
-#                to this queue.
-# wwwserv_out  - outgoing traffic from the WWW server
-# boss_out     - traffic coming from the boss's computer
+# std_ext        - the standard queue. also the default queue for
+#                  outgoing traffic on fxp0.
+# www_ext        - container queue for WWW server queues. limit to
+#                  500Kbps.
+#   www_ext_http - http traffic from the WWW server
+#   www_ext_misc - all non-http traffic from the WWW server
+# boss_ext       - traffic coming from the boss's computer
 
-queue std_out      cbq(default)
-queue wwwserv_out  bandwidth 500Kb
-queue boss_out     priority 3
+queue std_ext        cbq(default)
+queue www_ext        bandwidth 500Kb { www_ext_http, www_ext_misc }
+  queue www_ext_http priority 3 cbq(red)
+  queue www_ext_misc priority 1
+queue boss_ext       priority 3
 
-# enable queueing on the internal interface to control traffic coming in
-# from the Internet. again we'll use the cbq scheduler so we can control
-# the bandwidth of each queue. maximum incoming bandwidth is 1.5Mbps.
+# enable queueing on the internal interface to control traffic coming
+# from the Internet or the DMZ. use the cbq scheduler to control the
+# bandwidth of each queue. bandwidth on this interface is set to the
+# maximum. traffic coming from the DMZ will be able to use all of this
+# bandwidth while traffic coming from the Internet will be limited to
+# 1.0Mbps (because 0.5Mbps (500Kbps) is being allocated to fxp1).
 
-altq on dc0 cbq bandwidth 1.5Mb queue { std_in, wwwserv_in, sales_in, \
-	it_in, boss_in }
+altq on dc0 cbq bandwidth 100% queue { net_int, www_int }
 
 # define the parameters for the child queues.
-# std_in            - the standard queue. any filter rule below that does not
-#                     explicitly specify a queue will have its traffic added
-#                     to this queue.
-# wwwserv_in        - container queue for WWW server traffic.
-#   wwwserv_ftp_in  - FTP traffic destined for the WWW server. use RED
-#                     to help avoid congestion.
-#   wwwserv_misc_in - all other traffic destined for the WWW server. use
-#                     RED to help avoid congestion.
-# sales_in          - traffic to the Sales Dept network. use RED to help 
-#                     avoid congestion.
-# it_in             - traffic to the IT Dept network. use RED to help avoid
-#                     congestion.
-# boss_in           - traffic to the boss's PC.
+# net_int    - container queue for traffic from the Internet. bandwidth
+#              is 1.0Mbps.
+#   std_int  - the standard queue. also the default queue for outgoing
+#              traffic on dc0.
+#   it_int   - traffic to the IT Dept network.
+#   boss_int - traffic to the boss's PC.
+# www_int    - traffic from the WWW server in the DMZ.
 
-queue std_in            cbq(default)
-queue wwwserv_in        bandwidth 500Kb { wwwserv_misc_in, wwwserv_ftp_in }
-  queue wwwserv_misc_in bandwidth 250Kb priority 4 cbq(red borrow)
-  queue wwwserv_ftp_in  bandwidth 250Kb cbq(red borrow)
-queue sales_in          bandwidth 200Kb cbq(red)
-queue it_in             bandwidth 500Kb cbq(red borrow)
-queue boss_in           priority 3
+queue net_int    bandwidth 1.0Mb { std_int, it_int, boss_int }
+  queue std_int  cbq(default)
+  queue it_int   bandwidth 500Kb cbq(borrow)
+  queue boss_int priority 3
+queue www_int    cbq(red)
+
+# enable queueing on the DMZ interface to control traffic destined for
+# the WWW server. cbq will be used on this interface since detailed
+# control of bandwidth is necessary. bandwidth on this interface is set
+# to the maximum. traffic from the internal network will be able to use
+# all of this bandwidth while traffic from the Internet will be limited
+# to 500Kbps.
+
+altq on fxp1 cbq bandwidth 100% queue { internal_dmz, net_dmz }
+
+# define the parameters for the child queues.
+# internal_dmz   - traffic from the internal network.
+# net_dmz        - container queue for traffic from the Internet.
+#   net_dmz_http - http traffic.
+#   net_dmz_misc - all non-http traffic. this is also the default queue.
+
+queue internal_dmz   cbq(red)
+queue net_dmz        bandwidth 500Kb { net_dmz_http, net_dmz_misc }
+  queue net_dmz_http priority 3 cbq(red)
+  queue net_dmz_misc priority 1 cbq(default)
 
 
 # ... in the filtering section of pf.conf ...
 
 main_net  = "192.168.0.0/24"
-sales_net = "192.168.1.0/24"
-it_net    = "192.168.2.0/24"
-wwwserv   = "192.168.0.100"
+it_net    = "192.168.1.0/24"
+int_nets  = "{ 192.168.0.0/24, 192.168.1.0/24 }"
+dmz_net   = "10.0.0.0/24"
+
 boss      = "192.168.0.200"
-all_nets  = "{ 192.168.0.0/24, 192.168.1.0/24, 192.168.2.0/24 }"
+wwwserv   = "10.0.0.100"
+
+# default deny
+block on { fxp0, fxp1, dc0 } all
 
 # filter rules for fxp0 inbound
-block in on fxp0 all
-pass  in on fxp0 proto tcp from any to $wwwserv port { http ftp } \
-	flags S/SA keep state queue wwwserv_out
+pass in on fxp0 proto tcp from any to $wwwserv port { 21, \
+	&gt; 49151 } flags S/SA keep state queue www_ext_misc
+pass in on fxp0 proto tcp from any to $wwwserv port 80 \
+	flags S/SA keep state queue www_ext_http
 
 # filter rules for fxp0 outbound
-block out on fxp0 all
-pass  out on fxp0 proto tcp from $all_nets to any flags S/SA keep state
-pass  out on fxp0 proto { udp icmp } from $all_nets to any keep state
-pass  out on fxp0 from $boss to any keep state queue boss_out
+pass out on fxp0 from $int_nets to any keep state
+pass out on fxp0 from $boss to any keep state queue boss_ext
 
 # filter rules for dc0 inbound
-block in on dc0 all
-pass  in on dc0 from $all_nets
+pass in on dc0 from $int_nets to any keep state
+pass in on dc0 from $it_net to any queue it_int
+pass in on dc0 from $boss to any queue boss_int
+pass in on dc0 proto tcp from $int_nets to $wwwserv port { 21, 80, \
+	&gt; 49151 } flags S/SA keep state queue www_int
 
 # filter rules for dc0 outbound
-block out on dc0 all
-pass  out on dc0 from any to $all_nets 
-pass  out on dc0 from any to $wwwserv queue wwwserv_misc_in
-pass  out on dc0 proto tcp from any to $wwwserv port ftp queue wwwserv_ftp_in
-pass  out on dc0 from any to $it_net queue it_in
-pass  out on dc0 from any to $sales_net queue sales_in
-pass  out on dc0 from any to $boss queue boss_in
+pass out on dc0 from dc0 to $int_nets
+
+# filter rules for fxp1 inbound
+pass in on fxp1 proto { tcp, udp } from $wwwserv to any port 53 \
+	keep state
+
+# filter rules for fxp1 outbound
+pass out on fxp1 proto tcp from any to $wwwserv port { 21, \
+	&gt; 49151 } flags S/SA keep state queue net_dmz_misc
+pass out on fxp1 proto tcp from any to $wwwserv port 80 \
+	flags S/SA keep state queue net_dmz_http
+pass out on fxp1 proto tcp from $int_nets to $wwwserv port { 80, \
+	21, &gt; 49151 } flags S/SA keep state queue internal_dmz
 </pre>
 </td></tr>
 </table>
@@ -782,7 +811,7 @@ pass  out on dc0 from any to $boss queue boss_in
 <a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a> 
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: queueing.html,v 1.7 2003/05/15 03:03:54 nick Exp $</small>
+<small>$OpenBSD: queueing.html,v 1.8 2003/05/22 17:23:49 nick Exp $</small>
 
 </body>
 </html> 
