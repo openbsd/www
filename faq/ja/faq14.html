@@ -1,0 +1,1478 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>14.0 - Disk setup</title>
+<link rev= "made" href= "mailto:www@openbsd.org">
+<meta name= "resource-type" content= "document">
+<meta name= "description"   content= "the OpenBSD FAQ page">
+<meta name= "keywords"      content= "openbsd,faq">
+<meta name= "distribution"  content= "global">
+<meta name= "copyright"     content= "This document copyright 1998-2002 by OpenBSD.">
+<meta http-equiv="Content-Type" content="text/html; charset=iso-2022-jp">
+<style type="text/css">
+  <!--
+  pre { margin-left: 20px; }
+  -->
+</style>
+</head>
+
+<body bgcolor= "#ffffff" text= "#000000">
+
+<img alt="[OpenBSD]" height=30 width=141 src="../images/smalltitle.gif">
+<h2><font color=#e00000>14.0 - ディスクの設定</font><hr></h2>
+
+<h3>目次</h3>
+<ul>
+<li><a href="#disklabel"  >14.1 - OpenBSD の Disklabelを使う</a></li>
+<li><a href="#fdisk"      >14.2 - OpenBSD の fdiskを使う</a></li>
+<li><a href="#NewDisk"    >14.3 - OpenBSD でディスクを追加する</a></li>
+<li><a href="#SwapFile"   >14.4 - ファイルへのスワップ</a></li>
+<li><a href="#SoftUpdates">14.5 - Soft updates</a></li>
+<li><a href="#D0P3"       >14.6 - OpenBSD/i386 をインストールして起動すると
+"Using partition 3 id 0" で止まるんですけど</a></li>
+<li><a href="#LargeDrive" >14.7 - OpenBSD での大容量ドライブはどうなってるの ? - i386 のみ</a></li>
+<li><a href="#InstBoot"   >14.8 - Bootblock のインストール - i386 のみ</a></li>
+<li><a href="#Backup"     >14.9 - トラブルにそなえよう: テープへのバックアップと復元</a></li>
+<li><a href="#MountImage" >14.10 - OpenBSD でディスクイメージをマウント</a></li>
+<li><a href="#pciideErr"  >14.11 - 助けて!  PCIIDE でエラーになっちゃう!</a></li>
+<li><a href="#RAID"       >14.12 - OpenBSD の RAID オプション</a></li>
+</ul>
+<hr>
+
+<a name= "disklabel"></a>
+<a name="14.1"></a>
+<h2>OpenBSD の Disklabel を使う</h2>
+<h3>目次</h3>
+
+<ul>
+<li><a href="#disklabel.1">disklabel とはなんぞや ?</a></li>
+<li><a href="#disklabel.2">OpenBSD インストール時の disklabel</a></li>
+<li><a href="#disklabel.3">よくある disklabel の使い方</a></li>
+</ul>
+
+
+<a name="disklabel.1"></a>
+<h3>disklabel とはなんぞや ?</h3>
+  
+<p>
+最初に
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=disklabel&amp;sektion=8&amp;format=html">disklabel(8)</a>
+にあるマニュアルを読むこと。
+</p>
+
+<p>
+Disklabel は、ディスクとカーネル内のディスクドライバの間に、
+効率よいインターフェースを提供するようにしようってことでこしらえたのだ。
+ラベルは、ドライブのジオメトリとか、ファイルシステム情報とか、
+ディスク関係の情報を含んでいる。そしてこれがブートストラップ・プログラムに
+使われて、ドライブをロードしたり、ドライブ上のどこにファイルシステムが
+あるのかを調べたりすることになる。ラベルはまたファイルシステムといっしょに
+使われて、効率よい環境をつくる。disklabel についてもっと
+詳しいことは <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=disklabel&amp;sektion=5&amp;format=html">disklabel(5)</a>
+を読もう。
+</p> 
+
+<p>
+さらにおまけのメリットとして、disklabel を使うとディスクパーティションの
+アーキテクチャ的な制約を乗り越えられる。たとえば i386 では
+プライマリパーティション (つまり Windows NT や DOS など他の OS に見える
+パーティション) は 4 つまでしか持てない。
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=disklabel&amp;sektion=8&amp;format=html">disklabel(8)</a>
+では、この「プライマリパーティション」を一つ使うだけで、OpenBSDパーティション
+を全部 (たとえば 'swap', '/', '/usr', '/var') をそこに納められる。
+それでもほかの OS で使えるパーティションが 3 つも残っている !
+</p>
+
+<a name="disklabel.2"></a>
+<h3>OpenBSD インストール時の disklabel</h3>
+
+<p>
+OpenBSD インストールでの大きな山場のひとつが、ラベルを最初につくる
+ところだ。これは (i386 ユーザなら) <a href="#fdisk">fdisk(1)</a> の直後に出てくる。
+インストール中に、disklabel を使って、マウントポイントごとに別々のラベルを
+つくる。インストール中に、
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=disklabel&amp;sektion=8&amp;format=html">disklabel(8)</a>
+の中からマウントポイントを指定することもできるけれど、
+これはどうしても必要というわけじゃない。あとでどうせプロンプトで、
+これでいいか確認を求められるから。でも、やっといたほうがインストールがちょっとはスムーズになるかな。
+</p>
+
+<p>
+インストール中なら、まだラベルはぜんぜんないはずなので、
+どうしてもつくる必要がある。最初につくるラベルはラベル
+'a' だ。このラベルは絶対に / をマウントするところにしたほうがいい。作った方が
+いいおすすめパーティションとそのサイズに
+ついては、<a href="faq4.html#SpaceNeeded">FAQ 4, 必要なスペース</a> を読もう。サーバの場合、
+少なくともここに書いてあるラベルは別々にしておくのが望ましい。デスクトップの
+ユーザなら、/ のマウントポイントだけ作っておけば十分だろう。最初に
+root パーティション ('a' ラベル) をつくるとき、スワップラベル用に
+多少の空きを残しておくのをお忘れなく。いまので基本は
+説明したから、以下にインストール中に disklabel を使う例をあげよう。最初の
+例では、このマシン上には OpenBSD しか
+なくて、フルインストールをするものとする。
+</p>
+
+<pre>
+
+If this disk is shared with other operating systems, those operating systems
+should have a BIOS partition entry that spans the space they occupy completely.
+For safety, also make sure all OpenBSD file systems are within the offset and
+size specified in the 'A6' BIOS partition table.  (By default, the disklabel
+editor will try to enforce this).  If you are unsure of how to use multiple
+partitions properly (ie. separating /,  /usr, /tmp, /var, /usr/local, and other
+things) just split the space into a root and swap partition for now.
+
+# using MBR partition 3: type A6 off 63 (0x3f) size 4991553 (0x4c2a41) 
+
+Treating sectors 63-16386300 as the OpenBSD portion of the disk.
+You can use the 'b' command to change this.
+
+Initial label editor (enter '?' for help at any prompt)
+&gt; <strong>d a</strong>
+&gt; <strong>a a</strong>
+offset: [63] <strong>&lt;Enter&gt;</strong>
+size: [16386237] <strong>64M</strong>
+Rounding to nearest cylinder: 131040
+FS type: [4.2BSD] <strong>&lt;Enter&gt;</strong>
+mount point: [none] <strong>/</strong>
+fragment size: [1024] <strong>&lt;Enter&gt;</strong>
+block size: [8192] <strong>&lt;Enter&gt;</strong>
+cpg: [16] <strong>&lt;Enter&gt;</strong>
+&gt; <strong>a b</strong>
+offset: [131103] <strong>&lt;Enter&gt;</strong>
+size: [16255197] <strong>64M</strong>
+Rounding to nearest cylinder: 131040
+FS type: [swap] <strong>&lt;Enter&gt;</strong>
+</pre>
+
+<p>
+いまので、64M の root パーティションが / にマウントされて、64Meg スワップパーティションが作られている。オフセットが
+セクター 63 から始まるのに注目。これでいいのだ。サイズの話になると、disklabel は
+セクター単位で表示を行うけれど、でも入力するときは別にセクターで入力しなくていい。上の例でもそうだけれど、
+<i>64MB なら 64M</i> とか、<i>2GBなら 2G</i> とすればいい。すると Disklabel
+はそれをいちばん近いシリンダに丸めてくれる。また上の例では、disklabel は「b」がスワップだと自動的に
+想定していることにも注目。これは正しい想定で、GENERIC カーネルはラベル「b」にスワップを
+探しにいくよう設定されている。だからこのガイドラインにしたがって、スワップは 'b' にしておこう。
+</p>
+
+<p>
+次の例では、もうふたつラベルをこしらえている。これはつまり、完全なインストールではない
+ということだ。これらのサイズは、OpenBSD を完全にインストールするには不十分だから。
+パーティション全部をつくるのを見せても、繰り返しになるだけだ。
+</p>
+
+<pre>
+&gt; <strong>a d</strong>
+offset: [262143] <strong>&lt;Enter&gt;</strong>
+size: [16124157] <strong>64M</strong>
+Rounding to nearest cylinder: 131040
+FS type: [4.2BSD] <strong>&lt;Enter&gt;</strong>
+mount point: [none] <strong>/tmp</strong>
+fragment size: [1024] <strong>&lt;Enter&gt;</strong>
+block size: [8192] <strong>&lt;Enter&gt;</strong>
+cpg: [16] <strong>&lt;Enter&gt;</strong>
+&gt; <strong>a e</strong>
+offset: [393183] <strong>&lt;Enter&gt;</strong>
+size: [15993117] <strong>64M</strong>
+Rounding to nearest cylinder: 131040
+FS type: [4.2BSD] <strong>&lt;Enter&gt;</strong>
+mount point: [none] <strong>/var</strong>
+fragment size: [1024] <strong>&lt;Enter&gt;</strong>
+block size: [8192] <strong>&lt;Enter&gt;</strong>
+cpg: [16] <strong>&lt;Enter&gt;</strong>
+</pre>
+
+<p>
+上の例では、ふたつほど気がつく点がある。まず、オフセットが自動的に
+計算されて、次のところでデフォルトになって待っているということ。この手のインストールをするなら、オフセット変更を
+ぐちゃぐちゃする必要はまったくない。別のちがいとしては、ラベル 'c' は
+とばされている。これには理由があって、ラベル 'c' はディスク全体をあらわすラベルなのだ。
+だからラベル 'c' はまったくいじってはけない。
+</p>
+
+<p>
+ラベルが全部できたら、あとはそれをディスクに書き込んでインストールを
+先に進めればいい。全部書いて disklabel を終了するには (そしてインストールを続けるには)、
+</p>
+
+<pre>
+&gt; <strong>w</strong>
+&gt; <strong>q</strong>
+</pre>>
+
+<p>
+<strong>*注*</strong> - でかいドライブを持っている人へ。もしあなたの bios がそのサイズのドライブをサポートできなければ、
+OpenBSD でもサポートは無理だ。そうでなければ、OpenBSD は問題なくディスクを扱えるはず。もし bios がサポート
+していないドライブに直面したら、Maxtor EZ-Drive みたいなオーバーレイ製品を試してみるといい。
+</p>
+
+
+<a name="disklabel.3"></a>
+<h3>よくある disklabel(8) の使い方</h3>
+
+<p>
+いったんシステムのインストールが終わったら、もうあまり disklabel を使うこともないだろう。でもディスクを追加、
+削除、再構成するときなんかに disklabel を使う場合が出てくる。まず最初に
+やるべきことは、現状の disklabel を見ることだ。これには以下のようにする。
+</p>
+
+<pre>
+# <strong>disklabel wd0</strong> &gt;----- Or whatever disk device you'd like to view
+
+# using MBR partition 3: type A6 off 64 (0x40) size 16777152 (0xffffc0)
+# /dev/rwd0c:
+type: ESDI
+disk:
+label: TOSHIBA MK2720FC
+flags:
+bytes/sector: 512
+sectors/track: 63
+tracks/cylinder: 16
+sectors/cylinder: 1008
+cylinders: 2633
+total sectors: 2654064
+rpm: 3600
+interleave: 1
+trackskew: 0
+cylinderskew: 0
+headswitch: 0           # milliseconds
+track-to-track seek: 0  # milliseconds
+drivedata: 0 
+
+16 partitions:
+#        size   offset    fstype   [fsize bsize   cpg]
+  a:  2071440    65583    4.2BSD     1024  8192    16   # (Cyl.   65*- 2120)
+  b:    65520       63      swap                        # (Cyl.    0*- 65)
+  c:  2654064        0    unused        0     0         # (Cyl.    0 - 2632)
+  j:   512001  2137023    4.2BSD     1024  8192    16   # (Cyl. 2120*- 2627*)
+</pre>
+
+<p>
+上のコマンドは、単にすでにある disklabel を見せてくれて、ヘタにいじって壊したりすんなよ、
+と念を入れてくれているわけだ (われわれみんな、たまには忠告もきかないとね)。でももし変更を加えたいなら、
+disklabel で -E オプションを使わないといけない。
+</p>
+
+<pre>
+# <strong>disklabel -E wd0</strong>
+</pre>
+
+<p>
+これでプロンプトが出てくる。OpenBSD インストール時にお目にかかったのと同じものだ。このプロンプトで
+なによりだいじなコマンドは '?' だ。これは disklabel で使える可能なオプション一覧を
+表示してくれる。
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=disklabel&amp;sektion=8&amp;format=html">disklabel(8)</a>
+man ページ全部を見るには、 'M' コマンドを使う。このプロンプトから、パーティションの追加、削除、
+変更すべてを行う。もっと詳しくは 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=disklabel&amp;sektion=8&amp;format=html">disklabel(8)</a>
+man ページを読もう。
+</p>
+
+<a name= "fdisk"></a>
+<a name="14.2"></a>
+<h2>14.2 - OpenBSD の fdisk を使う</h2>
+
+<p>
+まず、必ず fdisk の man ページを見よう。
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fdisk&amp;apropos=0&amp;sektion=8&amp;arch=i386&amp;format=html">fdisk(8)</a>
+</p>
+<p>
+Fdisk は、パーティションのメンテナンスを助けてくれるソフトだ。この
+プログラムはインストール時に使われて、OpenBSD パーティションの設定をする (この
+パーティションの中に複数のラベルがのって、それぞれがファイルシステムやスワップなんかになる)。
+ドライブのスペースを区切って、一つをアクティブにできる。プログラムは
+通常、シングルユーザモードで使われる (つまり boot -s)。Fdisk はまた各種ハードディスクの MBR も
+設定する。
+</p>
+
+<p>
+インストールするには、ほとんどの場合は OpenBSD パーティションが <b>ひとつ</b>あれば
+いい。それをさらに区切ってスワップやファイルシステムをつくるには disklabel を使う。
+</p>
+
+<p>
+fdisk でパーティションテーブルを見るだけなら、こうしよう。
+</p>
+<pre># <strong>fdisk fd0</strong><br>
+</pre>
+
+<p>
+するとこんな感じの出力が出る。
+</p>
+
+<pre>
+         Disk: fd0       geometry: 80/2/18 [2880 sectors]
+         Offset: 0       Signatures: 0xAA55,0x0
+                  Starting        Ending
+          #: id  cyl  hd sec -  cyl  hd sec [     start -       size]
+----------------------------------------------------------------------
+         *0: A6    0   0   1 -   79   1  18 [         0 -       2880] OpenBSD
+          1: 00    0   0   0 -    0   0   0 [         0 -          0] unused
+          2: A7    0   0   2 -   79   1  18 [         1 -       2879] NEXTSTEP
+          3: 00    0   0   0 -    0   0   0 [         0 -          0] unused
+</pre>
+
+<p>
+この例では、フロッピードライブの fdisk 出力を見ている。OpenBSD パーティション (A6) と
+そのサイズも見られる。* がついているので、起動パーティションが
+OpenBSD パーティションだとわかる。
+</p>
+
+<p>
+前の例では、情報を見ただけだ。パーティションテーブルを
+編集したい場合は ?　うん、そのときには <b>-e</b> フラグを使う。
+するとコマンドラインプロンプトが出てきて、fdisk を操作できる。
+</p>
+
+<pre>
+# <strong>fdisk -e wd0</strong>
+Enter 'help' for information
+fdisk: 1&gt; <strong>help</strong>
+        help            Command help list
+        manual          Show entire OpenBSD man page for fdisk
+        reinit          Re-initialize loaded MBR (to defaults)
+        disk            Edit current drive stats
+        edit            Edit given table entry
+        flag            Flag given table entry as bootable
+        update          Update machine code in loaded MBR
+        select          Select extended partition table entry MBR
+        print           Print loaded MBR partition table
+        write           Write loaded MBR to disk
+        exit            Exit edit of current MBR, without saving changes
+        quit            Quit edit of current MBR, saving current changes
+        abort           Abort program without saving current changes
+fdisk: 1&gt; 
+</pre>
+
+<p> 
+fdisk に入っていろいろ試すのは、まったく危険はない。ただし、変更を保存するかどうかきかれたら
+絶対に <strong>N</strong> と答えて、<strong>write</strong> コマンドは使わないこと。
+</p>
+
+<p><b>-e</b> フラグで使えるコマンド一覧を
+以下に挙げる。</p>
+<ul>
+<li><strong>help</strong>    対話型編集モードで fdisk のわかるコマンド一覧を表示。</li>
+<li><strong>reinit</strong>  いま選ばれてメモリに入っているブートブロックのコピーを初期化。</li>
+<li><strong>disk</strong>    fdisk がプローブした現在のドライブジオメトリを表示。お望みなら編集もできる。</li>
+<li><strong>edit</strong>    現在のブートブロックのメモリ内コピーの、指定テーブルエントリを編集。BIOS ジオメトリモードで編集してもいいし、セクターオフセットやサイズで編集してもいい。</li>
+<li><strong>flag</strong>    パーティションテーブルの指定エントリを起動可能にする。起動可能にできるエントリはひとつだけだ。
+もし、拡張パーティションから起動したいなら、その拡張パーティションのエントリを起動可能にしておく。</li>
+<li><strong>update</strong>  現在のブートブロックのメモリ内コピーの機械コードを更新。</li>
+<li><strong>select</strong>  現在のブートブロックにある、拡張パーティションテーブルエントリで示されたブートブロックを、メモリに読み込む。</li>
+<li><strong>print</strong>   現在選択されている、メモリ内のブートブロックのコピーとその MBR テーブルをターミナルに表示。</li>
+<li><strong>write</strong>   現在メモリ内にあるブートブロックのコピーをディスクに書き出す。本気かどうか、操作の確認が出てくる。</li>
+<li><strong>exit</strong>    現在の fdisk のレベルを終了し、前に選んだメモリ内のブートブロックのコピーに戻るか、それがなければプログラムを終了。</li>
+<li><strong>quit</strong>    現在の fdisk のレベルを終了し、前に選んだメモリ内のブートブロックのコピーに戻るか、
+それがなければプログラムを終了。exit とちがうのは、変更したブロックはディスクに書き出されるということ。</li>
+<li><strong>abort</strong>   現在の変更を保存しないでプログラムを終了。</li>
+</ul>
+
+<a name= "NewDisk"></a>
+<a name="14.3"></a>
+<h2>14.3 - OpenBSD でディスクを追加する</h2>
+
+<p>
+うん、ディスクさえ<strong>きちんと</strong>インストールされたら、あとは
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fdisk&amp;apropos=0&amp;sektion=8&amp;arch=i386&amp;format=html">fdisk(8)</a>
+(<i>i386 のみ</i>)
+と
+<a href= "http://www.openbsd.org/cgi-bin/man.cgi?query=disklabel&amp;apropos=0&amp;sektion=8&amp;format=html">
+disklabel(8)</a> を使って
+OpenBSD 用にディスクを
+設定するだけだ。
+<P>
+i386 の人たちは、fdisk からはじめよう。ほかのアーキテクチャの人は、ここはとばしていいよ。
+<pre>
+# <Strong>fdisk -i sd2</strong>
+</pre>
+これはディスクの「ほんものの」パーティションを初期化して、
+OpenBSD 専用に変える。
+続いてここに disklabel をつくろう。これはちょっとややこしい。
+<pre>
+# <strong>disklabel -e sd2</strong>
+
+<i>(画面が消えて、$EDITOR で指定のエディタがたちあがる)</i>
+type: SCSI
+<i>うだうだ……</i>
+sectors/track: 63
+total sectors: 6185088
+<i>うだうだ……</i>
+16 partitions:
+#        size   offset    fstype   [fsize bsize   cpg]
+  c:  6185088        0    unused        0     0         # (Cyl.    0 - 6135)
+  d:  1405080       63    4.2BSD     1024  8192    16   # (Cyl.    0*- 1393*)
+  e:  4779945  1405143    4.2BSD     1024  8192    16   # (Cyl. 1393*- 6135)
+</pre>
+まず、'c' パーティションは無視ね。必ずあって、
+disklabel みたいなプログラムが機能するために必要なものだから !
+ふつうの操作用なら、fsize は必ず 1024 で、bsize は必ず 8192、 
+cpg は絶対に 16 だ。Fstype は 4.2BSD。Total sectors は、
+ディスクの総容量。
+たとえばこれが 3 GB のディスクだとしよう。ディスクメーカの言い方では、3 GB は
+3000 MB だ。そこで 6185088/3000 のわり算をしよう
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bc&amp;sektion=1">bc(1))</a> を使うのよ。答は 2061 だ。
+そこで a, d, e, f, g, ... のパーティションサイズを計算するには、それぞれ X MB の容量がほしければ単に X*2061
+のかけ算をしてやればいい。最初の新しいパーティションのオフセットは、
+さっき disklabel の出力に出てきた「sectors/track」と
+同じ。ここでは 63 やね。その後の各パーティションのオフセットは、
+各パーティションサイズと、そのパーティションの
+オフセットを組み合わせたものになる（ただし 'c' パーティションだけは、いまの式に
+あてはまるところもないし、無視ね)。
+<p>
+あるいは、ディスク上にパーティションひとつだけしかいらないこともある。たとえば
+ディスク全体を Web 保存に使うとか、ホームディレクトリにしたいとかなんとか。
+この場合には、ディスクの総容量から、トラックあたりのセクター数をひいてやればいい。
+6185088-63 = 6185025 だから、あなたのパーティションは次のようになる。
+<pre>
+    d:  6185025       63    4.2BSD     1024  8192    16 
+</pre>
+<p>
+<b>これがなんだか無用にややこしいと思ったら、単に disklabel -E を使えば、
+インストール時と同じパーティション切りモードに入れるよ !</b>
+そこでなら、96 メガバイトと言いたければ "96M" と指定すればいい (ディスクがでかければ、
+96G で 96 ギガバイトっちゅーこってすな !) 残念なことに、
+-E モードは本当のディスクジオメトリではなく、BIOS ディスクジオメトリを使っていて、
+この両者は必ずしも一致しない。この制約を回避するには、
+'geometry disk'の略で 'g d' とタイプしよう (その他のオプションとしては、'geometry bios' なら 'g b' で、
+'g u' とやれば geometry user、つまり disklabel が変更前に
+どういう内容になっていたかを表示する)
+<p>
+結構山盛りだったね。でもまだ話は終わっちゃいない。
+最後に、そのディスク上にファイルシステムをつくんなきゃいけない。<a href=
+"http://www.openbsd.org/cgi-bin/man.cgi?query=newfs&amp;apropos=0&amp;sektion=8&amp;format=html">newfs(8)</a> を使おう。
+</p>
+
+<pre>
+bsd# <strong>newfs wd1a </strong>
+</pre>
+
+<p>
+wd1a のところは、OpenBSD のディスク番号方式であなたのディスクの番号に該当するものに置き換えよう
+(OpenBSD のディスク名称を見たければ <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dmesg&sektion=8">dmesg(8)</a> の出力を見よう)。
+</p>
+
+<p>
+さて、作りたてのこのパーティションをどこにマウントするか考えよう。たとえば /u にマウントしたかったとする。
+まず、/u ディレクトリをつくる。それからそれをマウントする。
+</p>
+
+<pre>
+mount /dev/wd1a /u
+</pre>
+
+<p>
+最後にそれを <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fstab&amp;sektion=5">/etc/fstab(5)</a> に追加。
+</p>
+<pre>/dev/wd1a /u ffs rw 1 1</pre>
+
+<p>
+もし /usr/local とか既存のディレクトリを引っ越しさせたかったら ?  新しいドライブを
+/mnt にマウントして、cpio -pdum を使って /usr/local を /mnt ディレクトリにコピーしよう。
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fstab&amp;sektion=5">/etc/fstab(5)</a> ファイルを編集して、/usr/local パーティションがいまでは /dev/wd1a
+(いまさっき新規にフォーマットしたパーティション) になるように変更する。
+たとえば、
+</p>
+
+<pre>
+<strong>/dev/wd1a /usr/local ffs rw 1 1</strong>
+</pre>
+
+<p>
+<strong>boot -s</strong> で、シングルユーザモードで起動しよう。既存の
+/usr/local を /usr/local-backup に移動する (か、ツキが向いてる気分なら削除しちゃおうか)。そして
+空のディレクトリ /usr/local をつくる。それからシステムを再起動してみますと、あらふしぎ !  ファイルが /usr/local に !
+</p>
+
+<br>
+
+<a name= "SwapFile"></a>
+<a name="14.4"></a>
+<h2>14.4 - ファイルへのスワップ</h2>
+
+<p>
+(注: もし
+&quot;virtual memory exhausted&quot; エラーがたくさん出ているのでスワップをしようとしているなら、
+まずはプロセスごとのリミットを上げてみよう。
+csh なら <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=unlimit&amp;sektion=1&amp;format=html">unlimit(1)</a>
+だし、
+sh なら <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ulimit&amp;sektion=1&amp;format=html">ulimit(1)</a> だ。)
+</p>
+
+<p>
+OpenBSD 2.5 のリリース後に、
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=swapctl&amp;sektion=8&amp;format=html">swapctl(8)</a>
+ができて、スワップデバイスの扱いはずっと簡単になった。もし OpenBSD 2.5 システムを使っているなら、swapctl
+を swapon と読み替えて、スワップデバイスを一覧表示するには pstat -s を使おう。ファイルへのスワップは、
+カスタムのカーネルは必要ないけれど、ビルドしなおすこともできる。この FAQ では、どちらの方法でも
+スワップスペースを追加する方法を示す。
+</p>
+
+<h3>ファイルへのスワップ</h3>
+
+<p>
+追加のスワップ領域を設定するのに、いちばん簡単ですばやい方法は、ファイルへのスワップをすることだ。これは 
+Soft Updates を使っている人は使えない（これはデフォルトでは有効になっていない）。
+手始めに、まずいまどのくらいスワップ領域があって、どれくらいスワップを使っているかを調べよう。これには
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=swapctl&amp;sektion=8&amp;format=html">swapctl(8)</a>
+ユーティリティを使う。こんな具合だ。
+</p>
+
+<pre>
+ericj@oshibana&gt; <strong>swapctl -l</strong>
+Device      512-blocks     Used    Avail Capacity  Priority
+swap_device      65520        8    65512     0%    0
+</pre>
+
+<p>
+これは、いまスワップに使われているデバイスとその現在の統計を示す。上の
+例では &quot;swap_device&quot; というデバイスひとつしかない。これはディスク上の事前に定義された
+スワップ領域だ (disklabel を見るときにはパーティション b として表示される)。上の例でもわかるけれど、
+このデバイスは目下、あんまし使われていない。でもこの文章では、
+仮にもう 32M が必要だということにしよう。
+</p>
+<p>
+ファイルをスワップデバイスとして設定する第一歩は、そのファイルをつくることだ。これは 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dd&amp;sektion=1&amp;format=html">dd(1)</a>
+ユーティリティでやるのがいちばんいい。以下に大きさ 32M の <i>/var/swap</i> ファイルをつくってやろう。
+</p>
+
+<pre>
+ericj@oshibana&gt; <strong>sudo dd if=/dev/zero of=/var/swap bs=1k count=32768</strong>
+32768+0 records in
+32768+0 records out
+33554432 bytes transferred in 20 secs (1677721 bytes/sec)
+</pre>
+
+<p>
+これができたら、そのデバイスへのスワップを有効にしよう。以下のコマンドを使って、
+このデバイスへのスワップを有効にする。
+</p>
+
+<pre>
+ericj@oshibana&gt; <strong>sudo chmod 600 /var/swap</strong>
+ericj@oshibana&gt; <strong>sudo swapctl -a /var/swap</strong>
+</pre>
+
+<p>
+じゃあ、いまのがスワップデバイスの一覧にちゃんと追加されたかチェックしよう。
+</p>
+
+<pre>
+ericj@oshibana&gt; <strong>swapctl -l</strong>
+Device      512-blocks     Used    Avail Capacity  Priority
+swap_device      65520        8    65512     0%    0
+/var/swap        65536        0    65536     0%    0
+Total           131056        8   131048     0%
+</pre>
+
+<p>
+これでファイルが設定されてスワップが行われているので、<i>/etc/fstab</i>
+ファイルに記入して、次の起動時にもこのファイルが使われるようにしよう。この一行がないと、
+スワップデバイスが設定されないよ。
+</p>
+
+<pre>
+ericj@oshibana&gt; <strong>cat /etc/fstab</strong>
+/dev/wd0a / ffs rw 1 1
+/var/swap /var/swap swap sw 0 0
+</pre>
+
+<h3>vnode デバイス経由でスワップ</h3>
+
+<p>
+これはスワップ領域を追加するもっと恒久的な解決方法だ。ファイルを恒久的にスワップするには、まず vnd0c を
+スワップにしたカーネルをつくる。カーネルが wd0a を root ファイルシステムにしてあったら、これまでのスワップは
+wd0b だから、カーネル設定ファイルでこんな行を使おう (わかんなければ、新しいカーネルのコンパイルを参照)。 
+</p>
+
+<pre>
+config          bsd     root on wd0a swap on wd0b and vnd0c dumps on wd0b
+</pre>
+
+<p>
+これが終わったら、スワップに使うファイルを作らなきゃいけない。これは、
+上の例と同じコマンドを使えばいい。
+</p>
+
+<pre>
+ericj@oshibana&gt; <strong>sudo dd if=/dev/zero of=/var/swap bs=1k count=32768</strong>
+32768+0 records in
+32768+0 records out
+33554432 bytes transferred in 20 secs (1677721 bytes/sec)
+</pre>
+
+<p>
+さてファイルができたので、そのファイルを <i>/etc/fstab</i> に追加しよう。このデバイスが
+起動時にスワップデバイスになるための一行はこんな感じだ。
+</p>
+
+<pre>
+ericj@oshibana&gt; <strong>cat /etc/fstab</strong>
+/dev/wd0a / ffs rw 1 1
+/dev/vnd0c none swap sw 0 0 
+</pre>
+
+<p>
+この時点でコンピュータを再起動させて、カーネルの変更が反映されるようにしよう。これを
+やったら、デバイスをスワップとして設定することになる。これには
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vnconfig&amp;sektion=8&amp;format=html">vnconfig(8)</a> を使う。
+</p>
+
+<pre>
+ericj@oshibana&gt; <strong>sudo vnconfig -c -v vnd0 /var/swap</strong>
+vnd0: 33554432 bytes on /var/swap
+</pre>
+
+<p>
+さて最後の一歩。そのデバイスでスワップを有効にする。これは、上の例とまったく
+同じように swapctl(8) を使ってやろう。それから、それがスワップの一覧にきちんと追加されたか
+確認してやる。
+</p>
+
+<pre>
+ericj@oshibana&gt; <strong>sudo swapctl -a /dev/vnd0c</strong>
+ericj@oshibana&gt; <strong>swapctl -l</strong>
+Device      512-blocks     Used    Avail Capacity  Priority
+swap_device      65520        8    65512     0%    0
+/dev/vnd0c       65536        0    65536     0%    0
+Total           131056        8   131048     0%
+</pre>
+
+
+
+<a name= "SoftUpdates"></a>
+<a name="14.5"></a>
+<h2>14.5 - Soft Updates</h2>
+
+
+<p>
+過去数年にわたって、Kirk McKusick は "Soft Updates" なるものの
+開発を進めている。これは Greg Ganger と Yale
+Patt が提案したアイデアに基づくもので、バッファキャッシュ操作を
+部分的に整理してやると、FFSコードからディレクトリのエントリを同期書き込みしなきゃいけないという
+要件をはずせるじゃないか、というのが考え方だ。そうなると、ディスク書き込み性能は
+かなり上がる。<br>
+Soft Update はまだまだ開発中だから、
+コンピュータがきちんと shutdown せずに突然落ちたときにはやっぱり
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fsck&amp;sektion=8">fsck(8)</a>
+が必要なんだけど、将来は改善されるはずだ。<p>
+もっと詳しく Soft Update の中身を知りたいんだったら、
+<a href="http://www.ece.cmu.edu/~ganger/papers/CSE-TR-254-95/">Ganger and Patt</a> や
+<a href="http://www.mckusick.com/softdep/index.html">McKusick</a> にある論文を読んでおくれ。
+</p>
+
+<p>
+Softupdates を有効にするには、
+</p>
+
+<p>
+<strong>option FFS_SOFTUPDATES</strong>
+</p>
+をつけてカーネルをコンパイルしないといけない。
+
+<p>
+このオプションは OpenBSD 2.9 以降だったら GENERIC カーネルに入っているけど、でも、相変わらずマウントポイント毎に有効にしてやる必要はある。
+</p>
+
+<p>
+2.9 以降だったら、soft updates を有効にするには <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tunefs&amp;sektion=8">tunefs(8)</a> じゃなくて、マウント時のオプションで指定してやらないといけない。さて、<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mount&amp;sektion=8">mount(8)</a> ユーティリティでパーティッションをマウントするときに、そのパーティッションで soft updates を有効にしたいってことを指定できる。以下が soft updates を有効にしてマウントしたい <i>sd0a</i> のパーティションの行がある <i><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fstab&amp;sektion=5">/etc/fstab(5)</a></i> の例だ。
+</p>
+
+<pre>
+/dev/sd0a / ffs rw,softdep 1 1
+</pre>
+
+<p>
+2.9 より古い OpenBSD を使ってるんだったら、シングルユーザモードで起動して、以下のようにする。
+</p>
+
+<pre>
+        boot> <strong>boot -s</strong>
+        [snip]
+        bsd# <strong>tunefs -s enable &lt;raw device&gt;</strong>
+        bsd# <strong>reboot -n</strong>
+</pre>
+
+<p>
+sparc ユーザへの注意: sun4 や sun4c のマシンでは soft updates は有効にしないこと。こいつらはごく限られた量のカーネルメモリーしかサポートしてないので、soft updates は使えない。でも、sun4m マシンだったら大丈夫。
+</p>
+
+
+<a name= "D0P3"></a>
+<a name="14.6"></a>
+<h2>14.6 -  OpenBSD/i386 をインストールして起動すると "Using Drive: 0 Partition: 3" で止まるんですけど  - i386 のみ</h2>
+
+<p>
+これ自体は実はエラーメッセージじゃなくって、MBR に入ってるブートローダが、
+どのドライブのどのパーティションから起動しようとしているかってことなんだ。
+問題なのは、起動がここで止まってしまったってことだ。
+</p>
+<p>
+こういうことが起こるときのよくある理由がふたつある。BIOS と
+OpenBSD の MBR の非互換性、つまりドライブのジオメトリの問題だ。
+ドライブのジオメトリの問題は、インストールの途中で原因不明で起きること
+も報告されているけれど、例えば、ドライブをコンピュータから別のコンピュータ
+へ移したり、BIOS をアップデートしたり、BIOS の設定を変更したりしたときに
+起きる。
+</p>
+<p>
+BIOS の非互換性の問題を解決するには、ブートローダをシステムに合った
+ものにしないといけない。幸い、ブートローダは
+簡単に手に入る。
+</p>
+
+<h3>BootEasy ブートローダをインストールするには</h3>
+<p>
+まずシステムを起動しないといけない。ハードディスクから直接起動できない
+ときには、ブートフロッピーか CD-ROM で起動する必要がある。
+'boot>' プロンプトが出たら、ハードディスクからの起動に
+切換える。
+</p>
+<pre>
+reading boot.......
+probing pc0 com0 com1 pci mem [639k 79m a20=on]
+disk hd0 fd0
+>> OpenBSD BOOT 1.28
+boot> <b>boot hd0a:/bsd</b>
+</pre>
+<p>
+このコマンドで、最初のドライブの 'a' パーティションにある /bsd
+からの起動に切り換わって、システムが起動するようになる。
+</p>
+<p>
+システムが起動できたら、BootEasy ブートローダをインストールする必要が
+ある。ファイルは CD-ROM か ftp サイトの 
+3.0/tools/booteasy/Boot.bin ディレクトリ
+にあるので、以下のような
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fdisk&amp;sektion=8&amp;arch=i386&amp;format=html">fdisk(8)</a>
+コマンドでインストールできる。:
+</p>
+<pre>
+# <b>fdisk -i -f /mnt/3.0/tools/booteasy/Boot.bin wd0</b>
+</pre>
+<p>
+3.0 の CD を /mnt にマウントしてあって、IDE ドライブを使っているときは
+こんな感じだ。Boot.bin の場所やどんなハードディスクを使っているか(SCSI
+ドライブだったら 'sd0'というように)によって、
+適当に変える必要がある。<b>注意: ディスクが丸ごと OpenBSD の
+パーティションじゃないときは、これはやっちゃ
+いけない !</b>  MBR をこんなふうに初期化してしまうと OpenBSD の
+パーティションをディスク全体に広げて他のパーティションを全部消してしまう
+ので、大変なことになる。
+</p>
+<p>
+BootEasy には他にも機能があるので、ブートローダに問題がなくても
+使ってみたくなるかもしれない。起動時にブートパーティション
+を選ぶことができる -- どのパーティションから起動するのか聞いてきて、
+何も選ばなければアクティブパーティションから起動する。
+ひとつのディスクに複数の OS を入れてるんだったら、これは非常に便利だ。
+BootEasy をこういうふうにインストールするには、MS-DOS から CD-ROM か
+FTP サーバーの BootEasy のディレクトリにある BOOTINST.EXE を実行すればよい。
+</p>
+<h3>MS-DOS ブートローダをインストールするには</h3>
+<p>
+FDISK.EXE の入った Windows 9x か v6 の起動ディスクから起動する。
+システムが起動して MS-DOS のプロンプトが出たら、次のように打つ。
+</p>
+<pre>
+A:\&gt<b>fdisk /mbr</b>
+</pre>
+<p>
+メッセージは何も出ずに少しだけディスクにアクセスあってからコマンド
+プロンプトに戻ってくる。"Bad command or file name" と出たら、
+FDISK.EXE がディスクにないってことだ。うまくいったら
+"Using ..." というメッセージを出していた部分が置き換えられるので、
+メッセージは出なくなる。BIOS 互換性の問題があったんだったら、
+もうなくなったから、再起動すれば、OpenBSD のインスールは
+うまくいくはずだ。
+</p>
+<p>
+FreeDOS でもうまくいくという報告がある。
+</p>
+
+<h3>OS-BS ブートローダ</h3>
+<p>
+別のブートローダの OS-BS は OpenBSD の CD-ROM に入っているし、
+FTP サイトの 2.9/tools/osbs135.exe にもある。OS-BS のウェブページは、
+<a href="http://www.prz.tu-berlin.de/~wolf/os-bs.html">
+    http://www.prz.tu-berlin.de/~wolf/os-bs.html</a>
+だ。
+</p>
+<h3>LILO</h3>
+<p>
+Linux の LILO も使える。詳細は以下のところにある。
+<a href="ftp://ftp.openbsd.org/pub/OpenBSD/3.0/i386/INSTALL.linux">INSTALL.linux</a>
+</p>
+
+<h3>問題を避けるには</h3>
+<p>
+ほとんどのマシンは BIOS の互換性の問題はないけど、もし
+この問題があるとわかっているマシンの設定をするんだったら
+問題を避けるのはとても簡単だ。普通にインストールしている
+ときに OpenBSD のローダがシステムにインストールされるのは
+'Use entire disk for OpenBSD' という質問に 'Y' と答えたとき
+だけだ。'N' と答えて OpenBSD のパーティションを手動で作成
+すれば、fdisk で 'reinit' か' 'update' をしない限り
+ブートローダは置き換えられない。もちろん、なんらかのブートローダ
+が入っているときの話だ。-- そうでないなら (新品か空のディスクや他の
+プラットホームからとってきたドライブのとき) システムが起動する
+前に入れておかないといけない。
+</p>
+
+<h3>ドライブのジオメトリの問題を解決するには</h3>
+<p>
+理想を言えば、ドライブのジオメトリを直さずに
+同じジオメトリのままにして問題を避けたいと思うだろうけど、
+避けられないときもある。例えば LBA をサポートしていない
+古いコンピュータからどうしても LBA を使う新しいマシンへ
+大容量のドライブを移すようなときだ。
+</p>
+<p>
+上にあるように、ブートディスクか CD-ROM で起動しよう。
+root でログインして、以下のコマンドを実行する。
+</p>
+<pre>
+# cp /usr/mdec/boot /boot
+# /usr/mdec/installboot -v /boot /usr/mdec/biosboot wd0
+</pre>
+<p>
+再起動すれば、うまくいくはずだ。
+</p>
+<p>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=installboot&amp;sektion=8&amp;arch=i386">installboot(8)</a>
+は
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=biosboot&amp;sektion=8&amp;arch=i386">biosboot(8)</a>
+をロードするパーティションブートローダ
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=boot&amp;sektion=8&amp;arch=i386">boot(8)</a>
+をインストールして設定する。
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=boot&amp;sektion=8&amp;arch=i386">boot(8)</a>
+はカーネルを RAM へロードするモジュールだ。
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=biosboot&amp;sektion=8&amp;arch=i386">biosboot(8)</a> は、
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=boot&amp;sektion=8&amp;arch=i386">boot(8)</a>
+の物理的な場所 (システムの BIOS による) を指し示すテーブルを持っている。BIOS が感知する
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=boot&amp;sektion=8&amp;arch=i386">boot(8)</a>
+の場所を変更するような何かをやったときには、上にあるように
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=installboot&amp;sektion=8&amp;arch=i386">installboot(8)</a>
+を再度実行して
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=boot&amp;sektion=8&amp;arch=i386">boot(8)</a>
+を指しているテーブルを再初期化してやらないといけない。
+</p>
+詳しくは <a href="#14.8">section 14.8</a> を参照。
+<br>
+
+
+<a name= "LargeDrive"></a>
+<a name="14.7"></a>
+<h2>14.7 - OpenBSD での大容量ドライブに関する問題は ?  - i386 のみ</h2>
+
+<p>
+OpenBSD は現在や近い将来入手できるどんなハードディスクよりも
+ずっと大きなサイズのファイルシステムをサポートしているけれども、
+いくつかのインターフェースでは OpenBSD の理論的な最大値よりも小さな
+限界がある。
+IDE ドライブでは、限界は 128GB で、これは現在一般的な ATA インターフェース
+の限界だ。128G (1G=2^30 で、
+1,000,000,000 じゃないので、ドライブ製造業者は
+しばしば 137G といっている) より大きな容量を持つ次世代の ATA ドライブは、
+OpenBSD で新しいインターフェースの規格が実装されるまではサポートされない
+ことに注意。
+(開発のための
+<a href="/want.html">ハードウェア</a> の
+<a href="/ja/donations.html">寄付</a> 
+は歓迎するよ。)
+</p>
+<p>
+不幸にも、OS がメモリーにロードされるまでは
+OS の全部の能力は使えないので、
+起動のプロセスそれ自体に限界がある。
+起動プロセスはシステムの BIOS を使う (そしてだからこそそれに制限される)。
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=biosboot&amp;sektion=8&amp;arch=i386">biosboot(8)</a>
+や
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=boot&amp;sektion=8&amp;arch=i386">boot(8)</a>)
+といった OpenBSD のブートローダも
+それ自身の内部的な
+古い BIOS の限界から来ている 8G の限界がある。
+</p> 
+<p>
+こういったわけで、/bsd ファイル (カーネル) 全体が
+BIOS で使える領域内か、ディスクの先頭の 8G 以内のどちらか小さい方に
+置かれないといけない。これは、いくつかのずっと古いコンピュータでは
+root パーティションは完全に先頭の 504M 以内になければいけないが、
+ほとんどの新しいコンピュータでは root パーティションは先頭の
+8G 以内のどこかにあればいい、という意味だ。
+</p>
+<p>
+古い 486 に 40G のドライブを入れてひとつの巨大なパーティションとして
+OpenBSD をロードすることはできることに注意。うまく上にあった
+規則を破ることができたと思うかもしれない。しかしながら、その規則は
+もっとも嫌な具合につきまとってくるかもしれない。
+</p>
+<ul>
+  <li>40G の / パーティションにインストールする。うまく動く、なぜなら
+OS と全てのファイル (/bsd を含む) は先頭の 504M 以内にあるから。
+  <li>システムを使っていて、504M 以上のファイルがあるようになる。
+  <li>アップグレードして自分のカーネルを作成し、などをし、新しい
+      /bsd を古いものに上書きコピーする。
+  <li>再起動する。
+  <li>"bad magic" というようなメッセージが出る。
+</ul>
+<p>
+どうして ?  なぜなら新しい /bsd ファイルを「上書き」コピーしたとき、
+古いものを上書きしたのではなく、BIOS がサポートする
+504M の範囲の外にあるであろう新しい領域に再配置されてしまったからだ。
+BIOS を使っているブートローダは /bsd ファイルをとってこれなくて、
+システムはハングする。
+</p>
+<p>
+OpenBSD が起動するようにするには、/bsd が BIOS がサポートする
+範囲内になければいけない。安全にやるには、規則は単純だ。
+</p>
+<p>
+<b>root パーティション全体は BIOS で使える領域内か、
+ディスクの先頭の 8G 以内のどちらか小さい方に置かれないといけない。</b>
+</p>
+<p>
+OpenBSD は、システムの BIOS が認識できる空間のみではなく、
+IDE ドライブ全体 (128G まで)にアクセスすることができるが、root は
+BIOS の範囲内にあるのが一番だ。
+</p>
+
+<a name= "InstBoot"></a>
+<a name="14.8"></a>
+<h2>14.8 - Bootblock のインストール - i386 のみ</h2>
+
+<p>
+古いバージョンの MS-DOS は、1024 シリンダ以下のディスクジオメトリにしか対応
+していない。最近のディスクはほとんどすべて 1024 シリンダ以上
+あるので、ほとんどの SCSI BIOS チップ (SCSI コントローラボード上にある) と
+IDE BIOS (その他 PC BIOS の一部) は、
+真のディスクジオメトリを MS-DOS が扱える
+ようなものに「翻訳」するオプション (ときにはこれがデフォルト) がある。
+でも、BIOS チップの「翻訳」のしかたは必ずしも一致しない。
+もし BIOS を変えて (マザーボードを換えたとか、
+SCSI コントローラを換えたとか)、そして新しいやつの使う
+「翻訳」ディスクジオメトリがちがったら、
+第二段階ブートローダが読み込めない (つまりカーネルも読み込めない)。
+(なぜかというと、第一段階ブートローダは /boot の入ったブロック一覧を
+持っているんだけれど、これが以前の「翻訳」ジオメトリで記述されているからだ。)
+IDE ディスクを使っていて BIOS 設定を変えたときにも、
+翻訳を (うっかり) 変えてしまう場合がある (ほとんどの IDE BIOS は翻訳の仕方を 3 通り
+持っている)。ブートブロックをなおしてふつうにブートできるようにするには、
+ハードディスクに起動フロッピーを入れて、boot プロンプトで
+「b hd0a:/bsd」とタイプして、最初のハードディスク (フロッピーでは
+なく) から起動させよう。これでふつうにマシンが起動するはずだ。そうしたら、
+第一段階ブートローダを更新して、新しいジオメトリが見えるようにしよう
+(そしてそれに応じたブートブロックに書き換えよう)。
+<br>
+ここでの例では、あなたの起動ディスクが sd0 だと想定している (もし IDE なら wd0 等々..)。
+</p>
+
+<pre>
+# <strong>cd /usr/mdec; ./installboot /boot biosboot sd0</strong>
+</pre>
+
+<p>
+もし installboot が、BIOS のジオメトリが読めないよとブーたれるようなら、
+boot&gt; プロンプトで &quot;machine diskinfo&quot; コマンド (または短く
+&quot;ma di&quot;) コマンドを入れて、必要な情報を表示させよう。
+&quot;heads&quot; と &quot;secs&quot; の値をそれぞれ installboot の -h
+と -s フラグに食わせてやるのだ。こういう形で変更した installboot コマンドは
+こんな具合になる。
+</p>
+<pre>
+#<strong> cd /usr/mdec; ./installboot -h &lt;heads&gt; -s &lt;secs&gt; /boot biosboot sd0</strong>
+</pre>
+
+<p>
+もしブートブロックのバージョン更新が必要なら、それは自分でコンパイルするしかない。やりかたは簡単だ。
+</p>
+
+<pre>
+# <strong>cd /sys/arch/i386/stand/</strong>
+# <strong>make && make install </strong>
+# <strong>cd /usr/mdec; cp ./boot /boot</strong>
+# <strong>./installboot /boot biosboot sd0</strong> (ディスクのデバイスは自分のにあわせて変えてね)
+</pre>
+
+<a name= "Backup"></a>
+<a name="14.9"></a>
+<h2>14.9 - トラブルにそなえよう: テープへのバックアップと復元</h2>
+
+<h3>はじめに</h3>
+
+<p>
+もし、いわば業務用のサーバと称するようなものを走らせようとしているなら、固定ディスクのどれかがイカレたときのために、なんらかのバックアップはとっておこうね。
+</p>
+
+<p>
+ここにある情報は、OpenBSD についてくる通常の <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dump&amp;sektion=8&amp;format=html">dump(8)</a>/<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=restore&amp;sektion=8&amp;format=html">restore(8)</a> ユーティリティの使い方を説明している。複数のサーバを一本のテープドライブでバックアップするために、もっと高度な「Amanda」というソフトもある。ふつうの環境では <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dump&amp;sektion=8&amp;format=html">dump(8)</a>/<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=restore&amp;sektion=8&amp;format=html">restore(8)</a> でじゅうぶんだけれど、複数のマシンを一台のテープにバックアップしたければ、いずれ Amanda を検討するといいだろう。
+</p>
+
+<p>
+この文書のデバイス例は、SCSI ディスクとテープを使うような構成のシステムを想定している。業務用環境では、不良ブロックの処理のやりかたから、IDE よりも SCSI が推奨される。だからといって、IDE や別種のテープドライブを使っている人にここの情報が役にたたないわけじゃない。デバイス名だけ変えれば話は同じだ。たとえば SCSI の sd0a は、IDE のシステムなら wd0a になる。
+</p>
+
+<h3>テープにバックアップ</h3>
+
+<p>
+テープへのバックアップは、ファイルシステムがどこにマウントされているかという知識が必須だ。ファイルシステムがどうマウントされているかは、シェルプロンプトから <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mount&amp;sektion=8">mount(8)</a> コマンドを使えばいい。こんな出力が出てくるはずだ。
+</p>
+
+<pre>
+shell# <b>mount</b>
+/dev/sd0a on / type ffs (local)
+/dev/sd0h on /usr type ffs (local)
+</pre>
+
+<p>
+この例では、root (/) ファイルシステムは物理的には sd0a 上にある。これは SCSI 固定ディスク 0 のパーティション a だ。/usr ファイルシステムは sd0h 上で、これは SCSI 固定ディスク 0 のパーティション hになる。
+</p>
+
+<p>
+もっと高度なマウントテーブルの例はこんな感じだ。
+</p>
+
+<pre>
+shell# <b>mount</b>
+/dev/sd0a on / type ffs (local)
+/dev/sd0d on /var type ffs (local)
+/dev/sd0e on /home type ffs (local)
+/dev/sd0h on /usr type ffs (local)
+</pre>
+
+<p>
+このもっと高度な例では、root (/) ファイルシステムは物理的には sd0a 上にある。/var ファイルシステムは sd0d、/home ファイルシステムは sd0e で、/usr は sd0hにある。
+</p>
+
+<p>
+マシンのバックアップには、それぞれの固定ディスクパーティション名を dump に指定する必要がある。さっきの、簡単な方のマウントテーブルをバックアップするコマンドはこんな具合だ。
+</p>
+
+<pre>
+# <b>/sbin/dump -0au -f /dev/nrst0 /dev/rsd0a</b>
+# <b>/sbin/dump -0au -f /dev/nrst0 /dev/rsd0h</b>
+# <b>mt -f /dev/rst0 rewind  </b>
+</pre>
+
+<p>
+もっと複雑なほうのマウントテーブルの例なら、こんな感じだろう。
+</p>
+
+<pre>
+# <b>/sbin/dump -0au -f /dev/nrst0 /dev/rsd0a</b>
+# <b>/sbin/dump -0au -f /dev/nrst0 /dev/rsd0d</b>
+# <b>/sbin/dump -0au -f /dev/nrst0 /dev/rsd0e</b>
+# <b>/sbin/dump -0au -f /dev/nrst0 /dev/rsd0h</b>
+# <b>mt -f /dev/rst0 rewind</b>
+</pre>
+
+<p>
+それぞれのコマンドラインのスイッチが何をするのかは、<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dump&amp;sektion=8&amp;format=html">dump(8)</a> man ページを見るのがいちばん簡単だ。上の例で使ったパラメータをざっと説明しよう。
+</p>
+
+<ul>
+<li><b>0</b> - レベル 0 のダンプをする、つまり全ファイルをダンプ
+<li><b>a</b> - 自動的にテープメディアの長さを決めようとする
+<li><b>u</b> - /etc/dumpdates を更新して、最後にバックアップをした日時を記録する
+<li><b>f</b> - どのテープデバイスを使うか (ここでは /dev/nrst0)
+</ul>
+
+<p>
+そして最後に、バックアップするパーティションが記述してある (/dev/rsd0a, etc)。
+</p>
+
+<p>
+最後に <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mt&amp;sektion=1">mt(1)</a> コマンドを使って、ドライブを巻き戻している。ほかのオプション (たとえば eject) については mt man ページを見てね。
+</p>
+
+<p>
+テープデバイス名がよくわからなければ、dmesg を使って調べよう。たとえば dmesg を使うとこんな感じだ。
+</p>
+
+<pre>
+st0 at scsibus0 targ 5 lun 0: &lt;ARCHIVE, Python 28388-XXX, 5.28&gt;
+</pre>
+
+<p>
+バックアップをするときに、デバイス名が dmesg に出てくる「st0」ではなく「nrst0」になっているのに気がついたかな。st0 に nrst0 としてアクセスすると、同じ物理デバイスにアクセスしているのだけれど、ジョブの終了後に巻き戻さないことと、デバイスを raw mode でアクセスすることになる。複数のファイルシステムを一本のテープにバックアップするには、必ず巻き戻さないデバイスを使うこと。もし巻き戻すデバイス (rst0) を使ったら、バックアップごとにテープが巻き戻されて、前のファイルシステムが上書きされてしまう。各種テープドライブについてもっとくわしい説明は dump man ページにある。
+</p>
+
+<p>
+"backup" を簡単なスクリプトにするならこういう感じだ。
+</p>
+
+<pre>
+echo "  Starting Full Backup..."
+/sbin/dump -0au -f /dev/nrst0 /dev/rsd0a
+/sbin/dump -0au -f /dev/nrst0 /dev/rsd0d
+/sbin/dump -0au -f /dev/nrst0 /dev/rsd0e
+/sbin/dump -0au -f /dev/nrst0 /dev/rsd0h
+echo
+echo -n "  Rewinding Drive, Please wait..."
+mt -f /dev/rst0 rewind
+echo "Done."
+echo
+</pre>
+
+<p>
+もし毎晩定期的にバックアップしたいなら、<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=cron&amp;sektion=8&amp;format=html">cron(8)</a> を使って自動的にバックアップ用スクリプトを起動させよう。
+</p>
+
+<p>
+あと、それぞれのファイルシステムがどのくらいのサイズになるかを (紙切れに) 書いておくと役に立つ。それぞれのパーティションがどのくらいの容量を使っているか調べるには df -h を使おう。これをやっておくと、ドライブがこわれてパーティションテーブルを新しいドライブに再現するときに便利だ。
+</p>
+
+<p>
+データのリストアをすると、ファイルの断片化解消にもなる。ファイル全部を確実にバックアップするには、まず再起動してシングルユーザモードで起動することだ。ファイルシステムは、バックアップするときにマウントしていなくてもいい。シングルユーザモードで起動したら、root (/) r/w をマウントするのは忘れないように。そうしないと、ダンプの日付を書き出そうとするときに dump は失敗する。シングルユーザモードで起動するには、boot> プロンプトで bsd -s を入力しよう。
+</p>
+
+<h3>dump テープの中身を見る</h3>
+
+
+<p>
+初めてファイルシステムをバックアップしたら、テープをちょっとテストしてみて、そこのデータが思い通りのところにあるか確認するのがいいだろう。
+</p>
+
+<p>
+dump テープ上のファイルのカタログを見るには、以下のような例を使えばいい。
+</p>
+
+<pre>
+# <b>/sbin/restore -tvs 1 -f /dev/rst0</b>
+</pre>
+
+<p>
+これで、dump テープの最初のパーティション上にあるファイルのリストが一覧表示される。上の例で追加しておくと、1 というのはroot (/) ファイルシステムだ。
+</p>
+
+<p>
+2番目のテープパーティションになにがあるかを見て、その出力をファイルに書き込むにはこんな感じのコマンドを使おう。
+</p>
+
+<pre>
+# <b>/sbin/restore -tvs 2 -f /dev/rst0 > /home/me/list.txt</b>
+</pre>
+
+<p>
+さっきの単純なほうのようなマウントテーブルを持っている場合には、2 は /usr で、もし高度なほうのマウントテーブルならば 2 は /var とかほかのファイルシステムになる。シーケンス番号は、ファイルシステムがテープに書き出された順番と一致する。
+</p>
+
+
+<h3>テープからの復元</h3>
+
+<p>
+以下に上げた例題シナリオは、固定ディスクが完全にいかれたときに便利だ。テープからファイル一つだけを復元したいときは、restore man ページを見て、対話型モードの指示をよく読むこと。
+</p>
+
+<p>
+もしきちんと準備をしてあれば、ディスクを交換してテープからデータを復元するのはとても手早くできる。標準の OpenBSD インストール/起動フロッピーは、すでに必要な復元ユーティリティもあるし、パーティションを切って新しいドライブを起動可能にするためのバイナリも入っている。ほとんどの場合、このフロッピーと最新の dump テープがあれば、それだけでシステムを立て直せる。
+</p>
+
+<p>
+壊れたディスクドライブを物理的に交換したら、データの復元の基本的なステップは以下の通り。
+</p>
+
+<ul>
+<li>
+<p>
+OpenBSD インストール／起動フロッピーから起動。メニュー選択で、Shell を選ぼう。最新のバックアップテープを、書き込み禁止にしてからテープドライブに入れる。
+<br>
+</p>
+
+<li>
+<p>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fdisk&amp;sektion=8&amp;arch=i386&amp;format=html">fdisk(8)</a> コマンドを使って、新品のドライブにプライマリ OpenBSD パーティションをつくる。以下に例を示す。
+</p>
+
+<pre>
+shell# <b>fdisk -e sd0</b>
+</pre>
+
+<p>
+詳しくは <a href="#fdisk">fdisk FAQ</a> を参照。
+</p>
+
+<li>
+<p>
+disklabel コマンドを使って、いま fdisk で作ったプライマリ OpenBSD パーティションの中に、OpenBSD パーティションをつくる。以下に例を示す。
+</p>
+
+<pre>
+shell# <b>disklabel -E sd0</b>
+</pre>
+
+<p>
+(スワップをわすれないこと。詳しくは <a href="#disklabel">disklabel FAQ</a> を見よう。)
+</p>
+
+<li>
+<p>
+newfs コマンドで、上記ステップでつくったパーティションにきれいなファイルシステムをつくろう。以下に例を示す。
+</p>
+
+<pre>
+shell# <b>newfs /dev/rsd0a</b>
+shell# <b>newfs /dev/rsd0h</b>
+</pre>
+
+<li>
+<p>
+新品の root (/) ファイルシステムを /mnt にマウントする。以下に例を示す。
+</p>
+
+<pre>
+shell# <b>mount /dev/sd0a /mnt</b>
+</pre>
+
+<li>
+<p>
+マウントされた root ファイルシステムに移動して、復元プロセスを開始しよう。以下に例を示す。
+</p>
+
+<pre>
+shell# <b>cd /mnt</b>
+shell# <b>restore -rs 1 -f /dev/rst0</b>
+</pre>
+
+<li>
+<p>
+この新しいディスクは起動可能にしたいので、以下のコマンドでドライブに新しい MBR を書き込む。以下に例を示す。
+</p>
+
+<pre>
+shell# <b>fdisk -i sd0</b>
+</pre>
+
+<li>
+<p>
+ドライブに新品の MBR を書くと同時に、起動できるようにブートブロックをインストールしなきゃいけない。簡単な例を挙げよう。
+</p>
+
+<pre>
+shell# <b>cp /usr/mdec/boot /mnt/boot</b>
+shell# <b>/usr/mdec/installboot -v /mnt/boot /usr/mdec/biosboot sd0</b>
+</pre>
+
+<li>
+<p>
+ハードディスクの新しい root ファイルシステムはこれで用意ができたので、そこから起動してほかのファイルシステムのリストアを続けることができる。OS はまだ完全ではないから、必ずシングルユーザモードで起動するように。シェルのプロンプトで、以下のコマンドで、アンマウントしてシステムを停止させる。
+</p>
+
+<pre>
+shell# <b>umount /mnt</b>
+shell# <b>halt</b>
+</pre>
+
+<li>
+<p>
+インストール/起動フロッピーをドライブから抜いて、システムを再起動しよう。OpenBSD boot&gt; プロンプトで次のコマンドを入れる。
+</p>
+
+<pre>
+boot&gt; <b>bsd -s</b>
+</pre>
+
+<p>
+bsd -s で、カーネルはシングルユーザモードで起動することになる。これは root (/) ファイルシステムだけあればいい。
+</p>
+
+<li>
+<p>
+以上のステップをきちんとやって、途中でなにかトラブルがなければ、プロンプトが出てきて、シェルのパスを入れるかリターンを押せと言われる。リターンを押せば sh が使える。次に、root を読み出し専用ではなく r/w モードでマウントしなおそう。以下のコマンドを実行する。
+</p>
+
+<pre>
+shell# <b>mount -u -w /</b>
+</pre>
+
+<li>
+<p>
+r/w モードで再マウントしたら、残りのファイルシステムの再現を続けよう。以下に例を示す。
+</p>
+
+<pre>
+(単純なマウントテーブル)
+shell# <b>mount /dev/sd0h /usr; cd /usr; restore -rs 2 -f /dev/rst0</b>
+
+(もっと高度なマウントテーブル)
+shell#	<b>mount /dev/sd0d /var; cd /var; restore -rs 2 -f /dev/rst0</b>
+shell#	<b>mount /dev/sd0e /home; cd /home; restore -rs 3 -f /dev/rst0</b>
+shell#	<b>mount /dev/sd0h /usr; cd /usr; restore -rs 4 -f /dev/rst0</b>
+</pre>
+
+<p>
+ダンプセットから復元されるオブジェクト名をその都度見たいなら、ただの rsf ではなく "<b>restore rvsf</b>" を使おう。
+</p>
+
+<li>
+<p>
+最後に、ほかのファイルシステムを全部ディスクに回復し終えたら、マルチユーザモードに入ろう。すべてもくろみ通りに進んだら、システムは最新のバックアップ時と同じ状態に戻っていて、また使えるようになっているはずだ。
+</p>
+</ul>
+
+<a name= "MountImage"></a>
+<a name=14.l0></a>
+<h2>14.10 - OpenBSD でディスクイメージをマウントする</h2>
+
+<p>
+ディスクイメージ (ISO イメージ、dd で作ったディスクイメージなど) を OpenBSD で
+マウントするには、<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vnd&amp;sektion=4">vnd(4)</a> デバイスを設定する必要がある。たとえば、ISO イメージが <i>/tmp/ISO.image</i> にあるとしたら、マウントするには以下のようにするのだ。
+</p>
+
+<table border=0 width="800">
+        <tr>
+                <td nowrap bgcolor="#EEEEEE">
+<pre>
+# <strong>vnconfig svnd0 /tmp/ISO.image</strong>
+# <strong>mount -t cd9660 /dev/svnd0c /mnt</strong>
+</pre>
+                </td>
+        </tr>
+</table>
+
+<p>
+ポイントとしては、このイメージは CD イメージなので、マウントするときにはその種類を <i>cd9660</i> で指定してやるってことだ。これはどんな種類のイメージでもそうで、たとえばディスクイメージをマウントするなら ffs を使わなきゃいけない。
+</p>
+
+<p>
+イメージのアンマウントには以下のコマンドを使おう。
+</p>
+
+<table border=0 width="800">
+        <tr>
+                <td nowrap bgcolor="#EEEEEE">
+<pre>
+# <strong>umount /mnt</strong>
+# <strong>vnconfig -u svnd0</strong>
+</pre>
+                </td>
+        </tr>
+</table>
+
+<p>
+詳しくは
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vnconfig&amp;sektion=8">vnconfig(8)</a> man page を参照のこと。
+</p>
+
+
+<a name= "pciideErr"></a>
+<a name=14.11></a>
+<h2>14.11 - 助けて!  PCIIDE でエラーになっちゃう!</h2>
+
+
+<p>
+PCI IDE DMA は信頼できない。Microsoft が出荷しているオペレーティング
+システムで default は無効にしてあるのはそのためだ。
+</p>
+
+<p>
+OpenBSD は積極的で、設定できる一番上位の DMA モードを使おうとする。
+こうすると、ある設定ではバグのあるマザーボードのチップセットとか
+バグのあるドライブとかケーブル上のノイズなんかのせいで
+データ転送の悪化を引き起こすだろう。幸運にも、Ultra-DMA モードは
+悪化を検出する CRC によってデータ転送を保護する。Ultra-DMA CRC
+が失敗したときには、OpenBSD はエラーメッセージを出してもう一度
+転送を試みる。
+</p>
+
+<pre>
+wd2a:  aborted command, interface CRC error reading fsbn 64 of 64-79 (wd2 bn 127; cn 0 tn 2 sn 1), retrying
+</pre>
+
+<p>
+何度か失敗すると、OpenBSD はもっと遅い (願わくばもっと信頼できる)
+Ultra-DMA モードへ下げる。Ultra-DMA モード 0 まで行ったら、
+ドライブは PIO モードへ下げる。
+</p>
+
+<p>
+もし OpenBSD がうまくモードを下げられなかったり、途中でマシンが固まったり
+するようだったら、<a href="../../report.html">バグの報告</a> へ送っていただきたい。
+</p>
+
+
+<a name= "RAID"></a>
+<h2>14.12 - OpenBSD の RAID オプション</h2>
+RAID (Redundant Array of Inexpensive Disks) は、一台のディスクだけのときより、
+より良い性能や、容量、そして冗長性を得るために、複数台のディスクを使うための
+仕組みだ。
+RAID の特質についての詳細な議論は、この文章の範囲外だが、ふたつの重要な点だけは
+ここで明確にしておこう。
+<ul>
+<li>RAID はバックアップについては何もしない。</li>
+<li>RAID 自身はダウンタイムを短縮してくれはしない。</li>
+</ul>
+もし、これがあなたにとって新しい情報だったりしたら、これはあなたにとって、
+RAID の冒険のための良い出発点ではない。
+
+<h3>ソフトウェアオプション</h3>
+OpenBSD は、ソフトウェア RAID である RAIDframe を含んでいる。
+これについてのドキュメントは以下の場所にある。
+<ul>
+<li><a href="faq11.html#raid">FAQ 11, RAID</a>
+<li><a href="http://www.pdl.cmu.edu/RAIDframe/">RAIDframe ホームページ</a></li>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=raidctl&amp;sektion=8">raidctl(8) man ページ</a></li>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=raid&amp;sektion=4">raid(4) man ページ</a></li>
+</ul>
+<p>
+現時点では、ルートパーティションは OpenBSD では RAIDframe で直接ミラーリング
+できないが、これは、次の OpenBSD のリリースでは変更されるはずだ。
+</p>
+
+<h3>ハードウェアオプション</h3>
+<p>
+多くの OpenBSD の <a href="../../ja/plat.html">プラットフォーム</a> は、いろんな種類のハードウェア
+RAID 製品をサポートしている。これはプラットフォームによって変わるので、ハードウェアサポート
+ページ (<a href="../../ja/plat.html">ここ</a> にリストがある) を見てね。
+</p>
+<p>
+もうひとつ、複数のドライブを一台の IDE や SCSI のドライブとして見せて、
+これを標準の IDE や SCSI アダプタに接続して使うタイプの多くの製品が、
+多くのプラットフォームで利用可能だ。これらのデバイスは、SCSI や IDE を
+サポートしているどんなハードウェアプラットフォームでも仮想的に動作できる。
+</p>
+これらの製品のいくつかの製造業者は次のとおり。
+<ul>
+<li><a href="http://www.arcoide.com/">Arco</a></li>
+<li><a href="http://www.maxtronic.com/">Maxtronic</a></li>
+<li><a href="http://www.infortrend.com/">Infortrend</a></li>
+</ul>
+(注: これらは OpenBSD のユーザが使えることをレポートしてくれた
+製品というだけなので、その使用を推奨しているわけではないし、
+徹底したリストだというわけでもない。)
+
+
+<h3>Non-Options</h3>
+<p>
+<a href="../../mail.html">メーリングリスト</a>上で、ときどき繰り返される質問として、
+「Promise や HighPoint の IDE RAID コントローラはサポートしているのか ?」というのがある。
+その答は "No" だ。これらのカードやチップはほんとうのハードウェア RAID コントローラ
+じゃなくて、むしろ、これは、
+BIOS の助けを借りてブートするソフトウェア RAID だからなんだ。既に OpenBSD は、
+ハードウェアに依存しない方法でソフトウェア RAID をサポートしているんだから、
+OpenBSD の開発者の間では、これらのカードの特別なサポートを実装しようという気には
+ならないだろう。
+</p>
+<p>
+<font color= "#0000e0">
+<a href= "index.html">[FAQ トップへ]</a>
+<a href= "faq13.html">[13.0 - IPsec へ]</a>
+</font>
+</p>
+
+<hr>
+<p>
+<a href= "index.html"><img height= "24" width= "24" src= "../../images/back.gif" border= "0" alt="[back]"></a>
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: faq14.html,v 1.59 ]
+<br>
+$Translation: faq14.html,v 1.1 2002/04/13 15:02:14 toshi Exp $
+<br>
+$OpenBSD: faq14.html,v 1.1 2002/04/13 19:03:54 jufi Exp $
+</small>
+</p>
+</body>
+</html>
