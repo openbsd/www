@@ -15,9 +15,9 @@ all: ../groups.html ../support.html
 		@rm -f support-tbl.html
 
 groups.countries:	groups.dat mkcountries Makefile
-		mkcountries groups.dat > $@
+		sh mkcountries groups.dat > $@
 support.countries:	support.dat mkcountries Makefile
-		mkcountries support.dat > $@
+		sh mkcountries support.dat > $@
 
 clean:
 		rm -f *.countries
