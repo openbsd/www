@@ -418,6 +418,7 @@ This may be specified as an absolute value using the suffixes <tt>b</tt>,
 megabits, and gigabits per second, respectively or as a percentage of the
 parent queue's bandwidth.
 This parameter is only applicable when using the <tt>cbq</tt> scheduler.
+If not specified, the default is 100% of the parent queue's bandwith.
 <li><tt><i>pri</i></tt> - the priority of the queue. For <tt>cbq</tt> the
 priority range is 0 to 7 and for <tt>priq</tt> the range is 0 to 15.
 Priority 0 is the lowest priority. When not specified, a default of 1 is
@@ -451,9 +452,9 @@ Continuing with the example above:
 <blockquote>
 <tt>
 queue std bandwidth 50% cbq(default)<br>
-queue ssh { ssh_login, ssh_bulk }<br>
-&nbsp;&nbsp;queue ssh_login  priority 4 cbq(ecn)<br>
-&nbsp;&nbsp;queue ssh_bulk   cbq(ecn)<br>
+queue ssh bandwidth 25% { ssh_login, ssh_bulk }<br>
+&nbsp;&nbsp;queue ssh_login bandwidth 25% priority 4 cbq(ecn)<br>
+&nbsp;&nbsp;queue ssh_bulk  bandwidth 75% cbq(ecn)<br>
 queue ftp bandwidth 500Kb priority 3 cbq(borrow red)<br>
 </tt>
 </blockquote>
@@ -462,12 +463,22 @@ queue ftp bandwidth 500Kb priority 3 cbq(borrow red)<br>
 Here the parameters of the previously defined child queues are set. The
 <tt>std</tt> queue is assigned a bandwidth of 50% of the root queue's
 bandwidth (or 1Mbps) and is set as the default queue. The <tt>ssh</tt>
-queue defines two child queues, <tt>ssh_login</tt> and
+queue is assigned 25% of the root queue's bandwidth (500kb) and also
+contains two child queues, <tt>ssh_login</tt> and
 <tt>ssh_bulk</tt>. The <tt>ssh_login</tt> queue is given a higher
 priority than <tt>ssh_bulk</tt> and both have ECN enabled.  The
 <tt>ftp</tt> queue is assigned a bandwidth of 500Kbps and given a
 priority of 3. It can also borrow bandwidth when extra is available and
 has RED enabled. 
+
+<p>
+<b>NOTE:</b> Each child queue definition has its bandwidth specified.
+Without specifying the bandwidth, PF will give the queue 100% of the
+parent queue's bandwidth.
+In this situation, that would cause an error when the rules are loaded
+since if there's a queue with 100% of the bandwidth, no other queue can
+be defined at that level since there is no free bandwidth to allocate to
+it.
 
 <a name="assign"></a>
 <h3>Assigning Traffic to a Queue</h3>
@@ -497,7 +508,7 @@ defined in the <tt>altq on</tt> directive:
 <blockquote>
 <tt> 
 altq on fxp0 cbq bandwidth 2Mb queue { std, ftp }<br>
-queue std cbq(default)<br>
+queue std bandwidth 500Kb cbq(default)<br>
 queue ftp bandwidth 1.5Mb<br>
 <br>
 pass in on dc0 from any to any port 21 queue ftp<br>
@@ -642,9 +653,9 @@ altq on dc0 cbq bandwidth 2Mb queue { std_in, ssh_im_in, dns_in, bob_in }
 # bob_in      - bandwidth reserved for Bob's workstation. allow him to
 #               borrow.
 
-queue std_in    cbq(default)
-queue ssh_im_in priority 4
-queue dns_in    priority 5
+queue std_in    bandwidth 1.6Mb cbq(default)
+queue ssh_im_in bandwidth 200Kb priority 4
+queue dns_in    bandwidth 120Kb priority 5
 queue bob_in    bandwidth 80Kb cbq(borrow)
 
 
@@ -716,13 +727,18 @@ other network segments are using Fast Ethernet (100Mbps).
 <p>
 The network administrator has decided on the following policy:
 <ul>
-<li>Limit traffic between the WWW server and the Internet to 500Kbps in
+<li>Limit all traffic between the WWW server and the Internet to 500Kbps in
 each direction.
-<li>No bandwidth limit on traffic between the WWW server and the
-internal network.
-<li>Give HTTP traffic between the WWW server and the Internet a higher
-priority than other traffic between the WWW server and the Internet
-(such as FTP uploads).
+	<ul>
+	<li>Allot 250Kbps to HTTP traffic.
+	<li>Allot 250Kbps to "other" traffic (i.e., non-HTTP traffic)
+	<li>Allow either queue to borrow up to the full 500Kbps.
+	<li>Give HTTP traffic between the WWW server and the Internet a
+	higher priority than other traffic between the WWW server and the
+	Internet (such as FTP uploads).
+	</ul>
+<li>Traffic between the WWW server and the internal network can use up
+to the full 100Mbps that the network offers.
 <li>Reserve 500Kbps for the IT Dept network so they can download the
 latest software updates in a timely manner. They should be able to use
 more than 500Kbps when extra bandwidth is available.
@@ -752,15 +768,15 @@ altq on fxp0 cbq bandwidth 1.5Mb queue { std_ext, www_ext, boss_ext }
 #                  outgoing traffic on fxp0.
 # www_ext        - container queue for WWW server queues. limit to
 #                  500Kbps.
-#   www_ext_http - http traffic from the WWW server
-#   www_ext_misc - all non-http traffic from the WWW server
-# boss_ext       - traffic coming from the boss's computer
+#   www_ext_http - http traffic from the WWW server; higher priority.
+#   www_ext_misc - all non-http traffic from the WWW server.
+# boss_ext       - traffic coming from the boss's computer.
 
-queue std_ext        cbq(default)
+queue std_ext        bandwidth 500Kb cbq(default borrow)
 queue www_ext        bandwidth 500Kb { www_ext_http, www_ext_misc }
-  queue www_ext_http priority 3 cbq(red)
-  queue www_ext_misc priority 1
-queue boss_ext       priority 3
+  queue www_ext_http bandwidth 50% priority 3 cbq(red borrow)
+  queue www_ext_misc bandwidth 50% priority 1 cbq(borrow)
+queue boss_ext       bandwidth 500Kb priority 3 cbq(borrow)
 
 # enable queueing on the internal interface to control traffic coming
 # from the Internet or the DMZ. use the cbq scheduler to control the
@@ -776,15 +792,15 @@ altq on dc0 cbq bandwidth 100% queue { net_int, www_int }
 #              is 1.0Mbps.
 #   std_int  - the standard queue. also the default queue for outgoing
 #              traffic on dc0.
-#   it_int   - traffic to the IT Dept network.
-#   boss_int - traffic to the boss's PC.
-# www_int    - traffic from the WWW server in the DMZ.
+#   it_int   - traffic to the IT Dept network; reserve them 500Kbps.
+#   boss_int - traffic to the boss's PC; assign a higher priority.
+# www_int    - traffic from the WWW server in the DMZ; full speed.
 
 queue net_int    bandwidth 1.0Mb { std_int, it_int, boss_int }
-  queue std_int  cbq(default)
+  queue std_int  bandwidth 250Kb cbq(default borrow)
   queue it_int   bandwidth 500Kb cbq(borrow)
-  queue boss_int priority 3
-queue www_int    cbq(red)
+  queue boss_int bandwidth 250Kb priority 3 cbq(borrow)
+queue www_int    bandwidth 99Mb cbq(red borrow)
 
 # enable queueing on the DMZ interface to control traffic destined for
 # the WWW server. cbq will be used on this interface since detailed
@@ -798,13 +814,13 @@ altq on fxp1 cbq bandwidth 100% queue { internal_dmz, net_dmz }
 # define the parameters for the child queues.
 # internal_dmz   - traffic from the internal network.
 # net_dmz        - container queue for traffic from the Internet.
-#   net_dmz_http - http traffic.
+#   net_dmz_http - http traffic; higher priority.
 #   net_dmz_misc - all non-http traffic. this is also the default queue.
 
-queue internal_dmz      # no special settings needed
+queue internal_dmz   bandwidth 99Mb cbq(borrow)
 queue net_dmz        bandwidth 500Kb { net_dmz_http, net_dmz_misc }
-  queue net_dmz_http priority 3 cbq(red)
-  queue net_dmz_misc priority 1 cbq(default)
+  queue net_dmz_http bandwidth 50% priority 3 cbq(red borrow)
+  queue net_dmz_misc bandwidth 50% priority 1 cbq(default borrow)
 
 
 # ... in the filtering section of pf.conf ...
@@ -865,7 +881,7 @@ pass out on fxp1 proto tcp from $int_nets to $wwwserv port { 80, \
 <a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a> 
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: queueing.html,v 1.25 2005/02/07 05:56:39 joel Exp $</small>
+<small>$OpenBSD: queueing.html,v 1.26 2005/02/25 04:12:30 joel Exp $</small>
 
 </body>
 </html> 
