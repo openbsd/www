@@ -159,6 +159,15 @@ X  - Create an entry in /etc/services
 X     cvspserver		2401/tcp		# CVS client/server operations
 X  - Create an entry in /etc/inetd.conf
 X     cvspserver	stream	tcp nowait anoncvs /open/anoncvssh anoncvssh pserver
+X  - Create a file /open/anoncvs/cvs/CVSROOT/passwd with the following entry
+X	anoncvs:AHDysQkJIubEc
+X    which would be a password of "anoncvs" (as per anoncvs.html)
+X  - Create a file /open/anoncvs/cvs/CVSROOT/readers with a single entry:
+X	anoncvs
+X    which tells cvs that user "anoncvs" is allowed readonly access.
+X  - Create a zero-length file /open/anoncvs/cvs/CVSROOT/writers since you don't
+X    want anyone to be able to write to the mirror.
+X	% cp /dev/null /open/anoncvs/cvs/CVSROOT/writers
 X
 XSee the example layout below for full details.
 X
@@ -188,9 +197,12 @@ X
 X    cvs host=anoncvs1.ca.openbsd.org hostbase=/usr/OpenBSD base=/open/anoncvs delete
 X
 XThe file /open/sup/cvs/refuse tells sup what files it should not get.
-XIt should contain the single line:
+XIt should contain the following lines:
 X
 X    cvs/CVSROOT/history
+X    cvs/CVSROOT/readers
+X    cvs/CVSROOT/writers
+X    cvs/CVSROOT/passwd
 X
 Xif you ever fetch the file cvs/CVSROOT/history, delete it. it will
 Xcause you problems.
@@ -572,13 +584,13 @@ X	}
 X#endif /* ANONCVS_USER */
 X
 X
-X	seteuid(0);
+X	setuid(0);
 X	if (chroot(pw->pw_dir) == -1) {
 X		perror("chroot");
 X		exit (1);
 X	}
 X	chdir("/");
-X	setuid(getuid());
+X	setuid(pw->pw_uid);
 X
 X	/*
 X	 * program now "safe"
@@ -619,7 +631,8 @@ X		       "pserver connection from %s:%d to %s:%d\n",
 X		       them, ntohs(peer_sa.sin_port),
 X		       us, ntohs(my_sa.sin_port));
 X#endif /* USE_SYSLOG */
-X		execle("/usr/bin/cvs", "cvs", "pserver", NULL, env);
+X		execle("/usr/bin/cvs", "cvs",
+X		    __CONCAT("--allow-root=",LOCALROOT), "pserver", NULL, env);
 X		perror("execle: cvs");
 X		fprintf(stderr, "unable to exec CVS pserver!\n");
 X		exit(1);
