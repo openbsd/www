@@ -1,0 +1,330 @@
+BSD lpd vulnerabilities
+      Title: BSD lpd vulnerabilities
+      Date Issued: October 2, 1997
+      Last Modified: October 2, 1997
+      Code: SNI-19
+      Source: Network Associates (was SNI)
+
+-----BEGIN PGP SIGNED MESSAGE-----
+
+                        #####   ##   ##   ######
+                        ##      ###  ##     ##
+                        #####   ## # ##     ##
+                           ##   ##  ###     ##
+                        ##### . ##   ## . ###### .
+
+                           Secure Networks Inc.
+
+                            Security Advisory
+                             October 2, 1997
+
+                          BSD lpd vulnerabilities
+
+
+This advisory addresses a number of vulnerabilities present in the
+BSD line printer daemon (lpd).  These vulnerabilities can enable a
+remote individual to create and remove arbitrary files, as well as
+enabling remote individuals to obtain shell access as the user
+which lpd runs as.
+
+
+Problem Descriptions
+~~~~~~~~~~~~~~~~~~~~
+
+Problem 1: File creation
+
+Individuals with access to the line printer daemon from a privileged
+port on a valid print client can tell lpd to create a file, providing
+the name of the file, including directory names, is no longer than 5
+characters.
+
+Problem 2: File deletion
+
+Individuals with access to the line printer daemon from a privileged
+port on a valid print client can tell lpd to remove any file on the
+system.
+
+Problem 3: Remote execution
+
+Individuals with access to the line printer daemon from a privileged
+port on a valid print client can execute commands remotely as the
+user which lpd is running as.  This vulnerability can allow
+interactive shell access to the remote system.
+
+
+A privileged port on a valid client system is required to exploit
+all of these vulnerabilities.  A privileged port can be obtained on
+many operating systems by utilizing another vulnerability present in
+the file transfer protocol daemon (ftpd).  This vulnerability is
+commonly known as the "FTP bounce" attack, and allows data to be
+sent to any internet address and port, originating from the FTP
+data port (20).
+
+
+Technical Details
+~~~~~~~~~~~~~~~~~
+
+Problem 1: File creation
+
+BSD derived lp daemons support a feature to allow remote print clients
+to transfer control files and files to be printed, to the print server.
+These files are created in the printer daemon spool directory.
+
+This problem is present due to the fact that lpd fails to validate the
+name of files being uploaded by print clients.  By specifying an explicit
+path, an attacker can create files on a remote server.  This problem
+allows an attacker to specify a total of 5 characters in the path
+and name of the file.
+
+
+Problem 2: File deletion
+
+This problem uses the technique described in problem #1.  An attacker
+has the ability to create lpd control files.  lpd control files support
+various functions such as specifying a file to print and removal of
+files.  Any file which is sent to the remote print daemon which begins
+with "cf" will be treated as a control file.  By uploading a control
+file which utilizes the removal feature, any system file can be
+removed from the print server.
+
+
+Problem 3: Remote Execution
+
+This problem uses the technique described in problem #1.  By uploading
+a lpd control file, the attacker can cause lpd to send mail to the
+user specified in the control file, confirming their print job.  When
+lpd sends mail, it specifies the username which was inserted into the
+control file, on the sendmail command line.  By specifying a sendmail
+command line option rather than a username, the attacker can cause
+sendmail to utilize an alternate configuration file when it is invoked.
+
+An alternate sendmail configuration file can be transferred to the
+remote system via anonymous FTP, or Problem #1.
+
+
+Impact
+~~~~~~
+
+If anonymous FTP is enabled on a valid print client, and the print
+client is vulnerable to the FTP bounce attack, then individuals can
+create and remove files on the print server, and execute commands on
+the print server.
+
+If anonymous FTP is not enabled on any print client, but the FTP
+server is vulnerable to the FTP bounce attack, then any user with
+a valid FTP account can create and remove files on the print server,
+and execute commands on the print server.
+
+If no valid print clients are vulnerable to the FTP bounce attack, then
+a user with root privileges on any valid print client can create and
+remove files on the print server, and execute commands on the print
+server.
+
+
+Vulnerable Systems
+~~~~~~~~~~~~~~~~~~
+
+BSD/OS 2.1 and 3.0 (BSDI):
+
+  The BSD/OS print system is not configured by default, therefore
+  all vulnerabilities apply ONLY if the system has been configured
+  as a print server.
+
+  The BSD/OS lpd is vulnerable to all three problems if printing
+  has been enabled.
+
+  The lpd shipped with BSD/OS accepts connections from the FTP
+  daemon, allowing attackers to utilize the FTP bounce attack.
+
+  BSD/OS is vulnerable to problem 3 (remote execution) only if
+  the attacker has the ability to upload a world readable file
+  to the remote server.
+
+
+FreeBSD:
+
+  The FreeBSD print system is not configured by default, therefore
+  all vulnerabilities apply ONLY if the system has been configured
+  as a print server.
+
+  In 2.1.7 and 2.2.2, the ftpd shipped does NOT permit the ftp
+  bounce attack.
+
+  In 2.1.7 and 2.2.2, the lpd shipped does not permit connections from
+  the FTP daemon.
+
+  Current versions of FreeBSD are vulnerable only if the attacker has
+  super-user access on a valid print client.
+
+
+Linux:
+
+  Many Linux distributions have lpd configured by default and
+  permit "localhost" to use the print service.
+
+  The Linux lpd is vulnerable to all three problems if printing
+  has been enabled.
+
+  The lpd shipped with Linux accepts connections from the FTP
+  daemon, allowing attackers to utilize the FTP bounce attack.
+
+  The ftpd shipped with some Linux versions permits the FTP bounce
+  attack.  To determine your ftpd version, issue the command:
+
+  % telnet localhost 21
+
+  If you see: 'wu-ftpd-2.4.2-academ[BETA-13]' then you are NOT
+  vulnerable to FTP bounce attacks.  If you do not see
+  'academ[BETA-13]' in the ftpd version string, then there is
+  a high possibility that you are vulnerable to FTP bounce attacks.
+
+  Linux is vulnerable to problem 3 (remote execution) only if
+  the attacker has the ability to upload a world readable file
+  to the remote print server.
+
+
+OpenBSD 2.1:
+
+  The OpenBSD print system is not enabled by default.
+
+  The OpenBSD lpd does not permit connections from the FTP daemon.
+
+  OpenBSD ftpd is not vulnerable to ftp bounce attacks.
+
+  OpenBSD is vulnerable only if the attacker has super-user access
+  to a valid print client.
+
+  OpenBSD is vulnerable to problem 3 (remote execution) only if
+  the attacker has the ability to upload a world readable file
+  to the remote print server.
+
+  OpenBSD-current has all of the above problems fixed.
+
+
+Fix Information
+~~~~~~~~~~~~~~~
+
+There are several solutions which can serve as a workaround for this
+problem.
+
+i.   Installing a FTP daemon which prevents ftp bounce.  This FTP
+     daemon should be installed on all print clients to prevent non-root
+     users from obtaining a privileged port to connect to the print
+     daemon with.
+
+     A freely available FTP daemon which prevents users from sending
+     data to privileged ports is the Academ wu-ftpd variant, currently
+     in beta.
+
+     You can obtain a copy of this ftpd at:
+
+     ftp://ftp.academ.com/pub/wu-ftpd/private/wu-ftpd-2.4.2-beta-15.tar.Z
+
+     Installing this alternate FTP daemon will limit the above attacks,
+     however will still allow an attacker who has super-user access on
+     a valid print client to exploit these problems.
+
+ii.  Modify your print daemon to reject connections from the ftp-data
+     port (port 20).
+
+iii. Disable print services until a suitable fix has been made availible
+     for your operating system.
+
+iv.  Install a fixed version of the BSD print software.  A fixed version
+     of the BSD print software is availible at the following ftp site:
+
+     ftp://ftp.secnet.com/pub/patches/lpd.tar.gz
+
+     This package fixes numerous other problems present in the BSD
+     printing suite, including numerous buffer overflows present in both
+     the client programs and the server.  This package has been
+     provided by OpenBSD.
+
+v.   Contact your vendor for patch information.
+
+
+Additional Information
+~~~~~~~~~~~~~~~~~~~~~~
+
+The file deletion problems in lpd were discovered by Hiroshi Nakano
+<nakano@rins.ryukoku.ac.jp>
+
+The remote execution problem which enables attackers to execute
+commands as the lpd user was discovered by Oliver Friedrichs
+<oliver@secnet.com>
+
+For additional information about FTP bounce attacks, please see
+ftp://ftp.sterling.com/mirrors/avian.org/random/ftp-attack
+
+You can subscribe to our security advisory mailing list by sending
+mail to majordomo@secnet.com, containing the single line
+subscribe sni-advisories
+
+You can find Secure Networks papers at ftp://ftp.secnet.com/pub/papers
+and advisories at ftp://ftp.secnet.com/pub/advisories
+
+You can contact Secure Networks Inc. at <sni@secnet.com> using
+the following PGP key:
+
+Type Bits/KeyID    Date       User ID
+pub  1024/9E55000D 1997/01/13 Secure Networks Inc. <sni@secnet.com>
+                              Secure Networks <security@secnet.com>
+
+- -----BEGIN PGP PUBLIC KEY BLOCK-----
+Version: 2.6.3ia
+
+mQCNAzLaFzIAAAEEAKsVzPR7Y6oFN5VPE/Rp6Sm82oE0y6Mkuof8QzERV6taihn5
+uySb31UeNJ4l6Ud9alOPT/0YdeOO9on6eD1iU8qumFxzO3TLm8nTAdZehQSAQfoa
+rWmpwj7KpXN/3n+VyBWvhpBdKxe08SQN4ZjvV5HXy4YIrE5bTbgIhFKeVQANAAUR
+tCVTZWN1cmUgTmV0d29ya3MgSW5jLiA8c25pQHNlY25ldC5jb20+iQCVAwUQM1yd
+EB/bLKAOe7p9AQFptAQAiYpaZCpSmGgr05E698Z3t5r5BPAKUEtgvF53AvZUQLxz
+ZsYsVU5l5De0qKWJOQ/9LiDyWu1lvKhlTphbLy2RatWD4kO3oQL9v3TpSXm2WQhU
+uIzyZvj7S5ENodNnKn+gCDIvbou6OMot+7dRbWWgN2oabbru4CSlOxbG++yaTz+J
+AJUDBRAzTefbtOXez5VgyLkBAd0bA/43eGEgvPOFK+HHWCPpkSWCwtrtDU/dxOVz
+9erHnT/CRxeojCI+50f71Qe+kvx9Q1odz2Jl/fLxhnPQdbPnpWblIbu4F8H+Syrj
+HTilDrl1DWa/nUNgK8sb27SMviELczP1a8gwA1eo5SUCG5TWLLTAzjWOgTxod2Ha
+OwseUHmqVIkAlQMFEDNOVsr/d6Iw8NVIbQEBxM0D/14XRfgSLwszgJcVbslMHm/B
+fF6tHoWYojzQle3opOuMYHNN8GsMZRkc1qQ8QuNA9Aj5+qDqEontGjV5IvhBu1fY
+FM77AhagskaFCZxwqV64Qrk328WDO89NGSd+RuovVNruDdn20TxNCEVuPTHjI0UA
+8H+E6FW9jexg6RTHhPXYtCVTZWN1cmUgTmV0d29ya3MgPHNlY3VyaXR5QHNlY25l
+dC5jb20+iQCVAwUQMtqTKB/bLKAOe7p9AQFw5wQAgUwqJ+ZqfEy/lO1srU3nzxLA
+X0uHGHrMptRy/LFo8swD6G1TtWExUc3Yv/6g2/YK09b5WmplEJ+Q09maQIw+RU/s
+cIY+EsPauqIq4JTGh/Nm0Z4UDl2Y1x4GNtm0YqezxUPS0P0A3LHVLJ3Uo5og0G8O
+gPNrfbVz5ieT14OSCWCJAJUDBRAy2hd2/3eiMPDVSG0BAVNhBACfupfAcNhhnQaq
+aI03DOOiZSRjvql1xw4V+pPhM+IksdSK3YNUZVJJtANacgDhBT+jAPRaYbBWI3A5
+ZMdcSNM8aTG0LWMLIOiOYEm6Lgd3idRBFN0Js08eyITl8mhZ33mDe4I0KQri9UiV
+ZcPYTbb9CWM6Hv2cMbt6S6kLnFziqIkAlQMFEDLaF0+4CIRSnlUADQEBCLoEAJwt
+UofDgvyZ4nCDx1KKAPkkXBRaPMWBp46xeTVcxaYiloZfwHfpk1h2mEJAxmAsvizl
+OtIppHl4isUxcGi/E2mLCLMvis22/IQP/9obPahPvgNaMLVtZljO1Nv3QFEkNciL
+FEUTNJHR1ko7ibCxkBs4cOpirFuvTMDvWnNaXAf8
+=DchE
+- -----END PGP PUBLIC KEY BLOCK-----
+
+Copyright Notice
+~~~~~~~~~~~~~~~~
+The contents of this advisory are Copyright (C) 1997 Secure Networks Inc,
+and may be distributed freely provided that no fee is charged for
+distribution, and that proper credit is given.
+
+ You can find Secure Networks papers at ftp://ftp.secnet.com/pub/papers
+ and advisories at ftp://ftp.secnet.com/advisories
+
+ You can browse our web site at http://www.secnet.com
+
+ You can subscribe to our security advisory mailing list by sending mail to
+ majordomo@secnet.com with the line "subscribe sni-advisories"
+
+
+-----BEGIN PGP SIGNATURE-----
+Version: 2.6.3ia
+Charset: noconv
+
+iQCVAwUBNDRHjrgIhFKeVQANAQE5uAQAlaKLZBK2CC3YbkXy6CQOkQpj8ENIFx2P
+ruPcu3ybBTsnCKNFjSKK/NYJPTIgAPixFcevKPx1JmDO9nR8RaYZakpl1wxI6Xin
+c7NdMnQQBpZQr3AMapI6e9BniDPCWL8x83quIhbQFFgNgYPXYEPDXSkwsY2BObT/
+SJ8sWo4k4fQ=
+=dwHs
+-----END PGP SIGNATURE-----
+
+
+

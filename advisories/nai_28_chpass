@@ -1,0 +1,115 @@
+
+
+Vulnerability in OpenBSD 2.3 chpass(1)
+
+
+
+  Network Associates, Inc.
+  Security Advisory #26 <----- it's actually 28 (jwk)
+    August 3, 1998
+
+SYNOPSIS
+
+Due to an implementation problem involving file descriptor leakage across
+processes, it is possible to exploit the "chpass" command to gain superuser
+privileges on OpenBSD 2.3.
+
+AFFECTED SYSTEMS
+
+This vulnerability has been confirmed against OpenBSD 2.3 (and below). No other
+operating systems are currently known to be vulnerable to this problem.
+
+DETAILS
+
+The "chpass" command allows unprivileged users to edit database information
+associated with their account. Chpass assembles a collection of information that
+can be edited in a file, allows the user to modify it with the editor of their
+choice, and then commits the modified information back to the password database.
+
+Chpass is an SUID program. It functions by creating a temporary copy of the
+password database, spawning an editor to display and modify user account
+information, and then committing the information into the temporary password
+file copy, which is then used to rebuild the password database.
+
+In OpenBSD 2.3, an implementation flaw causes the temporary password file copy
+to become accessible to the spawned editor process and its children. An attacker
+can use this access to modify the information in the temporary copy. The tainted
+copy is used to rebuild the password database, allowing the attacker to modify
+"root"'s account information and gain superuser access.
+
+TECHNICAL DETAILS
+
+This problem exists due to file descriptor leakage between the "chpass" program,
+which is a security-critical SUID program, and the user's editor program.
+Because the file descriptor corresponding to the temporary password file copy is
+not closed after the editor is executed, the editor program (and its
+descendants) have write access to it.
+
+Unix programs spawn other programs by executing two system calls, fork() and
+execve(). The fork() system call creates a copy of the calling process, and the
+execve() call loads and runs an executable program into the new process. Because
+fork()'d copies of process maintain all the open file descriptors of their
+parents, care must be taken to ensure that sensitive files are closed before
+programs are executed in them.
+
+To simplify the task of ensuring that file descriptors aren't leaked to
+descendant processes, Unix systems support the "close-on-exec" flag, which, when
+applied to a file descriptor, forces the operating system to close the
+descriptor when the execve() system call is executed. OpenBSD 2.3 does not
+utilize this functionality to safeguard the password file copy.
+
+The password file copy is not meant to be written to before the user's editor
+closes. After the user is finished editing their account information, the
+original password file is copied over into the temporary file, overwriting its
+contents. Thus, attackers cannot simply write information into the temporary
+file with shell commands.
+
+There are two simple ways to work around this problem. First, an attacker can
+write a program which continually writes information to the beginning of the
+temporary file, overwriting the information copied in from the original password
+file. Secondly, an attacker can write information past the end of the original
+password file, allowing new accounts (with superuser privileges) to be created.
+
+RESOLUTION
+
+This problem has been resolved in OpenBSD-current, and a source code patch is
+available at the OpenBSD website at:
+ftp://ftp.openbsd.org/pub/OpenBSD/patches/2.3/common/chpass.patch
+
+The OpenBSD patch applies the close-on-exec flag to files opened by chpass(),
+preventing them from being accessible to the user's editor.
+
+CREDITS
+
+Documentation and testing of this problem was conducted by Oliver Friedrichs at
+the security labs of Network Associates. Thanks to Theo de Raadt and the OpenBSD
+project for prompt attention to this problem.
+
+ABOUT THE NETWORK ASSOCIATES SECURITY LABS
+
+The Security Labs at Network Associates hosts some of the most important
+research in computer security today. With over 25 published security advisories
+published in the last 2 years, the Network Associates security auditing teams
+have been responsible for the discovery of many of the Internet's most serious
+security flaws. This advisory represents our ongoing commitment to provide
+critical information to the security community.
+
+For more information about the Security Labs at Network Associates, see our
+website at www.nai.com or contact us at seclabs@nai.com.
+
+The Security Labs at Network Associates are a participating member of FIRST, the
+Forum for Incident Response Teams. For more information about FIRST, see
+www.first.org.
+
+ABOUT OPENBSD
+
+OpenBSD is one of the industry's most secure operating systems. Based on the
+widely used and respected 4.4BSD Unix platform, OpenBSD is freely available and
+supports 9 different hardware platforms, including Intel i386 and DEC Alpha
+architectures. The security labs at Network Associates have been involved with
+OpenBSD's ongoing security audit, a ground-breaking computer security effort,
+since its inception.
+
+More information about OpenBSD can be obtained at the OpenBSD website, at
+www.openbsd.org.
+ 

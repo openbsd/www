@@ -1,0 +1,222 @@
+4.4BSD NFS File Handles
+      Title: 4.4BSD NFS File Handles
+      Date Issued: March 7, 1997
+      Last Modified: March 7, 1997
+      Code: SNI-10
+      Source: Network Associates (was SNI)
+
+                        ######    ##   ##    ######
+                        ##        ###  ##      ##
+                        ######    ## # ##      ##
+                            ##    ##  ###      ##
+                        ###### .  ##   ## .  ######.
+
+                            Secure Networks Inc.
+
+                             Security Advisory
+                               March 7, 1997
+
+                          4.4BSD NFS File Handles
+
+
+There is a serious vulnerability in 4.4BSD and derivatives which allows
+unprivileged users to obtain valid NFS file handles.  A NFS file handle
+will permit a user to, at the least, obtain access as any non-root user
+to the filesystem, and possibly obtain root privileges.
+
+
+Problem Description
+~~~~~~~~~~~~~~~~~~~
+The problem occurs due to the fact that unprivileged users are able to obtain
+all information required to generate NFS file handles.
+
+In addition to returning traditional information, such as the creation time,
+size, inode number and last modification time, the 4.4BSD stat(2) system
+call and related functions return a field called st_gen.  The st_gen field
+is a 4 byte value which is different for each item on the filesystem.
+The st_gen value is used as a generation number to make NFS file handles
+difficult to guess.  Unfortunately, because all information used to generate
+a file handle is availible to users, a user can generate file handles
+identical to those given to NFS client hosts accessing file systems on the
+local server.
+
+Because a file handle is all that is needed to mount a filesystem, a user
+can then mount any exported filesystems, performing arbitrary filesystem
+operations as any non-root user, assuming they are on a host in the server's
+export list.  Such access will commonly result in the user obtaining root
+privileges.
+
+The incorrect code in the vn_stat() function, called by stat(2) reads:
+
+        ...
+        sb->st_gen = vap->va_gen;
+        sb->st_blocks = vap->va_bytes / S_BLKSIZE;
+        return (0);
+}
+
+It should be noted that in the above source code, all information from the
+generation number is pulled out and given to the user.  A correct
+implementation will only permit root users to access this number, as shown
+in the following example source code:
+
+        ...
+        sb->st_flags = vap->va_flags;
+        if (suser(p->p_ucred, &p->p_acflag)) {
+                sb->st_gen = 0;
+        } else {
+                sb->st_gen = vap->va_gen;
+        }
+        sb->st_blocks = vap->va_bytes / S_BLKSIZE;
+        return (0);
+}
+
+This will cause the st_gen field of the stat structure returned to
+unprivileged users to be zero, thus preventing ordinary users from
+determining file handles simply from the information returned by stat(2). 
+
+
+Impact
+~~~~~~
+Individuals with shell access to a NFS server or client can obtain access
+to the NFS server as any non-root user.  This will usually lead to root
+compromise.
+
+
+Vulnerable Systems
+~~~~~~~~~~~~~~~~~~
+4.4BSDLite2 appears vulnerable based on source inspection only.
+
+BSD/OS 2.0 is vulnerable
+BSD/OS 2.1 is vulnerable
+BSD/OS 3.0 is vulnerable
+
+FreeBSD 2.1.5 is vulnerable
+FreeBSD 2.1.6 is vulnerable
+FreeBSD 2.1.7 is vulnerable
+
+NetBSD 1.2 appears vulnerable based on source inspection only.
+
+OpenBSD 2.0 is vulnerable.
+OpenBSD-current obtained on 14 February 1997 or earlier is vulnerable.
+OpenBSD-current obtained later than February 14 is not vulnerable.
+
+
+Workaround
+~~~~~~~~~~
+If you are running a NFS server on your 4.4BSD system, or using a 4.4BSD
+system as a NFS client, we suggest modifying your kernel so that stat(2),
+and lstat(2) do not provide st_gen to unprivileged users.  You should also
+modify any system calls which return the same information as the above
+functions, but which exist solely for backwards compatibility with 4.3BSD.
+Finally, the generation numbers assigned to new inodes should be
+nonguessable.  Vendors are strongly urged to provide a utility to enable
+administrators to re-randomize the generation numbers when they suspect that
+file handles have been comprimised.
+
+A program to randomize generation numbers on 4.4BSD derived file systems can
+be obtained at ftp://ftp.secnet.com/pub/tools/bsd-fsirand/fsirand.tar.gz.
+
+WARNING:  The above fsirand program has been tested on various 4.4BSD
+derived operating systems and has performed without problems.  With this
+in mind, there is absolutely no guarantee that this program will work
+correctly on your file systems, and users should back up all data prior
+to randomizing generation numbers.  The author assumes no liability.
+To initially verify that fsirand will work correctly, a user may want to
+create a file system on a floppy drive and test the fsirand program on that
+file system.
+
+--- BSD/OS: Contact BSDi for a fix.  A fix will be availible shortly after
+    the release of this advisory.  BSDI patches can be obtained by ftping
+    to ftp://ftp.bsdi.com/pub/patches or by mailing patches@bsdi.com.  The
+    fsirand program has been tested on BSD/OS 2.1 and has functioned without
+    any problems.
+
+--- FreeBSD and NetBSD: Back up your system.  Then apply the included patch,
+    then recompile your kernel and reboot in single user mode.  At this point
+    the fsirand program should be run on all exported file systems.  Once
+    complete, reboot to multi-user mode.  It would be a good idea to run
+    fsirand on all file systems, in the event that some may be exported in
+    the future.
+
+--- OpenBSD: Back up your system.  Then use anoncvs to upgrade your system to
+    OpenBSD-current, recompile your kernel, and reboot in single user mode.
+    Run the fsirand program which is part of OpenBSD in order to randomize
+    generation numbers for pre-existing filesystems.  Finally reboot to
+    multi-user mode.
+
+The following diffs are to the 4.4BSDLite2 vfs_vnops.c, and prevent users
+from using stat(2) and related system calls for obtaining file handle
+generation numbers. 
+
+*** vfs_vnops.c Thu Mar  6 21:37:16 1997
+--- vfs_vnops.c.orig    Thu Mar  6 21:34:53 1997
+***************
+*** 344,350 ****
+        sb->st_ctimespec = vap->va_ctime;
+        sb->st_blksize = vap->va_blocksize;
+        sb->st_flags = vap->va_flags;
+!       sb->st_gen = vap->va_gen;
+        sb->st_blocks = vap->va_bytes / S_BLKSIZE;
+        return (0);
+  }
+--- 344,354 ----
+        sb->st_ctimespec = vap->va_ctime;
+        sb->st_blksize = vap->va_blocksize;
+        sb->st_flags = vap->va_flags;
+!       if (suser (p->u_cred, &p->p_acflag)) {
+!               sb->st_gen = 0;
+!       } else {
+!               sb->st_gen = vap->va_gen;
+!       }
+        sb->st_blocks = vap->va_bytes / S_BLKSIZE;
+        return (0);
+  }
+
+
+Additional Information
+~~~~~~~~~~~~~~~~~~~~~~
+If you have any questions about this advisory, feel free to mail me at 
+davids@secnet.com.  The following PGP key is for davids@secnet.com, should
+you wish to encrypt any message traffic to me.: 
+
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+Version: 2.6.2
+
+mQCNAzJ4qJAAAAEEAOgB7mooQ6NgzcUSIehKUufGsyojutC7phVXZ+p8FnHLLZNB
+BLQEtj5kmfww2A2pR29q4rgPeqEUOjWPlLNdSLby3NI8yKz1AQSQLHAwIDXt/lku
+8QXClaV6pNIaQSN8cnyyvjH6TYF778yZhYz0mwLqW6dU5whHtP93ojDw1UhtAAUR
+tCtEYXZpZCBTYWNlcmRvdGUgPGRhdmlkc0BzaWxlbmNlLnNlY25ldC5jb20+
+=LtL9
+-----END PGP PUBLIC KEY BLOCK-----
+
+Many thanks to Theo Deraadt <deraadt@openbsd.org> for initially alerting
+us to this problem, which was discovered by David Mazieres <dm@openbsd.org>.
+
+Many thanks to Keith Bostic <bostic@bsdi.com> for discussions and the
+suggestions which led to the included fix for vfs_vnops.c.
+
+The fsirand program was largely written by Todd Miller <millert@openbsd.org>.
+
+Information about BSD/OS can be found at http://www.bsdi.com.
+Information about FreeBSD can be found at http://www.freebsd.org
+Information about NetBSD can be found at http://www.netbsd.org
+Information about OpenBSD can be found at http://www.openbsd.org
+
+
+Copyright Notice
+~~~~~~~~~~~~~~~~
+The contents of this advisory are Copyright (C) 1997 Secure Networks Inc,
+and may be distributed freely provided that no fee is charged for
+distribution, and that proper credit is given.
+
+ You can find Secure Networks papers at ftp://ftp.secnet.com/pub/papers
+ and advisories at ftp://ftp.secnet.com/pub/advisories
+
+ You can browse our web site at http://www.secnet.com
+
+ You can subscribe to our security advisory mailing list by sending mail to
+ majordomo@secnet.com with the line "subscribe sni-advisories"
+
+
+
+

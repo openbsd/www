@@ -1,0 +1,280 @@
+Vacation Vulnerability
+      Title: Vacation Vulnerability
+      Date Issued: September 1, 1997
+      Last Modified: September 1, 1997
+      Code: SNI-18
+      Source: Network Associates (was SNI)
+
+-----BEGIN PGP SIGNED MESSAGE-----
+
+                        #####   ##   ##   ######
+                        ##      ###  ##     ##
+                        #####   ## # ##     ##
+                           ##   ##  ###     ##
+                        ##### . ##   ## . ###### .
+
+                           Secure Networks Inc.
+
+                            Security Advisory
+                            September 1, 1997
+
+                         Vacation Vulnerability
+
+
+This advisory addresses a vulnerability in the vacation program which
+allows individuals to execute commands remotely on vulnerable systems.
+
+Vacation is used by the recipient of email messages to notify the sender
+that they are not currently reading their mail.  This is installed by
+placing a .forward file into your directory containing a line as follows:
+
+                     \user, "|/usr/bin/vacation user"
+
+
+Problem Description
+~~~~~~~~~~~~~~~~~~~
+
+When vacation responds to an incoming message, it invokes the sendmail
+command, specifying the address of the sender on the command line.  By
+specifying a sendmail command line option rather than a valid email
+address, it is possible to cause sendmail to be invoked with an
+alternate configuration file.  This alternate configuration file can
+be previously sent to the system via a seperate email message, or via
+anonymous FTP.  When parsed, this new sendmail configuration file
+can cause sendmail to execute arbitrary commands on the remote system.
+
+
+Technical Details
+~~~~~~~~~~~~~~~~~
+
+By specifying the originating address of an email message to consist of
+a path to an alternate configuration file (i.e. -C/var/mail/user), the
+vacation program will invoke sendmail, and use /var/mail/user as the
+configuration file.  If the user's mailbox contains valid sendmail
+configuration options, sendmail will treat the user's mail spool as a
+sendmail configuration file.  Sendmail can be induced execute arbitrary
+shell commands from its configuration file.  Variations on this attack
+may be possible using sendmail options other than -C.
+
+
+Impact
+~~~~~~
+
+Remote individuals can obtain access to the account of any user running
+the vacation program.
+
+
+Vulnerable Systems
+~~~~~~~~~~~~~~~~~~
+
+The following assessments assume that an attacker can utilize the -C
+command line option of sendmail to specify an alternate configuration
+file and execute commands.  Other methods of causing sendmail to
+execute commands via command line options may be present.
+
+Operating systems which ship with a vulnerable version of vacation are:
+
+AIX      Version 4.2 is vulnerable.  Version 4.1 is also vulnerable if
+         public domain version of sendmail 8 has been installed.
+
+FreeBSD  All versions prior to August 28, 1997.
+
+NetBSD   All versions prior to NetBSD-current 19970828 are vulnerable.
+
+OpenBSD  All versions prior to July 29, 1997
+
+Solaris  All versions of Solaris are vulnerable ONLY if a public domain
+         version of sendmail has been installed, other than Solaris
+         sendmail.
+
+Linux    The two versions of vacation on the sunsite.unc.edu Linux
+         archive are both vulnerable as of August 5, 1997.  Linux
+         distributions we have verified do not ship with the vacation
+         program.
+
+HP-UX    HP-UX is vulnerable ONLY if a public domain version of
+         sendmail, other than HP-UX sendmail has been installed.
+
+BSD/OS (BSDI) is NOT vulnerable to this problem.
+Silicon Graphics IRIX does NOT APPEAR to be vulnerable to this problem.
+
+
+Fix Information
+~~~~~~~~~~~~~~~
+
+IBM AIX
+
+   Only the version of vacation shipped with AIX 4.2 is vulnerable.  The
+   following APAR will be available soon:
+
+     Abstract:  "SECURITY: /usr/bin/vacation vulnerability"
+     AIX 4.2:  IX70233
+
+   Until these fixes are applied, the vacation program should be disabled
+   with the following command (as root):
+
+     # chmod -x /usr/bin/vacation
+
+   If disabling vacation is not desirable, there is a temporary fix available
+   via anonymous ftp:
+     ftp://testcase.software.ibm.com/aix/fromibm/vacation.security.tar.Z
+
+   IBM and AIX are registered trademarks of International Business Machines
+   Corporation.
+
+HP-UX
+
+   The version of vacation shipped with HP-UX is vulnerable.  This
+   vulnerability is exploitable by remote users only if the system
+   administrator has installed a version of sendmail version 8, other
+   than HP sendmail.  HP will be providing a fix in the near future.
+
+Solaris
+
+   The version of vacation shipped with Solaris is vulnerable if a
+   public domain version of sendmail, other than Solaris sendmail,
+   has been installed on the system.  Sun Microsystems will be
+   issuing a solution to this problem in the near future.
+
+   As a short term workaround, the vacation program be disabled by
+   changing the permissions as follows:
+
+   # chmod -x /bin/vacation
+
+OpenBSD 2.1
+
+   This problem is present in OpenBSD-current prior to August 29, 1997.
+
+   Update your vacation sources to the version in -current using anoncvs,
+   or apply the fix provided below.  Then recompile the vacation program.
+   See http://www.openbsd.org for information about anoncvs.
+
+FreeBSD
+
+   FreeBSD has corrected this problem in 2.1-stable, 2.2-stable and
+   3.0-current as of August 28, 1997.  The source change described in
+   this advisory corrects the problem.  This problem will be fixed in
+   the upcoming 2.2.5-RELEASE and 3.0-RELEASE versions of FreeBSD.
+
+NetBSD
+
+   This problem is present in NetBSD-current prior to 19970828 and is
+   fixed in later releases.
+
+   Upgrade to a version of NetBSD-current newer than 19970828 or apply
+   the fix provided below.
+
+Other
+
+   Obtain a patched version of vacation at the following location:
+
+   ftp://ftp.secnet.com/pub/patches/vacation.tar.Z
+
+   To extract the archive when it is in the current directory, issue the
+   commands:
+
+   % uncompress vacation.tar
+   % tar -xvf vacation.tar
+
+   Then follow the installation instructions in the README file included
+   in the archive.  Please note that this version of vacation is taken
+   from BSD sources, and may require modification to work on other
+   platforms.
+
+
+The following patch, suggested independently by Eric Allman and Keith
+Bostic, solves the problem.
+
+Note that SNI has *not* verified that sendmail versions other than
+sendmail version 8 properly emulate getopt() in their interpretation of
+the option "--".  If you are applying this patch to an operating system
+which ships with a modified or older version of sendmail, you should
+verify that the sendmail command-line options which are *not* done
+using getopt() do not get parsed if they are preceeded by a '--' option.
+
+The following line:
+
+ execl(_PATH_SENDMAIL, "sendmail", "-f", myname, from, NULL);
+
+should be substituted with:
+
+ execl(_PATH_SENDMAIL, "sendmail", "-f", myname, "--", from, NULL);
+
+in vacation.c
+
+
+Additional Information
+~~~~~~~~~~~~~~~~~~~~~~
+
+The provided generic fix was suggested by both Eric Allman
+<eric@sendmail.org> and Keith Bostic <bostic@bsdi.com>
+
+This problem was discovered by David Sacerdote <davids@secnet.com>,
+and verified by David Sacerdote <davids@secnet.com> and
+Oliver Friedrichs <oliver@secnet.com>.
+
+You can subscribe to our security advisory mailing list by sending
+mail to majordomo@secnet.com, containing the single line
+subscribe sni-advisories
+
+You can find Secure Networks papers at ftp://ftp.secnet.com/pub/papers or
+http://www.secnet.com/papers and past advisories at
+ftp://ftp.secnet.com/pub/advisories or http://www.secnet.com/advisories
+
+You can contact Secure Networks Inc. at <sni@secnet.com> using
+the following PGP key:
+
+Type Bits/KeyID    Date       User ID
+pub  1024/9E55000D 1997/01/13 Secure Networks Inc. <sni@secnet.com>
+                              Secure Networks <security@secnet.com>
+
+- -----BEGIN PGP PUBLIC KEY BLOCK-----
+Version: 2.6.3ia
+
+mQCNAzLaFzIAAAEEAKsVzPR7Y6oFN5VPE/Rp6Sm82oE0y6Mkuof8QzERV6taihn5
+uySb31UeNJ4l6Ud9alOPT/0YdeOO9on6eD1iU8qumFxzO3TLm8nTAdZehQSAQfoa
+rWmpwj7KpXN/3n+VyBWvhpBdKxe08SQN4ZjvV5HXy4YIrE5bTbgIhFKeVQANAAUR
+tCVTZWN1cmUgTmV0d29ya3MgSW5jLiA8c25pQHNlY25ldC5jb20+iQCVAwUQM1yd
+EB/bLKAOe7p9AQFptAQAiYpaZCpSmGgr05E698Z3t5r5BPAKUEtgvF53AvZUQLxz
+ZsYsVU5l5De0qKWJOQ/9LiDyWu1lvKhlTphbLy2RatWD4kO3oQL9v3TpSXm2WQhU
+uIzyZvj7S5ENodNnKn+gCDIvbou6OMot+7dRbWWgN2oabbru4CSlOxbG++yaTz+J
+AJUDBRAzTefbtOXez5VgyLkBAd0bA/43eGEgvPOFK+HHWCPpkSWCwtrtDU/dxOVz
+9erHnT/CRxeojCI+50f71Qe+kvx9Q1odz2Jl/fLxhnPQdbPnpWblIbu4F8H+Syrj
+HTilDrl1DWa/nUNgK8sb27SMviELczP1a8gwA1eo5SUCG5TWLLTAzjWOgTxod2Ha
+OwseUHmqVIkAlQMFEDNOVsr/d6Iw8NVIbQEBxM0D/14XRfgSLwszgJcVbslMHm/B
+fF6tHoWYojzQle3opOuMYHNN8GsMZRkc1qQ8QuNA9Aj5+qDqEontGjV5IvhBu1fY
+FM77AhagskaFCZxwqV64Qrk328WDO89NGSd+RuovVNruDdn20TxNCEVuPTHjI0UA
+8H+E6FW9jexg6RTHhPXYtCVTZWN1cmUgTmV0d29ya3MgPHNlY3VyaXR5QHNlY25l
+dC5jb20+iQCVAwUQMtqTKB/bLKAOe7p9AQFw5wQAgUwqJ+ZqfEy/lO1srU3nzxLA
+X0uHGHrMptRy/LFo8swD6G1TtWExUc3Yv/6g2/YK09b5WmplEJ+Q09maQIw+RU/s
+cIY+EsPauqIq4JTGh/Nm0Z4UDl2Y1x4GNtm0YqezxUPS0P0A3LHVLJ3Uo5og0G8O
+gPNrfbVz5ieT14OSCWCJAJUDBRAy2hd2/3eiMPDVSG0BAVNhBACfupfAcNhhnQaq
+aI03DOOiZSRjvql1xw4V+pPhM+IksdSK3YNUZVJJtANacgDhBT+jAPRaYbBWI3A5
+ZMdcSNM8aTG0LWMLIOiOYEm6Lgd3idRBFN0Js08eyITl8mhZ33mDe4I0KQri9UiV
+ZcPYTbb9CWM6Hv2cMbt6S6kLnFziqIkAlQMFEDLaF0+4CIRSnlUADQEBCLoEAJwt
+UofDgvyZ4nCDx1KKAPkkXBRaPMWBp46xeTVcxaYiloZfwHfpk1h2mEJAxmAsvizl
+OtIppHl4isUxcGi/E2mLCLMvis22/IQP/9obPahPvgNaMLVtZljO1Nv3QFEkNciL
+FEUTNJHR1ko7ibCxkBs4cOpirFuvTMDvWnNaXAf8
+=DchE
+- -----END PGP PUBLIC KEY BLOCK-----
+
+
+Copyright Notice
+~~~~~~~~~~~~~~~~
+
+The contents of this advisory are Copyright (C) 1997 Secure Networks Inc,
+and may be distributed freely in unmodified form provided that no fee is
+charged for distribution, and that proper credit is given.
+
+-----BEGIN PGP SIGNATURE-----
+Version: 2.6.3ia
+Charset: noconv
+
+iQCVAwUBNAu+J7gIhFKeVQANAQGylwP+Kb5azwj3O9gns7/7v8Qk2q4gE1bpaF2y
+KhyiRLyQpQUC0dTYpR3J3u2TmfhXnDfavYnkMeEWjvMHp0d/h6/KQ2Qk3VyYZbTL
+yQXSrlqSlP+lxXdfHaqwNOfLWP7DrZ7r8NwH/FOlosPtMgYsVOv+97SxSmkSubIm
+K5MiCxBZS/k=
+=KJTq
+-----END PGP SIGNATURE-----
+
+
