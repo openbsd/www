@@ -1,0 +1,191 @@
+<HTML>
+<HEAD>
+<TITLE>OpenBSD New User FAQ: disklabel and fdisk</TITLE>
+</HEAD>
+<BODY>
+<A HREF="OpenBSD-FAQ-9.html">Previous</A>
+<A HREF="OpenBSD-FAQ-11.html">Next</A>
+<A HREF="OpenBSD-FAQ.html#toc10">Table of Contents</A>
+<HR>
+<H2><A NAME="s10">10. <CODE>disklabel</CODE> and <CODE>fdisk</CODE></A></H2>
+
+<P><CODE>disklabel</CODE> and <CODE>fdisk</CODE> are different in OpenBSD
+than what most users are used to in different operating systems.</P>
+
+<P>In OpenBSD, the disklabel is the core program used to modify
+and view a system's hard disk. <CODE>disklabel</CODE> is used to
+establish the disk's partitions as well as write the OpenBSD
+disklabel to disk. <CODE>disklabel</CODE> is also used to display
+which partitions are which. By running <CODE>disklabel</CODE> with
+an argument like "<CODE>wd0</CODE>" (think "<CODE>disklabel wd0</CODE>")
+the output will show not only what partitions of the disk
+are used by OpenBSD, but also what partitions can be used to
+access DOS partitions. Please note that disklabel is used by
+ALL platforms that OpenBSD supports.</P>
+
+<P>In all install procedures, disklabel is loaded up and the disk must be
+partitioned. Disklabeling is done in 512-byte sectors, so have a calculator
+ready <B>:-)</B></P>
+
+<P>A typical, finished disklabel looks like this:</P>
+
+<P>
+<BLOCKQUOTE><CODE>
+<PRE>
+----[start disklabel]-----
+
+# /dev/rsd0c:
+type: SCSI
+disk: SCSI disk
+label: ST41200N
+flags:
+bytes/sector: 512
+sectors/track: 70
+tracks/cylinder: 15
+sectors/cylinder: 1050
+cylinders: 1931
+total sectors: 2031705
+rpm: 3600
+interleave: 1
+trackskew: 0
+cylinderskew: 0
+headswitch: 0           # milliseconds
+track-to-track seek: 0  # milliseconds
+drivedata: 0 
+
+8 partitions:
+#        size   offset    fstype   [fsize bsize   cpg]
+  a:   163840        0    4.2BSD     1024  8192    16   # (Cyl.   0 - 156*)
+  b:    92160   163840      swap                        # (Cyl. 156*- 243*)
+  c:  2031705        0    unused        0     0         # (Cyl.   0 - 1934*)
+  e:  1775705   256000    4.2BSD     1024  8192    16   # (Cyl. 243*- 1934*)
+
+-----[end disklabel]-----
+</PRE>
+</CODE></BLOCKQUOTE>
+</P>
+
+
+<P>This is the disklabel from my DEC Alpha's SCSI disk ---
+<CODE>/dev/sd0</CODE>. Letters "<CODE>a-e</CODE>" are the different
+partitions on the disk. When the OpenBSD install procedure
+fires up disklabel, it generates the top 20 lines of the label.
+It's up to you (the person doing the install) to mete out the
+partitions as necessary for your system. The example I give
+here is pretty generic.  Different systems will want to have
+different sized partitions for different uses.</P>
+
+
+<P>To OpenBSD, there are a few special partition names that
+are reserved and have a special purpose. Partition "<CODE>a</CODE>"
+is reserved for the root file system.  Partition "<CODE>b</CODE>"
+is reserved for swap space. "<CODE>c</CODE>" is reserved as a way to
+access the whole, raw disk. For compatibility reasons with
+other *BSD's on the i386 platform, some people choose not to
+use partition "<CODE>d</CODE>". In setting up my Alpha, I left out
+partition "<CODE>d</CODE>", with no great loss.</P>
+
+
+<P>You don't have to be a math major to figure out how to
+proclaim space using disklabel on your OpenBSD install. From
+the disklabel above, the root partition ("<CODE>a</CODE>") of the
+install above is roughly 80 Megabytes large. How does "163840"
+represent this?</P>
+
+<P>Some of us may remember some dimensional analysis from
+chemistry.  This is much easier than finding Avagadro's
+number...</P>
+<P>
+<BLOCKQUOTE><CODE>
+<PRE>
+80 * 1024 * 1024 / 512 = 163840  
+M -&gt;  K  -&gt;  b -&gt; b/s  = sectors
+</PRE>
+</CODE></BLOCKQUOTE>
+</P>
+
+<P>(the long way)</P>
+
+<P>Since for us, the conversion factor will always be the same,
+multiply the amount of Megs that you want in a partition by
+"2048" and you'll get the amount of sectors you need to allot.</P>
+<P>
+<BLOCKQUOTE><CODE>
+<PRE>
+80 * 2048 = 163840
+</PRE>
+</CODE></BLOCKQUOTE>
+</P>
+
+<P>(the easy way)</P>
+
+
+<P>Now that we know how to size out our partitions, we need
+to know how to place them.</P>
+
+<P>Back to our example:</P>
+<P>
+<BLOCKQUOTE><CODE>
+<PRE>
+#        size  offset  fstype  [fsize bsize  cpg]
+  a:  163840       0  4.2BSD    1024  8192   16   # (Cyl.   0 - 156*)
+  b:   92160  163840    swap                      # (Cyl. 156*- 243*)
+  c: 2031705       0  unused       0     0        # (Cyl.   0 - 1934*)
+  e: 1775705  256000  4.2BSD    1024  8192   16   # (Cyl. 243*- 1934*)
+</PRE>
+</CODE></BLOCKQUOTE>
+</P>
+
+<P>You'll notice the "offset" column. That tells the disklabel
+where it should start the next partition. If you notice,
+the offset for the first partition is 0 (zero), and for the
+following partition it is the size of the previous partition.
+This is because disklabel starts counting from 0 (zero) and
+not from 1 (one).</P>
+
+<P>Remember, partition "<CODE>c</CODE>" spans the entire disk, so
+it's offset is 0 (zero) and it's size is the size of the disk
+in sectors.</P>
+
+<P>The fstype column is used to write to the disklabel what kind
+of filesystem should be on the disk. Notice for "<CODE>b</CODE>", the
+swap partition, it's filesystem is declared as "<CODE>swap</CODE>" since
+OpenBSD uses unformatted disk space for swapping.  Also not
+that the "<CODE>c</CODE>" partition must not have a filesystem on it,
+otherwise it will scrub the disk. Most importantly, OpenBSD
+uses the 4.2BSD ffs filesystem. Partitions like the root
+partition and <CODE>/usr</CODE>, etc. need to be declared as "<CODE>4.2BSD</CODE>"
+in the disklabel!</P>
+
+<H2><A NAME="ss10.1">10.1 fsize, bsize, and cpg</A></H2>
+
+<P><EM>fsize</EM> is the minimum file size, a partial block that
+is allocated for small files. <EM>fsize</EM> should be smaller
+than <EM>bsize</EM>.  <EM>bsize</EM> is the blocksize for a normal
+block of data on the partition.  <EM>cpg</EM> is the amount
+of cylinders per group, which is used for when some low
+level programs do mappings and other low-level functions
+on a per-cylinder basis. The defaults for this are 1024,
+8192, and 16, respectively. This can be changed based on
+your needs. For more information, check the FFS papers
+in <CODE>
+<A HREF="file:/usr/share/doc/smm/03.fsck_ffs">file:/usr/share/doc/smm/03.fsck_ffs</A></CODE> for starters.</P>
+
+
+<H2><A NAME="ss10.2">10.2 FDISK...</A></H2>
+
+<P>Unlike Linux, DOS, or FreeBSD, OpenBSD's fdisk is not
+full-screen/interactive. fdisk is used to manipulate partitions
+other than OpenBSD partitions as well as the MBR on various
+hard disks. If you are sharing a disk between DOS and OpenBSD,
+you can change which partition is active with fdisk. fdisk
+can also be used to display the same partition information as
+disklabel, although the format of the output is different.</P>
+
+
+<HR>
+<A HREF="OpenBSD-FAQ-9.html">Previous</A>
+<A HREF="OpenBSD-FAQ-11.html">Next</A>
+<A HREF="OpenBSD-FAQ.html#toc10">Table of Contents</A>
+</BODY>
+</HTML>
