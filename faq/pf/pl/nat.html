@@ -17,7 +17,7 @@ please, use a max of 72 chars per line -->
 
 <img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
 <p>
-[<a href="queueing.html">Wstecz: Kolejkowanie</a>]
+[<a href="filter.html">Wstecz: Filtrowanie pakietów</a>]
 [<a href="index.html">Spis tre¶ci</a>]
 [<a href="rdr.html">Dalej: Przekierowania ruchu</a>]
 
@@ -30,7 +30,8 @@ please, use a max of 72 chars per line -->
 <ul>
 <li><a href="#intro">Wprowadzenie</a>
 <li><a href="#works">Jak dzia³a NAT</a>
-<li><a href="#enable">W³±czanie NAT</a>
+<li><a href="#filter">NAT, a filtrowanie pakietów</a>
+<li><a href="#ipfwd">Przekazywanie pakietów IP (IP Forwarding)</a>
 <li><a href="#config">Konfiguracja NAT</a>
 <li><a href="#binat">Dwukierunkowe mapowanie adresów (mapowanie 1:1)</a>
 <li><a href="#except">Wyj±tki w regu³ach translacji</a>
@@ -116,12 +117,34 @@ do maszyny w sieci wewnêtrznej.
 Translacje pakietów ICMP odbywaj± siê w podobny sposób, ale bez modyfikacji
 portu ¼ród³owego.
 
-<a name="enable"></a>
-<h2>W³±czanie NAT</h2>
+<a name="filter"></a>
+<h2>NAT, a filtrowanie pakietów</h2>
 <p>
-Aby uruchomiæ NAT na bramce OpenBSD, poza
-<a href="config.html#activate">aktywacj± PF</a>, trzeba tak¿e w³±czyæ
-przekazywanie pakietów IP (ang. IP forwarding):
+<font color="#ff0000">Uwaga:</font> Pakiety podlegaj±ce translacji
+s± tak¿e przetwarzane przez regu³y filtruj±ce i zostan± przez nie
+zablokowane lub przepuszczone zgodnie z tym jak zadeklarowano.
+<i>Jedynym</i> odstêpstwem od tej regu³y jest u¿ycie s³owa kluczowego
+<tt>pass</tt> w samej regule <tt>nat</tt>.
+Spowoduje to przepuszczanie przez filtr pakietów podlegaj±cych NAT.
+
+<p>
+Nale¿y byæ ¶wiadomym, i¿ poniewa¿ translacje maj± miejsce <i>przed</i>
+filtrowaniem, regu³y filtruj±ce widz± pakiety <i>po translacji</i>,
+ju¿ z podmienionym adresem IP oraz portem, zgodnie z tym
+<a href="#works">Jak dzia³a NAT</a>.
+
+<!-- legacy anchor; can eventually be removed -->
+<a name="enable"></a>
+<a name="ipfwd"></a>
+<h2>Przekazywanie pakietów IP (IP Forwarding)</h2>
+<p>
+Poniewa¿ NAT jest prawie zawsze stosowany w routerach i bramkach sieciowych,
+najprawdopodobniej konieczne bêdzie aktywowanie przekazywania pakietów IP
+(ang. IP forwarding), aby umo¿liwiæ ich przekazywanie pomiêdzy interfejsami
+sieciowymi na maszynie OpenBSD.
+Przekazywanie pakietów IP jest aktywowane przy pomocy mechanizmu
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=3&amp;manpath=OpenBSD+3.4"
+>sysctl(3)</a>:
 <blockquote>
 <tt>
 # sysctl -w net.inet.ip.forwarding=1<br>
@@ -148,19 +171,26 @@ plik. Przekazywanie pakietów IP bêdzie w³±czone po kolejnym starcie systemu.
 
 <a name="config"></a>
 <h2>Konfiguracja NAT</h2>
-Ogólna sk³adnia regu³ NAT w <tt>/etc/pf.conf</tt> wygl±da tak:
+Ogólna sk³adnia regu³ NAT w <tt>pf.conf</tt> wygl±da tak:
 <blockquote>
 <tt>
-nat on <i>extif</i> [<i>af</i>] from <i>src_addr</i> 
+nat [pass] on <i>interface</i> [<i>af</i>] from <i>src_addr</i>
 [port <i>src_port</i>] to \<br>
-&nbsp;&nbsp;&nbsp;<i>dst_addr</i> [port <i>dst_port</i>] -&gt; 
-<i>ext_addr</i>
+&nbsp;&nbsp;&nbsp;<i>dst_addr</i> [port <i>dst_port</i>] -&gt;
+<i>ext_addr</i> [<i>pool_type</i>] [static-port]
 </tt>
 </blockquote>
 
 <dl>
-<dt><tt><i>extif</i></tt>
-<dd>Nazwa zewnêtrznego interfejsu sieciowego.
+<dt><tt>nat</tt>
+<dd>s³owo kluczowe rozpoczynaj±ce regu³ê NAT.
+
+<dt><tt>pass</tt>
+<dd>Powoduje, ¿e pakiety podlegaj±ce translacji s± zawsze przepuszczane
+przez regu³y filtruj±ce.
+
+<dt><tt><i>interface</i></tt>
+<dd>Nazwa interfejsu sieciowego na którym ma mieæ miejsce translacja pakietów.
 
 <dt><tt><i>af</i></tt>
 <dd>Rodzina adresów: <tt>inet</tt> dla IPv4 lub <tt>inet6</tt>
@@ -246,6 +276,13 @@ nie musi byæ prze³adowywany za ka¿dym razem, gdy zmienia siê IP.
 wprowadzony podczas ³adowania zestawu regu³.
 <li>Zestaw adresów w postaci <a href="macros.html#lists">listy</a>.
 </ul>
+
+<dt><tt><i>pool_type</i></tt>
+<dd>Okre¶la jaki typ <a href="pools.html">puli adresów</a> ma byæ
+zastosowany dla translacji.
+
+<dt><tt>static-port</tt>
+<dd>Mówi PF, aby port ¼ród³owy w pakietach TCP i UDP nie ulega³ translacji.
 
 </dl>
 
@@ -384,13 +421,12 @@ sieci wewnêtrznej.
 </dl>
 
 <dl>
-
 <dt>TIME_WAIT:TIME_WAIT
 <dd>Stan w jakim, wed³ug PF, znajduje siê po³±czenie TCP.
 </dl>
 
 <p>
-[<a href="queueing.html">Wstecz: Kolejkowanie</a>]
+[<a href="filter.html">Wstecz: Filtrowanie pakietów</a>]
 [<a href="index.html">Spis tre¶ci</a>]
 [<a href="rdr.html">Dalej: Przekierowania ruchu</a>]
 
@@ -400,9 +436,9 @@ sieci wewnêtrznej.
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
 <small>
-Originally [OpenBSD: nat.html,v 1.11 ]<br>
-$Translation: nat.html,v 1.3 2003/11/13 12:03:04 pl-team Exp $<br>
-$OpenBSD: nat.html,v 1.3 2003/11/14 23:10:31 horacio Exp $
+Originally [OpenBSD: nat.html,v 1.12 ]<br>
+$Translation: nat.html,v 1.4 2003/12/15 19:58:42 pl-team Exp $<br>
+$OpenBSD: nat.html,v 1.4 2003/12/16 11:04:12 horacio Exp $
 </small>
 </body>
 </html> 
