@@ -1,0 +1,360 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Redireccionamiento del Tr&aacute;fico</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta http-equiv="Content-Language" content="es">
+<meta name="resource-type" content="document">
+<meta name="description"   content="Preguntas Frecuentes de OpenBSD">
+<meta name="keywords"      content="openbsd,preguntas frecuentes,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="Este documento es copyright 2002-2003 de OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+
+<img alt="[OpenBSD]" height="30" width="141" src="../../../images/smalltitle.gif">
+<p>
+[<a href="nat.html">Anterior: NAT</a>]
+[<a href="index.html">Contenido</a>]
+[<a href="filter.html">Siguiente: Filtrado de Paquetes</a>]
+
+<h1><font color="#e00000">PF: Redireccionamiento
+(<tt>rdr</tt>)</font></h1>
+
+<hr>
+
+<h3>&Iacute;ndice de Contenidos</h3>
+<ul>
+<li><a href="#intro">Introducci&oacute;n</a>
+<li><a href="#filter">Redireccionamiento y Filtrado de Paquetes</a>
+<li><a href="#security">Implicaciones de Seguridad</a>
+<li><a href="#reflect">Redireccionamiento y Reflexi&oacute;n</a>
+       <ul>
+	   <li><a href="#splitdns">Ampliaci&oacute;n del Horizonte de
+	   DNS</a>
+	   <li><a href="#sepnet">Traslado del Servidor a una Red Local
+	   Separada</a>
+       <li><a href="#tcpproxy">TCP Proxying</a>
+       <li><a href="#rdrnat">Combinaci&oacute;n de RDR y NAT</a>
+       </ul>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Introducci&oacute;n</h2>
+<p>
+Cuando NAT est&aacute; funcionando en una oficina, todas las
+m&aacute;quinas de la red tienen acceso a Internet.  Pero,
+&iquest;Qu&eacute; ocurre cuando se tiene una m&aacute;quina
+detr&aacute;s de la pasarela de NAT a la que hay que acceder desde el
+exterior?  Aqu&iacute; es donde entra en juego el redireccionamiento.
+El redireccionamiento permite enviar el tr&aacute;fico entrante a una
+m&aacute;quina que se encuentre detr&aacute;s de una pasarela de NAT.
+
+<p>
+Veamos un ejemplo:
+<blockquote>
+<tt>
+rdr on tl0 proto tcp from any to any port 80 -&gt; 192.168.1.20
+</tt>
+</blockquote>
+
+<p>
+Esta regla redirecciona el tr&aacute;fico TCP del puerto 80 (un servidor
+de <i>web</i>) a una m&aacute;quina de dentro de la red en
+192.168.1.20.  As&iacute;, aunque 192.168.1.20 est&eacute; detr&aacute;s
+de la pasarela y dentro de la red, es accesible desde fuera de ella.
+
+<p>
+La parte <tt>from any to any</tt> de la regla <tt>rdr</tt> anterior
+puede ser bastante &uacute;til;  si sabemos qu&eacute; direcciones o
+subredes se supone que deben acceder al servidor de <i>web</i> por el
+puerto 80, podemos restringirlo en esa parte:
+<blockquote>
+<tt>
+rdr on tl0 proto tcp from 27.146.49.0/24 to any port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;192.168.1.20
+</tt>
+</blockquote>
+
+<p>
+Con esto se redireccionar&iacute;a s&oacute;lo la subred especificada.
+N&oacute;tese que esto implica que podemos diversos anfitriones
+entrantes a diversas m&aacute;quinas que se encuentren detr&aacute;s de
+la pasarela.  Esto puede ser bastante &uacute;til.  Por ejemplo,
+podr&iacute;amos permitir que usuarios que se encontraran en sitios
+remotos accedieran a sus propias m&aacute;quinas de trabajo usando el
+mismo puerto y direcci&oacute;n IP en la pasarela, siempre y cuando
+supi&eacute;ramos la direcci&oacute;n IP desde la que se
+conectar&iacute;an:
+<blockquote>
+<tt>
+rdr on tl0 proto tcp from 27.146.49.14 to any port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;192.168.1.20<br>
+rdr on tl0 proto tcp from 16.114.4.89 to any port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;192.168.1.22<br>
+rdr on tl0 proto tcp from 24.2.74.178 to any port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;192.168.1.23
+</tt>
+</blockquote>
+
+<a name="filter"></a>
+<h2>Redireccionamiento y Filtrado de Paquetes</h2>
+<p>
+Hay que tener en cuenta que los paquetes que coincidan con una regla
+<tt>rdr</tt> a&uacute;n tendr&aacute;n que pasar a trav&eacute;s de la
+maquinaria de filtrado y se les bloquear&aacute; o permitir&aacute; el
+paso de acuerdo con las reglas de filtrado que hayamos definido.
+Tambi&eacute;n hay que tener en cuenta que a los paquetes que coincidan
+con una regla <tt>rdr</tt> se les cambiar&aacute; su direcci&oacute;n IP
+de destino para que coincida con la direcci&oacute;n de
+redireccionamiento especificada en la regla de <tt>rdr</tt>.
+Consideremos el siguiente escenario:
+<ul>
+<li>192.0.2.1 - anfitri&oacute;n en Internet
+<li>24.65.1.13 - direcci&oacute;n externa del enrutador OpenBSD
+<li>192.168.1.5 - direcci&oacute;n interna del servidor de <i>web</i>
+</ul>
+
+<p>
+Regla de redireccionamiento:
+<blockquote>
+<tt>
+rdr on tl0 proto tcp from 192.0.2.1 to any port 80 -&gt; 192.168.1.5
+</tt>
+</blockquote>
+
+<p>
+El paquete antes de procesar la regla de <tt>rdr</tt>:
+<ul>
+<li>Direcci&oacute;n de origen: 192.0.2.1
+<li>Direcci&oacute;n de destino: 24.65.1.13
+</ul>
+
+<p>
+El paquete despu&eacute;s de procesar la regla de <tt>rdr</tt>:
+<ul>
+<li>Direcci&oacute;n de origen: 192.0.2.1
+<li>Direcci&oacute;n de destino: 192.168.1.5
+</ul>
+
+<p>
+La maquinaria de filtrado ver&aacute; el paquete IP tal como es
+despu&eacute;s despu&eacute;s de que se hayan procesado las reglas de
+<tt>rdr</tt>.
+
+<a name="security"></a>
+<h2>Implicaciones de Seguridad</h2>
+<p>
+El redireccionamiento tiene algunas implicaciones de seguridad.  Pinchar
+un agujero en el cortafuegos para permitir el paso de tr&aacute;fico a
+la red interna protegida, deja abierta la m&aacute;quina interna a
+merced de un potencial compromiso de seguridad.  Si, por ejemplo, el
+tr&aacute;fico se redirecciona a un servidor de <i>web</i> interno, y se
+descubriera una vulnerabilidad en el d&aelig;mon del servidor de
+<i>web</i> interno, o en un <i>script</i> de CGI que se ejecutara en el
+servidor de <i>web</i>, entonces esa m&aacute;quina puede ser
+comprometida por un intruso desde Internet.  El intruso tendr&iacute;a
+desde ah&iacute; un pasadizo a la red interna, una vez que se le ha
+permitido pasar a trav&eacute;s del cortafuegos.
+
+<p>
+Estos riesgos se pueden minimizar manteniendo el sistema al que hay que
+acceder desde fuera confinado firmemente en una red separada.  Esta red
+separada es la que se suele denominar como una &laquo;Zona
+Desmilitarizada&raquo; (DMZ) o una Red de Servicio Privado (PSN).  De
+este modo, si se comprometiera el servidor de <i>web</i>, los efectos se
+limitar&iacute;an a la red DMZ/PSN filtrando con cuidado el
+tr&aacute;fico con permiso para pasar desde y hacia la DMZ/PSN.
+
+<a name="reflect"></a>
+<h2>Redireccionamiento y Reflexi&oacute;n</h2>
+<p>
+A menudo se utilizan reglas de redireccionamiento para reenviar
+conexiones entrantes desde Internet a un servidor local con una
+direcci&oacute;n privada en la red interna o LAN, como en:
+<blockquote>
+<tt>
+server = 192.168.1.40<br>
+<br>
+rdr on $ext_if proto tcp from any to $ext_if port 80 -&gt; $server \<br>
+&nbsp;&nbsp;&nbsp;port 80
+</tt>
+</blockquote>
+
+<p>
+Pero cuando se comprueba la regla de redireccionamiento desde un cliente
+en la LAN, no funciona.  El motivo es que las reglas de
+redireccionamiento s&oacute;lo son v&aacute;lidas para los paquetes que
+pasan a trav&eacute;s de la interfaz especificada ($ext_if, la interfaz
+externa en el ejemplo).  Sin embargo, conectar la direcci&oacute;n
+externa del cortafuegos desde un anfitri&oacute;n en la LAN no significa
+que los paquetes vayan a pasar a trav&eacute;s de su interfaz externa.
+La pila TCP/IP del cortafuegos compara las direcciones de destino de los
+paquetes entrantes con sus propias direcciones y alias, y detecta las
+conexiones a s&iacute; misma en cuanto pasan la interfaz interna.  Estos
+paquetes no pasan físicamente a trav&eacute;s de la interfaz externa, y
+la pila no simula un pase de ese tipo en modo alguno.  As&iacute; que PF
+nunca ve estos paquetes en la interfaz externa y, por lo tanto, la regla
+de redireccionamiento que especifica la interfaz externa no es
+v&aacute;lida.
+
+<p>
+Si a&ntilde;adi&eacute;ramos una segunda regla de redireccionamiento
+para la interfaz interna tampoco obtendr&iacute;amos el efecto deseado.
+Cuando el cliente local se conecta a la direcci&oacute;n externa del
+cortafuegos, el paquete inicial del &laquo;saludo&raquo; de TCP llega al
+cortafuegos a trav&eacute;s de la interfaz interna.  La regla de
+redireccionamiento es v&aacute;lida y la direcci&oacute;n de destino se
+sustituye con la del servidor servidor interno.  El paquete se
+reenv&iacute;a de vuelta a trav&eacute;s de la interfaz interna y llega
+al servidor interno.  Pero no se ha traducido la direcci&oacute;n de
+origen y todav&iacute;a contiene la direcci&oacute;n local del cliente,
+por lo que el servidor env&iacute;a sus respuestas directamente al
+cliente.  El cortafuegos nunca llega a ver la respuesta y no tiene la
+oportunidad de invertir correctamente la traducci&oacute;n.  El cliente
+recibe una respuesta desde un punto de origen que no esperaba, y por lo
+tanto la bloquea.  En consecuencia, falla el saludo inicial de TCP y no
+se puede establecer una conexi&oacute;n.
+
+<p>
+A pesar de esto, a menudo es deseable que los clientes internos de la
+LAN se conecten al mismo servidor interno que los clientes externos, y
+que lo hagan de forma transparente.  Existen varias soluciones para este
+problema.
+
+<a name="splitdns"></a>
+<h3>Ampliaci&oacute;n del Horizonte de DNS</h3>
+
+<p>
+Se pueden configurar los servidores de DNS para que respondan a los
+requerimientos de los anfitriones locales de forma diferente a los
+requerimientos externos, de modo que los clientes locales reciban la
+direcci&oacute;n del servidor interno durante la resoluci&oacute;n del
+nombre.  As&iacute; se conectar&aacute;n directamente al servidor local
+y el cortafuegos no estar&aacute; en medio de este proceso.  Esto reduce
+el tr&aacute;fico local, ya que no hay que enviar los paquetes a
+trav&eacute;s del cortafuegos.
+
+<a name="sepnet"></a>
+<h3>Traslado del Servidor a una Red Local Separada</h3>
+
+<p>
+A&ntilde;adir una interfaz de red adicional al cortafuegos y trasladar
+el servidor local desde la red del cliente a una red dedicada (DMZ)
+permite redireccionar las conexiones de los clientes locales de la misma
+forma que se redireccionan las conexiones externas.  El uso de redes
+separadas ofrece varias ventajas, incluida la mejora de la seguridad al
+aislar al servidor del resto de los anfitriones locales.  Si el servidor
+(al que en nuestro caso se puede llegar desde Internet) llegara a ser
+comprometido, no podr&iacute;a acceder directamente a otros anfitriones,
+ya que todas los conexiones deben pasar a trav&eacute;s del cortafuegos.
+
+<a name="tcpproxy"></a>
+<h3>TCP proxying</h3>
+
+<p>
+Se puede configurar una <i>proxy</i> (un servidor intermedio de
+almacenamiento que act&uacute;a de intermediario entre el cliente y el
+servidor al que se quiere acceder, y que aligera la conexi&oacute;n
+ofreciendo datos del servidor final que tenga almacenados)
+gen&eacute;rica de TCP en el cortafuegos, bien a la escucha en el puerto
+de reenv&iacute;o o bien redireccionando las conexiones de la interfaz
+interna al puerto por el que est&aacute; a la escucha.  Cuando un
+cliente local se conecta al cortafuegos, la <i>proxy</i> acepta la
+conexi&oacute;n, establece una segunda conexi&oacute;n al servidor
+interno, y reenv&iacute;a los datos entre esas dos conexiones.
+
+<p>
+Se pueden crear <i>proxies</i> simples usando
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=inetd&amp;sektion=8&amp;manpath=OpenBSD+3.3">inetd(8)</a> y
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=nc&amp;sektion=1&amp;manpath=OpenBSD+3.3">nc(1)</a>.
+La siguiente entrada de <tt>/etc/inetd.conf</tt> crea un conector
+(<i>socket</i>) que estar&aacute; a la escucha, vinculado a la
+direcci&oacute;n de <i>loopback</i> (127.0.0.1) y al puerto 5000.  Las
+conexiones se reenv&iacute;an al puerto 80 del servidor 192.168.1.10.
+<blockquote>
+<tt>
+127.0.0.1:5000 stream tcp nowait nobody /usr/bin/nc nc -w \<br>
+&nbsp;&nbsp;&nbsp;20 192.168.1.10 80
+</tt>
+</blockquote>
+
+<p>
+La siguiente regla de redireccionamiento reenv&iacute;a el puerto 80 de
+la interfaz interna a la <i>proxy</i>:
+<blockquote>
+<tt>
+rdr on $int_if proto tcp from $int_net to $ext_if port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;127.0.0.1 port 5000
+</tt>
+</blockquote>
+
+<a name="rdrnat"></a>
+<h3>Combinaci&oacute;n de RDR y NAT</h3>
+
+<p>
+Con una regla adicional de NAT en la interfaz interna, se puede obtener
+la traducci&oacute;n de la direcci&oacute;n de origen que falta y que se
+ha descrito antes.
+<blockquote>
+<tt>
+rdr on $int_if proto tcp from $int_net to $ext_if port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;$server
+<br>
+no nat on $int_if proto tcp from $int_if to $int_net<br>
+nat on $int_if proto tcp from $int_net to $server port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;$int_if
+</tt>
+</blockquote>
+
+<p>
+Esto har&aacute; que el paquete inicial del cliente sea traducido de
+nuevo cuando se reenv&iacute;e de vuelta a trav&eacute;s de la interfaz
+interna, sustituyendo la direcci&oacute;n de origen del cliente con la
+direcci&oacute;n interna del cortafuegos.  El servidor interno
+enviar&aacute; una respuesta al cortafuegos, que puede invertir las
+traducciones de NAT y RDR cuando est&eacute; reenviando al cliente
+local.  Esta construcci&oacute;n es bastante compleja, ya que crea dos
+estados separados para cada una de las conexiones reflejadas.  Hay que
+tener cuidado para que la regla de NAT no sea v&aacute;lida para otro
+tr&aacute;fico, por ejemplo para conexiones que se originen en
+anfitriones externos (a trav&eacute;s de otras redirecciones) o en el
+mismo cortafuegos.  N&oacute;tese que la regla <tt>rdr</tt> anterior
+har&aacute; que la pila de TCP/IP vea los paquetes que llegan a la
+interfaz interna con una direcci&oacute;n de destino dentro de la red
+interna.  Para evitar que la pila env&iacute;e mensajes de
+redireccionamiento de ICMP (indicando al cliente que puede llegar
+directamente a su destino, y rompiendo la reflexi&oacute;n), hay que
+desactivar los redireccionamientos en la pasarela, usando
+<blockquote>
+<tt>
+# sysctl -w net.inet.ip.redirect=0<br>
+# sysctl -w net.inet6.ip6.redirect=0 <i>(si se usa IPv6)</i>
+</tt>
+</blockquote>
+
+<p>
+En general, se deber&iacute;an usar las soluciones mencionadas
+anteriormente en lugar de &eacute;sta.
+
+<p>
+[<a href="nat.html">Anterior: NAT</a>]
+[<a href="index.html">Contenido</a>]
+[<a href="filter.html">Siguiente: Filtrado de Paquetes</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[&Iacute;ndice]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: rdr.html,v 1.4 2003/05/15 03:03:54 nick Exp ]<br>
+$OpenBSD: rdr.html,v 1.1 2003/05/28 14:39:30 jufi Exp $<br>
+$Translation: rdr.html,v 1.2 2003/05/26 09:12:05 horacio Exp $
+</small>
+</body>
+</html> 

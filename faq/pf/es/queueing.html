@@ -1,0 +1,935 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Formaci&oacute;n de Colas</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta http-equiv="Content-Language" content="es">
+<meta name="resource-type" content="documento">
+<meta name="description"   content="Preguntas Frecuentes de OpenBSD">
+<meta name="keywords"      content="openbsd,preguntas frecuentes,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="Este documento es copyright 2003 de OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<img alt="[OpenBSD]" height="30" width="141" src="../../../images/smalltitle.gif">
+<p>
+[<a href="scrub.html">Anterior: Normalizaci&oacute;n de Paquetes</a>]
+[<a href="index.html">Contenido</a>]
+[<a href="nat.html">Siguiente: NAT</a>]
+
+<p>
+<h1><font color="#e00000">PF: Queueing</font></h1>
+
+
+<hr>
+
+<h3>&Iacute;ndice de Contenidos</h3>
+<ul>
+<li><a href="#queueing"><i>Queueing</i>: Colas de espera</a>
+<li><a href="#sched"><i>Schedulers</i>:</a>
+	<ul>
+	<li><a href="#cbq">Colas Basadas en Clases</a>
+	<li><a href="#priq">Colas Prioritarias</a>
+	<li><a href="#red">Pronta Detecci&oacute;n Aleatoria</a>
+	<li><a href="#ecn">Notificaci&oacute;n Expl&iacute;cita de
+	Congesti&oacute;n</a>
+	</ul>
+<li><a href="#altq">Configuraci&oacute;n de la Formaci&oacute;n de
+Colas</a>
+<li><a href="#assign">Asignaci&oacute;n de Tr&aacute;fico a una Cola</a>
+<li><a href="#example1">Ejemplo #1: Red Particular, Peque&ntilde;a</a>
+<li><a href="#example2">Ejemplo #2: Red Corporativa</a>
+</ul>
+
+<hr>
+
+<a name="queueing"></a>
+<h2><i>Queueing</i>: Colas de espera</h2>
+<p>
+Poner algo en cola es almacenarlo en orden, a la espera de ser
+procesado.  En una red de ordenadores, cuando se env&iacute;an paquetes
+desde un anfitri&oacute;n, &eacute;stos entran en un sistema de colas en
+el que permanecen hasta ser procesados por el sistema operativo.
+Entonces el sistema operativo decide qu&eacute; cola debe procesar y
+qu&eacute; paquete o paquetes de dicha cola.  El orden en el que el
+sistema operativo selecciona los paquetes que va a procesar puede
+afectar al rendimiento de la red.  Pongamos por ejemplo un usuario que
+estuviera ejecutando dos aplicaciones de red:  SSH y FTP.  Lo ideal
+ser&iacute;a procesar los paquetes de SSH antes que los de FTP, por la
+propia naturaleza de SSH;  cuando se pulsa una tecla en el cliente SSH
+se espera obtener una respuesta inmediata, mientras que un retraso de
+unos pocos segundos en una transferencia por FTP pasa casi inadvertido.
+Pero, &iquest;qu&eacute; ocurrir&iacute;a si el enrutador que maneja
+estas conexiones procesara una gran parte de paquetes de la
+conexi&oacute;n de FTP antes de procesar la conexi&oacute;n de SSH?  Los
+paquetes de la conexi&oacute;n de SSH se quedar&iacute;an en la cola (o
+incluso ser&iacute;an rechazados por el enrutador si la cola no fuera lo
+suficientemente grande como para mantener todos los paquetes) y
+podr&iacute;a parecer que hay retrasos en la sesi&oacute;n de SSH, o que
+va muy lenta.  Al modificar la estrategia de la cola en uso, las
+diversas aplicaciones, usuarios y ordenadores pueden compartir bastante
+bien el ancho de banda de la red.
+
+<p>
+N&oacute;tese que el uso de colas s&oacute;lo es de utilidad para
+paquetes con direcci&oacute;n <i>hacia fuera</i>.  Una vez que un
+paquete ha llegado a una interfaz <i>desde fuera</i>, es demasiado tarde
+para ponerlo en una cola debido a que ya habr&aacute; consumido el ancho
+de banda necesario para llegar a la interfaz que acaba de recibirlo.  En
+estos casos la &uacute;nica soluci&oacute;n es activar el sistema de
+colas en el enrutador adyacente o, si el anfitri&oacute;n que ha
+recibido el paquete act&uacute;a como enrutador, activar el sistema de
+colas en la interfaz interna desde la que los paquetes salen del
+enrutador.
+
+<a name="sched"></a>
+<h2><i>Schedulers</i>: </h2>
+<p>
+El <i>scheduler</i> es lo que decide qu&eacute; colas hay que procesar y
+en qu&eacute; orden deben ser procesadas.  Por definici&oacute;n,
+OpenBSD usa un <i>scheduler</i> tipo FIFO (el primero en entrar es el
+primero en salir).  Una cola FIFO funciona como la cola de un
+supermercado o la de un banco, en donde el primer producto de la cola es
+tambi&eacute;n el primero que se procesa.  Seg&uacute;n van llegando
+nuevos paquetes, &eacute;stos se van a&ntilde;adiendo al final de la
+cola.  Si la cola se llena, los nuevos paquetes que lleguen son
+bloqueados.  Esto se conoce como <i>&quot;tail-drop&quot;</i>.
+
+<p>
+OpenBSD tiene soporte para dos <i>schedulers</i> adicionales:
+<ul>
+<li>Colas Basadas en Clases (<i>Class Based Queueing</i>)
+<li>Colas Prioritarias (<i>Priority Queueing</i>)
+</ul>
+
+<a name="cbq"></a>
+<h3>Colas Basadas en Clases</h3>
+<!-- queueing ~ formación de colas -->
+<p>
+CBQ (<i>Class Based Queueing</i>) es un algoritmo de formaci&oacute;n de
+colas que divide el ancho de banda de una conexi&oacute;n de red entre
+varias colas o clases.  A cada cola se le asigna un tr&aacute;fico
+bas&aacute;ndose en la direcci&oacute;n de origen o de destino, el
+n&uacute;mero de puerto, protocolo, etc&eacute;tera.  De forma opcional,
+se puede configurar una cola para que tome prestado ancho de banda de la
+cola ra&iacute;z de la cual origina, si &eacute;sta est&aacute; siendo
+infrautilizado.  A las colas tambi&eacute;n se les da una prioridad de
+modo que aquellas que contengan tr&aacute;fico interactivo, como SSH,
+puedan tener sus paquetes procesados antes que las colas que contengan
+tr&aacute;fico masivo, como FTP.
+
+<p>
+Las colas CBQ se ordenan de un modo jer&aacute;rquico.  En la parte
+superior de la jerarqu&iacute;a se encuentra la cola ra&iacute;z, que
+define la cantidad total de ancho de banda disponible.  Las colas
+derivadas de &eacute;sta se crean bajo la cola ra&iacute;z, y a cada una
+de ellas se les puede asignar alguna porci&oacute;n del ancho de banda
+de la cola ra&iacute;z.  Por ejemplo, se pueden definir las colas como
+sigue:
+<dl>
+<dd>Cola Ra&iacute;z (2Mbps)
+	<dl>
+	<dd>Cola A (1Mbps)
+	<dd>Cola B (500Kbps)
+	<dd>Cola C (500Kbps)
+	</dl>
+</dl>
+En este caso, el ancho de banda total disponible se ha configurado a 2
+megabits por segundo (Mbps), que luego se divide entre las tres colas
+derivadas.
+
+<p>
+La jerarqu&iacute;a se puede expandir a&uacute;n m&aacute;s definiendo
+colas dentro de otras colas.  Para dividir el ancho de banda en partes
+iguales entre varios usuarios y clasificar tamb&iacute;en sus
+tr&aacute;ficos para que ciertos protocolos no agoten otros por el ancho
+de banda, se puede definir una estructura de formaci&oacute;n de colas
+como el siguiente:
+<dl>
+<dd>Cola Ra&iacute;z (2Mbps)
+	<dl>
+	<dd>UsuarioA (1Mbps)
+		<dl>
+		<dd>ssh (50Kbps)
+		<dd>tr&aacute;f. masivo (950Kbps)
+		</dl>
+	<dd>UsuarioB (1Mbps)
+		<dl>
+		<dd>audio (250Kbps)
+		<dd>tr&aacute;f. masivo (750Kbps)
+			<dl>
+			<dd>http (100Kbps)
+			<dd>otro tr&aacute;fico (650Kbps)
+			</dl>
+		</dl>
+	</dl>
+</dl>
+N&oacute;tese que, en cada nivel, la suma del ancho de banda asignado a
+cada una de las colas no es superior al ancho de banda asignado a la
+cola ra&iacute;z.
+
+<p>
+Se puede configurar una cola para que tome prestado ancho de banda de la
+cola de la que origina si a &eacute;sta le sobra en exceso ancho de
+banda debido a que no est&aacute; siendo usado por otras colas
+derivadas.  Tomemos como ejemplo una configuraci&oacute;n de una
+formaci&oacute;n de colas como la siguiente:
+<dl>
+<dd>Cola Ra&iacute;z (2Mbps)
+	<dl>
+	<dd>UsuarioA (1Mbps)
+		<dl>
+		<dd>ssh (100Kbps)
+		<dd>ftp (900Kbps, pr&eacute;stamo)
+		</dl>
+	<dd>UsuarioB (1Mbps)
+	</dl>
+</dl>
+Si el tr&aacute;fico en la cola de ftp excede los 900Kbps y el
+tr&aacute;fico en la cola del UsuarioA es menor de de 1Mbps (debido a
+que la cola de ssh est&aacute; usando menos tr&aacute;fico que los
+100Kbps), la cola de ftp tomar&aacute; prestado el ancho de banda
+sobrante del UsuarioA.  De este modo, la cola de ftp podr&aacute; usar
+m&aacute;s ancho de banda del que tiene asignado cuando sufra una
+sobrecarga.  Cuando la cola de ssh incremente su carga, se
+devolver&aacute; en ancho de banda que se ha tomado prestado.
+
+<p>
+CBQ asigna a cada cola un nivel de prioridad.  Las colas con una
+prioridad m&aacute;s alta tendr&aacute;n preferencia sobre las colas de
+prioridad m&aacute;s baja durante una congesti&oacute;n, ya que ambas
+colas comparten la misma ra&iacute;z de origen (o sea, siempre que ambas
+colas se encuentren en la misma rama dentro de la jerarqu&iacute;a).
+Las colas con una misma prioridad se procesan de forma
+<i>round-robin</i>.  Por ejemplo:
+<dl>
+<dd>Cola Ra&iacute;z (2Mbps)
+	<dl>
+	<dd>UsuarioA (1Mbps, prioridad 1)
+		<dl>
+		<dd>ssh (100Kbps, prioridad 5)
+		<dd>ftp (900Kbps, prioridad 3)
+		</dl>
+	<dd>UsuarioB (1Mbps, prioridad 1)
+	</dl>
+</dl>
+CBQ procesar&aacute; las colas del UsuarioA y del UsuarioB de forma
+<i>round-robin</i>;  ninguna de las dos colas tendr&aacute; preferencia
+sobre la otra.  Al mismo tiempo que est&eacute; procesando la cola del
+UsuarioA, CBQ tambi&eacute;n procesar&aacute; las colas que deriven de
+&eacute;sta.  En este caso, la cola ssh tiene una prioridad m&aacute;s
+alta y obtendr&aacute; un trato preferente sobre la cola de ftp si hay
+congesti&oacute;n en la red.  N&oacute;tese que no se comparan las
+prioridades de las colas de ssh y ftp con las colas del UsuarioA y
+UsuarioB, ya que no est&aacute;n en la misma rama dentro de la
+jerarqu&iacute;a.
+
+<p>
+Para una explicaci&oacute;n m&aacute;s detallada de la teor&iacute;a
+detr&aacute;s de CBQ, v&eacute;ase
+<a href="http://www.icir.org/floyd/cbq.html">este sitio</a>.
+
+<a name="priq"></a>
+<h3>Colas Prioritarias</h3>
+<p>
+Las PRIQ (<i>Priority Queueing</i>) asignan colas m&uacute;ltiples a una
+interfaz de red, y dan a cada cola un nivel de prioridad &uacute;nico.
+Una cola con un nivel de prioridad m&aacute;s alto se procesa
+<i>siempre</i> antes que una cola con un nivel de prioridad m&aacute;s
+bajo.
+
+<p>
+La estructura de formaci&oacute;n de colas en PRIQ es escricta, no se
+pueden definir colas dentro de otras colas.  Se define s&oacute;lo la
+cola ra&iacute;z, en la que se decide la cantidad total de ancho de
+banda disponible, y a partir de ah&iacute; las &laquo;sub-colas&raquo;
+se definen bajo la cola ra&iacute;z.  Consideremos el siguiente ejemplo:
+<dl>
+<dd>Cola Ra&iacute;z (2Mbps)
+	<dl>
+	<dd>Cola A (prioridad 1)
+	<dd>Cola B (prioridad 2)
+	<dd>Cola C (prioridad 3)
+	</dl>
+</dl>
+La cola ra&iacute;z est&aacute; definida con un ancho de banda de 2Mbps
+disponible para ella misma, y se han definido tres subcolas.  La cola
+con la prioridad m&aacute;s alta (el n&uacute;mero de prioridad
+m&aacute;s alto) es la que se procesa primero.  Una vez que se han
+procesado todos los paquetes en esa cola, o si la cola estuviera
+vac&iacute;a, PRIQ pasa a la cola que tenga el siguiente nivel de
+prioridad m&aacute;s alto.  Dentro de una cola cualquiera, los paquetes
+se procesan tipo FIFO.
+
+<p>
+Es importante tener en cuenta que cuando se usa PRIQ hay que planificar
+las cola con mucho cuidado.  Debido a que PRIQ <i>siempre</i> procesa
+una cola de prioridad m&aacute;s alta antes que otra de prioridad
+m&aacute;s baja, es posible que una cola de alta prioridad sea la causa
+de que se retrasen, o incluso se lleguen a bloquear, paquetes en una
+cola de prioridad m&aacute;s baja si la cola de alta prioridad
+est&aacute; recibiendo un flujo constante de paquetes.
+
+<a name="red"></a>
+<h3>Pronta Detecci&oacute;n Aleatoria</h3>
+<p>
+RED (<i>Random Early Detection</i>) es un algoritmo para evitar la
+congesti&oacute;n.  Su trabajo es evitar la congesti&oacute;n en la red
+asegur&aacute;ndose de que la cola no se llene.  Para ello calcula
+continuamente la longitud media (el tama&ntilde;o) de la cola y la
+compara con dos umbrales o l&iacute;mites, un umbral m&iacute;nimo y
+otro m&aacute;ximo.  Si el tama&ntilde;o medio de la cola se encuentra
+por debajo del umbral m&iacute;nimo, entonces no se bloquear&aacute;
+ning&uacute;n paquete.  Si el tama&ntilde;o medio se encuentra por
+encima del umbral m&aacute;ximo, entonces <i>todos</i> los paquetes
+nuevos que lleguen ser&aacute;n bloqueados.  Si el tama&ntilde;o medio
+se encuentra entre los valores de los dos umbrales, entonces se
+bloquear&aacute;n los paquetes de acuerdo con un c&aacute;lculo de
+probabilidad sacado del tama&ntilde;o medio de la cola.  En otras
+palabras,  seg&uacute;n se va aproximando el tama&ntilde;o medio de la
+cola al umbral m&aacute;ximo, se van bloqueando un n&uacute;mero cada
+vez mayor de paquetes.  Cuando bloquea los paquetes, RED escoge de
+qu&eacute; conexiones bloquear&aacute; los paquetes de una forma
+aleatoria.  Las conexiones que usen mayores cantidades de ancho de banda
+ser&aacute; las que tengan una probabilidad m&aacute;s alta de que se
+bloqueen sus paquetes.
+
+<p>
+RED es muy &uacute;til por que evita una situaci&oacute;n conocida como
+sincronizaci&oacute;n global, explosiones repentinas de tr&aacute;fico
+(desbordamientos).  La sincronizaci&oacute;n global se refiere a una
+p&eacute;rdida total de caudal debida al bloqueo de de paquetes desde
+varias conexiones al mismo tiempo.  Por ejemplo, si la congesti&oacute;n
+tiene lugar en un enrutador que lleva tr&aacute;fico para 10 conexiones
+de FTP y se est&aacute;n bloqueando los paquetes de todas estas
+conexiones (o la mayor&iacute;a de ellas), como ocurre con la
+formaci&oacute;n de colas tipo FIFO, el caudal total caer&aacute; de
+forma significativa.  Esta situaci&oacute;n no es deseable por que hace
+que todas las conexiones de FTP reduzcan su caudal y tambi&eacute;n
+implica que la red ya no puede ser utilizada en su potencia
+m&aacute;xima.  RED evita esta situaci&oacute;n escogiendo de forma
+aleatoria las conexiones de las que bloquear&aacute; los paquetes, en
+lugar de escogerlas todas.  Las conexiones que usen grandes cantidades
+de ancho de banda tienen una mayor probabilidad de que sus paquetes sean
+bloqueados.  De esta forma se moderar&aacute; el ritmo de las conexiones
+que usen un mayor ancho de banda, se evitar&aacute; la
+congesti&oacute;n, y no habr&aacute;n p&eacute;rdidas significativas en
+el caudal total.  Adem&aacute;s de esto, RED tambi&eacute;n puede
+manejar explosiones repentinas de tr&aacute;fico por que empieza a
+bloquear paquetes <i>antes</i> de que se llene la cola.  Cuando llega
+una explosi&oacute;n de tr&aacute;fico, no hay espacio suficiente en la
+cola para contener los nuevos paquetes.
+
+<p>
+Para una explicaci&oacute;n m&aacute;s detallada de la teor&iacute;a
+detr&aacute;s de RED, v&eacute;ase
+<a href="http://www.icir.org/floyd/red.html">este sitio</a>.
+
+<a name="ecn"></a>
+<h3>Notificaci&oacute;n Expl&iacute;cita de Congesti&oacute;n</h3>
+<p>
+ECN (<i>Explicit Congestion Notification</i>) funciona en
+conjunci&oacute;n con RED para notificar a dos anfitriones que se
+comuniquen a trav&eacute;s de la red sobre cualquier congesti&oacute;n
+existente en el camino de la comunicaci&oacute;n.  Para ello permite que
+RED active un indicador en la cabecera del paquete en lugar de bloquear
+el paquete.  Si el anfitri&oacute;n remitente tiene soporte para ECN,
+entonces puede leer este indicador y moderar el ritmo del tr&aacute;fico
+de su red en consecuencia.
+
+<p>
+Para m&aacute;s informaci&oacute;n sobre ECN, v&eacute;ase el
+<a href="http://www.rfc-editor.org/rfc/rfc3168.txt">RFC 3168</a>.
+
+<a name="altq"></a>
+<h2>Configuraci&oacute;n de la Formaci&oacute;n de Colas</h2>
+<p>
+A partir de OpenBSD 3.0, la implementaci&oacute;n de formaci&oacute;n de
+colas
+<a href="http://www.csl.sony.co.jp/person/kjc/kjc/software.html#ALTQ">
+ALTQ (<i>Alternate Queueing</i>)</a> ha formado parte del sistema base.
+Desde OpenBSD 3.3, ALTQ se ha integrado en PF.  La implementaci&oacute;n
+de ALTQ de OpenBSD tiene soporte para <i>schedulers</i> de Colas Basadas
+en Clase (CBQ) y Colas Prioritarias (PRIQ).  Tambi&eacute;n tiene
+soporte para Pronta Detecci&oacute;n Aleatoria (RED) y
+Notificaci&oacute;n Expl&iacute;cita de Congesti&oacute;n (ECN).
+
+<p>
+Debido a que ALTQ ha sido fusionado con PF, es necesario activar PF para
+que funcione la formaci&oacute;n de colas.  Las instrucciones para la
+activaci&oacute;n de PF se pueden encontrar en la
+<a href="config.html#activate">secci&oacute;n de
+configuraci&oacute;n</a>.
+
+<p>
+La formaci&oacute;n de colas se configura en
+<tt><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+3.3">/etc/pf.conf</a></tt>.
+Existen dos tipos de directivas usadas para configurar la
+formaci&oacute;n de colas:
+<ul>
+<li><tt>altq on</tt> - activa la formaci&oacute;n de colas en un
+interfaz, define el <i>scheduler</i> que se usar&aacute;, y crea la cola
+ra&iacute;z
+<li><tt>queue</tt> - define las propiedades de una cola derivada
+</ul>
+
+<p>
+La sintaxis para la directiva <tt>altq on</tt> es:
+<blockquote>
+<tt>
+altq on <i>interface scheduler</i> bandwidth <i>bw</i> qlimit 
+<i>qlim</i> \<br>
+&nbsp;&nbsp;&nbsp;tbrsize <i>size</i> queue { <i>queue_list</i> }
+</tt>
+</blockquote>
+
+<ul>
+<li><tt><i>interface</i></tt> - la interfaz de red en la que se vaya a
+activar la formaci&oacute;n de colas.
+<li><tt><i>scheduler</i></tt> - el <i>scheduler</i> que se usar&aacute;
+para la formaci&oacute;n de colas.  Los valores que acepta son
+<tt>cbq</tt> y <tt>priq</tt>.  S&oacute;lo se puede activar un
+<i>scheduler</i> en una interfaz al mismo tiempo.
+<li><tt><i>bw</i></tt> - la cantidad total de ancho de banda disponible
+para el <i>scheduler</i>.  Se puede especificar como un valor absoluto
+usando los sufijos b, Kb, Mb y Gb para representar bits, kilobits,
+megabits, y gigabits por segundo, respectivamente o como porcentaje del
+ancho de banda de <tt><i>interface</i></tt>.
+<li><tt><i>qlim</i></tt> - el n&uacute;mero m&aacute;ximo de paquetes
+que puede contener la cola.  Este par&aacute;metro es opcional, y la
+configuraci&oacute;n predeterminada es de 50.
+<li><tt><i>size</i></tt> - el tama&ntilde;o del regulador de prueba
+<!-- token bucket regulator --> en bytes.  Si no se especifica, el
+tama&ntilde;o se configurar&aacute; bas&aacute;ndose en el ancho de
+banda de <tt><i>interface</i></tt>.
+<li><tt><i>queue_list</i></tt> - una lista de las colas derivadas que se
+crear&aacute;n bajo la cola ra&iacute;z.
+</ul>
+
+Por ejemplo,
+<blockquote>
+altq on fxp0 cbq bandwidth 2Mb queue { std, ssh, ftp }
+</blockquote>
+activa CBQ en la interfaz fxp0.  El ancho de banda total disponible
+est&aacute; configurado en 2Mbps.  Se han definido tres colas derivadas:
+std, ssh y ftp.
+
+<p>
+La sintaxis para la directiva <tt>queue</tt> es:
+<blockquote>
+<tt>
+queue <i>name</i> bandwidth <i>bw</i> priority <i>pri</i> qlimit
+<i>qlim</i> \<br>
+&nbsp;&nbsp;&nbsp;<i>scheduler</i> ( <i>sched_options</i> )
+{ <i>queue_list</i> }
+</tt>
+</blockquote>
+
+<ul>
+<li><tt><i>name</i></tt> - el nombre de la cola.  Debe coincidir con el
+nombre de una de las colas definidas por <tt><i>queue_list</i></tt> en
+la directiva <tt>altq on</tt>.  Para <tt>cbq</tt>, tambi&eacute;n puede
+coincidir con el nombre de una cola definida por
+<tt><i>queue_list</i></tt> en la directiva <tt>queue</tt> anterior.  Los
+nombres de las colas no deben exceder de 15 caracteres.
+<li><tt><i>bw</i></tt> - la cantidad total de ancho de banda disponible
+para el <i>scheduler</i>.  Se puede especificar como un valor absoluto
+usando los sufijos b, Kb, Mb, y Gb para representar bits, kilobits,
+megabits, y gigabits por segundo, respectivamente o como porcentaje del
+ancho de banda de <tt><i>interface</i></tt>.
+<li><tt><i>pri</i></tt> - la prioridad de la cola.  Para <tt>cbq</tt>,
+el rango de prioridad va de 0 a 7, y para <tt>priq</tt> el rango va de 0
+a 15.  La prioridad 0 es la m&aacute;s baja.  Si no se especifica, se
+usar&aacute; un valor predeterminado de 1.
+<li><tt><i>qlim</i></tt> - el n&uacute;mero m&aacute;ximo de paquetes
+que puede contener la cola.  Si no se especifica, se usar&aacute; un
+valor predeterminado de 50.
+<li><tt><i>scheduler</i></tt> - el <i>scheduler</i> que se utilice, bien
+sea <tt>cbq</tt> o <tt>priq</tt>.  Debe ser el mismo que para la cola
+ra&iacute;z.
+<li><tt><i>sched_options</i></tt> - opciones adicionales que se pueden
+pasar al <i>scheduler</i> para controlar su comportamiento:
+	<ul>
+	<li><tt>default</tt> - define una cola predeterminada a la que
+	ir&aacute;n todos los paquetes que no coincidan con ninguna otra
+	cola.  Es necesaria la definici&oacute;n de al menos una cola
+	predeterminada.
+	<li><tt>red</tt> - activa RED en esta cola.
+	<li><tt>rio</tt> - activa RED con IN/OUT.  En este modo, RED
+	mantendr&aacute; tama&ntilde;os medios de cola m&uacute;ltiples y
+	valores de umbrales m&uacute;ltiples, uno por cada nivel de Calidad
+	de Servicio de IP (<i>IP Quality of Service</i>).
+	<li><tt>ecn</tt> - activa ECN en esta cola.  <tt>ecn</tt> implica
+	<tt>red</tt>.
+	<li><tt>borrow</tt> - la cola puede tomar ancho de banda prestado de
+	su cola ra&iacute;z.  Esto s&oacute;lo se puede especificar cuando
+	se usa el <i>scheduler</i> <tt>cbq</tt>.
+	</ul>
+<li><tt><i>queue_list</i></tt> - una lista de colas derivadas que se
+crear&aacute;n bajo esta cola.  Una <tt><i>queue_list</i></tt>
+s&oacute;lo se puede definir cuando se usa el <i>scheduler</i>
+<tt>cbq</tt>.
+</ul>
+
+Continuando con el ejemplo anterior:
+<blockquote>
+<tt>
+queue std          bandwidth 50% cbq(default)<br>
+queue ssh          { ssh_login, ssh_bulk }<br>
+&nbsp;&nbsp;queue ssh_login  priority 4 cbq(ecn)<br>
+&nbsp;&nbsp;queue ssh_bulk   cbq(ecn)<br>
+queue ftp          bandwidth 500Kb priority 3 cbq(borrow red)<br>
+</tt>
+</blockquote>
+
+<p>
+Aqu&iacute; se encuentran activados los par&aacute;metros de las colas
+derivadas anteriormente definidas.  A la cola stq se le ha asignado un
+ancho d banda del 50% del ancho de banda de la cola ra&iacute;z
+(&oacute; 1Mbps), y est&aacute; configurada como la cola predeterminada.
+La cola ssh define dos colas derivadas, ssh_login y ssh_bulk.  A
+ssh_login se le ha dado una prioridad m&aacute;s alta que a ssh_bulk, y
+ambas tienen ECN activado.  A la cola FTP se le ha asignado un ancho de
+banda de 500Kbps y se le ha dado una prioridad de 3.  Tambi&eacute;n
+puede tomar prestado ancho de banda cuando haya disponible ancho de
+banda adicional, y tiene activado RED.
+
+<a name="assign"></a>
+<h3>Asignaci&oacute;n de Tr&aacute;fico a una Cola</h3>
+<p>
+Para asignar tr&aacute;fico a una cola se usa la clave <tt>queue</tt>
+junto con las <a href="filter.html">reglas de filtrado</a> de PF.  Por
+ejemplo, en un grupo de reglas de filtrado que contengan una
+l&iacute;nea como:
+<blockquote>
+<tt>pass out on fxp0 from any to any port 22</tt>
+</blockquote>
+
+<p>
+Los paquetes que coincidan con esa reglas pueden ser asignados a una
+cola espec&iacute;fica usando la clave <tt>queue</tt>:
+<blockquote>
+<tt>pass out on fxp0 from any to any port 22 queue ssh</tt>
+</blockquote>
+
+<p>
+Cuando se usa la clave <tt>queue</tt> con directivas de bloqueo
+<tt>block</tt>, cualquier paquete TCP RST o ICMP resultante que no se
+pueda alcanzar ser&aacute; asignado a la cola espec&iacute;fica.
+
+<p>
+N&oacute;tese que la clasificaci&oacute;n de la cola puede tener lugar
+en una interfaz que no sea la definida por la directiva <tt>altq
+on</tt>:
+<blockquote>
+<tt> 
+altq on fxp0 cbq bandwidth 2Mb queue { std, ftp }<br>
+queue std cbq(default)<br>
+queue ftp bandwidth 1.5Mb<br>
+<br>
+pass in on dc0 from any to any port 21 queue ftp<br>
+</tt>
+</blockquote>
+
+<p>
+La formaci&oacute;n de cola est&aacute; activada en la interfaz fxp0,
+pero la clasificaci&oacute;n tiene lugar en la interfaz dc0.  Si los
+paquetes que coinciden con la regla <tt>pass</tt> salen de la interfaz
+fxp0, pasar&aacute;n a la cola <tt>ftp</tt>.  Este tipo de
+formaci&oacute;n de colas puede ser muy &uacute;til para enrutadores.
+
+<p>
+Normalmente s&oacute;lo se da un nombre de cola con la clave
+<tt>queue</tt>, pero si se especifica un segundo nombre esa cola se
+usar&aacute; para paquetes con un Tipo de Servicio,
+<a href="http://www.rfc-editor.org/rfc/rfc791.txt">ToS (<i>Type of
+Service</i>)</a>, de retraso bajo y para paquetes TCP ACK sin carga
+&uacute;til de datos.  Un buen ejemplo de esto se encuentra cuando se
+usa SSH.  Las sesiones de ingreso de SSH configuran el ToS para retrasos
+bajos, mientras que las sesiones de SCP y SFTP no.  PF puede usar esta
+informaci&oacute;n para poner en la cola paquetes que pertenezcan a una
+conexi&oacute;n de ingreso en una cola diferente a la de las conexiones
+que no sean de ingreso.  Esto es &uacute;til para dar prioridad a los
+paquetes de conexiones de ingreso sobre los paquetes de transferencia de
+archivos.
+<blockquote>
+<tt>pass out on fxp0 from any to any port 22 queue(ssh_bulk, ssh_login)</tt>
+</blockquote>
+
+<p>
+Esto asigna los paquetes que pertenecen a las conexiones de ingreso de
+SSH a la cola ssh_login, y los paquetes que pertenecen a las conexiones
+de transferencia de archivos de SCP y SFTP a la cola ssh_bulk.
+Entonces, los paquetes de las conexiones de ingreso de SSH ser&aacute;n
+procesados antes que los de las conexiones de SCP y SFTP, ya que la cola
+ssh_login tiene una prioridad m&aacute;s alta.
+
+<p>
+La asignaci&oacute;n de paquetes TCP ACK a una cola de prioridad
+m&aacute;s alta es &uacute;til en conexiones asim&eacute;tricas, o sea
+aquellas conexiones que tienen anchos de banda de carga y descarga
+diferentes, como las l&iacute;neas ADSL.  Con una l&iacute;nea ADSL, si
+se est&aacute; uilizando al m&aacute;ximo el canal de carga y se inicia
+una descarga, la descarga sufrir&aacute; por que los paquetes TCP ACK
+que necesita enviar entrar&aacute;n en congesti&oacute;n cuando intenten
+pasar a trav&eacute;s del canal de carga.  Las pruebas realizadas
+demuestran que para obtener los mejores resultados, el ancho de banda en
+la cola de carga debe estar configurado con un valor inferior al de la
+capacidad de la conexi&oacute;n.  Por ejemplo, si una l&iacute;nea ADSL
+tiene un m&aacute;ximo de carga de 640Kbps, al configurar el ancho de
+banda (<tt>bandwith</tt>) de la cola ra&iacute;z con un valor como 600Kb
+se obtendr&aacute;n mejores resultados.  La forma para obtener la mejor
+configuraci&oacute;n del ancho de banda es probando varias
+configuraciones.
+
+<p>
+Cuando se usa la clave <tt>queue</tt> con reglas <tt>keep state</tt>,
+como:
+<blockquote>
+<tt>
+pass in on fxp0 proto tcp from any to any port 22 flags S/SA \<br>
+&nbsp;&nbsp;&nbsp;keep state queue ssh
+</tt>
+</blockquote>
+
+<p>
+PF registra la cola en la entrada de la tabla de estado para que los
+paquetes que vuelvan desde fxp0 que coincidan con la conexi&oacute;n de
+mantenimiento de estado<!-- stateful connection --> acaben en la cola
+ssh.  N&oacute;tese que, aunque se est&eacute; usando la clave
+<tt>queue</tt> en una regla que filtre el tr&aacute;fico entrante, el
+objetivo es especificar una cola para el tr&aacute;fico saliente
+correspondiente;  la regla anterior no pone en cola los paquetes
+entrantes.
+
+<a name="example1"></a>
+<h2>Ejemplo #1: Red Particular, Peque&ntilde;a</h2>
+<pre>
+  
+    [ Alice ]    [ Charlie ]
+        |             |                              ADSL
+     ---+-----+-------+------ dc0 [ OpenBSD ] fxp0 -------- ( Internet )
+              |
+           [ Bob ]
+
+</pre>
+
+<p>
+En este ejemplo se est&aacute; usando OpenBSD en una pasarela de
+Internet para una red peque&ntilde;a casera con tres estaciones de
+trabajo.  La pasarela est&aacute; realizando filtrado de paquetes y
+tareas de NAT.  La conexi&oacute;n a Internet es a trav&eacute;s de una
+l&iacute;nea ADSL con una velocidad de 2Mbps de descarga y 640Kbps de
+carga.
+
+<p>
+La pol&iacute;tica de formaci&oacute;n de colas para esta red es:
+<ul>
+<li>Reservar 80Kbps de ancho de banda de descarga para Bob, para que
+pueda jugar con su juegos en Internet sin retrasos ocasionados por las
+descargas de Alice o Charlie.  Permitir que Bob use m&aacute;s de 80Kbps
+cuando se encuentren disponibles.
+<li>El tr&aacue;fico de SSH y de mensajer&iacute;a instant&aacute;nea
+tendr&aacute; una prioridad m&aacute;s alta que el tr&aacute;fico
+regular.
+<li>Los requerimientos y respuestas de DNS tendr&aacute;n la segunda
+prioridad m&aacute;s alta.
+<li>Los paquetes salientes de TCP ACK tendr&aacute;n una prioridad
+m&aacute;s alta que el resto de tr&aacute;fico saliente.
+</ul>
+
+<p>
+A continuaci&oacute;n hay un grupo de reglas que cumple esta
+pol&iacute;tica de red.  N&oacute;tese que s&oacute;lo est&aacute;n
+presentes las directivas de <tt>pf.conf</tt> que se aplican directamente
+a la pol&iacute;tica anterior;  no se muestran
+<a href="nat.html">NAT</a>, <a href="rdr.html">RDR</a>,
+<a href="options.html">opciones</a>, etc&eacute;tera.
+
+<p>
+<table border="0" width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+# activar la formaci&oacute;n de colas en la interfaz externa para controlar
+# el tr&aacute;fico que sale hacia Internet;  usar el <i>scheduler</i> priq para
+# controlar s&oacute;lo las prioridades; configurar el ancho de banda con
+# un valor de 610Kbps para obtener el mejor rendimiento de la cola TCP ACK.
+
+altq on fxp0 priq bandwidth 610Kb queue { std_out, ssh_im_out, dns_out, \
+	tcp_ack_out }
+
+# definir los par&aacute;metros para las colas derivadas.
+# std_out      - la cola est&aacute;ndar; el tr&aacute;fico de cualquier regla de
+#		 filtrado que no especifique de forma expl&iacute;cita una
+#		 cola ser&aacute; a&ntilde;adido a esta cola.
+# ssh_im_out   - tr&aacute;fico interactivo de SSH y varios mensajes instant&aacute;neos.
+# dns_out      - requerimientos de DNS.
+# tcp_ack_out  - paquetes TCP ACK sin carga &uacute;til de datos.
+
+queue std_out     priq(red default)
+queue ssh_im_out  priority 4 priq(red)
+queue dns_out     priority 5 priq(red)
+queue tcp_ack_out priority 6 priq(red)
+
+# activar la formaci&oacute;n de colas en la interfaz interna para controlar
+# el tr&aacute;fico entrante procedente de Internet;  usar el <i>scheduler</i>
+# cbq para controlar el ancho de banda;  el ancho de banda m&aacute;ximo
+# es de 2Mbps.
+
+altq on dc0 cbq bandwidth 2Mb queue { std_in, ssh_im_in, dns_in, bob_in }
+
+# definir los par&aacute;metros para las colas derivadas.
+# std_in      - la cola est&aacute;ndar; el tr&aacute;fico de cualquier regla de
+#		filtrado por debajo que no especifique de forma expl&iacute;cita
+#		una cola ser&aacute; a&ntilde;adido a esta cola.
+# ssh_im_in   - tr&aacute;fico interactivo de SSH y varios mensajes instant&aacute;neos.
+# dns_in      - respuestas de DNS.
+# bob_in      - ancho de banda reservado para la estaci&oacute;n de Bob;
+#		permitirle que tome prestado.
+
+queue std_in    cbq(default)
+queue ssh_im_in priority 4
+queue dns_in    priority 5
+queue bob_in    bandwidth 80Kb cbq(borrow)
+
+
+# ... en la secci&oacute;n de filtrado de pf.conf ...
+
+alice         = &quot;192.168.0.2&quot;
+bob           = &quot;192.168.0.3&quot;
+charlie       = &quot;192.168.0.4&quot;
+local_net     = &quot;192.168.0.0/24&quot;
+ssh_ports     = &quot;{ 22 2022 }&quot;
+im_ports      = &quot;{ 1863 5190 5222 }&quot;
+
+# reglas de filtrado para fxp0 entrante
+block in on fxp0 all
+
+# reglas de filtrado para fxp0 saliente
+block out on fxp0 all
+pass  out on fxp0 inet proto tcp from (fxp0) to any flags S/SA \
+	keep state queue(std_out, tcp_ack_out)
+pass  out on fxp0 inet proto { udp icmp } from (fxp0) to any keep state
+pass  out on fxp0 inet proto { tcp udp } from (fxp0) to any port domain \
+	keep state queue dns_out
+pass  out on fxp0 inet proto tcp from (fxp0) to any port $ssh_ports \
+	flags S/SA keep state queue(std_out, ssh_im_out)
+pass  out on fxp0 inet proto tcp from (fxp0) to any port $im_ports \
+	flags S/SA keep state queue(ssh_im_out, tcp_ack_out)
+
+# reglas de filtrado para dc0 entrante
+block in on dc0 all
+pass  in on dc0 from $local_net
+
+# reglas de filtrado para dc0 saliente
+block out on dc0 all
+pass  out on dc0 from any to $local_net
+pass  out on dc0 proto { tcp udp } from any port domain to $local_net \
+	queue dns_in
+pass  out on dc0 proto tcp from any port $ssh_ports to $local_net \
+	queue(std_in, ssh_im_in)
+pass  out on dc0 proto tcp from any port $im_ports to $local_net \
+	queue ssh_im_in
+pass  out on dc0 from any to $bob queue bob_in
+</pre>
+</td></tr>
+</table>
+
+<a name="example2"></a>
+<h2>Ejemplo #2: Red Corporativa</h2>
+<pre>
+
+  ( Dept IT )  [ PC del Jefe ]
+       |             |                                T1
+     --+----+--------+------- dc0 [ OpenBSD ] fxp0 -------- ( Internet )
+            |                         fxp1
+         [ COMP1 ]    [ WWW ]         /
+                         |           / 
+                       --+----------' 
+
+</pre>
+
+<p>
+En este ejemplo, el anfitri&oacute;n de OpenBSD act&uacute;a como
+cortafuegos para la red de una compa&ntilde;&iacute;a.  La
+compa&ntilde;&iacute;a tiene un servidor de WWW en la parte DMZ de su
+red, en el que los clientes cargan sus sitios <i>web</i> mediante FTP.
+El departamento de Inform&aacute;tica, IT, tiene su propia subred
+conectada a la red principal, y el jefe tiene un PC en su escritorio que
+usa para correo electr&oacute;nico y para navear por Internet.  La
+conexi&oacute;n a Internet es a trav&eacute;s de una l&iacute;nea T1 a
+1.5Mbps en ambas direcciones.  El resto de los segementos de la red usan
+Fast Ethernet (100Mbps).
+
+<p>
+El administrador de la red ha decido aplicar la siguiente
+pol&iacute;tica:
+<ul>
+<li>Limitar el tr&aacute;fico entre el servidor de WWW e Internet a
+500Kbps en cada direcci&oacute;n.
+<li>No hay l&iacute;mite para el ancho de banda en el tr&aacute;fico
+entre el servidor de WWW y la red interna.
+<li>Dar una mayor prioridad al tr&aacute;fico de HTTP entre el servidor
+de WWW e Internet que al resto de tr&aacute;fico entre el servidor de
+WWW e Internet (como a las cargas y descargas por FTP).
+<li>Reservar 500Kbps para el Dept. de IT para que puedan descargar las
+&uacute;ltimas actualizaciones de <i>software</i> a tiempo.  Pueden usar
+m&aacute;s de 500Kbps cuando haya ancho de banda adicional disponible.
+<li>Dar una prioridad m&aacute;s alta al tr&aacute;fico entre el PC del
+jefe e Internet que al resto de tr&aacute;fico hacia/desde Internet.
+</ul>
+
+<p>
+A continuaci&oacute;n viene el grupo de reglas que cumple esta
+pol&iacute;tica de red.  N&oacute;tese que s&oacute;lo est&aacute;n
+presentes las directivas de <tt>pf.conf</tt> que se aplican directamente
+a la pol&iacute;tica anterior;  no se muestran
+<a href="nat.html">NAT</a>, <a href="rdr.html">RDR</a>,
+<a href="options.html">opciones</a>, etc&eacute;tera.
+
+<p>
+<table border="0" width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+# activar la formaci&oacute;n de colas en la interfaz externa para poner
+# en cola a los paquetes salientes hacia Internet; usar el
+# <i>scheduler</i> cbq para que se pueda controlar la utilizaci&oacute;n
+# de ancho de banda de cada cola; el ancho de banda saliente
+# m&aacute;ximo es de 1.5Mbps.
+
+altq on fxp0 cbq bandwidth 1.5Mb queue { std_ext, www_ext, boss_ext }
+
+# definir los par&aacute;metros para las colas derivadas.
+# std_ext         - la cola est&aacute;ndar;  tambi&eacute;n la cola predeterminada
+#		    para el tr&aacute;fico saliente en fxp0.
+# www_ext         - cola contenedora para colas del servidor de WWW;
+#		    limitada a 500Kbps.
+#   www_ext_http  - tr&aacute;fico http desde el servidor de WWW.
+#   www_ext_misc  - todo el tr&aacute;fico no http desde el servidor
+#		    de WWW.
+# boss_ext        - tr&aacute;fico entrante desde el PC del jefe.
+
+queue std_ext        cbq(default)
+queue www_ext        bandwidth 500Kb { www_ext_http, www_ext_misc }
+  queue www_ext_http priority 3 cbq(red)
+  queue www_ext_misc priority 1
+queue boss_ext       priority 3
+
+# activar la formaci&oacute;n de colas en la interfaz interna para
+# controlar el tr&aacute;fico entrante desde Internet o desde la DMZ;
+# usar el <i>scheduler</i> cbq para controlar el ancho de banda de cada
+# cola;  el ancho de banda en esta interfaz est&aacute; configurado al
+# m&aacute;ximo; el tr&aacute;fico entrante desde la DMZ podr&aacute; usar todo este
+# ancho de banda, mientras que el tr&aacute;fico entrante desde Internet
+# tendr&aacute; un l&iacute;mite de 1.0Mbps (por que se han ubicado 0.5Mbps
+# (500Kbps) para fxp1).
+
+altq on dc0 cbq bandwidth 100% queue { net_int, www_int }
+
+# definir los par&aacute;metros para las colas derivadas.
+# net_int    - cola contenedora para el tr&aacute;fico desde Internet;
+	       el ancho de banda es de 1.0Mbps.
+#   std_int  - la cola est&aacute;ndar;  tambi&eacute;n la cola predeterminada
+#	       para el tr&aacute;fico saliente en dc0.
+#   it_int   - tr&aacute;fico hacia la red del Dept IT.
+#   boss_int - tr&aacute;fico hacia el PC del jefe.
+# www_int    - tr&aacute;fico desde el servidor de WWW en la DMZ.
+
+queue net_int    bandwidth 1.0Mb { std_int, it_int, boss_int }
+  queue std_int  cbq(default)
+  queue it_int   bandwidth 500Kb cbq(borrow)
+  queue boss_int priority 3
+queue www_int    cbq(red)
+
+# activar la formaci&oacute;n de colas en la interfaz de DMZ para
+# controlar el tr&aacute;fico destinado al servidor de WWW;
+# se usar&aacute; cbq en esta interfaz ya que es necesario un control
+# detallado del ancho de banda; el ancho de banda en esta interfaz
+# est&aacute; configurado al m&aacute;ximo; el tr&aacute;fico desde la red interna
+# podr&aacute; usar todo este ancho de banda, mientras que el
+# tr&aacute;fico desde Internet estar&aacute; limitado a 500Kbps.
+
+altq on fxp1 cbq bandwidth 100% queue { internal_dmz, net_dmz }
+
+# definir los par&aacute;metros para las colas derivadas.
+# internal_dmz   - tr&aacute;fico desde la red interna.
+# net_dmz        - cola contenedora para tr&aacute;fico desde Internet.
+#   net_dmz_http - tr&aacute;fico http.
+#   net_dmz_misc - todo el tr&aacute;fico no http; es la cola predeterminada
+
+queue internal_dmz   cbq(red)
+queue net_dmz        bandwidth 500Kb { net_dmz_http, net_dmz_misc }
+  queue net_dmz_http priority 3 cbq(red)
+  queue net_dmz_misc priority 1 cbq(default)
+
+
+# ... en la secci&oacute;n de filtrado de pf.conf ...
+
+main_net  = &quot;192.168.0.0/24&quot;
+it_net    = &quot;192.168.1.0/24&quot;
+int_nets  = &quot;{ 192.168.0.0/24, 192.168.1.0/24 }&quot;
+dmz_net   = &quot;10.0.0.0/24&quot;
+
+boss      = &quot;192.168.0.200&quot;
+wwwserv   = &quot;10.0.0.100&quot;
+
+# denegaci&oacute;n predeterminada
+block on { fxp0, fxp1, dc0 } all
+
+# reglas de filtrado para fxp0 entrante
+pass in on fxp0 proto tcp from any to $wwwserv port { 21, \
+       &gt; 49151 } flags S/SA keep state queue www_ext_misc
+pass in on fxp0 proto tcp from any to $wwwserv port 80 \
+       flags S/SA keep state queue www_ext_http
+
+# reglas de filtrado para fxp0 saliente
+pass out on fxp0 from $int_nets to any keep state
+pass out on fxp0 from $boss to any keep state queue boss_ext
+
+# reglas de filtrado para dc0 entrante
+pass in on dc0 from $int_nets to any keep state
+pass in on dc0 from $it_net to any queue it_int
+pass in on dc0 from $boss to any queue boss_int
+pass in on dc0 proto tcp from $int_nets to $wwwserv port { 21, 80, \
+       &gt; 49151 } flags S/SA keep state queue www_int
+
+# reglas de filtrado para dc0 saliente
+pass out on dc0 from dc0 to $int_nets
+
+# reglas de filtrado para fxp1 entrante
+pass in on fxp1 proto { tcp, udp } from $wwwserv to any port 53 \
+       keep state
+
+# reglas de filtrado para fxp1 saliente
+pass out on fxp1 proto tcp from any to $wwwserv port { 21, \
+       &gt; 49151 } flags S/SA keep state queue net_dmz_misc
+pass out on fxp1 proto tcp from any to $wwwserv port 80 \
+       flags S/SA keep state queue net_dmz_http
+pass out on fxp1 proto tcp from $int_nets to $wwwserv port { 80, \
+       21, &gt; 49151 } flags S/SA keep state queue internal_dmz
+</pre>
+</td></tr>
+</table>
+
+<p>
+[<a href="scrub.html">Anterior: Normalizaci&oacute;n de Paquetes</a>]
+[<a href="index.html">Contenido</a>]
+[<a href="nat.html">Siguiente: NAT</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[&Iacute;ndice]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: queueing.html,v 1.8 2003/05/22 17:23:49 nick Exp ]<br>
+$OpenBSD: queueing.html,v 1.1 2003/05/28 14:39:30 jufi Exp $<br>
+$Translation: queueing.html,v 1.2 2003/05/26 09:12:05 horacio Exp $
+</small>
+</body>
+</html> 

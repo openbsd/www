@@ -1,0 +1,635 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Filtrado de Paquetes</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta http-equiv="Content-Language" content="es">
+<meta name="resource-type" content="document">
+<meta name="description"   content="Preguntas Frecuentes de OpenBSD">
+<meta name="keywords"      content="openbsd,preguntas frecuentes,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="Este documento es copyright 2002-2003 de OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<img alt="[OpenBSD]" height="30" width="141" src="../../../images/smalltitle.gif">
+<p>
+[<a href="rdr.html">Anterior: Redireccionamiento de Tr&aacute;fico</a>]
+[<a href="index.html">Contenido</a>]
+[<a href="logging.html">Siguiente: Registros de Bit&aacute;cora</a>]
+
+<h1><font color="#e00000">PF: Filtrado de Paquetes</font></h1>
+
+<hr>
+
+<h3>&Iacute;ndice de Contenidos</h3>
+<ul>
+<li><a href="#intro">Introducci&oacute;n</a>
+<li><a href="#syntax">Sintaxis de las Reglas</a>
+<li><a href="#defdeny">Denegaci&oacute;n Predeterminada</a>
+<li><a href="#pass">Paso de Tr&aacute;fico</a>
+<li><a href="#state">Mantenimiento de Estado</a>
+<li><a href="#udpstate">Mantenimiento de Estado para UDP</a>
+<li><a href="#tcpflags">Indicadores de TCP</a>
+<li><a href="#quick">La Clave <tt>quick</tt></a>
+<li><a href="#ipopts">Opciones de IP</a>
+<li><a href="#example">Ejemplo de Grupo de Reglas de Filtrado</a>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Introducci&oacute;n</h2>
+<p>
+Filtrar paquetes es pasar o bloquear los paquetes de datos de forma
+selectiva seg&uacute;n llegan a de una interfaz de red.  Los criterios
+que usa
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+3.3">pf(4)</a>
+para inspeccionar los paquetes se basan en la Layer 3 de las cabeceras
+de (<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ip&amp;sektion=4&amp;manpath=OpenBSD+3.3">IPv4</a> y
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ip6&amp;sektion=4&amp;manpath=OpenBSD+3.3">IPv6</a>)
+y en la Layer 4 de las cabeceras de
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tcp&amp;sektion=4&amp;manpath=OpenBSD+3.3">TCP</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=udp&amp;sektion=4&amp;manpath=OpenBSD+3.3">UDP</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=icmp&amp;sektion=4&amp;manpath=OpenBSD+3.3">ICMP</a>, y
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=icmp6&amp;sektion=4&amp;manpath=OpenBSD+3.3">ICMPv6</a>).
+Los criterios que m&aacute;s se utilizan son los de la direcci&oacute;n
+de origen y de destino, el puerto de origen y de destino, y el
+protocolo.
+
+<p>
+Las reglas de filtrado especifican los criterios con los que debe
+coincidir un paquete y la acci&oacute;n a seguir, bien sea bloquearlo o
+pasarlo, que se toma cuando se encuentra una coincidencia.  Las reglas
+de filtrado se eval&uacute;an por orden de secuencia, de la primera a la
+&uacute;ltima.  A menos que el paquete coincida con una regla que
+contenga la clave <tt>quick</tt>, se evaluar&aacute; el paquete
+compar&aacute;ndolo con <i>todas</i> las reglas de filtrado antes de
+decidir una acci&oacute;n final.  La &uacute;ltima regla que coincida
+ser&aacute; la &laquo;ganadora&raquo; y la que dictamine qu&eacute;
+acci&oacute;n se tomar&aacute; con el paquete.  Al final del grupo de
+reglas de filtrado hay un <tt>pass all</tt> impl&iacute;cito que indica
+que si alg&uacute;n paquete no coincide con ninguna de las reglas de
+filtrado, la acci&oacute;n a seguir ser&aacute; <tt>pass</tt>, o sea
+pasarlo.
+
+<a name="syntax"></a>
+<h2>Sintaxis de las Reglas</h2>
+<p>
+La sintaxis general, <i>muy simplificada</i>, para las reglas de
+filtrado es:
+<blockquote>
+<tt>
+<i>action</i> <i>direction</i> [log] [quick] on <i>int</i> [<i>af</i>] 
+[proto <i>protocol</i>] \<br>
+&nbsp;&nbsp;&nbsp;from <i>src_addr</i> [port <i>src_port</i>] to 
+<i>dst_addr</i> [port <i>dst_port</i>] \<br>
+&nbsp;&nbsp;&nbsp;[<i>tcp_flags</i>] [<i>state</i>]
+</tt>
+</blockquote>
+
+<dl>
+<dt><tt><i>action</i></tt>
+<dd>La acci&oacute;n a seguir para los paquetes que coincidan, ya sea
+<tt>pass</tt> o <tt>block</tt>.  La acci&oacute;n <tt>pass</tt>
+pasar&aacute; el paquete de vuelta al n&uacute;cleo del sistema, para
+que lo procese, mientras que la acci&oacute;n <tt>block</tt>
+actuar&aacute; seg&uacute;n se indique en la configuraci&oacute;n de la
+opci&oacute;n de la pol&iacute;tica de bloqueo,
+<a href="options.html#block-policy"><tt>block-policy</tt></a>.
+La acci&oacute;n predeterminada se puede anular especificando
+<tt>block drop</tt> (bloquear y eliminar el paquete) o
+<tt>block return</tt> (bloquear y devolver el paquete).
+
+<dt><tt><i>direction</i></tt>
+<dd>La direcci&oacute;n en la que se mueve el paquete en una interfaz,
+que ser&aacute; <tt>in</tt> (entrante) o <tt>out</tt> (saliente).
+
+<dt><tt>log</tt>
+<dd>Indica que se debe registrar el paquete por medio de
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+3.3">pflogd(8)</a>.
+Si la regla especifica la opci&oacute;n <tt>keep state</tt> o
+<tt>modulate state</tt>, entonces s&oacute;lo se registrar&aacute; el
+paquete que establezca el estado.  Para registrar todos los paquetes hay
+que usar la opci&oacute;n <tt>log-all</tt>.
+
+<dt><tt>quick</tt>
+<dd>Si un paquete coincide con una regla que especifique la
+opci&oacute;n <tt>quick</tt>, entonces esa regla se considera como la
+regla final de coincidencia para el paquete, y se tomar&aacute; la
+acci&oacute;n que se haya especificado sin m&aacute;s dilaci&oacute;n.
+
+<dt><tt><i>int</i></tt>
+<dd>El nombre de la interfaz de red a trav&eacute;s de la cual se mueve
+el paquete.
+
+<dt><tt><i>af</i></tt>
+<dd>La familia de direcciones del paquete, bien <tt>inet</tt> para IPv4
+&oacute; <tt>inet6</tt> para IPv6.  Generalmente, PF es capaz de
+determinar este par&aacute;metro bas&aacute;ndose en la
+direcci&oacute;n, o direcciones, de origen y/o de destino.
+
+<dt><tt><i>protocol</i></tt>
+<dd>El protocolo de la capa Layer 4 del paquete:
+<ul>
+<li><tt>tcp</tt>
+<li><tt>udp</tt>
+<li><tt>icmp</tt>
+<li><tt>icmp6</tt>
+<li>Un nombre de protocolo v&aacute;lido del fichero
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=protocols&amp;sektion=5&amp;manpath=OpenBSD+3.3"><tt>/etc/protocols</tt></a>
+<li>Un n&uacute;mero de protocolo entre 0 y 255
+<li>Un grupo de protocolos que usen una
+<a href="macros.html#lists">lista</a>.
+</ul>
+
+<dt><tt><i>src_addr</i></tt>, <tt><i>dst_addr</i></tt> 
+<dd>La direcci&oacute;n de origen y/o de destino en la cabecera IP.  Las
+direcciones se pueden especificar como:
+<ul>
+<li>Una sola direcci&oacute;n IPv4 &oacute; IPv6.
+<li>Un bloque de red
+<a href="http://public.pacbell.net/dedicated/cidr.html">CIDR</a>.
+<li>Un &laquo;Nombre de Dominio Totalmente Cualificado&raquo; (FQDN) que
+se resolver&aacute; por el &laquo;Servicio de Nombres de Dominio&raquo;
+cuando se carguen las reglas.  Todas las direcciones IP resultantes se
+sustituir&aacute;n dentro de la regla.
+<li>El nombre de una interfaz de red.  Cualquier direcci&oacute;n IP
+asignada a la interfaz se sustituir&aacute; dentro de la regla.
+<li>El nombre de una interfaz de red seguido de la m&aacute;scara de red
+como sigue: <i><tt>/netmask</tt></i> (o sea, <tt>/24</tt>).  Cada
+direcci&oacute;n IP en la interfaz se combina con la m&aacute;scara de
+red para formar un bloque de red CIDR, que se sustituye dentro de la
+regla.
+<li>El nombre de una interfaz de red entre par&eacute;ntesis.  De este
+modo se instruye a PF para que actualice la reglas si la
+direcci&oacute;n, o direcciones, IP en dicha interfaz cambia.  Es de
+gran utilidad cuando la interfaz obtiene su direcci&oacute;n IP por
+medio de DHCP o de una conexi&oacute;n tipo <i>dial-up</i>, ya que no
+hay que volver a cargar las reglas cada vez que cambie la
+direcci&oacute;n.
+<li>El nombre de una interfaz de red seguido por las claves
+<tt>:network</tt> o <tt>:broadcast</tt>.  La red CIDR resultante (o sea,
+192.168.0.0/24) o la direcci&oacute;n de multidifusi&oacute;n
+(<i>broadcast</i>) (o sea, 192.168.0.255) se sustituir&aacute;n dentro
+de la regla cuando se carguen las reglas.
+<li>Una <a href="tables.html">tabla</a>.
+<li>Cualquiera de las anteriores en negaci&oacute;n, usando el
+modificador <tt>!</tt> (&quot;not&quot;).
+<li>Un grupo de direcciones que usen una
+<a href="macros.html#lists">lista</a>.
+<li>La clave <tt>any</tt> para indicar todas las direcciones.
+<li>La clave <tt>all</tt>, que es una abreviaci&oacute;n de
+<tt>from any to any</tt>.
+</ul>
+
+<dt><tt><i>src_port</i></tt>, <tt><i>dst_port</i></tt>
+<dd>El puerto de origen y/o de destino en la capa Layer 4 de la cabecera
+IP.  Los puertos se pueden especificar como:
+<ul>
+<li>Un n&uacute;mero entre el 1 y el 65535
+<li>Un nombre de servicio v&aacute;lido del fichero
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=services&amp;sektion=5&amp;manpath=OpenBSD+3.3"><tt>/etc/services</tt></a>
+<li>Un grupo de puertos que usen una
+<a href="macros.html#lists">lista</a>
+<li>Un indicador de campo:
+	<ul>
+	<li><tt>!=</tt> (no es igual que)
+	<li><tt>&lt;</tt> (menor que)
+	<li><tt>&gt;</tt> (mayor que)
+	<li><tt>&lt;=</tt> (menor o igual que)
+	<li><tt>&gt;=</tt> (mayor o igual que)
+	<li><tt>&gt;&lt;</tt> (dentro del campo... menor que y mayor que)
+	<li><tt>&lt;&gt;</tt> (campo inverso)
+	</ul>
+	<dl>
+	<dd>Los dos &uacute;ltimos son operadores binarios (toman dos
+	argumentos) y no incluyen los argumentos en el campo.
+	</dl>
+</ul>
+
+<dt><tt><i>tcp_flags</i></tt>
+<dd>Especifica los indicadores que deben existir en la cabecera TCP
+cuando se usa <tt>proto tcp</tt>.  Los indicadores se especifican como
+<tt>flags <i>check</i>/<i>mask</i></tt>.  Por ejemplo, <tt>flags
+S/SA</tt> instruye a PF para que s&oacute;lo mire los indicadores S y A
+(SYN y ACK), y que acepte la coincidencia si el indicador SYN
+est&aacute; activo (&quot;on&quot;).
+
+<dt><tt><i>state</i></tt>
+<dd>Especifica si se guarda la informaci&oacute;n sobre el estado en
+paquetes que coincidan con esta regla.
+<ul>
+<li><tt>keep state</tt> - funciona con TCP, UDP y ICMP.
+<li><tt>modulate state</tt> - s&oacute;lo funciona con TCP.  PF
+generar&aacute; &laquo;N&uacute;meros de Secuencia Inicial&raquo; (ISNs,
+<i>Initial Sequence Numbers</i>) fuertes para los paquetes que coincidan
+con esta regla.
+</ul>
+</dl>
+
+<a name="defdeny"></a>
+<h2>Denegaci&oacute;n Predeterminada</h2>
+<p>
+La pr&aacute;ctica recomendada para configurar un cortafuegos es la de
+tomar una aproximaci&oacute;n de &laquo;denegaci&oacute;n
+predeterminada&raquo;; o sea, denegar el paso a <i>todo</i> y a partir
+de ah&iacute; ir permitiendo el paso a trav&eacute;s del cortafuegos de
+forma selectiva a cierto tr&aacute;fico.  Esta aproximaci&oacute;n es la
+recomendada por que los posibles fallos se cometer&iacute;an a favor de
+la seguridad, y tambi&eacute;n por que hace m&aacute;s f&aacute;cil la
+creaci&oacute;n de grupos de reglas.
+
+<p>
+Para crear una pol&iacute;tica de filtrado de denegaci&oacute;n
+predeterminada, las primeras dos reglas deben ser:
+<blockquote>
+<tt>
+block in  all<br>
+block out all
+</tt>
+</blockquote>
+
+<p>
+Con esto se bloquea todo el tr&aacute;fico en todas las interfaces en
+cualquier direcci&oacute;n, y desde cualquier origen hasta cualquier
+destino.
+
+<a name="pass"></a>
+<h2>Paso de Tr&aacute;fico</h2>
+<p>
+Ahora hay que permitir de forma expl&iacute;cita y selectiva el paso del
+tr&aacute;fico a trav&eacute;s del cortafuegos, o de lo contrario
+ser&aacute; bloqueado por la pol&iacute;tica de denegaci&oacute;n
+predeterminada.  Aqu&iacute; es donde entran en juego los criterios del
+paquete, como el puerto de origen/destino, la direcci&oacute;n de
+origen/destino, y el protocolo.  Siempre que se permita el paso de
+cierto tr&aacute;fico a trav&eacute;s del cortafuegos, hay que escribir
+las reglas de un modo tan restrictivo como sea posible.  Esto es para
+asegurarse de que s&oacute;lo pasar&aacute; el tr&aacute;fico que se
+permita, y ning&uacute;n otro.
+
+<p>
+Algunos ejemplos:
+<blockquote>
+<tt>
+# Dejar pasar el tr&aacute;fico entrante en la interfaz dc0 de la red local,<br>
+# 192.168.0.0/24, hacia la direcci&oacute;n IP 192.168.0.1 de la m&aacute;quina de OpenBSD.<br>
+# Tambi&eacute;n dejar pasar el tr&aacute;fico saliente que es enviado de vuelta en dc0.<br>
+pass in &nbsp;on dc0 from 192.168.0.0/24 to 192.168.0.1<br>
+pass out on dc0 from 192.168.0.1 to 192.168.0.0/24<br>
+<br>
+<br>
+# Dejar pasar el tr&aacute;fico entrante TCP en la interfaz fxp0 del servidor<br>
+# de <i>web</i> que se encuentra en la m&aacute;quina de OpenBSD.  El nombre de la<br>
+# interfaz, fxp0, se usa como la direcci&oacute;n de destino para que los paquetes<br>
+# s&oacute;lo coincidan con esta regla si tienen como destino la m&aacute;quina de OpenBSD.<br>
+pass in on fxp0 proto tcp from any to fxp0 port www
+</tt>
+</blockquote>
+
+<a name="state"></a>
+<h2>Mantenimiento de Estado</h2>
+<p>
+Una de las capacidades importantes de PF es la de &laquo;mantener el
+estado&raquo; (<i>keeping state</i>) o &laquo;inspecci&oacute;n completa
+del estado&raquo; (<i>stateful inspection</i>).  La inspecci&oacute;n
+del estado se refiere a la capacidad de PF de llevar un seguimiento del
+estado, o del progreso, de una conexi&oacute;n de red.  Almacenando
+informaci&oacute;n sobre cada conexi&oacute;n en una tabla de estado, PF
+puede determinar r&aacute;pidamente si un paquete que est&aacute;
+pasando a trav&eacute;s del cortafuegos pertenece a una conexi&oacute;n
+ya establecida.  Si es as&iacute;, se le permite pasar a trav&eacute;s
+del cortafuegos sin tener que pasar a trav&eacute;s de la
+evaluaci&oacute;n del grupo de reglas.
+
+<p>
+El mantenimiento de estado tiene muchas ventajas, entre otras unos
+grupos de reglas son m&aacute;s simples y un mejor rendimiento del
+filtrado de paquetes.  PF puede puede hacer que los paquetes que vayan
+en <i>cualquier</i> direcci&oacute;n coincidan con entradas en la tabla
+de estado, lo que quiere decir que no es necesario escribir las reglas
+de filtrado que permiten el paso del tr&aacute;fico de vuelta.  Y, como
+los paquetes que coinciden con conexiones <i>stateful</i> no pasan a
+trav&eacute;s de la evaluaci&oacute;n del grupo de reglas, el tiempo que
+tarda PF en procesarlos se puede reducir considerablemente.
+
+<p>
+Cuando una regla tiene la opci&oacute;n <tt>keep state</tt>, el primer
+paquete que coincide con ella crea un &laquo;estado&raquo; entre el
+remitente y el destinatario.  Ahora los paquetes que vayan entre el
+remitente y el destinatario no ser&aacute;n los &uacute;nicos que
+coincidir&aacute;n con la entrada de estado y que circunvalar&aacute;n
+la evaluaci&oacute;n de las reglas, sino que tambi&eacute;n lo
+har&aacute;n los paquetes de respuesta desde el destinatario hacia el
+remitente.  Por ejemplo:
+<blockquote>
+<tt>
+pass out on fxp0 proto tcp from any to any keep state
+</tt>
+</blockquote>
+
+<p>
+Esta regla permite el paso de cualquier tr&aacute;fico TCP saliente en
+la interfaz <tt>fxp0</tt>, y tambi&eacute;n permite que el
+tr&aacute;fico de respuesta pase de vuelta a trav&eacute;s del
+cortafuegos.  El mantenimiento de estado es una funcionalidad muy
+&uacute;til, y su uso mejora de forma significativa el rendimiento del
+cortafuegos, ya que las b&uacute;squedas de estados son mucho m&aacute;s
+r&aacute;pidas que pasar un paquete a trav&eacute;s de las reglas de
+filtrado.
+
+<p>
+La opci&oacute;n <tt>modulate state</tt> funciona como <tt>keep
+state</tt>, con la diferencia que s&oacute;lo es v&aacute;lida para
+paquetes TCP.  Con <tt>modulate state</tt>, el ISN de las conexiones
+salientes es aleatorio.  Esto es &uacute;til para proteger conexiones
+que hayan sido iniciadas por ciertos sistemas operativos que realizan un
+pobre trabajo al escoger ISNs.
+
+<p>
+Mantenimiento de estado en paquetes TCP, UDP y ICMP salientes y ISN TCP
+modulados:
+<blockquote>
+<tt>
+pass out on fxp0 proto tcp from any to any modulate state<br>
+pass out on fxp0 proto { udp, icmp } from any to any keep state
+</tt>
+</blockquote>
+
+<p>
+Otra ventaja del mantenimiento de estado es que el tr&aacute;fico ICMP
+correspondiente pasar&aacute; a trav&eacute;s del cortafuegos.  Por
+ejemplo, si se especifica <tt>keep state</tt> para una conexi&oacute;n
+TCP y llega un mensaje ICMP de origen que se refiere a esta
+conexi&oacute;n TCP, se buscar&aacute; su coincidencia con la entrada
+apropiada de la tabla de estado y pasar&aacute; a trav&eacute;s del
+cortafuegos.
+
+<p>
+Es importante tener en cuenta que las conexiones con estado est&aacute;n
+limitadas a la interfaz en las que han sido creadas.  Esto es importante
+sobre todo en enrutadores y cortafuegos con PF, en especial cuando se ha
+implementado una pol&iacute;tica de denegaci&oacute;n predeterminada
+como la que se ha detallado anteriormente.  Si un cortafuegos
+est&aacute; manteniendo el estado en todas las conexiones salientes en
+la interfaz externa, hay que permitir el paso de esos paquetes a
+trav&eacute;s de la interfaz interna de forma expl&iacute;cita.
+
+<p>
+N&oacute;tese que las reglas de <a href="nat.html"><tt>nat</tt></a>, 
+<a href="nat.html#binat"><tt>binat</tt></a>, y
+<a href="rdr.html"><tt>rdr</tt></a> crean un estado impl&iacute;cito
+para las conexiones que coincidan, siempre que la conexi&oacute;n pase
+por el filtro del grupo de reglas.
+
+<a name="udpstate"></a>
+<h2>Mantenimiento de Estado para UDP</h2>
+<p>
+Se dice que &laquo;no se puede crear estado con UDP, ya que UDP es un
+protocolo sin estado&raquo;.  Aunque es cierto que una sesi&oacute;n de
+comunicaci&oacute;n de UDP no tiene ning&uacute;n concepto de estado (un
+comienzo y un final de las comunicaciones expl&iacute;cito), esto no
+tiene ning&uacute;n impacto en la capacidad de PF para crear estado para
+una sesi&oacute;n de UDP.  En el caso de protocolos sin paquetes de
+&laquo;comienzo&raquo; ni &laquo;final&raquo;, PF se limita a mantener
+un seguimiento del tiempo transcurrido desde que ha pasado un paquete
+que coincida.  Los valores del tiempo muerto (<i>timeout</i>) se pueden
+configurar en la secci&oacute;n de <a href="options.html">opciones</a>
+del fichero <tt>/etc/pf.conf</tt>.
+
+<a name="tcpflags"></a>
+<h2>Indicadores de TCP</h2>
+<p>
+La coincidencia de paquetes TCP basada en indicadores es algo que se
+suele usar para filtrar paquetes TCP que est&eacute;n intentando abrir
+una nueva conexi&oacute;n.  Aqu&iacute; se puede ver una lista de
+indicadores TCP y sus significados:
+<ul>
+<li><b>F</b> : FIN  - <i>Finish</i>; final de la sesi&oacute;n
+<li><b>S</b> : SYN  - <i>Synchronize</i>; indica un requerimiento para
+iniciar la sesi&oacute;n
+<li><b>R</b> : RST  - <i>Reset</i>; abandonar una conexi&oacute;n
+<li><b>P</b> : PUSH - <i>Push</i>; el paquete es  enviado inmediatamente
+<li><b>A</b> : ACK  - <i>Acknowledgement</i>
+<li><b>U</b> : URG  - <i>Urgent</i>
+<li><b>E</b> : ECE  - <i>Explicit Congestion Notification Echo</i>
+<li><b>W</b> : CWR  - <i>Congestion Window Reduced</i>
+</ul>
+
+<p>
+Para que PF inspeccione los indicadores TCP durante la evaluaci&oacute;n
+de una regla se usa la clave <tt>flags</tt> con la sintaxis siguiente:
+<blockquote>
+<tt>
+flags <i>check</i>/<i>mask</i>
+</tt>
+</blockquote>
+
+<p>
+La parte <tt><i>mask</i></tt> indica a PF que s&oacute;lo inspeccione
+los indicadores especificados, y la parte <tt><i>check</i></tt>
+especifica qu&eacute; indicadores deben estar activos (&quot;on&quot;)
+en la cabecera para que ocurra una coincidencia.
+<blockquote>
+<tt>
+pass in on fxp0 proto tcp from any to any port ssh flags S/SA
+</tt>
+</blockquote>
+
+<p>
+Esta regla permite el paso de tr&aacute;fico TCP con el indicador SYN
+activo, y s&oacute;lo mira a los indicadores SYN y ACK.  Un paquete con
+los indicadores SYN y URG coincidir&iacute;a con la regla anterior,
+mientras que un paquete con SYN y ACK, o s&oacute;lo con ACK, no
+coincidir&iacute;a.
+
+<p>
+Nota:  la siguiente sintaxis ten&iacute;a soporte en versiones
+anteriores de OpenBSD.
+<blockquote>
+<tt>
+. . . flags S
+</tt>
+</blockquote>
+
+<p>
+Este soporte ya no existe.  Ahora hay que especificar <i>siempre</i> una
+m&aacute;scara.
+
+<p>
+Los indicadores se suelen usar junto con reglas <tt>keep state</tt> para
+ayudar a controlar la creaci&oacute;n de entradas de estado:
+<blockquote>
+<tt>
+pass out on fxp0 proto tcp all flags S/SAFR keep state
+</tt>
+</blockquote>
+
+<p>
+Esto permitir&iacute;a la creaci&oacute;n de estado en cualquier paquete
+TCP saliente con el indicador SYN activado entre los indicadores SYN,
+ACK, FIN y RST.
+
+<p>
+Hay que tener cuidado con el uso de indicadores;  hay que entender
+qu&eacute; es lo que se est&aacute; haciendo y porqu&eacute;, y tener
+cuidado con los consejos dados por otros ya que muchos suelen ser
+err&oacute;neos.  Algunas personas han sugerido la creaci&oacute;n de
+estado &laquo;s&oacute;lo si est&aacute; activado el indicador SYN, y no
+otros&raquo;.  Una regla de este tipo terminar&iacute;a as&iacute;
+<pre>
+     . . . flags S/FSRPAUEW  <i>&iquest;&iquest;mala idea!!</i>
+</pre>
+
+<p>
+La teor&iacute;a es crear estado s&oacute;lo en el inicio de la
+sesi&oacute;n TCP, y la sesi&oacute;n deber&iacute;a iniciarse con un
+indicador SYN, y ninguno otro.  El problema es que algunos sitios
+est&aacute;n empezando a usar el indicador ECN, y cualquier sitio que
+use ECN e intente conectar con nosotros ser&iacute;a rechazado por una
+regla de ese tipo.  Una directiva mucho mejor es:
+<blockquote>
+<tt>
+. . . flags S/SAFR
+</tt>
+</blockquote>
+
+<p>
+Esto significa que el paquete coincide <i>s&oacute;lo si</i> lleva
+activado SYN, y si no lleva activado ACK, FIN y RST.
+
+<a name="quick"></a>
+<h2>La Clave <tt>quick</tt></h2>
+<p>
+Como se ha indicado anteriormente, cada paquete se eval&uacute;a con el
+grupo de reglas filtrado, desde la primera hasta la &uacute;ltima.  El
+resultado predeterminado es el de marcar el paquete para que se le
+permita el paso;  esto puede cambiar con cualquiera de las reglas por
+las que pasa, y podr&iacute;a cambiar varias veces antes de llegar al
+final de las reglas de filtrado.  <b>La &uacute;ltima regla con la que
+coincida marcar&aacute; el resultado.</b>  Existe una excepci&oacute;n
+para esto:  la opci&oacute;n <tt>quick</tt> en una regla de filtrado
+tiene el efecto de cancelar el procesamiento de cualquier regla
+consiguiente, y provoca que se ejecute la acci&oacute;n especificada sin
+m&aacute;s dilaci&oacute;n.  Veamos un par de ejemplos:
+
+<p>
+Mal:
+<blockquote>
+<tt>
+block in on fxp0 proto tcp from any to any port ssh<br>
+pass &nbsp;in all
+</tt>
+</blockquote>
+
+<p>
+En este caso, la l&iacute;nea <tt>block</tt> puede ser evaluada, pero
+nunca tendr&aacute; ning&uacute;n efecto, ya que va seguida por una
+l&iacute;nea que permite el paso de todo.
+
+<p>
+Mejor:
+<blockquote>
+<tt>
+block in quick on fxp0 proto tcp from any to any port ssh<br>
+pass &nbsp;in all
+</tt>
+</blockquote>
+
+<p>
+Estas reglas se eval&uacute;an de un forma algo diferente.  Si un
+paquete coincide en la l&iacute;nea <tt>block</tt>, debido a la
+naturaleza de la opci&oacute;n <tt>quick</tt>, se bloquear&aacute; el
+paso a dicho paquete y se ignorar&aacute; el resto del grupo de reglas.
+
+<a name="ipopts"></a>
+<h2>Opciones de IP</h2>
+<p>
+Por definici&oacute;n, PF bloquea los paquetes con las opciones IP
+activadas.  Esto puede hacer las cosas m&aacute;s dif&iacute;ciles para
+utilidades de <i>fingerprinting</i> de sistemas operativos como nmap.
+Si se tiene una aplicaci&oacute;n que requiere el paso de estos
+paquetes, como multidifusi&oacute;n o IGMP, se puede usar la directiva
+<tt>allow-opts</tt>:
+<blockquote>
+<tt>
+pass in quick on fxp0 all allow-opts
+</tt>
+</blockquote>
+
+<a name="example"></a>
+<h2>Ejemplo de Reglas de Filtrado</h2>
+<p>
+A continuaci&oacute;n tenemos un ejemplo de un grupo de reglas de
+filtrado.  La m&aacute;quina en la que est&aacute; funcionando PF
+act&uacute;a como cortafuegos entre una red interna peque&ntilde;a e
+Internet.  S&oacute;lo se muestran las reglas de filtrado:
+<a href="queueing.html">queueing</a>, <a href="nat.html">NAT</a>, 
+<a href="rdr.html">rdr</a>, etc.. se han omitido en este ejemplo.
+<br>
+<br>
+<table border="0" width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+ext_if  = fxp0
+int_if  = dc0
+lan_net = 192.168.0.0/24
+
+# configurar una pol&iacute;tica de denegaci&oacute;n predeterminada
+block in  all
+block out all
+
+# permitir s&oacute;lo conexiones por ssh si provienen
+# desde la m&aacute;quina de confianza, 192.168.0.15;
+# usar &quot;block drop&quot; para que se env&iacute;e un TCP RST
+# para cerrar inmediatamente las conexiones bloqueadas;
+# usar &quot;quick&quot; para que las reglas &quot;pass&quot; que
+# vienen a continuaci&oacute;n no anulen esta regla.
+block drop in quick on $int_if proto tcp from ! 192.168.0.15 \
+   to $int_if port ssh flags S/SA
+
+# permitir el paso del tr&aacute;fico hacia y desde la
+# red local con destino a la m&aacute;quina de cortafuegos.
+pass in  on $int_if from $lan_net to $int_if 
+pass out on $int_if from $int_if to $lan_net
+
+# permitir el paso de paquetes tcp, udp y icmp
+# salientes en la interfaz externa (Internet);
+# mantener el estado en udp y icmp, y modular
+# el estado en tcp.
+pass out on $ext_if proto tcp all modulate state flags S/SA
+pass out on $ext_if proto { udp, icmp } all keep state
+
+# permitir el paso de las conexiones entrantes de ssh
+# en la interfaz externa siempre que su destino NO sea
+# el cortafuegos (o sea, aqu&eacute;llas cuyo destino sea
+# una m&aacute;quina en la red local);  registrar el paquete inicial
+# para que podamos ver m&aacute;s tarde qui&eacute;n intenta conectar.
+pass in log on $ext_if proto tcp from any to { !$ext_if, !$int_if } \
+   port ssh flags S/SA keep state
+</pre>
+</td></tr>
+</table>
+
+<p>
+[<a href="rdr.html">Anterior: Redireccionamiento de Tr&aacute;fico</a>]
+[<a href="index.html">Contenido</a>]
+[<a href="logging.html">Next: Registros de Bit&aacute;cora</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[&Iacute;ndice]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: filter.html,v 1.6 2003/05/25 01:35:07 nick Exp ]<br>
+$OpenBSD: filter.html,v 1.1 2003/05/28 14:39:30 jufi Exp $<br>
+$Translation: filter.html,v 1.2 2003/05/26 09:12:05 horacio Exp $
+</small>
+</body>
+</html> 

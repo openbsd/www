@@ -1,0 +1,356 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Atajos para la Creaci&oacute;n de Grupos de Reglas</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta http-equiv="Content-Language" content="es"
+<meta name="resource-type" content="document">
+<meta name="description"   content="Preguntas Frecuentes de OpenBSD">
+<meta name="keywords"      content="openbsd,preguntas frecuentes,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="Este documento es copyright 2003 de OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<img alt="[OpenBSD]" height="30" width="141" src="../../../images/smalltitle.gif">
+<p>
+[<a href="anchors.html">Anterior: Anclajes y Sub-Grupos de Reglas</a>]
+[<a href="index.html">Contenido</a>]
+[<a href="../pools.html">Next: Address Pools and Load Balancing</a>]
+
+<p>
+<h1>
+<font color="#e00000">PF: Atajos para la Creaci&oacute;n de Grupos de
+Reglas</font>
+</h1>
+
+<hr>
+
+<h3>&Iacute;ndice de Contenidos</h3>
+<ul>
+<li><a href="#intro">Introducci&oacute;n</a>
+<li><a href="#macros">Uso de Macros</a>
+<li><a href="#lists">Uso de Lists</a>
+<li><a href="#grammar">Gram&aacute;tica de PF</a>
+       <ul>
+       <li><a href="#elim">Eliminaci&oacute;n de Claves</a>
+	   <li><a href="#return">Simplificaci&oacute;n de Respuesta</a>
+       <li><a href="#order">Orden de las Claves</a>
+       </ul>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Introducci&oacute;n</h2>
+<p>
+PF ofrece muchas formas en las que se puede simplificar un grupo de
+reglas.  Algunos buenos ejemplos de esto son con el uso de
+<a href="macros.html#macros">macros</a> y
+<a href="macros.html#lists">listas</a>.  Adem&aacute;s, el lenguaje del
+grupo de reglas, o gram&aacute;tica, tambi&eacute;n ofrece algunos
+atajos para hacer m&aacute;s simples los grupos de reglas.  Como regla
+general, el grupo de reglas m&aacute;s simple es aqu&eacute;l que es
+m&aacute;s f&aacute;cil de entender y de mantener.
+
+<a name="macros"></a>
+<h2>Uso de Macros</h2>
+<p>
+Las macros son &uacute;tiles por que proveen un modo alternativo de
+fijar direcciones, n&uacute;meros de puertos, nombres de interfaces,
+etc... dentro de un grupo de reglas.  &iquest;Ha cambiado la
+direcci&oacute;n IP del servidor?  No hay problema, basta con actualizar
+la macro;  no es necesario cambiar las reglas de filtrado que nos han
+costado tanto de perfeccionar.
+
+<p>
+Una convenci&oacute;n com&uacute;n en los grupos de reglas de PF es la
+de definir una macro por cada interfaz de red.  Si una tarjeta de red
+tuviera que ser reemplazada con otra que usara un controlador diferente,
+por ejemplo si cambi&aacute;ramos una de 3Com con una de Intel, se
+podr&iacute;a actualizar la macro y las reglas de filtrado
+funcionar&iacute;an como antes.  Otro beneficio de las macros es al
+instalar un mismo grupo de reglas en varias m&aacute;quinas.  Unas
+m&aacute;quinas pueden tener tarjetas de red diferentes a las de otras,
+y el uso de macros para definir las interfaces de red permitir&iacute;a
+instalar los grupos de reglas realizando unos cambios m&iacute;nimos de
+edici&oacute;n.  El uso de macros para definir informaci&oacute;n en un
+grupo de reglas que est&aacute; sujeto a cambios, como los
+n&uacute;meros de puertos, direcciones IP, y nombres de interfaces, es
+una pr&aacute;ctica recomendada.
+<blockquote>
+<tt>
+# definir macros para cada interfaz de red<br>
+IntIF = &quot;dc0&quot;<br>
+ExtIF = &quot;fxp0&quot;<br>
+DmzIF = &quot;fxp1&quot;
+</tt>
+</blockquote>
+
+<p>
+Otra convenci&oacute;n com&uacute;n es la de usar macros para definir
+direcciones IP y bloques de red.  Esto puede reducir enormemente el
+mantenimiento de un grupo de reglas cuando cambien las direcciones IP.
+<blockquote>
+<tt>
+# definir nuestras redes<br>
+IntNet = &quot;192.168.0.0/24&quot;<br>
+ExtAdd = &quot;24.65.13.4&quot;<br>
+DmzNet = &quot;10.0.0.0/24&quot;
+</tt>
+</blockquote>
+
+<p>
+Si alguna vez hubiera que expandir la red interna o se renumerara en un
+bloque IP diferente, se podr&iacute;a actualizar la macro:
+<blockquote>
+<tt>
+IntNet = &quot;{ 192.168.0.0/24, 192.168.1.0/24 }&quot;
+</tt>
+</blockquote>
+
+<p>
+Una vez que se haya vuelto a cargar el grupo de reglas, todo
+funcionar&aacute; como antes.
+
+<a name="lists"></a>
+<h2>Uso de Listas</h2>
+<p>
+Veamos unas cuantas reglas que podemos tener en nuestro grupo de reglas
+para el manejo de direcciones
+<a href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a> que no
+deber&iacute;an estar por Internet, y cuando lo est&aacute;n suele ser
+para crear problemas:
+<blockquote>
+<tt>
+block in quick on tl0 inet from 127.0.0.0/8 to any<br>
+block in quick on tl0 inet from 192.168.0.0/16 to any<br>
+block in quick on tl0 inet from 172.16.0.0/12 to any<br>
+block in quick on tl0 inet from 10.0.0.0/8 to any<br>
+block out quick on tl0 inet from any to 127.0.0.0/8<br>
+block out quick on tl0 inet from any to 192.168.0.0/16<br>
+block out quick on tl0 inet from any to 172.16.0.0/12<br>
+block out quick on tl0 inet from any to 10.0.0.0/8
+</tt>
+</blockquote>
+
+<p>
+Ahora veamos la siguiente simplificaci&oacute;n de lo anterior:
+<blockquote>
+<tt>
+block in quick on tl0 inet from { 127.0.0.0/8, 192.168.0.0/16, \<br>
+&nbsp;&nbsp;&nbsp;172.16.0.0/12, 10.0.0.0/8 } to any<br>
+block out quick on tl0 inet from any to { 127.0.0.0/8, \<br>
+&nbsp;&nbsp;&nbsp;192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }
+</tt>
+</blockquote>
+
+<p>
+El grupo de reglas se ha reducido de ocho a dos l&iacute;neas.  Y
+todav&iacute;a puede mejorar si usamos macros en conjunci&oacute;n con
+una lista:
+<blockquote>
+<tt>
+NoRouteIPs = &quot;{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, \<br>
+&nbsp;&nbsp;&nbsp;10.0.0.0/8 }&quot;
+<br>
+ExtIF = &quot;tl0&quot;<br>
+block in quick on $ExtIF from $NoRouteIPs to any<br>
+block out quick on $ExtIF from any to $NoRouteIPs
+</tt>
+</blockquote>
+
+<p>
+N&oacute;tese que las macros y las listas simplifican el fichero
+<tt>/etc/pf.conf</tt>, aunque en realidad
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.3">pfctl(8)</a>
+expande las l&iacute;neas en reglas m&uacute;ltiples.  Por lo tanto, el
+ejemplo anterior se expande a las siguientes l&iacute;neas:
+<blockquote>
+<tt>
+block in quick on tl0 inet from 10.0.0.0/8 to any<br>
+block in quick on tl0 inet from 172.16.0.0/12 to any<br>
+block in quick on tl0 inet from 192.168.0.0/16 to any<br>
+block in quick on tl0 inet from 127.0.0.0/8 to any<br>
+block out quick on tl0 inet from any to 10.0.0.0/8<br>
+block out quick on tl0 inet from any to 172.16.0.0/12<br>
+block out quick on tl0 inet from any to 192.168.0.0/16<br>
+block out quick on tl0 inet from any to 127.0.0.0/8
+</tt>
+</blockquote>
+
+<p>
+Como se puede ver, la expansi&oacute;n de PF no es m&aacute;s que una
+conveniencia para quien escribe y mantiene el fichero
+<tt>/etc/pf.conf</tt>, y no una simplificaci&oacute;n real de las reglas
+procesadas por
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+3.3">pf(4)</a>.
+
+<p>
+Se pueden usar las macros para definir algo m&aacute;s que direcciones y
+puertos;  se pueden usar en cualquier parte de un fichero de reglas de
+PF:
+<blockquote>
+<tt>
+pre  = &quot;pass in quick on ep0 inet proto tcp from &quot;<br>
+post = &quot;to any port { 80, 6667 } keep state&quot;<br>
+<br>
+# la clase de David<br>
+$pre 21.14.24.80 $post<br>
+<br>
+# la casa de Nick<br>
+$pre 24.2.74.79 $post<br>
+$pre 24.2.74.178 $post
+</tt>
+</blockquote>
+
+<p>
+Se expanden a:
+<blockquote>
+<tt>
+pass in quick on ep0 inet proto tcp from 21.14.24.80 to any \<br>
+&nbsp;&nbsp;&nbsp;port = 80 keep state<br>
+pass in quick on ep0 inet proto tcp from 21.14.24.80 to any \<br>
+&nbsp;&nbsp;&nbsp;port = 6667 keep state<br>
+pass in quick on ep0 inet proto tcp from 24.2.74.79 to any \<br>
+&nbsp;&nbsp;&nbsp;port = 80 keep state<br>
+pass in quick on ep0 inet proto tcp from 24.2.74.79 to any \<br>
+&nbsp;&nbsp;&nbsp;port = 6667 keep state<br>
+pass in quick on ep0 inet proto tcp from 24.2.74.178 to any \<br>
+&nbsp;&nbsp;&nbsp;port = 80 keep state<br>
+pass in quick on ep0 inet proto tcp from 24.2.74.178 to any \<br>
+&nbsp;&nbsp;&nbsp;port = 6667 keep state
+</tt>
+</blockquote>
+
+<a name="grammar"></a>
+<h2>Gram&aacute;tica de PF</h2>
+<p>
+Con la versi&oacute;n 3.3 de OpenBSD, se ha afinado la gram&aacute;tica
+de PF para permitir mayor flexibilidad en un grupo de reglas.  Ahora PF
+es capaz de deducir ciertas claves, lo que significa que no es necesario
+mantener el estado de forma expl&iacute;cita en una regla.  El orden que
+siguien las claves tampoco es tan estricto como sol&iacute;a serlo.
+
+<a name="elim"></a>
+<h3>Eliminaci&oacute;n de Claves</h3>
+<p>
+Para definir una pol&iacute;tica de denegaci&oacute;n predeterminada, se
+usan dos reglas:
+<blockquote>
+<tt>
+block in all<br>
+block out all
+</tt>
+</blockquote>
+
+<p>
+Que se pueden reducir a:
+<blockquote>
+<tt>
+block all
+</tt>
+</blockquote>
+
+<p>
+Cuando no se especifica la direcci&oacute;n, PF asume que la regla es
+aplicable a los paquetes que van en ambas direcciones.
+
+<p>
+De forma parecida, las cl&aacute;usulas <tt>from any to any</tt> y
+<tt>all</tt> se pueden dejar fuera de una regla;  por ejemplo:
+<blockquote>
+<tt>
+block in on rl0 all<br>
+pass &nbsp;in quick log on rl0 proto tcp from any to any port 22 keep state
+</tt>
+</blockquote>
+
+<p>
+que se puede simplificar en:
+<blockquote>
+<tt>
+block in on rl0<br>
+pass &nbsp;in quick log on rl0 proto tcp to port 22 keep state</tt>
+</blockquote>
+
+<p>
+La primera regla bloquea el paso a todos los paquetes entrantes desde
+cualquier origen hacia cualquier destino en rl0, y la segunda reglas
+permite el paso al tr&aacute;fico TCP entrante en rl0 hacia el puerto
+22.
+ 
+<a name="return"></a>
+<h3>Simplificaci&oacute;n de Respuesta</h3>
+<p>
+Un grupo de reglas que se usara para bloquear paquetes y responder con
+un TCP RST o con un ICMP Unreachable, ser&iacute;a as&iacute;:
+<blockquote>
+<tt>
+block in all<br>
+block return-rst in proto tcp all<br>
+block return-icmp in proto udp all<br>
+block out all<br>
+block return-rst out proto tcp all<br>
+block return-icmp out proto udp all
+</tt>
+</blockquote>
+
+<p>
+Esto se puede simplificar a:
+<blockquote>
+<tt>
+block return
+</tt>
+</blockquote>
+
+<p>
+Cuando PF ve la clave <tt>return</tt>, es lo suficientemente listo como
+para enviar la respuesta correcta, o ninguna respuesta, dependiendo del
+protocolo del paquete que se est&eacute; bloqueando.
+
+<a name="order"></a>
+<h3>Orden de las Claves</h3>
+<p>
+El orden en el que se especifican las claves es flexible en la
+mayor&iacute;a de los casos.  Por ejemplo, una regla escrita como:
+<blockquote>
+<tt>
+pass in log quick on rl0 proto tcp to port 22 \<br> 
+&nbsp;&nbsp;&nbsp;flags S/SA keep state queue ssh label ssh
+</tt>
+</blockquote>
+
+<p>
+Tambi&eacute;n se puede escribir como:
+<blockquote>
+<tt>
+pass in quick log on rl0 proto tcp to port 22 \<br>
+&nbsp;&nbsp;&nbsp;queue ssh keep state label ssh flags S/SA
+</tt>
+</blockquote>
+
+<p>
+Otras variaciones similares tambi&eacute;n funcionar&aacute;n.
+
+<p>
+[<a href="anchors.html">Anterior: Anclajes y Sub-Grupos de Reglas</a>]
+[<a href="index.html">Contenido</a>]
+[<a href="../pools.html">Siguiente: Address Pools and Load Balancing</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[&Iacute;ndice]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: shortcuts.html,v 1.4 2003/05/15 03:03:54 nick Exp ]<br>
+$OpenBSD: shortcuts.html,v 1.1 2003/05/28 14:39:30 jufi Exp $<br>
+$Translation: shortcuts.html,v 1.2 2003/05/26 09:12:05 horacio Exp $
+</small>
+</body>
+</html> 
