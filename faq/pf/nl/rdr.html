@@ -1,0 +1,368 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Verkeersomleiding (Port Forwarding)</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+</head>
+
+<!--
+Copyright (c) 2003, Nick Holland <nick@openbsd.org>
+Copyright (c) 2003, 2004, Joel Knight <enabled@myrealbox.com>
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<a href="../../nl/index.html">
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif" border="0">
+</a>
+<p>
+[<a href="nat.html">Vorige: Network Address Translation</a>]
+[<a href="index.html">Inhoud</a>]
+[<a href="../shortcuts.html">Volgende: Shortcuts om Regelsets aan te maken</a>]
+
+<h1><font color="#e00000">PF: Verkeersomleiding (Port Forwarding)</font></h1>
+
+<hr>
+
+<h3>Inhoudstafel</h3>
+<ul>
+<li><a href="#intro">Inleiding</a>
+<li><a href="#filter">Omleiding en Pakketten Filteren</a>
+<li><a href="#security">Veiligheidsimplicaties</a>
+<li><a href="#reflect">Omleiding en Reflectie</a>
+	<ul>
+	<li><a href="#splitdns">Split-Horizon DNS</a>
+	<li><a href="#sepnet">De Server naar een Afzonderlijk Netwerk
+        Verplaatsen</a>
+	<li><a href="#tcpproxy">TCP Proxying</a>
+	<li><a href="#rdrnat">Combinatie van RDR en NAT</a>
+	</ul>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Inleiding</h2>
+Wanneer u NAT hebt draaien in uw kantoor hebt u het hele Internet ter
+beschikking op al uw machines. Wat als u een machine hebt achter de
+NAT gateway die van buitenaf toegankelijk moet zijn? Dit is waar
+omleiding in het spel komt. Omleiding ("redirection") laat toe dat
+binnenkomend verkeer naar een machine achter de NAT gateway gestuurd
+wordt.
+
+<p>
+Laten we naar een voorbeeld kijken:
+<blockquote>
+<tt>
+rdr on tl0 proto tcp from any to any port 80 -&gt; 192.168.1.20
+</tt>
+</blockquote>
+
+<p>
+Deze lijn leidt TCP poort 80 (web server) verkeer om naar een machine
+binnen het netwerk op 192.168.1.20. Dus, zelfs al staat 192.168.1.20 achter
+uw gateway en binnen uw netwerk, kan de buitenwereld er aan.
+
+<p>
+Het <tt>from any to any</tt> gedeelte van de bovenstaande <tt>rdr</tt>
+lijn kan erg nuttig zijn. Als u weet welke adressen of subnets toegang
+zouden mogen hebben tot de webserver op poort 80, kan u ze hier
+beperken:
+<blockquote>
+<tt>
+rdr on tl0 proto tcp from 27.146.49.0/24 to any port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;192.168.1.20
+</tt>
+</blockquote>
+
+<p>
+Dit zal alleen het opgegeven subnet omleiden. Merk op dat dit impliceert
+dat u verschillende binnenkomende hosts naar verschillende machines
+achter de gateway kan omleiden. Dit kan erg nuttig zijn. U zou bijvoorbeeld
+gebruikers op remote sites toegang tot hun eigen desktop computers
+kunnen verlenen met dezelfde poort en hetzelfde IP adres op de gateway
+zolang u het IP adres kent van waar ze zullen verbinden:
+<blockquote>
+<tt>
+rdr on tl0 proto tcp from 27.146.49.14 to any port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;192.168.1.20<br>
+rdr on tl0 proto tcp from 16.114.4.89 to any port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;192.168.1.22<br>
+rdr on tl0 proto tcp from 24.2.74.178 to any port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;192.168.1.23
+</tt>
+</blockquote>
+
+<a name="filter"></a>
+<h2>Omleiding en Pakketten Filteren</h2>
+<font color="#ff0000">OPMERKING:</font> Vertaalde pakketten moeten nog
+steeds doorheen de filtermotor gaan en zullen geblokkeerd of doorgelaten
+worden op basis van de gedefinieerde filterregels.
+
+<p>
+De <i>enige</i> uitzondering op deze regel is wanneer het <tt>pass</tt>
+sleutelwoord gebruikt wordt binnen de <tt>rdr</tt> regel. In dit geval
+zullen de omgeleide pakketten "stateful" recht doorheen de filtermotor
+passeren: de filterregels zullen niet geëvalueerd worden voor deze
+pakketten.
+Dit is een handige shortcut om te vermijden <tt>pass</tt> filterregels
+toe te voegen voor iedere omleidingsregel.
+Beschouw het als een normale <tt>rdr</tt> regel (zonder <tt>pass</tt>
+sleutelwoord) geassocieerd met een <tt>pass</tt> filterregel met het
+<tt>keep state</tt> sleutelwoord.
+Als u echter meer specifieke filteropties zoals <tt>synproxy</tt>,
+<tt>modulate state</tt>, enz. wil inschakelen, zal u nog steeds een
+specifieke <tt>pass</tt> regel moeten gebruken aangezien deze opties
+niet binnen omleidingsregels passen.
+
+<p>
+Besef ook dat aangezien vertaling gebeurt <i>vóór</i> filtering, de
+filtermotor het <i>vertaalde</i> pakket zal zien zoals het er uitziet
+nadat zijn bestemmings-IP adres en/of bestemmingspoort veranderd werden
+in het omleidingsadres/poort gespecificeerd in de <tt>rdr</tt> regel.
+Beschouw het volgende scenario:
+
+<ul>
+<li>192.0.2.1 - host op het Internet
+<li>24.65.1.13 - extern adres van OpenBSD router
+<li>192.168.1.5 - intern IP adres van webserver
+</ul>
+
+<p>
+Omleidingsregel:
+<blockquote>
+<tt>
+rdr on tl0 proto tcp from 192.0.2.1 to 24.65.1.13 port 80 \<br>
+&nbsp;&nbsp;&nbsp;-&gt; 192.168.1.5 port 8000
+</tt>
+</blockquote>
+
+<p>
+Pakket vóór het verwerken van de <tt>rdr</tt> regel:
+<ul>
+<li>Bronadres: 192.0.2.1
+<li>Bronpoort: 4028 (willekeurig gekozen door besturingssysteem)
+<li>Bestemmingsadres: 24.65.1.13
+<li>Bestemmingspoort: 80
+</ul>
+
+<p>
+Pakket ná het verwerken van de <tt>rdr</tt> regel:
+<ul>
+<li>Bronadres: 192.0.2.1
+<li>Bronpoort: 4028
+<li>Bestemmingsadres: 192.168.1.5
+<li>Bestemmingspoort: 8000
+</ul>
+
+<p>
+De filtermotor zal het IP pakket zien zoals het er uitziet nadat de
+vertaling gebeurd is.
+
+<a name="security"></a>
+<h2>Veiligheidsimplicaties</h2>
+Omleiding heeft wel veiligheidsimplicaties. Een gat slaan in de firewall
+om verkeer naar het interne, beschermde netwerk toe te laten, opent
+mogelijk de interne machine voor gevaar. Als verkeer bijvoorbeeld
+doorgestuurd wordt naar een interne webserver, en een kwetsbaarheid
+wordt ontdekt in de webserver daemon of in een CGI script dat op de
+webserver draait, dan kan die machine gecompromitteerd worden door
+een indringer op het Internet. Van daar uit heeft de indringer een
+deuropening naar het interne netwerk, één die toegelaten is om recht
+door de firewall heen te gaan.
+
+<p>
+Deze risico's kunnen geminimaliseerd worden door het extern toegankelijke
+systeem stevig opgesloten te houden op een afzonderlijk netwerk. Dit
+netwerk wordt vaak een Demilitarized Zone (DMZ) of een Private Service
+Network (PSN) genoemd. Op deze manier, als de webserver gecompromitteerd
+wordt, kunnen de effecten beperkt worden tot het DMZ/PSN netwerk door
+voorzichtig filteren van het verkeer toegelaten naar en vanaf het DMZ/PSN.
+
+<a name="reflect"></a>
+<h2>Omleiding en Reflectie</h2>
+Vaak worden omleidingsregels gebruikt om binnenkomende verbindingen vanaf
+het Internet door te sturen naar een lokale server met een privaat adres
+in het interne netwerk of LAN, zoals:
+<blockquote>
+<tt>
+server = 192.168.1.40<br>
+<br>
+rdr on $ext_if proto tcp from any to $ext_if port 80 -&gt; $server \<br>
+&nbsp;&nbsp;&nbsp;port 80
+</tt>
+</blockquote>
+
+<p>
+Maar wanneer de omleidingsregel getest wordt vanaf een client op de LAN,
+werkt het niet. De reden is dat omleidingsregels alleen van toepassing
+zijn op pakketten die langs de gespecificeerde interface (<tt>$ext_if</tt>,
+de externe interface, in het voorbeeld) passeren.
+Verbinden met het externe adres van de firewall vanaf een host in de LAN,
+betekent echter niet dat de pakketten werkelijk langs zijn externe interface
+zullen passeren. De TCP/IP stack op de firewall vergelijkt het
+bestemmingsadres van binnenkomende pakketten met zijn eigen adressen en
+aliast en detecteert verbindingen naar zichzelf zodra ze de interne
+interface voorbij zijn. Zulke pakketten gaan niet fysisch langs de externe
+interface, en de stack simuleert zulke doorgang op geen enkele manier.
+Dus, PF ziet deze pakketten nooit op de externe interface, en de
+omleidingsregel, die de externe interface specificeert, is niet van
+toepassing.
+
+<p>
+Een tweede omleidingsregel toevoegen voor de interne interface heeft
+ook niet het gewenste effect. Wanneer de lokale client verbindt naar
+het externe adres van de firewall, zal het initiële pakket van de TCP
+handdruk ("handshake") de firewall bereiken langs de interne interface.
+De omleidingsregel is niet van toepassing en het bestemmingsadres wordt
+vervangen door dat van de interne server. Het pakket wordt terug via
+de interne interface doorgestuurd en bereikt de interne server. Maar het
+bronadres werd niet vertaald, en bevat nog steeds het adres van de
+lokale client, dus de server stuurt zijn antwoorden rechtstreeks naar
+de client. De firewall ziet het antwoord nooit en krijgt niet de kans om
+de vertaling netjes om te keren. De client ontvangt een antwoord van een
+bron die hij nooit verwachtte en laat het vallen. De TCP handdruk mislukt
+dan en er kan geen verbinding opgericht worden.
+
+<p>
+Toch is het vaak wenselijk voor clients in de LAN om te verbinden met
+dezelfde interne server als externe clients en om dit transparant te
+doen. Er zijn verscheidene oplossingen voor dit probleem:
+
+<a name="splitdns"></a>
+<h3>Split-Horizon DNS</h3>
+
+<p>
+Het is mogelijk om DNS servers te configureren om opzoekingen van lokale
+hosts verschillend te beantwoorden dan externe opzoekingen zodat de
+lokale clients het adres van de interne server zullen ontvangen tijdens
+de naamvertaling. Ze zullen dan rechtstreeks met de lokale server
+verbinden, en de firewall is hier helemaal niet bij betrokken. Dit
+reduceert lokaal verkeer omdat pakketten niet doorheen de firewall
+gezonden moeten worden.
+
+<a name="sepnet"></a>
+<h3>De Server naar een Afzonderlijk Lokaal Netwerk Verplaatsen</h3>
+
+<p>
+Een bijkomende netwerkinterface toevoegen aan de firewall en de lokale
+server vanuit het netwerk van de client verplaatsen naar een specifiek
+netwerk (DMZ) laat de omleiding toe van verbindingen van lokale clients
+op dezelfde manier als de omleiding van externe verbindingen. Het gebruik
+van afzonderlijke netwerken heeft verscheidene voordelen, waaronder
+het verbeteren van de veiligheid door de server te isoleren van de
+overblijvende lokale hosts. Als de server (die in ons geval bereikbaar
+is vanaf het Internet) ooit gecompromitteerd wordt, hij heeft geen
+rechtstreekse toegang tot de andere hosts aangezien alle verbindingen
+via de firewall moeten.
+
+<a name="tcpproxy"></a>
+<h3>TCP Proxying</h3>
+
+<p>
+Een algemene TCP proxy kan ingesteld worden op de firewall, die ofwel
+luistert op de poort die doorgestuurd moet worden, ofwel verbindingen
+op de interne interface omleidt naar de poort waarop hij luistert.
+Wanneer een lokale client verbindt met de firewall, aanvaardt de proxy
+de verbinding, richt een tweede verbinding op met de interne server,
+en stuurt gegevens door tussen deze twee verbindingen.
+
+<p>
+Eenvoudige proxies kunnen aangemaakt worden met
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=inetd&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>inetd(8)</a> en
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=nc&amp;sektion=1&amp;manpath=OpenBSD+3.6"
+>nc(1)</a>. De volgende <tt>/etc/inetd.conf</tt> entry creëert een
+luisterende socket verbonden aan het loopback adres (127.0.0.1) en poort 5000.
+Verbindingen worden doorgestuurd naar poort 80 op server 192.168.1.10.
+<blockquote>
+<tt>
+127.0.0.1:5000 stream tcp nowait nobody /usr/bin/nc nc -w \<br>
+&nbsp;&nbsp;&nbsp;20 192.168.1.10 80
+</tt>
+</blockquote>
+
+<p>
+De volgende omleidingsregel stuurt poort 80 op de interne interface
+door naar de proxy:
+<blockquote>
+<tt>
+rdr on $int_if proto tcp from $int_net to $ext_if port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;127.0.0.1 port 5000
+</tt>
+</blockquote>
+
+<a name="rdrnat"></a>
+<h3>Combinatie van RDR en NAT</h3>
+
+<p>
+Met een bijkomende NAT regel op de interne interface kan de ontbrekende
+vertaling van het bronadres die hierboven beschreven werd, bereikt worden.
+<blockquote>
+<tt>
+rdr on $int_if proto tcp from $int_net to $ext_if port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;$server
+<br>
+no nat on $int_if proto tcp from $int_if to $int_net<br>
+nat on $int_if proto tcp from $int_net to $server port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;$int_if
+</tt>
+</blockquote>
+
+<p>
+Dit zal ervoor zorgen dat het initiële pakket van de client opnieuw
+vertaald wordt wanneer het terug doorgestuurd wordt via de interne
+interface, waarbij het bronadres van de client vervangen wordt door
+het interne adres van de firewall. De interne server zal terug
+antwoorden naar de firewall, die allebei NAT en RDR vertalingen kan
+omkeren bij het doorsturen naar de lokale client. Deze constructie
+is eerder complex aangezien ze twee afzonderlijke toestanden ("states")
+creëert voor elke gereflecteerde verbinding. Er moet zorg voor gedragen
+worden om te vermijden dat de NAT regel op ander verkeer van toepassing
+wordt, bijvoorbeeld verbindingen die van externe hosts komen (door
+andere omleidingen) of van de firewall zelf. Merk op dat de <tt>rdr</tt>
+regel hierboven er voor zal zorgen dat de TCP/IP stack de pakketten
+ziet aankomen op de interne interface met een bestemmingsadres binnen
+het interne netwerk.
+
+<p>
+In het algemeen worden beter de voorheen vermelde oplossingen gebruikt.
+
+<p>
+[<a href="nat.html">Vorige: Network Address Translation</a>]
+[<a href="index.html">Inhoud</a>]
+[<a href="../shortcuts.html">Volgende: Shortcuts om Regelsets aan te maken</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[terug]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [ OpenBSD: rdr.html,v 1.21 ]<br>
+$Translation: rdr.html,v 1.1 2005/02/13 11:16:52 smestdag Exp $<br>
+$OpenBSD: rdr.html,v 1.1 2005/02/13 11:37:43 jufi Exp $
+</small>
+
+</body>
+</html> 
