@@ -34,6 +34,8 @@ red</a>
 named</a>
 <li><a href="#PPTP">6.9 - Configuraci&oacute;n de una conexi&oacute;n
 PPTP en OpenBSD</a>
+<li><a href="#Bridge">6.10 - C&oacute;mo configurar un &laquo;puente de
+red&raquo; (<em>bridge</em>) con OpenBSD</a>
 </ul>
 </p>
 <hr>
@@ -1003,11 +1005,15 @@ pass in quick on fxp0 inet proto udp from any to any port 53
 </p>
 
 <p> 
-Como hay algunos sistemas operativos y aplicaciones que tienen problemas
-con paquetes fragmentados o an&oacute;malos, a veces es beneficioso
-normalizar los paquetes antes de que pasen a su destino final.  Esto se
-hace mediante la directiva <strong>scrub</strong>, que se usa como
-sigue:
+La &laquo;normalizaci&oacute;n de paquetes&raquo; implica el
+reensamblaje de los paquetes fragmentados y la limpieza de las opciones
+de IP.  Algunos sistemas operativos y aplicaciones tienen problemas con
+paquetes fragmentados o an&oacute;malos, y en general es bueno
+normalizar los paquetes para que los puedan buscar bien las reglas de
+filtros y los anfitriones de destino de estos paquetes.  Por lo tanto,
+casi siempre es beneficioso normalizar los paquetes antes de que lleguen
+a su destino final.  Para esto se utiliza la directiva
+<strong>scrub</strong>, que se usa como sigue:
 
 <ul>
 <pre>
@@ -1015,9 +1021,10 @@ scrub in all
 </pre>
 </ul>
 
-Pero como esta orden a&ntilde;ade una carga adicional en el sistema, no
-es recomendable usarla a menos que este sistema se encuentre protegiendo
-a un dispositivo que tenga una pobre implementaci&oacute;n de TCP/IP.
+Esta directiva a&ntilde;ade una peque&ntilde;a carga adicional al
+sistema, y requiere de un poco de memoria para los fragmentos del
+paquete.  Las ventajas de la normalizaci&oacute;n de paquetes casi
+siempre son mayores que este peque&ntilde;o coste.
 </p>
 
 <p>
@@ -3555,7 +3562,201 @@ cuando se reinicie el sistema.
 </p>
 
 
+<a name="Bridge"></a>
+<h2>6.10 - Configuraci&oacute;n de un &laquo;puente de red&raquo; en
+OpenBSD</h2>
+
+Un puente o <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridge&sektion=4">bridge</a>
+es un enlace entre dos o m&aacute;s redes separadas entre s&iacute;.  A
+diferencia de los enrutadores, la transferencia de paquetes a
+trav&eacute;s de un puente es &laquo;invisible&raquo;;
+l&oacute;gicamente, los dos segmentos de red aparecen como un solo
+segmento a los nodos de cada extremo del puente.  El puente s&oacute;lo
+reenv&iacute;a aquellos paquetes que deban pasar desde un segmento hacia
+el otro, por lo que, entre otras cosas, ofrecen una forma f&aacute;cil
+para reducir el tr&aacute;fico en una red compleja, y a&uacute;n
+as&iacute;, permiten que cualquier nodo pueda acceder a otro nodo
+cualquiera siempre que esto sea preciso.
+
 <p>
+N&oacute;tese que, debido a esta &laquo;naturaleza invisible&raquo;, una
+interfaz en un puente puede o no tener una direcci&oacute;n IP propia.
+Si la tiene, la interfaz tendr&aacute; dos modos de operaci&oacute;n,
+uno que ser&aacute; parte de un puente y el otro un NIC normal
+independiente.  Si ninguna de las interfaces tiene una direcci&oacute;n
+IP, entonces el puente pasar&aacute; los datos de red, pero no se
+podr&aacute; mantener externamente (esto se puede considerar una
+funcionalidad).
+
+<h3>Ejemplo de una aplicaci&oacute;n de puente</h3>
+
+<p>
+Uno de mis bastidores tiene unos cuantos sistemas ya viejos, y ninguno
+de &eacute;stos tiene un NIC 10BASE-TX integrado.  Aunque todos tienen
+un conector AUI o AAUI, mis transportadores se limitan al cable coaxial.
+Una de las m&aacute;quinas en este bastidor es un servidor de OpenBSD
+que siempre est&aacute; conectado a la red de alta velocidad.
+A&ntilde;adi&eacute;ndole un segundo NIC con puerto coaxial puedo usar
+esta m&aacute;quina como un puente hacia la red coaxial.
+
+<p>
+Ahora este sistema tiene dos NIC, una tarjeta Intel EtherExpress/100
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fxp&sektion=4"><tt>fxp0</tt></a>)
+y otra tarjeta 3c590-Combo
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ep&sektion=4"><tt>ep0</tt></a>)
+para el puerto coaxial.  <tt>fxp0</tt> es el enlace con el resto de mi
+red, y por lo tanto tiene una direcci&oacute;n IP;  <tt>ep0</tt>
+s&oacute;lo se va a usar para el puente, y por lo tanto no tiene una
+direcci&oacute;n IP.  Las m&aacute;quinas conectadas al segmento coaxial
+se comunican como si estuvieran en el resto de la red...
+&iquest;c&oacute;mo se hace esto?
+
+<p>
+El fichero <tt>hostname.fxp0</tt> contiene la informaci&oacute;n de
+configuraci&oacute;n de la tarjeta <tt>fxp0</tt>.  Esta m&aacute;quina
+est&aacute; configurada mediante DCHP, por lo que el fichero es como
+sigue:
+
+<blockquote>
+<pre>
+$ <b>cat /etc/hostname.fxp0</b>
+dhcp NONE NONE NONE NONE
+</pre>
+</blockquote>
+
+<p>
+Hasta aqu&iacute; sin sorpresas.
+
+<p>
+La tarjeta <tt>ep0</tt> es, l&oacute;gicamente, algo diferente:
+
+<blockquote>
+<pre>
+$ <b>cat /etc/hostname.ep0</b>
+up media 10base2
+</pre>
+</blockquote>
+
+Aqu&iacute; pasamos al sistema la instrucci&oacute;n de activar esta
+interfaz usando
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&sektion=8">ifconfig(8)</a>,
+y de configurarla como 10BASE-2 (coaxial).  No es necesario especificar
+ninguna direcci&oacute;n IP ni informaci&oacute;n parecida para esta
+interfaz.  Las opciones que acepta la tarjeta <tt>ep</tt> se pueden
+encontrar en la p&aacute;gina del manual de
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ep&sektion=4">ep(4)</a>.
+
+<p>
+Ahora necesitamos configurar el puente.  Los puentes se inician siempre
+que exista un fichero que se llame algo como
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridgename.if&sektion=5"><tt>nombre_puente.bridge0</tt></a>.
+He aqu&iacute; un ejemplo de mi situaci&oacute;n:
+
+<blockquote>
+<pre>
+$ <b>cat /etc/bridgename.bridge0</b>
+add fxp0
+add ep0
+up
+</pre>
+</blockquote>
+
+<p>
+Lo que dice es que se configure un puente que consista de dos NIC, fxp0
+y ep0, y que se active.  No importa el orden en que aparezcan las
+tarjetas, recu&eacute;rdese que un puente es muy sim&eacute;trico, los
+paquetes pasan en ambas direcciones.
+
+<p>
+&iexcl;Eso es todo!  Despu&eacute;s de reiniciar ya tendremos un puente
+totalmente funcional.
+
+<h3>Filtros de paquetes en un puente</h3>
+
+<p>
+Aunque existen varios usos para un puente simple como &eacute;ste, es
+muy probable que quiera hacer algo con los paquetes mientras pasan a
+trav&eacute;s del puente.  Se puede usar <a href="#PF">PF</a> para
+restringir el tr&aacute;fico que pasar&aacute; a trav&eacute;s del
+puente.
+
+<p>
+Hay que tener en cuenta que, por la naturaleza del puente, los mismos
+datos pasar&aacute;n a trav&eacute;s de ambas interfaces, por lo que
+s&oacute;lo ser&aacute; necesario filtrar en una sola interfaz.  Las
+reglas &quot;Pass all&quot; pueden quedar as&iacute;:
+
+<blockquote>
+<pre>
+pass in  on ep0  any
+pass out on ep0  any
+pass in  on fxp0 any
+pass out on fxp0 any
+</pre>
+</blockquote>
+
+Supongamos ahora que quiero filtrar el tr&aacute;fico que llegue a
+estas viejas m&aacute;quinas, y que s&oacute;lo quiero que pase el
+tr&aacute;fico de <em>web</em> y SSH por ellas.  En este caso dejaremos
+salir y entrar todo el tr&aacute;fico de la interfaz ep0, y filtraremos
+el de la interfaz fxp0, usando &quot;keep state&quot; para manejar la
+respuesta de datos:
+
+<blockquote>
+<pre>
+# Pass all traffic through ep0
+pass in quick on ep0 all
+pass out quick on ep0 all
+
+# Block fxp0 traffic
+block in  on fxp0 all
+block out on fxp0 all
+
+pass in quick on fxp0 proto tcp from any to any port {22, 80} \
+     flags S/SA keep state
+</pre>
+</blockquote>
+
+<p>
+N&oacute;tese que este grupo de reglas evitar&aacute; que llegue
+cualquier tr&aacute;fico a la m&aacute;quina puente o a cualquier otro
+nodo &laquo;detr&aacute;s&raquo; de ella, excepto el tr&aacute;fico
+entrante de HTTP y SSH.  Es posible obtener otros resultado filtrando la
+otra interfaz.
+
+<p>
+Para monitorizar y controlar el puente, se puede usar la orden
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=brconfig&sektion=8">brconfig(8)</a>,
+que tambi&eacute;n puede ser usada para crear un puente despu&eacute;s
+del arranque.
+
+<h3>Consejos</h3>
+
+<ul>
+<li>Es MUY recomendable filtrar en una sola interfaz.  Aunque se puede
+filtrar en ambas, para ello hay que saber muy bien lo que se est&aacute;
+haciendo.
+
+<li>Usando la opci&oacute;n <em>blocknonip</em> de
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=brconfig&sektion=8">brconfig(8)</a>
+o en
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridgename.if&sektion=5">bridgename.bridge0</a>,
+se puede evitar que se cuele tr&aacute;fico no IP (como IPX o NETBEUI)
+por los filtros.  Hay que tener en cuenta que los puentes funcionan para
+todo tipo de tr&aacute;fico, no s&oacute;lo para IP.
+
+<li>Un puente requiere que los NIC est&eacute;n en &laquo;modo
+prom&iacute;scuo&raquo; (que est&eacute;n a la escucha para TODO el
+tr&aacute;fico de red, no s&oacute;lo para el de la interfaz
+redireccionada).  Esto implica una mayor carga en el procesador y el bus
+de la esperada.  Algunos NIC no funcionan correctamente en este modo;
+el <em>chip</em> TI ThunderLAN
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tl&sektion=4">tl(4)</a>)
+es un ejemplo de un <em>chip</em> que no funciona como parte de un
+puente.
+</ul>
+
+
 <p>
 <font color="#0000e0">
 <a href="index.html">[Volver al &iacute;ndice principal]</a>
@@ -3570,9 +3771,9 @@ cuando se reinicie el sistema.
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
 <small>
-Originally [OpenBSD: faq6.html,v 1.141 2002/07/12 02:51:35 nick Exp ]<br>
-$Translation: faq6.html,v 1.66 2002/07/14 07:03:31 horacio Exp $<br>
-$OpenBSD: faq6.html,v 1.55 2002/07/14 12:24:28 jufi Exp $
+Originally [OpenBSD: faq6.html,v 1.144 2002/07/25 22:06:57 nick Exp ]<br>
+$Translation: faq6.html,v 1.67 2002/07/26 22:53:22 horacio Exp $<br>
+$OpenBSD: faq6.html,v 1.56 2002/07/27 09:00:49 jufi Exp $
 </small>
 </p>
 </body>
