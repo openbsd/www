@@ -33,6 +33,12 @@ $1 == "C" { country = substr($0, 3);
 		country = "United States"
 	if (country != oldCountry) {
 		print "<tr><td bgcolor=\"#99FFFF\" colspan=\"2\" align=\"center\">"
+		if (country == "United States") {
+			n = split("USA", labels, " ")
+		} else {
+			n = split(country, labels, " ")
+		}
+		print "<a name='" labels[1] "'></a>"
 		print "<b>" country "</b>"
 		print "</td></tr>"
 	 }
