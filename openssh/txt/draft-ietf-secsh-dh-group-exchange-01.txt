@@ -7,11 +7,11 @@
 Network Working Group                                      Markus Friedl
 INTERNET-DRAFT                                              Niels Provos
 Expires in six months                                 William A. Simpson
-                                                            January 2001
+                                                              April 2001
 
 
    Diffie-Hellman Group Exchange for the SSH Transport Layer Protocol
-               draft-ietf-secsh-dh-group-exchange-00.txt
+               draft-ietf-secsh-dh-group-exchange-01.txt
 
 
 1.  Status of this Memo
@@ -57,7 +57,7 @@ Expires in six months                                 William A. Simpson
 
 Friedl/Provos/Simpson     expires in six months                 [Page 1]
 
-INTERNET DRAFT                                              January 2001
+INTERNET DRAFT                                                April 2001
 
 
      using the "diffie-hellman-group1-sha1" method.  This method pre-
@@ -113,22 +113,23 @@ INTERNET DRAFT                                              January 2001
 
 Friedl/Provos/Simpson     expires in six months                 [Page 2]
 
-INTERNET DRAFT                                              January 2001
+INTERNET DRAFT                                                April 2001
 
 
-     Servers and clients SHOULD support groups with a modulus length of
-     k bits, where 1024 <= k <= 8192.
+     The client requests a modulus from the server indicating the pre-
+     ferred size.  In the following description (C is the client, S is
+     the server; the modulus p is a large safe prime and g is a genera-
+     tor for a subgroup of GF(p); min is the minimal size of p in bits
+     that is acceptable to the client; n is the size of the modulus p in
+     bits that the client would like to receive from the server; max is
+     the maximal size of p in bits that the client can accept; V_S is
+     S's version string; V_C is C's version string; K_S is S's public
+     host key; I_C is C's KEXINIT message and I_S S's KEXINIT message
+     which have been exchanged before this part begins):
 
-     The client requests a minimum modulus size from the server.  In the
-     following description (C is the client, S is the server; n is the
-     minimal number of bits in the subgroup; p is a large safe prime and
-     g is a generator for a subgroup of GF(p); V_S is S's version
-     string; V_C is C's version string; K_S is S's public host key; I_C
-     is C's KEXINIT message and I_S S's KEXINIT message which have been
-     exchanged before this part begins):
-
-     1.   C sends "n", the minimal number of bits in the subgroup that
-          the server should reply with.
+     1.   C sends "min || n || max" to S, indicating the minimal accept-
+          able group size, the preferred size of the group and the maxi-
+          mal group size in bits the client will accept.
 
      2.   S finds a group that best matches the client's request, and
           sends "p || g" to C.
@@ -138,11 +139,20 @@ INTERNET DRAFT                                              January 2001
 
      4.   S generates a random number y (0 < y < (p-1)/2) and computes f
           = g^y mod p. S receives "e".  It computes K = e^y mod p, H =
-          hash(V_C || V_S || I_C || I_S || K_S || n || p || g || e || f
-          || K) (these elements are encoded according to their types;
-          see below), and signature s on H with its private host key.  S
-          sends "K_S || f || s" to C.  The signing operation may involve
-          a second hashing operation.
+          hash(V_C || V_S || I_C || I_S || K_S || min || n || max || p
+          || g || e || f || K) (these elements are encoded according to
+          their types; see below), and signature s on H with its private
+          host key.  S sends "K_S || f || s" to C.  The signing opera-
+          tion may involve a second hashing operation.
+
+          Implementation Notes:
+
+               To increase the speed of the key exchange, both client
+               and server may reduce the size of their private expo-
+               nents. It should be at least twice as long as the key
+               material that is generated from the shared secret.  For
+               more details see the paper by van Oorschot and Wiener
+               [1].
 
      5.   C verifies that K_S really is the host key for S (e.g. using
           certificates or a local database).  C is also allowed to
@@ -150,27 +160,32 @@ INTERNET DRAFT                                              January 2001
           render the protocol insecure against active attacks (but may
           be desirable for practical reasons in the short term in many
           environments).  C then computes K = f^x mod p, H = hash(V_C ||
-          V_S || I_C || I_S || K_S || n || p || g || e || f || K), and
-          verifies the signature s on H.
+          V_S || I_C || I_S || K_S || min || n || max || p || g || e ||
+          f || K), and verifies the signature s on H.
 
-          Either side MUST NOT send or accept e or f values that are not
-          in the range [1, p-1]. If this condition is violated, the key
-          exchange fails.  To prevent confinement attacks, they MUST
-          accept the shared secret K only , if 1 < K < p - 1.
-
-
-     The server should return the smallest group it knows about that is
-     larger than the size the client requested.  If the server does not
-     know a group that is larger than the client request, then it has to
-     return the largest group it knows.  In all cases, the size of the
-     returned group SHOULD be at least 1024 bits.
+          Servers and clients SHOULD support groups with a modulus
 
 
 
 Friedl/Provos/Simpson     expires in six months                 [Page 3]
 
-INTERNET DRAFT                                              January 2001
+INTERNET DRAFT                                                April 2001
 
+
+          length of k bits, where 1024 <= k <= 8192.  The recommended
+          values for min and max are 1024 and 8192 respectively.
+
+          Either side MUST NOT send or accept e or f values that are not
+          in the range [1, p-1]. If this condition is violated, the key
+          exchange fails.  To prevent confinement attacks, they MUST
+          accept the shared secret K only if 1 < K < p - 1.
+
+
+     The server should return the smallest group it knows that is larger
+     than the size the client requested.  If the server does not know a
+     group that is larger than the client request, then it SHOULD return
+     the largest group it knows.  In all cases, the size of the returned
+     group SHOULD be at least 1024 bits.
 
      This is implemented with the following messages.  The hash algo-
      rithm for computing the exchange hash is defined by the method
@@ -179,7 +194,9 @@ INTERNET DRAFT                                              January 2001
 
      First, the client sends:
        byte      SSH_MSG_KEY_DH_GEX_REQUEST
-       uint32    n, number of bits the subgroup should have at least
+       uint32    min, minimal size in bits of an acceptable group
+       uint32    n, preferred size in bits of the group the server should send
+       uint32    max, maximal size in bits of an acceptable group
 
      The server responds with
        byte      SSH_MSG_KEX_DH_GEX_GROUP
@@ -203,7 +220,17 @@ INTERNET DRAFT                                              January 2001
        string    I_C, the payload of the client's SSH_MSG_KEXINIT
        string    I_S, the payload of the server's SSH_MSG_KEXINIT
        string    K_S, the host key
-       uint32    n, number of bits the client requested
+
+
+
+Friedl/Provos/Simpson     expires in six months                 [Page 4]
+
+INTERNET DRAFT                                                April 2001
+
+
+       uint32    min, minimal size in bits of an acceptable group
+       uint32    n, preferred size in bits of the group the server should send
+       uint32    max, maximal size in bits of an acceptable group
        mpint     p, safe prime
        mpint     g, generator for subgroup
        mpint     e, exchange value sent by the client
@@ -219,23 +246,20 @@ INTERNET DRAFT                                              January 2001
      The "diffie-hellman-group-exchange-sha1" method specifies Diffie-
      Hellman Group and Key Exchange with SHA-1 as HASH.
 
-
-
-
-
-Friedl/Provos/Simpson     expires in six months                 [Page 4]
-
-INTERNET DRAFT                                              January 2001
-
-
 7.  Summary of Message numbers
 
      The following message numbers have been defined in this document.
 
-       #define SSH_MSG_KEX_DH_GEX_REQUEST      30
+       #define SSH_MSG_KEX_DH_GEX_REQUEST_OLD  30
+       #define SSH_MSG_KEX_DH_GEX_REQUEST      34
        #define SSH_MSG_KEX_DH_GEX_GROUP        31
        #define SSH_MSG_KEX_DH_GEX_INIT         32
        #define SSH_MSG_KEX_DH_GEX_REPLY        33
+
+     SSH_MSG_KEX_DH_GEX_REQUEST_OLD is used for backwards compatibility.
+     Instead of sending "min || n || max", the client only sends "n".
+     Additionally, the hash is calculated using only "n" instead of "min
+     || n || max".
 
      The numbers 30-49 are key exchange specific and may be redefined by
      other kex methods.
@@ -251,11 +275,19 @@ INTERNET DRAFT                                              January 2001
      calculating moduli exchange values, and discourages dedication of
      resources for analysis of any particular modulus.
 
-     It is important to only employ safe primes as moduli.  Oorshot and
-     Wiener note that using short private exponents with a random prime
-     modulus p makes the computation of the discrete logarithm easy [1].
-     However, they also state that this problem does not apply to safe
-     primes.
+     It is important to employ only safe primes as moduli.  Van Oorshot
+
+
+
+Friedl/Provos/Simpson     expires in six months                 [Page 5]
+
+INTERNET DRAFT                                                April 2001
+
+
+     and Wiener note that using short private exponents with a random
+     prime modulus p makes the computation of the discrete logarithm
+     easy [1].  However, they also state that this problem does not
+     apply to safe primes.
 
      The least significant bit of the private exponent can be recovered,
      when the modulus is a safe prime [2].  However, this is not a prob-
@@ -276,13 +308,6 @@ INTERNET DRAFT                                              January 2001
      Bodo Moeller suggested that the server send only one group, reduc-
      ing the complexity of the implementation and the amount of data
      that needs to be exchanged between client and server.
-
-
-
-Friedl/Provos/Simpson     expires in six months                 [Page 5]
-
-INTERNET DRAFT                                              January 2001
-
 
 10.  Bibliography
 
@@ -306,6 +331,14 @@ INTERNET DRAFT                                              January 2001
 
      [6]  Ylonen, T., et al: "SSH Authentication Protocol", Internet-
           Draft, draft-ietf-secsh-userauth-09.txt
+
+
+
+
+Friedl/Provos/Simpson     expires in six months                 [Page 6]
+
+INTERNET DRAFT                                                April 2001
+
 
      [7]  Ylonen, T., et al: "SSH Connection Protocol", Internet-Draft,
           draft-ietf-secsh-connect-09.txt
@@ -331,14 +364,6 @@ INTERNET DRAFT                                              January 2001
       DH *d = NULL;
       d = DH_generate_parameters(1024, DH_GENERATOR_2, NULL, NULL);
       BN_print_fp(stdout, d->p);
-
-
-
-
-Friedl/Provos/Simpson     expires in six months                 [Page 6]
-
-INTERNET DRAFT                                              January 2001
-
 
       The order of the subgroup generated by 2 is q = p - 1.
 
@@ -366,34 +391,9 @@ INTERNET DRAFT                                              January 2001
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 Friedl/Provos/Simpson     expires in six months                 [Page 7]
 
-INTERNET DRAFT                                              January 2001
+INTERNET DRAFT                                                April 2001
 
 
 12.  Author's Address
@@ -407,7 +407,7 @@ INTERNET DRAFT                                              January 2001
 
      Niels Provos
      Center for Information Technology Integration
-     519 W. William Street
+     535 W. William Street
      Ann Arbor, MI, 48103
 
      Phone: (734) 764-5207
