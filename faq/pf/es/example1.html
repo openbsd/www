@@ -21,7 +21,7 @@ Autenticaci&oacute;n de Pasarelas</a>]
 [<a href="index.html">Contenido</a>]
 
 <p>
-<h1><font color="#e00000">PF: Ejemplo #1: Cortafuegos para Red en Casa u
+<h1><font color="#e00000">PF: Ejemplo: Cortafuegos para Red en Casa u
 Oficina</font></h1>
 <hr>
 
@@ -77,8 +77,9 @@ En la red interna hay varios ordenadores;  el diagrama muestra
 s&oacute;lo tres (COMP1, ... COMP3), aunque el n&uacute;mero real no es
 relevante.  Estos ordenadores son estaciones de trabajo normales que se
 usan para navegar por la <i>web</i>, correo electr&oacute;nico, charlas
-interactivas (<i>chats</i>), etc.  La red interna usa el bloque de red
-192.168.0.0 / 255.255.255.0.
+interactivas (<i>chats</i>), etc., excepto COMP3 que además corre un pequeño
+servidor web.
+La red interna usa el bloque de red 192.168.0.0 / 255.255.255.0.
 
 <p>
 El enrutador con OpenBSD es un Pentium 100 con dos tarjetas de red:  una
@@ -105,8 +106,12 @@ cortafuegos desde Internet:
 	<li>Auth/Ident (TCP puerto 113): usado por algunos servicios como
 	SMTP y IRC.
 	<li>ICMP Echo Requests: el tipo de paquete ICMP usado por
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ping&amp;sektion=8&amp;manpath=OpenBSD+3.4">ping(8)</a>.
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ping&amp;sektion=8&amp;manpath=OpenBSD+3.5">ping(8)</a>.
 	</ul>
+<li>Redireccionar intentos de conexión al puerto TCP 80 (accesos a un servidor
+	web) a la computadora COMP3.
+<li>Permitir también el tráfico por el puerto TCP 80 destinado a COMP3 a través
+	del firewall
 <li>Registrar estad&iacute;sticas de filtrado en la interfaz externa.
 <li>Contestar, de modo predeterminado, con un <i>TCP RST</i> o <i>ICMP
 Unreachable</i> a los paquetes bloqueados.
@@ -143,6 +148,9 @@ tcp_services = &quot;{ 22, 113 }&quot;<br>
 icmp_types = &quot;echoreq&quot;<br>
 <br>
 priv_nets = &quot;{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }&quot;
+<br>
+<br>
+comp3 = "192.168.0.3"
 </tt>
 </blockquote>
 
@@ -152,13 +160,14 @@ tendr&aacute; lugar el filtrado.  La tercera y cuarta l&iacute;neas son
 una lista de los n&uacute;meros de puertos TCP de los servicios que se
 abrir&aacute;n a Internet (SSH y ident/auth) y de los tipos de paquetes
 ICMP a los se que les permitir&aacute; llegar a la m&aacute;quina
-cortafuegos.  La &uacute;ltima l&iacute;nea define la direcci&oacute;n
+cortafuegos.  La quinta l&iacute;nea define la direcci&oacute;n
 de <i>loopback</i> y los bloques de direcciones
 <a href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a>.
+Finalmente, la última línea define la dirección IP de COMP3.
 
 <p>
 <b>Nota</b>: Si la conexi&oacute;n de Internet ADSL requiere
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pppoe&amp;sektion=8&amp;manpath=OpenBSD+3.4">PPPoE</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pppoe&amp;sektion=8&amp;manpath=OpenBSD+3.5">PPPoE</a>,
 entonces el filtrado y NAT tendr&aacute;n que realizarse en la interfaz
 <tt>tun0</tt>, y <i>no</i> en la <tt>ep0</tt>.
 
@@ -207,8 +216,8 @@ direcci&oacute;n.
 <a name="rdr"></a>
 <h3>Redireccionamiento</h3>
 <p>
-El &uacute;nico redireccionamiento que se necesita es para
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+3.4">ftp-proxy(8)</a>,
+La primera regla de redireccionamiento se necesita para
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+3.5">ftp-proxy(8)</a>,
 de modo que los clientes de FTP en la red local puedan conectarse a
 servidores de FTP en Internet.
 <blockquote>
@@ -223,6 +232,19 @@ de FTP al puerto 21.  Si los usuarios se conectan a servidores de FTP
 por otros puertos, entonces se debe usar una lista que especifique el
 puerto de destino;  por ejemplo:
 <tt>from any to any port { 21, 2121 }</tt>.
+
+<p>
+la segunda recla de redireccionamiento atrapa cualquier intento de conexión
+desde Internet hacia el puerto TCP 80 en el corta fuegos.
+Intentos legítimos de acceso a este puerto serán realizados por usuarios que
+intentan acceder al servidor web de la red.
+Estos intentos de conexión necesitan ser redirigidos a COMP3:
+
+<blockquote>
+<tt>
+rdr on $ext_if proto tcp from any to any port 80 -&gt; $comp3
+</tt>
+</blockquote>
 
 <a name="filter"></a>
 <h3>Reglas de Filtrado</h3>
@@ -248,7 +270,7 @@ una interfaz virtual de red que usan las aplicaciones para comunicarse
 entre s&iacute; mismas dentro del sistema.  Todo el tr&aacute;fico
 deber&iacute;a pasar por la interfaz de <i>loopback</i>.  En OpenBSD, la
 interfaz de <i>loopback</i> es
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=lo&amp;sektion=4&amp;manpath=OpenBSD+3.4">lo(4)</a>.
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=lo&amp;sektion=4&amp;manpath=OpenBSD+3.5">lo(4)</a>.
 <blockquote>
 <tt>
 pass quick on lo0 all
@@ -301,6 +323,23 @@ una regla de filtrado parecida a la anterior que especifique <tt>proto
 udp</tt>.
 
 <p>
+Además de tener una regla <tt>rdr</tt> que redirija el tráfico del
+servidor web a COMP3, también DEBEMOS dejar pasar este tráfico a través
+del corta fuegos:
+<blockquote>
+<tt>
+pass in on $ext_if proto tcp from any to $comp3 port 80 \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;flags S/SA synproxy state
+</tt>
+</blockquote>
+
+<p>
+Como una medida de seguridad adicional, usaremos
+<a href="filter.html#synproxy">TCP SYN Proxy</a> para proteger aún más el
+servidor web.
+
+<p>
+
 Ahora debemos dejar pasar el tr&aacute;fico ICMP:
 <blockquote>
 <tt>
@@ -395,6 +434,8 @@ icmp_types = "echoreq"
 
 priv_nets = "{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"
 	  
+comp3 = "192.168.0.3"
+
 # opciones
 set block-policy return
 set loginterface $ext_if
@@ -406,6 +447,7 @@ scrub in all
 nat on $ext_if from $int_if:network to any -&gt; ($ext_if)
 rdr on $int_if proto tcp from any to any port 21 -&gt; 127.0.0.1 \
    port 8021
+rdr on $ext_if proto tcp from any to any port 80 -&gt; $comp3
 
 # reglas de filtrado
 block all
@@ -417,6 +459,9 @@ block drop out quick on $ext_if from any to $priv_nets
 
 pass in on $ext_if inet proto tcp from any to ($ext_if) \
    port $tcp_services flags S/SA keep state
+
+pass in on $ext_if proto tcp from any to $comp3 port 80 \
+   flags S/SA synproxy state
 
 pass in inet proto icmp all icmp-type $icmp_types keep state
 
@@ -440,9 +485,9 @@ Autenticaci&oacute;n de Pasarelas</a>]
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
 <small>
-Originally [OpenBSD: example1.html,v 1.12 ]<br>
-$OpenBSD: example1.html,v 1.7 2004/01/04 22:29:12 horacio Exp $<br>
-$Translation: example1.html,v 1.9 2004/01/04 21:32:07 horacio Exp $
+Originally [OpenBSD: example1.html,v 1.15 ]<br>
+$OpenBSD: example1.html,v 1.8 2004/08/31 16:10:23 saad Exp $<br>
+$Translation: example1.html,v 1.10 2004/08/30 17:38:14 santana Exp $
 </small>
 </body>
 </html> 
