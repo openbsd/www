@@ -17,9 +17,9 @@ please, use a max of 72 chars per line -->
 
 <img alt="[OpenBSD]" height=30 width=141 src="../../images/smalltitle.gif">
 <p>
-[<a href="rdr.html">Previous: Traffic Redirection</a>]
+[<a href="tables.html">Previous: Tables</a>]
 [<a href="index.html">Contents</a>]
-[<a href="logging.html">Next: Logging</a>]
+[<a href="nat.html">Next: Network Address Translation</a>]
 
 <h1><font color="#e00000">PF: Packet Filtering</font></h1>
 
@@ -31,10 +31,11 @@ please, use a max of 72 chars per line -->
 <li><a href="#syntax">Rule Syntax</a>
 <li><a href="#defdeny">Default Deny</a>
 <li><a href="#pass">Passing Traffic</a>
+<li><a href="#quick">The <tt>quick</tt> Keyword</a>
 <li><a href="#state">Keeping State</a>
 <li><a href="#udpstate">Keeping State for UDP</a>
 <li><a href="#tcpflags">TCP Flags</a>
-<li><a href="#quick">The <tt>quick</tt> Keyword</a>
+<li><a href="#synproxy">TCP SYN Proxy</a>
 <li><a href="#antispoof">Blocking Spoofed Packets</a>
 <li><a href="#ipopts">IP Options</a>
 <li><a href="#example">Filtering Ruleset Example</a>
@@ -79,7 +80,7 @@ packet does not match any filter rule the resulting action will be
 The general, <i>highly simplified</i> syntax for filter rules is:
 <blockquote>
 <tt>
-<i>action</i> <i>direction</i> [log] [quick] on <i>int</i> [<i>af</i>] 
+<i>action</i> <i>direction</i> [log] [quick] on <i>interface</i> [<i>af</i>] 
 [proto <i>protocol</i>] \<br>
 &nbsp;&nbsp;&nbsp;from <i>src_addr</i> [port <i>src_port</i>] to 
 <i>dst_addr</i> [port <i>dst_port</i>] \<br>
@@ -104,16 +105,17 @@ drop</tt> or <tt>block return</tt>.
 <dt><tt>log</tt>
 <dd>Specifies that the packet should be logged via
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+3.4"
->pflogd(8)</a>. If the rule specifies the <tt>keep state</tt> or
-<tt>modulate state</tt> option then only the packet which establishes
-the state is logged. To log all packets regardless, use
-<tt>log-all</tt>.
+>pflogd(8)</a>. If the rule specifies the <tt>keep state</tt>,
+<tt>modulate state</tt>, or <tt>synproxy state</tt> option, then only the
+packet which establishes the state is logged. 
+To log all packets regardless, use <tt>log-all</tt>.
 
 <dt><tt>quick</tt>
-<dd>If a packet matches a rule specifying <tt>quick</tt> then that rule
-is considered the last matching rule and the specified action is taken.
+<dd>If a packet matches a rule specifying <tt>quick</tt>, then that rule
+is considered the last matching rule and the specified 
+<tt><i>action</i></tt> is taken.
 
-<dt><tt><i>int</i></tt>
+<dt><tt><i>interface</i></tt>
 <dd>The name of the network interface that the packet is moving through.
 
 <dt><tt><i>af</i></tt>
@@ -148,7 +150,7 @@ the rule.
 <li>The name of a network interface. Any IP addresses assigned to the
 interface will be substituted into the rule.
 <li>The name of a network interface followed by
-<tt>/<i>netmask</tt></i> (i.e., <tt>/24</tt>). Each IP address on the
+<tt>/<i>netmask</i></tt> (i.e., <tt>/24</tt>). Each IP address on the
 interface is combined with the netmask to form a CIDR network block
 which is substituted into the rule.
 <li>The name of a network interface in parentheses <tt>( )</tt>. This
@@ -207,6 +209,10 @@ rule.
 <li><tt>keep state</tt> - works with TCP, UDP, and ICMP.
 <li><tt>modulate state</tt> - works only with TCP. PF will generate
 strong Initial Sequence Numbers (ISNs) for packets matching this rule.
+<li><tt>synproxy state</tt> - proxies incoming TCP connections to help
+protect servers from spoofed TCP SYN floods. 
+This option includes the functionality of <tt>keep state</tt> and
+<tt>modulate state</tt>.
 </ul>
 </dl>
 
@@ -260,6 +266,45 @@ pass out on dc0 from 192.168.0.1 to 192.168.0.0/24<br>
 pass in on fxp0 proto tcp from any to fxp0 port www
 </tt>
 </blockquote>
+
+<a name="quick"></a>
+<h2>The <tt>quick</tt> Keyword</h2>
+As indicated earlier, each packet is evaluated against the filter ruleset
+from top to bottom.  By default, the packet is marked for passage, which
+can be changed by any rule, and could be changed back and forth several
+times before the end of the filter rules. <b>The last matching rule
+"wins".</b>  There is an exception to this: The <tt>quick</tt> option
+on a filtering rule has the effect of canceling any further rule
+processing and causes the specified action to be taken. Let's look at a
+couple examples:
+
+<p>
+Wrong:
+<blockquote>
+<tt>
+block in on fxp0 proto tcp from any to any port ssh<br>
+pass &nbsp;in all
+</tt>
+</blockquote>
+
+<p>
+In this case, the <tt>block</tt> line may be evaluated, but will never
+have any effect, as it is then followed by a line which will pass
+everything.
+
+<p>
+Better:
+<blockquote>
+<tt>
+block in quick on fxp0 proto tcp from any to any port ssh<br>
+pass &nbsp;in all
+</tt>
+</blockquote>
+
+<p>
+These rules are evaluated a little differently.  If the <tt>block</tt>
+line is matched, due to the <tt>quick</tt> option, the packet will be
+blocked, and the rest of the ruleset will be ignored.
 
 <a name="state"></a>
 <h2>Keeping State</h2>
@@ -348,7 +393,7 @@ ability to create state for a UDP session.  In the case of protocols
 without "start" and "end" packets, PF simply keeps track of how long it
 has been since a matching packet has gone through.  If the timeout is
 reached, the state is cleared.  The timeout values can be set in the 
-<a href="options.html">options</a> section of the <tt>/etc/pf.conf</tt>
+<a href="options.html">options</a> section of the <tt>pf.conf</tt>
 file.
 
 <a name="tcpflags"></a>
@@ -456,44 +501,45 @@ pass in on fxp0 proto tcp from any to any port ssh flags S/SA \<br>
 </tt>
 </blockquote>
 
-<a name="quick"></a>
-<h2>The <tt>quick</tt> Keyword</h2>
-As indicated earlier, each packet is evaluated against the filter ruleset
-from top to bottom.  By default, the packet is marked for passage, which
-can be changed by any rule, and could be changed back and forth several
-times before the end of the filter rules. <b>The last matching rule
-"wins".</b>  There is an exception to this: The <tt>quick</tt> option
-on a filtering rule has the effect of canceling any further rule
-processing and causes the specified action to be taken. Let's look at a
-couple examples:
+<a name="synproxy"></a>
+<h2>TCP SYN Proxy</h2>
+<p>
+Normally when a client initiates a TCP connection to a server PF will
+pass the 
+<a href="http://www.inetdaemon.com/tutorials/internet/tcp/connections.html"
+>handshake</a> packets between the two endpoints as they arrive. 
+PF has the ability, however, to proxy the handshake. 
+With the handshake proxied, PF itself will complete the handshake with
+the client, initiate a handshake with the server, and then pass packets
+between the two. 
+The benefit of this process is that no packets are sent to the server
+before the client completes the handshake. 
+This eliminates the threat of spoofed TCP SYN floods affecting the
+server because a spoofed client connection will be unable to complete
+the handshake.
 
 <p>
-Wrong:
+The TCP SYN proxy is enabled using the <tt>synproxy state</tt> keywords
+in filter rules. Example:
+
 <blockquote>
 <tt>
-block in on fxp0 proto tcp from any to any port ssh<br>
-pass &nbsp;in all
+pass in on $ext_if proto tcp from any to $web_server port www \<br>
+&nbsp;&nbsp;&nbsp;flags S/SA synproxy state
 </tt>
 </blockquote>
 
 <p>
-In this case, the <tt>block</tt> line may be evaluated, but will never
-have any effect, as it is then followed by a line which will pass
-everything.
+Here, connections to the web server will be TCP proxied by PF.
 
 <p>
-Better:
-<blockquote>
-<tt>
-block in quick on fxp0 proto tcp from any to any port ssh<br>
-pass &nbsp;in all
-</tt>
-</blockquote>
+Because of the way <tt>synproxy state</tt> works, it also includes the
+same functionality as <tt>keep state</tt> and <tt>modulate state</tt>.
 
 <p>
-These rules are evaluated a little differently.  If the <tt>block</tt>
-line is matched, due to the <tt>quick</tt> option, the packet will be
-blocked, and the rest of the ruleset will be ignored.
+The SYN proxy will not work if PF is running on a 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridge&amp;sektion=4&amp;manpath=OpenBSD+3.4"
+>bridge(4)</a>.
 
 <a name="antispoof"></a>
 <h2>Blocking Spoofed Packets</h2>
@@ -543,9 +589,9 @@ antispoof for fxp0 inet
 
 <p>
 When a ruleset is loaded, any occurrences of the <tt>antispoof</tt>
-keyword are expanded into two filter rules. Assuming that interface fxp0
-has IP address 10.0.0.1 and a subnet mask of 255.255.255.0 (i.e., a
-/24), the above <tt>antispoof</tt> rule would expand to:
+keyword are expanded into two filter rules. Assuming that interface
+<tt>fxp0</tt> has IP address 10.0.0.1 and a subnet mask of 255.255.255.0
+(i.e., a /24), the above <tt>antispoof</tt> rule would expand to:
 
 <blockquote>
 <tt>
@@ -558,10 +604,11 @@ block in inet from 10.0.0.1 to any
 These rules accomplish two things:
 <ul>
 <li>Blocks all traffic coming from the 10.0.0.0/24 network that does
-<i>not</i> pass in through fxp0. Since the 10.0.0.0/24 network is on the
-fxp0 interface, packets with a source address in that network block
+<i>not</i> pass in through <tt>fxp0</tt>. Since the 10.0.0.0/24 network is on the
+<tt>fxp0</tt> interface, packets with a source address in that network block
 should never be seen coming in on any other interface.
-<li>Blocks all incoming traffic from 10.0.0.1, the IP address on fxp0.
+<li>Blocks all incoming traffic from 10.0.0.1, the IP address on
+<tt>fxp0</tt>.
 The host machine should never send packets to itself through an external
 interface, so any incoming packets with a source address belonging to
 the machine can be considered malicious.
@@ -654,26 +701,26 @@ pass out on $ext_if proto tcp all modulate state flags S/SA
 pass out on $ext_if proto { udp, icmp } all keep state
 
 # allow ssh connections in on the external interface as long as they're
-# NOT destined for the firewall (ie, they're destined for a machine on
+# NOT destined for the firewall (i.e., they're destined for a machine on
 # the local network). log the initial packet so that we can later tell
-# who is trying to connect.
+# who is trying to connect. use the tcp syn proxy to proxy the connection.
 pass in log on $ext_if proto tcp from any to { !$ext_if, !$int_if } \
-   port ssh flags S/SA keep state
+   port ssh flags S/SA synproxy state
 </pre>
 </td></tr>
 </table>
 
 <p>
-[<a href="rdr.html">Previous: Traffic Redirection</a>]
+[<a href="tables.html">Previous: Tables</a>]
 [<a href="index.html">Contents</a>]
-[<a href="logging.html">Next: Logging</a>]
+[<a href="nat.html">Next: Network Address Translation</a>]
 
 <p>
 <hr>
 <a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a> 
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: filter.html,v 1.14 2003/11/09 23:29:02 nick Exp $</small>
+<small>$OpenBSD: filter.html,v 1.15 2003/11/27 15:08:25 nick Exp $</small>
 
 </body>
 </html> 
