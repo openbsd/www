@@ -1,0 +1,804 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+<head>
+<title>OpenBSD AnonCVS</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=iso-2022-jp">
+<meta name="resource-type" content="document">
+<meta name="description" content="How to get OpenBSD updates via Internet using Anonymous CVS">
+<meta name="keywords" content="openbsd,anoncvs,updates">
+<meta name="distribution" content="global">
+<meta name="copyright" content="This document copyright 1996-2002 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000" link="#23238e">
+
+<img alt="[OpenBSD]" height="30" width="141" src="../images/smalltitle.gif">
+<p>
+<h2><font color="#e00000">Anonymous CVS</font></h2>
+
+<hr>
+
+<h3>目次</h3>
+
+<ul>
+<li><a href="#anoncvs">Anonymous CVS とは ?</a>
+<li><a href="#CVS">CVS とは ?</a>
+<li><a href="#starting">Anonymous CVS を使い始めるために</a>
+<li><a href="#using">ソースツリーの取得・更新に CVS を使おう</a>
+<li><a href="#CVSROOT">利用可能な Anonymous CVS サーバ</a>
+<li><a href="#CRYPTO">cvs(1) を使っての暗号ソースの取得</a>
+<li><a href="#EXAMPLE">cvs(1) の使用例</a>
+<li><a href="#WHICH">rsh(1) と ssh(1) をどちらを使うか ?</a>
+<li><a href="#SUP">sup(1) を使った CVS リポジトリのミラーリング</a>
+<li><a href="#MIRROR">anoncvs ミラーの構築</a>
+</ul>
+
+<hr>
+
+<h3><a name="anoncvs"><font color="#0000e0">Anonymous CVS とは ?</font></a></h3>
+
+<p>
+Anonymous CVS は、現時点での OpenBSD ソースに対して加えられた更新に関して、
+OpenBSD のソースツリーのあなたのローカルなコピーを最新に維持しておくための
+方法だ。開発の最先端に追従することに加え、リリースの errata のためのパッチ
+を追跡することもまた可能です。 
+</p>
+
+<p>
+他のソースコード更新技術に対する Anonymous CVS の主な利点は、中央の
+ソースコードリポジトリかミラーに対して、それが直接働くということ
+だろう。これはつまり、あなたの変更と他のソースの変更に関する更新や
+マージを制御したり、diff を取ったり、変更履歴や他のことを中央の
+リポジトリに対して質問したりするために、フルセットの CVS コマンドを
+あなたは使用可能だということだ。
+</p> 
+
+<p>
+OpenBSD プロジェクトは、現状では、次の 5 個の主ソースリポジトリを持つ。
+</p>
+
+<ul>
+  <li><b>src</b> - OpenBSD オペレーティングシステムの全ソースコードを収容。</li>
+  <li><b>ports</b> - <a href="./ports.html">OpenBSD Ports</a> を収容。</li>
+  <li><b>www</b> - すべての OpenBSD の Web ページ (このページを含む) を収容。</li>
+  <li><b>x11</b> - OpenBSD 対応の
+      <a href="http://www.XFree86.org/">XFree86-3</a> ソフトウェアプロジェクトを収容。</li>
+  <li><b>xf4</b> - OpenBSD 対応の
+      <a href="http://www.XFree86.org/">XFree86-4</a> ソフトウェアプロジェクトを収容。</li>
+</ul>
+
+<p>
+要約すると、Anonymous CVS を使用することの実際の強みは、それが「寛容な」
+ソースコードコントロールシステムであるということであり、それは、あなたが
+そのまま続けずに解決しなければならない難問のリストを放置するのではなく、
+むしろ、あなたのローカルなソースに対してあなたが加えた変更と、あなたの
+全体のソースツリーを更新するための<strong>「最善の努力」</strong>をする
+ことを<strong>尊重する</strong>。
+</p>
+
+<h3><a name="CVS"><font color="#0000e0">CVS とは ?</font></a></h3>
+
+<p>
+<a href="why-cvs.html">
+CVS とは、OpenBSD のソースツリーを管理するのに使用されているソースコードコントロール
+システムである。</a>それは、すべての正式にリリースされたソースコードとそれに対する
+変更のための中央のリポジトリを実装する一方で、開発者に対しては彼らの作業中の変更を
+含むソースコードのローカルなコピーを保守することを許している。「<b>書き込み権</b>」
+を持つ開発者は、OpenBSD のソースツリーに対して直接変更をコミットできる一方で、
+「Anonymous CVS」のユーザは「<b>読み出し権</b>」を持ち、そして、ソースの自分の
+ローカルなコピーを最新の状態に維持でき、中央のリポジトリに対する質問を発行できる。
+</p>
+
+<p>
+CVS の主な強みは、あなたの行ったあなたのローカルなコピーに対する変更とともに、
+中央のリポジトリに対する変更のインテリジェントなマージを実行可能なことだろう。
+これは、もし、あなたがモジュールに対して変更を加えて、更新を実行した場合にも、
+あなたの変更が「吹き飛ばされる」ようなことがないことを意味しており、むしろ、
+CVS は、中央のソースに対する変更とあなたがあなたのローカルなコピーに対して
+加えた変更とをマージするよう、最大限の努力を払おうとする。
+</p>
+
+<p>
+変更を完全にマージできなかった場合には、CVS は「柔軟なフォールバック」を提供し、
+また、あなたのローカルなコピーに対する注釈された変更を提供し、あなたのバージョンの
+変更されていないコピーを保存し、そして、あなたの要求した他のソースモジュールの
+更新を継続する。
+</p>
+
+<h3><a name="starting"><font color="#0000e0">Anonymous CVS
+を使い始めるために</font></a></h3>
+
+<p>
+最新版の CVS は、
+<a href="http://www.cvshome.org/">Cyclic</a> にある。
+バージョン 1.6 以前のものは推奨しないし、また、動作しないだろう。
+もし、OpenBSD を既にインストールしていれば、CVS は含まれている。
+</p>
+
+<p>
+OpenBSD CD を持つ人は、その中に <i>CVS/</i> ディレクトリがあるのを見たことがあるかも
+知れない。実際、これには理由があって、CD には、更新するのに便えるよう、OpenBSD の
+<b>src</b> モジュールのチェックアウトされたものが入っている。このツリーを使うのは、
+OpenBSD のソースツリーの新鮮なチェックアウトより、格段に速く CVS の最初の更新ができる
+だろう。ここで、CD の利用法には 2 通りある。
+</p>
+
+<ul>
+<li>CD から /usr/src に CVS ツリーをコピーする方法
+(CD は /mnt にマウントされているものと仮定)
+<pre>
+	# <b>cd /mnt; pax -rw CVS Makefile [a-z]* /usr/src</b>
+</pre>
+<li>書き込み可能なディレクトリの下に CD を使用した union マウントを使用 (<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mount_union&amp;apropos=0&amp;sektion=8&amp;manpath=OpenBSD+Current&amp;format=html">mount_union(8)</a> を参照)
+(この方法は、ツリーからコンパイルする場合にのみ使用可能)
+<pre>
+	# <b>mount -t union -o -b /mnt /usr/src</b>
+</pre>
+</ul>
+
+<p>
+手元に CD を持たない人に対しては、ソースリポジトリを「<b>チェックアウト</b>」するために、
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=cvs&amp;sektion=1&amp;format=html">cvs(1)</a>
+を使うことができる。これについては、<a href="#using">次節</a>で議論しよう。
+</p>
+
+<p>
+その後、<i>/usr/src</i> は、良きチェックアウトのための領域となり、ここで、すべての
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=cvs&amp;sektion=1&amp;format=html">cvs(1)</a>
+コマンドがうまく動くことだろう。
+</p>
+
+<h3><a name="using"><font color="#0000e0">ソースツリーの取得・更新に
+CVS を使おう</font></a></h3>
+
+<p>
+CVS は、ソースを受け取り、それを更新するための単純な方法であることを目指して
+設計されているので、何をするにもそれほど難解ではない。最初に、<i>-current</i>
+を追いかけたいのかパッチブランチに追従したいのかを決定するだけだ。
+-current ツリーには細かい変更のすべてが含まれており、
+パッチブランチは、正式リリースに加え、<a href="errata.html">errata</a> から
+のパッチが既に適用されたものとなっている。
+<i>-current</i> の定義については、<a href="faq/upgrade-minifaq.html#1.1">
+更新ミニ FAQ</a>を参照して欲しい。
+
+<p>いったん、追いかけるツリーを決めたら、どの Anonymous CVS サーバを
+使うのかを選択しなければならない。これらのサーバのリストは、
+<a href="#CVSROOT">以下</a>のとおり。しかしながら、これらのサーバへの
+アクセス方法には 3 通りある。
+</p>
+
+<dl>
+<dt><b>ssh</b><dd>Secure Shell を Anonymous CVS サーバへのアクセスに使うことができる。
+この方法は暗号化されるので、<em>お薦め</em>の方法だ。
+2.6 の時点で、OpenBSD は標準ディストリビューションとして OpenSSH を含んでいる。
+<dt><b>rsh</b><dd>Remote Shell は、<a href="http://www.openssh.com/">ssh</a> での
+アクセスができないユーザのために、いくつかのサーバ上で使うことができる。
+<dt><b>pserver</b><dd>pserver 他のふたつの接続を阻むファイアウォールの後ろにいる
+ユーザに対しては、最も役に立つものだろう。
+</dl>
+
+<p>
+<b>注:</b> rsh を使いたいというユーザは、最初に
+<var>CVS_RSH</var> 環境変数を rsh にセットする必要がある。
+
+<ul>
+<li>Korn/Bourne シェルの場合:
+<pre>
+	$ <b>export CVS_RSH=/usr/bin/rsh</b>
+</pre>
+<li>csh/tcsh の場合:
+<pre>
+	% <b>setenv CVS_RSH /usr/bin/rsh</b>
+</pre>
+</ul>
+
+<p>
+いったん、どの <a href="#CVSROOT">Anonymous CVS サーバ</a>を使うのかを、そして、
+どの方法を使用するのかを選択したなら、cvs を使い始めることができる。 
+CD を持っている人は、自分のシステムにソースを取得するために、
+<a href="#starting">上記</a>の方法で CD 上の CVS のチェックアウトで cvs を使い始められる。
+もし、CD を持っていないなら、ソースをチェックアウトするために次の方法を使おう。
+この方法は、OpenBSD のソースを <i>/usr/src</i> に置くためのものだ。
+</p>
+
+<pre>
+	# <b>cd /usr; cvs checkout -P src</b>
+</pre>
+
+<p>
+上記の方法は、<i>-current</i> のソースツリーをチェックアウトすることになる。多くの人に
+とっては、パッチブランチのソースが欲しいことだろう。このパッチブランチをチェックアウト
+するためには、次の例のようにコマンドライン上でタグを指定する必要がある。
+</p>
+
+<pre>
+	# <b>cd /usr; cvs checkout -P -rOPENBSD_2_9 src</b>
+</pre>
+<p>
+これは、2.8 の場合なら、OPENBSD_2_8 となる。
+
+<p> 現時点では、OPENBSD_2_9 のタグのみが、リリースのソースと適用済の erratta
+を含む。
+
+<h3><a name="CVSROOT"><font color="#0000e0">利用可能な Anonymous CVS サーバ
+</font></a></h3>
+
+<p>
+ふたつのレベルのソースツリーへのアクセス方法がある。
+
+<dl>
+<dt><strong>開発者向けの読み書きアクセス:</strong>
+<dd>ソースツリーへの変更を commit する必要のある開発者は、OpenBSD のマシン上に
+アカウントを持つ必要がある。このアクセス方法を得るということは、OpenBSD の
+他の開発者とともにソースに対して作業するという、自然な結果となろう。
+誰かが何か良い仕事をし、そして、それをチームで作業できるようにした場合に、
+彼らはアカウントを取得することになるだろう。
+</dl>
+
+<dl>
+<dt><strong>すべての人向けの読み込み専用アクセス:</strong>
+<dd>読み込み専用の CVS リポジトリに対しては誰でもアクセスすることができる。
+これらの読み込み専用の CVS リポジトリのコピーは、ミラーされていることも多い。
+それらを使用するには、<var>CVSROOT</var> 環境変数に次の値のどれかひとつを
+セットして欲しい。
+<p>
+<em>以下の <a href="#WHICH">ssh vs. rsh</a> に関する注を参照して欲しい &nbsp; !</em>
+<p>
+<ul>
+<li><strong>CVSROOT=anoncvs@anoncvs1.usa.openbsd.org:/cvs</strong><br>
+このホストは、<strong>anoncvs@anoncvs4.usa.openbsd.org</strong> としても知られている。<br>
+所在地は、米国西部のカルフォルニア州レッドウッド市。<br>
+メンテナンスは、<a href="mailto:millert@openbsd.org">Todd Miller</a>。<br>
+利用可能なプロトコルは、rsh, ssh, ssh port 2022, pserver.<br>
+4 時間ごとに更新されている。
+<p>
+<li><strong>CVSROOT=anoncvs@anoncvs.usa.openbsd.org:/cvs</strong><br>
+このホストは、<strong>anoncvs3.usa.openbsd.org</strong> としても知られている。<br>
+所在地は、米国西部のボウルダーのコロラド大学。<br>
+メンテナンスは、<a href="mailto:millert@openbsd.org">Todd Miller</a>。<br>
+利用可能なプロトコルは、rsh, ssh, ssh port 2022, pserver.<br>
+3 時間ごとに更新されている。
+<p>
+<li><strong>CVSROOT=anoncvs@anoncvs5.usa.openbsd.org:/cvs</strong><br>
+このホストは、<strong>squid.nas.nasa.gov</strong> としても知られている。<br>
+所在地は、米国カルフォルニア州モッフェットフィールドの Ames Research Center。<br>
+メンテナンスは、<a href="mailto:allison@mail.arc.nasa.gov">Tyler Allison</a>。<br>
+利用可能なプロトコルは、ssh のみ。<br>
+3 時間ごとに更新されている。
+<p>
+<li><strong>CVSROOT=anoncvs@mirror.arc.nasa.gov:/cvs</strong><br>
+所在地は、米国カルフォルニア州モッフェットフィールドの Ames Research Center。<br>
+メンテナンスは、<a href="mailto:allison@mail.arc.nasa.gov">Tyler Allison</a>。<br>
+利用可能なプロトコルは、ssh のみ。<br>
+3 時間ごとに更新されている。
+<p>
+<li><strong>CVSROOT=anoncvs@anoncvs6.usa.openbsd.org:/cvs</strong><br>
+このホストは、<strong>openbsd.citi.umich.edu</strong> としても知られている。<br>
+所在地は、米国中央部のミシガン大学。<br>
+メンテナンスは、<a href="mailto:rees@umich.edu">Jim Rees</a>。<br>
+利用可能なプロトコルは、ssh, ssh port 2022.<br>
+12 時間ごとに更新されている。
+<p>
+<li><strong>CVSROOT=anoncvs@anoncvs1.ca.openbsd.org:/cvs</strong><br>
+このホストは、<strong>anoncvs.ca.openbsd.org</strong>、
+<strong>openbsd.sunsite.ualberta.ca</strong> としても知られている。<br>
+所在地は、カナダ・アルバータ州のエドモントン。<br>
+メンテナンスは、<A HREF="mailto:beck@ualberta.ca">Bob Beck</A>。<br>
+利用可能なプロトコルは、ssh, rsh, ssh port 2022, pserver<br>
+2 時間ごとに更新されている。
+<p>
+<li><strong>CVSROOT=anoncvs@anoncvs.comstyle.com:/cvs</strong><br>
+このホストは、<strong>openbsd.comstyle.com</strong> としても知られている。<br>
+所在地は、カナダ・オンタリオ州のトロント。<br>
+メンテナンスは、<A HREF="mailto:brad@comstyle.com">Brad Smith</A>。<br>
+利用可能なプロトコルは、ssh, ssh port 2022<br>
+2 時間ごとに更新されている。
+<p>
+<li><strong>CVSROOT=anoncvs@anoncvs.uk.openbsd.org:/cvs</strong><br>
+所在地は、英国のロンドン。<br>
+メンテナンスは、<a href="mailto:peter@wonderland.org">Peter Galbavy</a>。<br>
+利用可能なプロトコルは、ssh のみ。<br>
+6 時間ごとに更新されている。
+<p>
+<li><strong>CVSROOT=anoncvs@anoncvs.tw.openbsd.org:/cvs</strong><br>
+このホストは、<strong>OpenBSD.csie.NCTU.edu.tw</strong> としても知られている。<br>
+所在地は、台湾の台北。<br>
+メンテナンスは、<a href="mailto:lkchu@OpenBSD.csie.NCTU.edu.tw">Liang-Kai Chu</a>。<br>
+利用可能なプロトコルは、rsh, ssh, ssh port 2022.<br>
+12 時間ごとに更新されている。
+<p>
+<li><strong>CVSROOT=anoncvs@anoncvs.no.openbsd.org:/cvs</strong><br>
+このホストは、<strong>cvs.inet.no</strong> としても知られている。<br>
+所在地は、ノルウェイ。<br>
+メンテナンスは、<a href="mailto:cvsadmin@inet.no">Michael Shuldman</a>。<br>
+利用可能なプロトコルは、rsh, ssh, ssh port 2022.<br>
+4 時間ごとに更新されている。
+<p>
+<li><strong>CVSROOT=anoncvs@anoncvs.se.openbsd.org:/cvs</strong><br>
+このホストは、<strong>anoncvs.stacken.kth.se</strong> としても知られている。<br>
+所在地は、スウェーデン。<br>
+メンテナンスは、<a href="mailto:anoncvs@stacken.kth.se">Magnus Holmberg</a>。<br>
+利用可能なプロトコルは、rsh, ssh, ssh port 2022.<br>
+3 時間ごとに更新されている。
+<p>
+<li><strong>CVSROOT=anoncvs@anoncvs.be.openbsd.org:/cvs</strong><br>
+このホストは、<strong>badlands.rug.ac.be</strong> としても知られている。<br>
+所在地は、ベルギー。<br>
+メンテナンスは、<a href="mailto:wvdputte@reptile.rug.ac.be">Wim Vandeputte</a>。<br>
+利用可能なプロトコルは、ssh, ssh port 2022.<br>
+3 時間ごとに更新されている。
+<p>
+<li><strong>CVSROOT=anoncvs@anoncvs.nl.openbsd.org:/cvs</strong><br>
+このホストは、<strong>anoncvs.calyx.nl</strong> としても知られている。<br>
+所在地は、オランダのアムステルダム。<br>
+メンテナンスは、<a href="mailto:nick@calyx.net">Nick Merrill</a> と
+<a href="mailto:alex@calyx.nl">Alexander Grendel</a>。<br>
+利用可能なプロトコルは、ssh.<br>
+3 時間ごとに更新されている。
+<p>
+<li><strong>CVSROOT=anoncvs@anoncvs.jp.openbsd.org:/cvs</strong><br>
+このホストは、<strong>kankoromochi.econ.nagasaki-u.ac.jp</strong> としても知られている。<br>
+所在地は、日本の長崎大学経済学部。<br>
+メンテナンスは、<a href="mailto:sigh@net.nagasaki-u.ac.jp">鈴木 斉</a>。<br>
+利用可能なプロトコルは、ssh, pserver.<br>
+3 時間ごとに更新されている。
+<p>
+<li><strong>CVSROOT=anoncvs@anoncvs.cz.openbsd.org:/cvs</strong><br>
+このホストは、<strong>com-os2.ms.mff.cuni.cz</strong> としても知られている。<br>
+所在地は、チェコ共和国プラハの
+カレロヴァ大学数理学部。<br>
+メンテナンスは、<a href="mailto:galambos@com-os2.ms.mff.cuni.cz">Leo Galambos
+</a>。<br>
+利用可能なプロトコルは、ssh, ssh port 2022.<br>
+3 時間ごとに更新されている。
+<p>
+<li><strong>CVSROOT=anoncvs@anoncvs1.au.openbsd.org:/cvs</strong><br>
+このホストは、<strong>anoncvs.au.openbsd.org</strong>、
+<strong>anoncvs.openbsd.aba.net.au</strong> としても知られている。<br>
+所在地は、オーストラリア・ビクトリア州カールトン。<br>
+メンテナンスは、<A HREF="mailto:mwp@aba.net.au">Micheal Paddon</A>。<br>
+利用可能なプロトコルは、ssh.<br>
+4 時間ごとに更新されている。
+<p>
+<li><strong>CVSROOT :pserver:anoncvs@cvs.bsdfr.org:/cvs</strong><br>
+所在地は、フランス。<br>
+メンテナンスは、<a href="mailto:jch@oleane.net">Jean-Claude Christophe</a>。<br>
+利用可能なプロトコルは、pserver.<br>
+24 時間ごとに更新されている。
+<p>
+<li><strong>CVSROOT=anoncvs@anoncvs.de.openbsd.org:/cvs</strong><br>
+このホストは、<strong>grappa.unix-ag.uni-kl.de</strong> としても知られている。<br>
+所在地は、ドイツのカイザースラウテルン大学。<br>
+メンテナンスは、<A HREF="mailto:hgw@d1906.inka.de">Hans-G&uuml;nter Weigand</A>
+と <A HREF="mailto:naddy@openbsd.org">Christian Weisgerber</A>。<br>
+利用可能なプロトコルは、rsh, ssh, ssh port 2022, pserver<br>
+6 時間ごとに cvsup.leo.org から更新されている。
+<p>
+<li><strong>CVSROOT=anoncvs@exokernel.lcs.mit.edu:/cvs</strong><br>
+所在地は、米国東部の M.I.T。<br>
+メンテナンスは、????<br>
+利用可能なプロトコルは、ssh, ???<br>
+7 時間ごとに更新されている。
+<p>
+<li><strong>CVSROOT=anoncvs@xyzzy.gsnig.org:/cvs</strong><br>
+所在地は、スウェーデンのイェーテボリ。<br>
+メンテナンスは、<A HREF="mailto:martin@openbsd.org">Martin Fredriksson</A>。<br>
+利用可能なプロトコルは、ssh port 2022.<br>
+4 時間ごとに更新されている。
+<p>
+<li><strong>CVSROOT=anoncvs@stl-isaas.ey.com:/cvs</strong><br>
+所在地は、米国東部のミズーリ州セントルイス。<br>
+メンテナンスは、<A HREF="mailto:aaron11@sprynet.com">Aaron Miller</A>。<br>
+利用可能なプロトコルは、ssh, ssh port 2022, pserver.<br>
+3 時間ごとに更新されている。
+<p>
+<li><strong>CVSROOT=anoncvs@openbsd.groupbsd.org:/cvs</strong><br>
+所在地は、米国東部のノースカロライナ州ヒルズボロー。<br>
+メンテナンスは、<A HREF="mailto:randy@openbsd.org">Randy Lewis</A>
+と <A HREF="mailto:jason@openbsd.org">Jason Wright</A>。<br>
+利用可能なプロトコルは、ssh, pserver.<br>
+4 時間ごとに更新されている。
+<p>
+<li><strong>CVSROOT=anoncvs@anoncvs.mx.openbsd.org:/cvs</strong><br>
+所在地は、メキシコ自治大学 Iztacala キャンパス。<br>
+メンテナンスは、<A HREF="mailto:alex@iztacala.unam.mx">Alejandro Juarez</A>。<br>
+利用可能なプロトコルは、ssh.<br>
+3 時間ごとに更新されている。
+<p>
+<li><strong>CVSROOT=anoncvs@anoncvs.pl.openbsd.org:/cvs</strong><br>
+このホストは、<strong>anoncvs1.pl.openbsd.org</strong>、
+<strong>incredible.bmtmc.gda.pl</strong> としても知られている。<br>
+所在地は、ポーランド・グダンスクの BMT Maritime Consultants。<br>
+メンテナンスは、<A HREF="mailto:detergent@incredible.bmtmc.gda.pl">
+Adam Naguszewski</A>。<br>
+利用可能なプロトコルは、ssh, pserver.<br>
+3 時間ごとに更新されている。
+<P>
+<li><strong>CVSROOT=anoncvs@rt.fm:/cvs</strong><br>
+所在地は、米国イリノイ州レークインザヒルズ。<br>
+メンテナンスは、<A HREF="mailto:jcs@rt.fm">
+Joshua Stein</A>。<br>
+利用可能なプロトコルは、ssh.<br>
+3 時間ごとに更新されている。
+<p>
+<li><strong>CVSROOT=anoncvs@shellhung.org:/cvs</strong><br>
+所在地は、中国の香港。<br>
+メンテナンスは、<A HREF="mailto:shell@shellhung.org">
+Shell Hung</A>。<br>
+利用可能なプロトコルは、pserver, ssh.<br>
+3 時間ごとに更新されている。
+<p>
+<li><strong>CVSROOT=anoncvs@anoncvs.openbsd.org.ar:/cvs</strong><br>
+所在地は、アルゼンチンのブエノスアイレス。<br>
+メンテナンスは、<A HREF="mailto:alejo@fibertel.com.ar">
+Alejo Sanchez</A> と
+<A HREF="mailto:claudio@core-sdi.com">Claudio Castiglia</A>。<br>
+利用可能なプロトコルは、ssh.<br>
+3 時間ごとに更新されている。
+<p>
+<li><strong>CVSROOT=anoncvs@cvs.openbsd.cz:/cvs</strong><br>
+所在地は、チェコ共和国のプラハ。<br>
+メンテナンスは、<A HREF="mailto:vladya@openbsd.cz">Vladimir Kotal</A>。<br>
+利用可能なプロトコルは、ssh, pserver.<br>
+4 時間ごとに更新されている。
+<p>
+<li><strong>CVSROOT=anoncvs@anoncvs.openbsd.org.ua:/cvs</strong><br>
+所在地は、ウクライナのキエフ。<br>
+メンテナンスは、<A HREF="mailto:hunter@dg.net.ua">Sergey Smitienko</A>。<br>
+利用可能なプロトコルは、ssh.<br>
+6 時間ごとに更新されている。
+<p>
+<li><strong>CVSROOT=openbsd@openbsd.bug.it:/cvs</strong><br>
+所在地は、イタリアのモデナ。<br>
+メンテナンスは、<A HREF="mailto:jwk@bug.it">Giacomo Cariello</A>。<br>
+利用可能なプロトコルは、ssh で、パスワードは "openbsd" を使用。<br>
+6 時間ごとに更新されている。
+</ul>
+
+
+<p>
+<em>注:</em> もし、あなたのサーバが、不正確な情報や知らない情報で
+ここにリストアップされていた場合、
+<a href="mailto:beck@openbsd.org"><tt>beck@openbsd.org</tt></a>に連絡して欲しい。
+</p>
+
+<p>
+あなたは、どのサーバが最も自分に近いところにあるのかを見つけるために、
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=traceroute&amp;sektion=8&amp;format=html">traceroute(8)</a>
+を使いたいと思うかも知れない。
+サーバに関する問題は、
+問題のサーバの<b>メインテナ</b>に報告すべきだ。 
+</dl>
+
+<h3><a name="CRYPTO"><font color="#0000e0">cvs(1)
+を使っての暗号ソースの取得</font></a></h3>
+
+<p>
+<strong>重要な注意事項:</strong>
+誰もが知っておくべきこととして、暗号ソフトウェアに関しては
+若干の問題がある。
+<ul>
+<li>OpenBSD のソースはカナダからのもの
+なので、
+	<a href="http://insight.mcmaster.ca/org/efc/pages/doc/crypto-export.html">
+	カナダの個人によって研究されたもの</a>として、
+また、
+	<a href="http://axion.physics.ubc.ca/ECL.html">
+	カナダの輸出制限リストの記述</a>にあるように、
+カナダから世界に向けての暗号ソフトウェアの輸出は合法的なものだ。
+<p>
+<li>しかしながら、あなたが、米国やカナダ以外の地域に住んでいるのなら、
+あなたは米国内にある Anonymous CVS サーバから OpenBSD のソースの
+暗号セクションを持っていくべきではない。問題のファイルは次のとおり。
+<ul>
+<li>src/kerberosIV/*
+<li>src/kerberosV/*
+<li>src/lib/libdes/*
+<li>src/lib/libc/crypt/crypt.c
+<li>src/lib/libc/crypt/morecrypt.c
+<li>src/sys/crypto
+<li>src/sys/netinet
+<li>src/usr.sbin/afs/src/rxkad/*
+<li>XF4/xc-mit/lib/Xdmcp/Wraphelp.c
+<li>XF4/xc-old/lib/Xdmcp/Wraphelp.c
+<li>XF4/xc/lib/Xdmcp/Wraphelp.c
+</ul>
+米国の ITAR 軍需品リストによって、暗号ソフトウェアは、
+米国からカナダだけに対して輸出されたものかも知れないのだ。
+<p>
+<li>OpenBSD プロジェクトでは、さらなる Anonymous CVS サーバを探している。
+あなたがどのように支援できるかを知るためにも読んでいただきたい。
+</ul>
+
+<h3><a name="EXAMPLE"><font color="#0000e0">cvs(1) の使用例</font>
+</a></h3>
+
+<P>
+注意: もし、(パッチブランチのような) ブランチを <i>-current</i> に更新したい場合、
+<code>-A</code> フラグを cvs に追加することができるが、このフラグは他にはほとんど
+使い道がないものだ。古目のバージョンのバージョンの OpenBSD のドキュメンテーションでは、
+多くの例の中で、このフラグの使用が推奨されている。我々は最早、絶対に必要でない限りは、
+このフラグを推奨しない。
+
+<p>
+Anonymous CVS サーバの使用法の例は次のとおり。
+<pre>
+% <strong>setenv CVSROOT anoncvs@anoncvs.ca.openbsd.org:/cvs</strong>
+% <strong>cd /tmp</strong>
+% <strong>cvs get src/sys/arch/sparc</strong>
+    [リポジトリからあなたのマシンへファイルをコピー]
+% <strong>cvs log src/sys/arch/sparc/sparc/locore.s</strong>
+    [選択したファイルのコミットログを表示]
+% <strong>cvs diff -bc -r1.1 -r1.5 src/sys/arch/sparc/sparc/locore.s</strong>
+    [リビジョン 1.1 とリビジョン 1.5 との間の変更点を表示]
+</pre>
+
+<p>
+<a name="pserver">cvs を ``pserver'' (ssh や rsh を使用する代わりの直接の TCP 接続) 
+instead of using ssh or rsh) で使用する場合には、いったん login しなければならない。</a>
+
+<pre>
+% <strong>setenv CVSROOT :pserver:anoncvs@anoncvs.ca.openbsd.org:/cvs</strong>
+% <strong>cvs login</strong>
+(anoncvs@anoncvs1.ca.openbsd.org への login)
+CVS password: <strong>anoncvs</strong>
+    [この行を ~/.cvspass に書く (ファイル名は CVS_PASSFILE がオーバーライドする)。]
+    [上記において、'blah' とタイプした後の私の ~/.cvspass 内の行の一例            ]
+    [password is:                                                                 ]
+    [:pserver:anoncvs@anoncvs5.usa.openbsd.org:/cvs Au'yc                         ]
+    [一度 login した後は、他のすべての上記の CVSROOT が動くようになるだろう。     ]
+% <strong>cvs get ksrc-i386 ksrc-common</strong>
+    [あなたは、i386 カーネルを再構築するのに必要なものだけ、受け取ることができる。]
+</pre>
+
+<p>
+Anonymous CVS を使用する人が、普通に自分のソースツリーを更新
+するには、
+<ul><li>まず、初期のツリーを `get' する。
+
+<p> (もし、<i>-current</i> を追いかけているのなら):
+<pre>
+	# <strong>setenv CVSROOT anoncvs@anoncvs.ca.openbsd.org:/cvs</strong>
+	# <strong>cd /usr</strong>
+	# <strong>cvs -q get -P src</strong>
+</pre>
+
+<p> (もし、2.9 のパッチブランチを追いかけているのなら):
+<pre>
+	# <strong>setenv CVSROOT anoncvs@anoncvs.ca.openbsd.org:/cvs</strong>
+	# <strong>cd /usr</strong>
+	# <strong>cvs -q get -rOPENBSD_2_9 -P src</strong>
+</pre>
+</li>
+
+<li> その後、いつでもこのツリーを `update' するには:
+<p> (もし、<i>-current</i> を追いかけているのなら):
+<pre>
+	# <strong>cd /usr/src</strong>
+	# <strong>cvs -q up -Pd</strong>
+</pre>
+
+<p> (もし、2.9 のパッチブランチを追いかけているのなら):
+<pre>
+	# <strong>cd /usr/src</strong>
+	# <strong>cvs -q up -rOPENBSD_2_9 -Pd</strong>
+</pre>
+
+これを実行するごとに、いつでも自分の /usr/src ツリーを同期させるだろう。これに
+よってあなたのローカルな変更が壊されることはなく、むしろ、変更をマージしようと
+試みる。もし、obj ディレクトリ (obj シンボリックリンクではない) を使用している
+のなら、cvs のコマンドラインに、"-I obj" を追加しようと思うかも知れないが、これ
+は、リポジトリの中にはない obj ディレクトリが現れるたびに出力されるウォーニング
+が出力されないように cvs を動かすことができるようになるだろう。
+
+<p>
+<li> 注:
+もし、最初に異なるサーバから持ってきた、あるいは CD から持ってきたソースツリー
+を更新しようとするのなら、<em>-d $CVSROOT</em> オプションを cvs のコマンドライン
+に追加する<strong>必要がある</strong>。
+<pre>
+	# <strong>cd /usr/src</strong>
+	# <strong>cvs -d $CVSROOT -q up -Pd</strong>
+</pre>
+</li>
+</ul>
+
+<p>
+<a href="ports.html">ports</a> を<a name="ports">使う</a>のも、src と同様だ。
+<ul><li>
+<p> (もし、<i>-current</i> を追いかけているのなら):
+<pre>
+	# <strong>setenv CVSROOT anoncvs@anoncvs.ca.openbsd.org:/cvs</strong>
+	# <strong>cd /usr</strong>
+	# <strong>cvs -q get -P ports</strong>
+</pre>
+</li>
+<p> (もし、2.9 のパッチブランチを追いかけているのなら):
+<pre>
+	# <strong>setenv CVSROOT anoncvs@anoncvs.ca.openbsd.org:/cvs</strong>
+	# <strong>cd /usr</strong>
+	# <strong>cvs -q get -rOPENBSD_2_9 -P ports</strong>
+</pre>
+<li> その後、いつでもこのツリーを `update' するには:
+<p> (もし、<i>-current</i> を追いかけているのなら):
+<pre>
+	# <strong>cd /usr</strong>
+	# <strong>cvs -q up -Pd ports</strong>
+</pre>
+<p> (もし、2.9 のパッチブランチを追いかけているのなら):
+<pre>
+	# <strong>cd /usr</strong>
+	# <strong>cvs -q up -rOPENBSD_2_9 ports</strong>
+</pre>
+</li>
+</ul>
+
+上記の例において、cvs の出力を最小化させるために、<i>-q</i> オプションも
+指定可能だ。画面いっぱいの出力がお好みの向きには、これのオプションは
+外しておいた方が幸せだろう。
+
+<p>
+また、ローカルにパッチを当てたモジュール (ここでは <i>cd.c</i>) をバグレポートに
+含めるために diff を取るには、
+<pre>
+	# <strong>cd /usr</strong>
+	# <strong>cvs diff -u src/sys/scsi/cd.c &gt; /tmp/patch</strong>
+</pre>
+
+<p>
+(CVS ソースに含まれている)
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=cvs&amp;sektion=1&amp;format=html">
+cvs(1) マニュアルページ</a>には、
+もっと多くの CVS の使い方についての情報がある。
+
+<h4>X11 ソースツリー</h4>
+
+<p>
+Anonymous CVS はまた、OpenBSD の X11 (XFree86) ソースツリーもミラーしている。二枚目の
+CD からの XFree86 ソースツリーを更新するために、上記のレシピを適用することができる。
+X11 の cvs モジュールで XFree86 3 のソースツリーをコピーしたり、ダウンロードしたり
+できるが、XFree86 4 を含んだ現時点でのモジュールは XF4 となっている。
+現状では、XF4 のソースを <i>/usr/XF4</i> に取得するのに、ふたつの方法がある。
+
+<ul>
+<li>CD からツリーをコピーする (二枚目の CD は /mnt にマウントされているものと仮定)。
+<pre>
+        # <strong>cd /mnt; cp -Rp XF4 /usr</strong>
+</pre>
+<li>書き込み可能なディレクトリの下に CD を使用した union マウントを使用する。
+<pre>
+        # <strong>mount -t union -o -b /mnt/XF4 /usr/XF4</strong>
+</pre>
+</ul>
+
+この後、<i>/usr/XF4</i> は cvs によって既に使われていることだろう。例としては、
+たとえば、それを -current ソース (既に <var>CVSROOT</var> 環境変数としてセット
+していると仮定) に更新することができる。
+
+<pre>
+        # <strong>cd /usr/XF4</strong>
+        # <strong>cvs -q update -Pd</strong>
+</pre>
+
+<p>
+<strong>警告:</strong>
+cvs を使用する場合には、カレントディレクトリが、参照しているツリーの root か、
+/tmp のような独立した場所かのどちらかになっているよう、注意すべきであろう。
+"get" のようなあコマンドの場合、カレントディレクトリの下に、任意のサブツリーを
+作成できてしまうので、これに続く更新は再帰的にこのサブツリーを更新していくだろう。
+
+<p>
+Anonymous CVS サービスは、経験の浅い開発者にとって、CVS のオペレーションを
+学び、"commit" アクセスを経験するまでの、とても複雑な開発プロセスを経験するための
+絶好のチャンスを提供しているが、高品質で有用な技術を見せることの結果として、
+彼らはいずれ自然に開発者としてのアクセスを与えられるようになるだろう。
+同様に、パッチを提供する人は、CVS ツリーに関係する自分の "diff" を作成することが
+できるが、それは、簡単に統合できるものだろう。
+
+
+<h3><a name="WHICH"><font color="#0000e0">rsh(1) と ssh(1) をどちらを使うか ?</font></a></h3>
+
+<p>
+デフォルトで、CVS クライアントは、CVS サーバとのやり取りに ssh ("secure shell":
+<a href="http://www.openssh.com/">OpenSSH</a>) を使用する。
+
+<p>
+多くの CVS サイトは、最早セキュリティ上の理由から rsh をサポートしない。
+ファイアウォール等のローカルな問題や、slirp のような不完全なプロトコルエミュレータ
+もまた、rsh の利用の邪魔になるかも知れない。しかし、それでも、もし、rsh を使う必要が
+ある場合には、<var>CVS_RSH</var> 環境変数に rsh を指定しなければならない。
+(典型的には <strong>/usr/bin/rsh</strong>).
+
+<p>
+もし、ローカルなポリシーが ssh のデフォルトポートの 22 番の外との接続を邪魔する場合、
+ポート 2022 がその代わりに使用されるかも知れない。しかしながら、それはすべての Anonymous
+CVS サーバがこのポートでの ssh 接続を受け付けるわけではないことに注意する必要がある。
+さらに、セキュリティ上の理由から、最近のバージョンの ssh では、暗号<strong>なし</strong>
+が無効化されているので、ほとんどの Anonymous CVS サーバは最早の接続を受け付けない。
+また、CVS では既に圧縮が有効なので、ssh での圧縮を有効にしようとはしない。
+
+<p>
+上記に述べた制限や落し穴を避けるために、
+<strong>$HOME/.ssh/config</strong> コンフィグレーションファイルなどを
+指定することができる。
+<pre>
+	Host anoncvs.ca.openbsd.org
+	    Compression no
+	    Port 2022
+</pre>
+
+<p>
+CVS をスタートする際は、少々騒々しいので、少し静かにさせるために、
+次のようなことをしたくなるかも知れない。
+
+<pre>
+	<strong>% setenv CVS_CLIENT_PORT -1</strong>
+</pre>
+
+<p>
+<h3><a name="SUP"><font color="#0000e0">sup(1) を使った
+CVS リポジトリのミラーリング</font></a></h3>
+
+<p>
+OpenBSD のツリーそのものをミラーしようとするユーザは、
+<em>anoncvs.usa.openbsd.org</em> や <em>anoncvs1.usa.openbsd.org</em>
+(これらは異なるマシンだ) から、そうしようとするかも知れない。しかし、これらは
+cvs ツリーであり、ソースツリーをチェックアウトしているのでは<b>ない</b>ことに
+注意する必要がある。これは、もし、高速な cvs オペレーション (diff、annotate 等)
+や、もし、複数のソースツリーを持ち、新しいものを転送したい (そうすれば、ローカルな
+cvs ミラーからツリーをチェックアウトすることができる) 場合にのみ、有用でしかない。
+<p>
+supfile の例は次のとおり。
+<pre>
+	cvs host=anoncvs.usa.openbsd.org hostbase=/ base=/home delete
+</pre>
+<p>
+これは、/home/sup の中の最後の sup データファイルとともに cvs ツリーを
+/home/cvs にミラーするだろう。すべての OpenBSD cvs ツリーは、現状では
+およそ 1.3GB のサイズになる。
+
+<h3><a name="MIRROR"><font color="#0000e0">anoncvs ミラーの構築
+</font></a></h3>
+
+<p>
+もし、あなたが Anonymous CVS のミラーサイトに作ろうと思うのなら、Anonymous CVS
+の<a href="mailto:sup@openbsd.org">メンテナ</a>に連絡を取っていただきたい。
+Anonymous CVS ミラーは約 1.2GB のディスク容量を必要とし、Anonymous CVS ユーザ
+ひとり当たり 32MB までのスワップを使用する (ユーザは大きなオペレーションを行う
+ものと仮定する一方で、小さなオペレーションはより少量のリソースを使用すると仮定
+するが、それでもなお、 Anonymous CVS は ftp や sup より大きなインパクトがある)。
+そのような Anonymous CVS マシンは、サービスを行おうとする地域に対する優れた
+ネットワーク接続を持つべきだろう。Anonymous CVS サーバを構築について記述された
+<a href="anoncvs.shar">ドキュメント</a>が利用可能となっている。
+
+<h3><font color="#0000e0">最終的な注意事項</font></h3>
+ソースツリーをアップグレードした後、構築しようとする前に、
+<KBD>/usr/src/Makefile</KBD> の先頭のコメントを読むべきだろう。
+また、もし、可能なら、<KBD>make build</KBD> を実行する<strong>前</strong>に
+新しいカーネルを構築しておくべきだ。場合によっては、カーネルを構築できる
+ようになる前に、<KBD>config</KBD>ユーティリティを再構築し、インストールして
+おく必要があるかも知れない。もし、<KBD>config GENERIC</KBD> が失敗するようなら、
+たぶん、このケースだろう。
+<p>
+ソースからの再構築によって、リリースから -current ツリーへのアップグレードは、
+しばしば明確ではない依存性のため、どちらかと言えば難しいということに注意するのは、
+重要なことだろう。なので、ソースからツリーを構築しようとする前に、まず、最新の
+スナップショットをインストールすることを提案しておこう。
+
+<hr>
+<a href="index.html"><img height="24" width="24" src="back.gif" border="0" 
+alt="OpenBSD"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: cvsup.html,v 1.169 ]
+<br>
+$Translation: anoncvs.html,v 1.1 2002/04/01 14:29:44 toshi Exp $
+<br>
+$OpenBSD: anoncvs.html,v 1.1 2002/04/05 06:02:56 jufi Exp $
+<br>
+</small>
+
+</body>
+</html>
