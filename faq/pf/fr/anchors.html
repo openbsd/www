@@ -1,0 +1,307 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF : Ancres et Bases de R&egrave;gles
+            Nomm&eacute;es (Sub)</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+</head>
+
+<!--
+Copyright (c) 2003, 2004 Joel Knight <enabled@myrealbox.com>
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
+<p>
+[<a href="scrub.html">Pr&eacute;c&eacute;dent : Scrub (Normalisation de
+Paquets)</a>]
+[<a href="index.html">Index</a>]
+[<a href="../queueing.html">Suivant : Gestion de La Bande Passante</a>]
+
+<p>
+<h1><font color="#e00000">PF : Ancres et Bases de R&egrave;gles
+    Nomm&eacute;es (Sub)</font></h1>
+
+<hr>
+
+<h3>Table des Mati&egrave;res</h3>
+<ul>
+<li><a href="#intro">Introduction</a>
+<li><a href="#named">Bases de R&egrave;gles Nomm&eacute;es</a>
+<li><a href="#options">Options d'Ancrage</a>
+<li><a href="#manip">Manipulation des Bases de R&egrave;gles
+    Nomm&eacute;es</a>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Introduction</h2>
+En plus de la base de r&egrave;gles principale, PF peut aussi
+&eacute;valuer des bases de r&egrave;gles secondaires. Vu que les bases
+de r&egrave;gles secondaires ("sub rulesets" en anglais) peuvent
+&ecirc;tre manipul&eacute;es &agrave; la vol&eacute;e en utilisant
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.5">pfctl(8)</a>, 
+elles fournissent une bonne fa&ccedil;on pour modifier dynamiquement
+l'ensemble des r&egrave;gles actives. Alors qu'une
+<a href="tables.html">table</a> est utilis&eacute;e pour contenir une
+liste dynamique d'adresses, une base de r&egrave;gle secondaire est
+utilis&eacute;e pour contenir un ensemble dynamique de r&egrave;gles de
+filtrage, <tt>nat</tt>, <tt>rdr</tt>, et <tt>binat</tt>.
+
+<p>
+Les bases de r&egrave;gles secondaires sont attach&eacute;es &agrave; la
+base de r&egrave;gles principale &agrave; l'aide d'ancres. Il existe
+quatre types de r&egrave;gles <tt>anchor</tt> (ancre en anglais) :
+<ul>
+<li><tt>anchor <i>nom</i></tt> - &eacute;value toutes les r&egrave;gles
+    de <a href="../filter.html">filtrage</a> de l'ancre
+    <i><tt>nom</tt></i>
+<li><tt>binat-anchor <i>nom</i></tt> - &eacute;value toutes les
+    r&egrave;gles de traduction
+    <a href="nat.html#binat"><tt>binat</tt></a> de l'ancre
+    <i><tt>nom</tt></i>
+<li><tt>nat-anchor <i>nom</i></tt> - &eacute;value toutes les
+    r&egrave;gles de traduction <a href="nat.html"> <tt>nat</tt></a> de
+    l'ancre <i><tt>nom</tt></i>
+<li><tt>rdr-anchor <i>nom</i></tt> - &eacute;value toutes les
+    r&egrave;gles <a href="rdr.html"><tt>rdr</tt></a> de l'ancre
+    <i><tt>nom</tt></i>
+</ul>
+
+Seule la base de r&egrave;gles principale peut contenir des
+r&egrave;gles <tt>anchor</tt>.
+
+<a name="named"></a>
+<h2>Bases de R&egrave;gles Nomm&eacute;es</h2>
+Une base de r&egrave;gles nomm&eacute;e est un groupe de r&egrave;gles
+de filtrage et/ou de traduction &agrave; laquelle un nom a
+&eacute;t&eacute; attribu&eacute;. Lorsque PF lit une r&egrave;gle
+<tt>anchor</tt> dans la base de r&egrave;gles principale, il
+&eacute;valuera toutes les bases de r&egrave;gles attach&eacute;es
+&agrave; ce point d'ancrage dans l'ordre alphab&eacute;tique de leur
+nommage. Le traitement de la base de r&egrave;gles principale se
+poursuivra ensuite &agrave; moins que le paquet en cours de traitement
+ne corresponde &agrave; une r&egrave;gle de filtrage qui utilise le mot-
+cl&eacute; <tt>quick</tt> ou &agrave; une r&egrave;gle de traduction
+dans l'ancre, dans ce cas la correspondance est d&eacute;clar&eacute;e
+comme finale et l'&eacute;valuation sera arr&ecirc;t&eacute;e aussi bien
+dans les bases de r&egrave;gles rattach&eacute;es &agrave; l'ancre que
+dans la base de r&egrave;gles principale.
+
+<p>
+Par exemple :
+<blockquote>
+<tt>
+ext_if = "fxp0"<br>
+<br>
+block on $ext_if all<br>
+pass &nbsp;out on $ext_if all keep state<br>
+anchor goodguys
+</tt>
+</blockquote>
+
+<p>
+Cette base de r&egrave;gles impl&eacute;mente une politique dite
+restrictive (tout ce qui n'est pas connu est interdit par d&eacute;faut)
+sur l'interface <tt>fxp0</tt> aussi bien pour le trafic entrant que le
+trafic sortant. Le trafic sortant est ensuite autoris&eacute; et un
+&eacute;tat est gard&eacute;. Ensuite une r&egrave;gle d'ancrage est
+cr&eacute;&eacute;e avec le nom <tt>goodguys</tt>. Les ancres peuvent
+&ecirc;tre peupl&eacute;es avec des r&egrave;gles de deux fa&ccedil;ons
+diff&eacute;rentes :
+<ul>
+<li>en utilisant une r&egrave;gle de chargement <tt>load</tt>
+<li>en utilisant 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.5">pfctl(8)</a>
+</ul>
+
+<p>
+Une r&egrave;gle de chargement <tt>load</tt> est utilis&eacute;e pour
+ordonner &agrave; <tt>pfctl</tt> de peupler l'ancre
+sp&eacute;cifi&eacute;e et la base de r&egrave;gles nomm&eacute;es
+&agrave; partir d'un fichier texte. Par exemple :
+<blockquote>
+<tt>
+load anchor goodguys:ssh from "/etc/anchor-goodguys-ssh"
+</tt>
+</blockquote>
+
+<p>
+Lorsque la base de r&egrave;gles principale est charg&eacute;e, les
+r&egrave;gles figurant dans le le fichier <tt>/etc/anchor-goodguys-
+ssh</tt> seront charg&eacute;es dans la base de r&egrave;gles
+nomm&eacute;e <tt>ssh</tt> attach&eacute;e &agrave; l'ancre
+<tt>goodguys</tt>.
+
+<p>
+Pour ajouter des r&egrave;gles &agrave; une ancre &agrave; l'aide de
+<tt>pfctl</tt>, le type de commandes suivant devra &ecirc;tre
+employ&eacute; :
+<blockquote>
+<tt>
+# echo "pass in proto tcp from 192.0.2.3 to any port 22" \<br>
+&nbsp;&nbsp;&nbsp;| pfctl -a goodguys:ssh -f -
+</tt>
+</blockquote>
+
+<p>
+Ceci ajoute une r&egrave;gle <tt>pass</tt> &agrave; la base de
+r&egrave;gles nomm&eacute;e <tt>ssh</tt> attach&eacute;e &agrave;
+l'ancre <tt>goodguys</tt>. PF &eacute;valuera ensuite cette r&egrave;gle
+(ainsi que les autres r&egrave;gles de filtrage ajout&eacute;es par la
+suite) lorsqu'il atteint la ligne <tt>anchor goodguys</tt> dans la base
+de r&egrave;gles principale.
+
+<p>
+Les r&egrave;gles peuvent aussi &ecirc;tre sauvegard&eacute;es et
+charg&eacute;es &agrave; partir d'un fichier texte :
+<blockquote>
+<tt>
+# cat &gt;&gt; /etc/anchor-goodguys-www<br>
+pass in proto tcp from 192.0.2.3 to any port 80<br>
+pass in proto tcp from 192.0.2.4 to any port { 80 443 }<br>
+<br>
+# pfctl -a goodguys:www -f /etc/anchor-goodguys-www<br>
+</tt>
+</blockquote>
+
+<p>
+Ceci charge les r&egrave;gles &agrave; partir du fichier
+<tt>/etc/anchor-goodguys-www</tt> dans la base de r&egrave;gles
+nomm&eacute;e <tt>www</tt> attach&eacute;e &agrave; l'ancre
+<tt>goodguys</tt>.
+
+<p>
+Des r&egrave;gles de filtrage et de traduction peuvent &ecirc;tre
+charg&eacute;es dans une base de r&egrave;gles nomm&eacute;e en
+utilisant les m&ecirc;mes syntaxe et options utilis&eacute;es par les
+r&egrave;gles d&eacute;finies dans la base de r&egrave;gles principale.
+Une exception est &agrave; signaler c&eacute;pendant dans le cas des
+<a href="macros.html">macros</a>. Les macros utilis&eacute;es dans une
+base de r&egrave;gles nomm&eacute;e doivent aussi &ecirc;tre
+d&eacute;finies dans la base de r&egrave;gles nomm&eacute;e qui les
+utilisent; les macros d&eacute;finies dans la base de r&egrave;gles
+principale ne sont <i>pas</i> visibles par les bases de r&egrave;gles
+nomm&eacute;es.
+
+<p>
+Chaque base de r&egrave;gles nomm&eacute;e, ainsi que la base de
+r&egrave;gles principale, existe s&eacute;paremment des autres bases de
+r&egrave;gles. Les op&eacute;rations effectu&eacute;es sur une base de
+r&egrave;gles, telles que la suppression des r&egrave;gles, n'a aucun
+effet sur les autres bases. De plus, la suppression d'un point d'ancrage
+dans la base de r&egrave;gles principale ne d&eacute;truit pas l'ancre
+ni les bases de r&egrave;gles nomm&eacute;es attach&eacute;es &agrave;
+cet ancre. Une base de r&egrave;gles nomm&eacute;e n'est d&eacute;truire
+que lorsque toutes les r&egrave;gles qu'elle contient sont
+supprim&eacute;es &agrave; l'aide de
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.5">pfctl(8)</a>.
+Une fois un point d'ancrage se retrouve sans aucune base de
+r&egrave;gles nomm&eacute;e attach&eacute;e, il est aussi
+d&eacute;truit.
+
+<a name="options"></a>
+<h2>Options d'Ancrage</h2>
+Optionnellement, les r&egrave;gles d'ancrage <tt>anchor</tt> peuvent
+sp&eacute;cifier une interface, un protocole, un port source, un port
+destination, une balise ... en utilisant la m&ecirc;me syntaxe que celle
+employ&eacute;e dans les r&egrave;gles de filtrage. Lorsque de telles
+informations sont fournies, les r&egrave;gles d'ancrage sont uniquement
+&eacute;valu&eacute;es lorsque le paquet en cours de traitement
+correspond &agrave; la d&eacute;finition de la r&egrave;gle d'ancrage.
+Par exemple : <blockquote> <tt> ext_if = "fxp0"<br> <br> block on
+$ext_if all<br> pass &nbsp;out on $ext_if all keep state<br> anchor ssh
+in on $ext_if proto tcp from any to any port 22<br> </tt> </blockquote>
+
+<p>
+Les r&egrave;gles de l'ancre <tt>ssh</tt> sont uniquement
+&eacute;valu&eacute;es pour les paquets TCP destin&eacute;s au port 22
+en entr&eacute;e de <tt>fxp0</tt>. Ces r&egrave;gles sont alors
+ajout&eacute;es &agrave; l'ancre de la fa&ccedil;on suivante :
+<blockquote>
+<tt>
+# echo "pass in from 192.0.2.10 to any" | pfctl -a ssh:allowed -f -
+</tt>
+</blockquote>
+
+<p>
+Ainsi, m&ecirc;me si la r&egrave;gle de filtrage ne sp&eacute;cifie ni
+l'interface, ni le protocole ni d'autres param&egrave;tres tels que le
+port, le h&ocirc;te 192.0.2.10 sera uniquement autoris&eacute; &agrave;
+faire des connexions SSH vu la d&eacute;finition de la r&egrave;gle
+d'ancrage.
+
+<a name="manip"></a>
+<h2>Manipulation des Bases de R&egrave;gles Nomm&eacute;es</h2>
+La manipulation des bases de r&egrave;gles nomm&eacute;es se fait
+&agrave; l'aide de <tt>pfctl</tt>. Cette commande peut &ecirc;tre
+utilis&eacute;e pour ajouter ou supprimer des r&egrave;gles d'une base
+de r&egrave;gles sans n&eacute;cessiter le rechargement de la base de
+r&egrave;gles principale.
+
+<p>
+Pour lister toutes les r&egrave;gles de la base de r&egrave;gles
+<tt>allowed</tt>, attach&eacute;e &agrave; l'ancre <tt>ssh</tt> :
+<blockquote>
+<tt>
+# pfctl -a ssh:allowed -s rules
+</tt>
+</blockquote>
+
+<p>
+Pour supprimer toutes les r&egrave;gles de filtrage de la m&ecirc;me
+base de r&egrave;gles :
+<blockquote>
+<tt>
+# pfctl -a ssh:allowed -F rules
+</tt>
+</blockquote>
+
+<p>
+Si la base de r&egrave;gles est omise, l'action s'applique &agrave;
+toutes les r&egrave;gles de l'ancre.
+
+<p>
+Pour une liste compl&egrave;te des commandes, veuillez consulter
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.5">pfctl(8)</a>.
+
+<p>
+[<a href="scrub.html">Pr&eacute;c&eacute;dent : Scrub (Normalisation de Paquets)</a>]
+[<a href="index.html">Index</a>]
+[<a href="../queueing.html">Suivant : Gestion de La Bande Passante</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[back]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: anchors.html,v 1.12 ]<br>
+$Translation: anchors.html,v 1.1 2004/05/28 18:44:13 saad Exp $<br>
+$OpenBSD: anchors.html,v 1.1 2004/05/31 21:12:02 saad Exp $
+</small>
+
+</body>
+</html> 
