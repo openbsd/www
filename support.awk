@@ -15,6 +15,8 @@
 # into HTML to make nice neat tables.
 
 
+$1 ~ /^#/ { next; }
+
 $1 == "0" {
 	if (FNR != 1)
 		dump();
@@ -47,7 +49,10 @@ $1 == "N" { note = substr($0, 2); next }
 	}
 
 function dump() {
-	print "<TR><TD>" indv "<BR>" org "<BR>" addr
+	print "<TR><TD>" 
+	if (indv != "")
+		print indv "<BR>" 
+	print org "<BR>" addr
 	print "	<TD>" city "<BR>" prov
 	print "	<TD>" phone "<BR>" fax
 	print "	<TD>"
