@@ -7,12 +7,12 @@
 
 
 <h2>MINI-FAQ: Upgrading OpenBSD</h2>
-<h3>Latest OpenBSD Release - 2.7</h3>
+<h3>Latest OpenBSD Release - 2.8</h3>
 
 <h4>Kjell Wooding 
-&lt;<A HREF="mailto:kwooding@codetalker.com">kwooding@codetalker.com</A>&gt;
+&lt;<A HREF="mailto:kjell@openbsd.com">kjell@openbsd.org</A>&gt;
 </h4>
-Last Update - $OpenBSD: upgrade-minifaq.html,v 1.38 2000/08/07 06:18:51 kjell Exp $
+Last Update - $OpenBSD: upgrade-minifaq.html,v 1.39 2000/12/21 18:19:08 kjell Exp $
 
 <P>
 
@@ -70,6 +70,12 @@ standard way of bootstrapping it?
 and <tt>/dev</tt>?
 </A>
 <BR>
+
+<A HREF="#1.10">
+1.10: How do I clean all the cruft out of my existing source tree?
+</A>
+<BR>
+
 
 
 <H3>2.0: Upgrading from 2.3</H3>
@@ -173,10 +179,17 @@ recognized by the kernel.
 </A>
 <BR>
 
-<h3>6.0 - Upgrading from 2.7 to <I>-current</I></h3>
+<h3>6.0 - Upgrading from 2.7</h3>
 
 <A HREF="#6.1">
-6.1: Upgrading gcc 2.95.2 to 2.95.3-pre (May 27)
+6.1: What are the major problems upgrading from 2.7 to 2.8?
+</A>
+<BR>
+
+<h3>7.0 - Upgrading from 2.8 to <i>-current</i></h3>
+
+<A HREF="#7.1">
+7.1: New auth group
 </A>
 <BR>
 
@@ -198,7 +211,7 @@ unbranched source tree. As of 2.7, a patch branch was introduced.
 At approximately
 six-month intervals, OpenBSD <B>releases</B> are produced. These are
 numbered in the conventional (2.x) manner. The current OpenBSD release is
-2.7. 
+2.8. 
 <P>
 
 <B>-current</B>, short for <I>openbsd-current</I>, refers to the
@@ -221,10 +234,12 @@ work correctly (or even at all). Snapshots are quite useful when moving
 from a formal release (or older version of -current) to the current tree.
 
 <P>
-As of OpenBSD 2.7, a 
-<A HREF="../stable.html">patch branch</A> (called <B>-stable</B>) 
-was introduced.  This branch contains the base 2.7 release, plus any
-errata patches that have been published.
+As of OpenBSD 2.7, a <A HREF="../stable.html">patch branch</A> (called
+<B>-stable</B>) was introduced.  This branch contains the base
+release, and any important patches or fixes (important being the
+errata patches, plus others that are obvious and simple, but do not
+deserve an errata entry).
+
 
 <H4><A NAME="1.2">
 1.2: What is the best way to upgrade to <I>-current</I>?
@@ -360,11 +375,6 @@ sometimes necessary in other cases. The easiest way to do this is:
 <LI> Update <tt>/etc</tt> and <tt>/dev</tt> by hand. These are not updated 
 automatically. Choose a directory with enough space to 
 hold /, /dev, /var, and /etc. Here I'll use <I>/home/newroot</I> 
-<P>
-(<B>Note</B>: make sure the directory hierarchy you choose
-does not have group write (g+w) or other write (o+w)  
-permissions or sendmail will complain during this step. 
-This makes /tmp a bad choice):
 
 <PRE>
   # mkdir /home/newroot          
@@ -466,19 +476,34 @@ In general, you'll want to perform the following procedure:
 (and yes, you are building it twice)
 
 <PRE>
-  # rm -r /usr/obj/gnu/egcs/gcc/*
-  # cd /usr/src/gnu/egcs/gcc
-  # make -f Makefile.bsd-wrapper obj
-  # make -f Makefile.bsd-wrapper clean
-  # make -f Makefile.bsd-wrapper depend
-  # make -f Makefile.bsd-wrapper 
-  # make -f Makefile.bsd-wrapper install
-  # make -f Makefile.bsd-wrapper clean
-  # make -f Makefile.bsd-wrapper depend
-  # make -f Makefile.bsd-wrapper 
-  # make -f Makefile.bsd-wrapper install
+  $ rm -r /usr/obj/gnu/egcs/gcc/*
+  $ cd /usr/src/gnu/egcs/gcc
+  $ make -f Makefile.bsd-wrapper clean
+  $ make -f Makefile.bsd-wrapper obj
+  $ make -f Makefile.bsd-wrapper depend
+  $ make -f Makefile.bsd-wrapper 
+  $ sudo make -f Makefile.bsd-wrapper install
+  $ make -f Makefile.bsd-wrapper clean
+  $ make -f Makefile.bsd-wrapper depend
+  $ make -f Makefile.bsd-wrapper 
+  $ sudo make -f Makefile.bsd-wrapper install
 </PRE>
 And then run a normal <i>make build</i>.
+<P>
+You may be able to speed this process up by using the
+BOOTSTRAP procedure:
+
+<PRE>
+  $ cd /usr/src/gnu/egcs/gcc
+  $ make -f Makefile.bsd-wrapper clean
+  $ make -f Makefile.bsd-wrapper obj
+  $ make -f Makefile.bsd-wrapper -DBOOTSTRAP
+  $ sudo make -f Makefile.bsd-wrapper -DBOOTSTRAP install
+  $ make -f Makefile.bsd-wrapper clean
+  $ make -f Makefile.bsd-wrapper
+  $ sudo make -f Makefile.bsd-wrapper install
+</PRE>
+
 
 <h4><A NAME="1.9">
 1.9: What is the best way to upgrade <tt>/etc</tt>, <tt>/var</tt>,
@@ -515,6 +540,28 @@ to see the changes between 2.6 and 2.7, do a:
 
 Once you have identified the changes, reapply them to your
 local tree, preserving any local configuration you may have done.
+
+<h4><A NAME="1.10">
+1.10: How do I clean all the cruft out of my existing source tree?
+</A></H4>
+
+The most important thing you can do is clean out your obj
+directories. Here's a procedure to update source and kill any leftover
+objects:
+
+<PRE>
+  # cd /usr/src
+  # cvs -q -d anoncvs@some.anon.server/cvs up -PAd
+  # find . -type l -name obj | xargs rm
+  # make -k cleandir
+  # rm -rf /usr/obj/*
+  # make obj
+</PRE>
+
+If you're still having trouble, you may want to try adding
+<tt>-I ! -I CVS -I obj</tt> to your CVS updates. This will identify any
+extra cruft in your source tree.
+
 
 <H3>2.0: Upgrading from 2.3</H3>
 <h4><A NAME="2.1">
@@ -1190,7 +1237,7 @@ To correct the problem, escape to the shell, remove the <tt>/usr/include/machine
 
 <P>
 <H3><a name="5.0">
-5.0 - Upgrading from 2.6
+5.0 - Upgrading from 2.6 to 2.7
 </A></H3>
 </P>
 
@@ -1422,28 +1469,114 @@ You need to update your bootblocks. See
 of the OpenBSD FAQ for details.
 
 <H3><A NAME="6.0">
-6.0 - Upgrading from 2.7 to <I>-current</I>
+6.0 - Upgrading from 2.7 to 2.8
 </A></H3>
 
 <H4><A NAME="6.1">
-6.1: Upgrading gcc 2.95.2 to 2.95.3-pre (May 27)
+6.1: What are the major problems upgrading from 2.7 to 2.8?
 </A></H4>
 
-<I>gcc</I> has been upgraded to a 2.95.3 pre-release. 
-Follow the <A HREF="#1.8">standard procedure</A> for
-upgrading to a new gcc version.
+A significant gcc change was introduced that makes it all too easy
+to generate self-referencing <i>libc</i> libraries. For this reason, upgrades
+should follow exactly this procedure:
+
+<ol>
+<li> <a href="#1.10">Clean the cruft</a> from your source tree, and fetch
+the 2.8 code.<P>
+
+<li> Build and install a new linker. This <b>must</b> be done before
+a full <i>gcc</i> build.
+<PRE>
+  $ cd /usr/src/gnu/usr.bin/ld
+  $ make clean &amp;&amp; make obj &amp;&amp; make
+  $ sudo make install
+</PRE>
+
+<li> Build and install the new <i>gcc</i>. Use the
+     <a href="#1.8">BOOTSTRAP</a> procedure to speed
+     things up.<P>
+
+<li> Build a new kernel. Do not install it yet
+<PRE>
+  $ cd /usr/src/sys/arch/`machine`/conf
+  $ config GENERIC
+  $ cd ../compile/GENERIC
+  $ make clean &amp;&amp; make depend &amp;&amp; make
+</PRE>
+
+<li> Because of some libc changes, your machine may hang on startup unless
+   your <tt>/etc/resolv.conf</tt> contains <i>lookup file bind</i>.
+   Add this line if necessary
+<PRE>
+  # echo &quot;lookup file bind&quot; &gt;&gt; /etc/resolv.conf
+</PRE>
+
+<li> Install the new kernel and reboot
+<PRE>
+  # cd /usr/src/sys/arch/`machine`/compile/GENERIC
+  # mv /bsd /bsd.old
+  # mv bsd /bsd
+  # chown root.wheel /bsd
+  # shutdown -r now
+</PRE>
+(If this step fails, you can recover by booting the old kernel - bsd.old -
+at the <tt>boot&gt;</tt> prompt.)<P>
+
+<li> Build and install the new make (and support files). 
+     Do not skip the <tt>make depend</tt> step.
+<PRE>
+  $ cd /usr/src/usr.bin/make
+  $ make clean &amp;&amp; make obj &amp;&amp; make depend &amp;&amp; make
+  $ sudo make install
+  $ cd /usr/src/share/mk
+  $ sudo make install
+</PRE>
+
+<li> Install the latest <i>mtree</i>, and ensure the necessary directory
+     structure is present.
+<PRE>
+  $ cd /usr/src/etc/mtree
+  $ sudo install -c -o root -g wheel -m 444 4.4BSD.dist /etc/mtree
+  $ sudo mtree -qdef /etc/mtree/
+</PRE>
+
+<li> Perform the make build
+<PRE>
+  # cd /usr/src &amp;&amp; make build
+</PRE>
+
+<li> <a href="#1.9">Update <tt>/etc</tt> <tt>/var</tt> and 
+     <tt>/dev/MAKEDEV</tt></a> by hand.
+
+</ol>
+
+<H3><A NAME="7.0"></A>
+7.0 - Upgrading from 2.8 to <i>-current</i>
+</H3>
+
+<H4><A NAME="7.1">
+7.1: New auth group
+</A></H4>
+
+A new group, <i>auth</i>, gid 11, has been added to the system.
+Add a line like the following to your <tt>/etc/group</tt>:
+<PRE>
+  auth:*:11:
+</PRE>
+
+
 
 <P>
 <FONT SIZE=-1>
 --
 <BR>
-$OpenBSD: upgrade-minifaq.html,v 1.38 2000/08/07 06:18:51 kjell Exp $
+$OpenBSD: upgrade-minifaq.html,v 1.39 2000/12/21 18:19:08 kjell Exp $
 
 <BR>
-Copyright &copy; 1998-2000, Kjell Wooding. 
+Copyright &copy; 1998-2001, Kjell Wooding. 
 <BR>
 Please send any comments, questions, or suggestions to 
-<A HREF="mailto:kwooding@codetalker.com">kwooding@codetalker.com</A>
+<A HREF="mailto:kjell@openbsd.org">kjell@openbsd.org</A>
 
 </FONT>
 
