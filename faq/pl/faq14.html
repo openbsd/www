@@ -59,7 +59,7 @@ Je¶li chcesz pomóc w aktualizacji tego pliku, zajrzyj na
                            i odtwarzanie z ta¶my.</a>
 <li><a href="#MountImage" >14.10 - Montowanie obrazów dysków w OpenBSD</a>
 <li><a href="#pciideErr"  >14.11 - Pomocy! Otrzymuje komunikaty o b³êdach
-                           podczas pracy z urz±dzeniami PCIIDE!</a>
+                           podczas pracy z urz±dzeniami IDE DMA!</a>
 <li><a href="#RAID"       >14.13 - Macierze RAID dla OpenBSD</a>
 </ul>
 <hr>
@@ -752,9 +752,18 @@ edycji tablicy partycji, a tak¿e do instalacji kodu MBR na dysku.
 <p>
 MBR OpenBSD przy uruchomieniu wy¶wietla komunikat podobny do poni¿szego:
 <pre>
-    Using Drive: 0 Partition: 3
+    Using drive 0, partition: 3.
 </pre>
 Okre¶la on numer dysku oraz partycji z której zostanie za³adowany PBR.
+Rzecz±, która rzuca siê w oczy jest kropka na koñcu powy¿szej linijki
+(".") - oznacza ona, ¿e maszyna umo¿liwia bootowanie w trybie LBA. W
+przypadku, gdy sprzêt nie pozwala na u¿ywanie translacji LBA, znak
+kropki zostanie zast±piony ¶rednikiem (";"), który oznacza translacjê CHS:
+<pre>
+    Using Drive 0, Partition 3;
+</pre>
+Proszê zauwa¿yæ, ¿e ostatni znak w postaci kropki lub przecinka zosta³
+wprowadzony w "nowym" MBR, dostêpnym od wersji OpenBSD 3.5.
 
 <li><b><i>Partition Boot Record (PBR):</i></b>
 Partition Boot Record w skrócie PBR, nazywany tak¿e 
@@ -778,9 +787,17 @@ który szczególowo opisany jest <a href="faq14.html#InstBoot">w dalszej czêsci
 tego dokumentu</a>.
 Podczas uruchamiania PBR wy¶wietla komunikat podobny do poni¿szego:
 <pre>
-    reading boot....
+    Loading...
 </pre>
-wypisuj±c na ekranie kropkê wraz z ka¿dym odczytanym sektorem.
+wypisuj±c na ekranie kropkê wraz z ka¿dym odczytanym sektorem. Podobnie
+jak w przypadku MBR, PBR zaznacza czy u¿ywa translacji LBA czy CHS. W
+przypadku wykorzystania CHS, do powy¿szego komunikatu do³±czony jest
+¶rednik:
+<pre>
+    Loading;...
+</pre>
+Poprzednie wersje (sprzed OpenBSD 3.5) wy¶wietlaj± komunikat <tt>reading
+boot...</tt>.
 
 <li><b><i>Program £aduj±cy Drugiego Poziomu (ang. Second Stage Boot Loader)
  <tt>/boot</tt>:</i></b> <tt>/boot</tt> jest ³adowany przez PBR, a jego
@@ -799,7 +816,7 @@ znak zachêty:
 <pre>
      probing: pc0 com0 com1 apm mem[636k 190M a20=on]
      disk: fd0 hd0+
-     >> OpenBSD/i386 BOOT 2.02
+     >> OpenBSD/i386 BOOT 2.06
      boot>
 </pre>
 
@@ -834,11 +851,11 @@ bezpo¶rednio ze sprzêtem bez pomocy BIOS-u.
 
 Poni¿szy przyk³ad przedstawia najczêstszy przebieg bootowania OpenBSD:
 <blockquote><pre>
-Using Drive: 0 Partition: 3                      <b><i>&lt;- MBR</i></b>
-reading boot....                                 <b><i>&lt;- PBR</i></b>
+Using drive 0, partition: 3.                     <b><i>&lt;- MBR</i></b>
+Loading....                                      <b><i>&lt;- PBR</i></b>
 probing: pc0 com0 com1 apm mem[636k 190M a20=on] <b><i>&lt;- /boot</i></b>
 disk: fd0 hd0+
->> OpenBSD/i386 BOOT 2.02
+>> OpenBSD/i386 BOOT 2.06
 boot>
 booting hd0a:/bsd 4464500+838332 [58+204240+181750]=0x56cfd0
 entry point at 0x100120
@@ -848,7 +865,7 @@ Copyright (c) 1982, 1986, 1989, 1991, 1993       <b><i><- Kernel</i></b>
         The Regents of the University of California.  All rights reserved.
 Copyright (c) 1995-2003 OpenBSD.  All rights reserved.  http://www.OpenBSD.org
 
-OpenBSD 3.4 (GENERIC) #18: Wed Sep 17 03:34:47 MDT 2003
+OpenBSD 3.5 (GENERIC) #34: Mon Mar 29 12:24:55 MST 2004
    ...
 </pre></blockquote>
 
@@ -885,32 +902,37 @@ miejscu wskazaæ inny, prawid³owy kod MBR.
 
 <li><b>B³êdna lokalizacja <tt>/boot</tt> w PBR:</b>
 Podczas instalacji Partition Boot Record, program installboot(8) zapisuje
-w nim fizyczne umiejscowienie na dysku pliku <tt>/boot</tt>. Tak wiêc
+numer bloku i offset iwêz³a w którym znajduje siê plik <tt>/boot</tt>. Tak wiêc
 usuniêcie b±dz zamiamiana pliku <tt>/boot</tt> bez ponownego uruchomienia
 <a href="faq14.html#InstBoot">installboot(8)</a> spowoduje, ¿e zabootowanie
 systemu stanie siê niemo¿liwe, jako ¿e PBR spróbóje za³adowaæ z dysku dane,
-które z pewno¶ci± nie s± programem ³aduj±cym drugiego poziomu. Z racji
-tego, ¿e <tt>/boot</tt> jest ³adowany przy u¿yciu wywo³añ BIOS-u, zmiana
-geometrii dysku (np. przeniesienie napêdu z jednego komputera, u¿ywaj±cego
-translacji CHS do drugiego, który wykorzystuje translacjê LBA, lub nawet
-zmiana sposobu t³umaczenia geometrii dysku w BIOS-ie) spowoduje, ¿e
+które z pewno¶ci± nie s± programem ³aduj±cym drugiego poziomu.
+
+Z racji tego, ¿e <tt>/boot</tt> jest ³adowany przy u¿yciu wywo³añ
+BIOS-u, starsze wersje PBR by³y bardzo wra¿liwe na zmiany geometrii
+dysku (np. przeniesienie napêdu z jednego komputera, u¿ywaj±cego
+translacji CHS do drugiego, który wykorzystuje translacjê LBA, lub
+nawet zmiana sposobu t³umaczenia geometrii dysku w BIOS-ie) spowoduje, ¿e
 wg BIOS-u plik <tt>/boot</tt> znajdzie siê w zupe³nie innym miejscu dysku,
 tak wiêc konieczne bêdzie wykorzystanie programu installboot(8) przed 
-ponownym uruchomieniem systemu.
-
-Jako ¿e PBR jest bardzo ma³y, tak i komunikaty o b³êdach s± bardzo lakoniczne:
-<ul>
-<li><b>Read Error</b> - BIOS zwróci³ b³±d podczas próby odczytu z dysku.
-Mo¿e byæ to spowodowane uszkodzeniem dysku b±d¼ prób± odwo³ania siê do
-nieistniej±cego sektora (np. w wyniku niew³a¶ciwego ustawienia geometrii dysku).
-<li><b>Bad magic</b> - nieprawid³owy magiczny numer (zobacz stronê podrêcznika
-systemowego <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=magic&amp;sektion=5">magic(5)</a>)
-odczytany z nag³ówka programu ³aduj±cego drugiego poziomu. Zasadniczo oznacza
-to, ¿e cokolwiek zosta³o odczytane z dysku napewno nie jest to <tt>/boot</tt>.
-Najczê¶ciej zwi±zane jest to ze zmian± geometrii dysku, zmian± pliku
-<tt>/boot</tt> lub zignorowaniem <a href="faq14.html#LargeDrive">
-ograniczenia 8GB</a> w danym systemie.
+ponownym uruchomieniem systemu. Nowy PBR (dostêpny w OpenBSD 3.5 i
+pó¼niejszych) jest bardziej tolerancyjny na zmiany translacji.
 </ul>
+
+Jako ¿e PBR jest bardzo ma³y, tak i komunikaty o b³êdach s± bardzo
+lakoniczne i troche tajemnicze:
+<ul>
+<li><b>ERR</b> - BIOS zwróci³ b³±d podczas próby odczytu z dysku.
+Najczê¶ciej oznacza to po prostu to, ¿e z dysku nie uda³o siê nic odczytaæ.
+<li><b>ERR M</b> - nieprawid³owy magiczny numer (zobacz stronê podrêcznika
+systemowego
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=magic&amp;sektion=5">
+magic(5)</a>) odczytany z nag³ówka programu ³aduj±cego drugiego poziomu.
+Zasadniczo oznacza to, ¿e cokolwiek zosta³o odczytane z dysku napewno
+nie jest to <tt>/boot</tt>. Najczê¶ciej zwi±zane jest to ze niew³a¶ciwym
+uruchomieniem programu
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=installboot&amp;sektion=8">installboot(8)</a>
+lub plik <tt>/boot</tt> zosta³ zmieniony.
 </ul>
 
 Bardziej szczegó³owe informacje o procesie ³adowania OpenBSD/i386 mo¿na
@@ -923,7 +945,6 @@ Dokument Hala Landisa pt. "How it Works".
 
 <a name="LargeDrive"></a>
 <h2>14.7 - O czym nale¿y wiedzieæ u¿ywaj±c du¿ych dysków w OpenBSD?</h2>
-<!-- XXX version i386 changes for 3.5 -->
 
 <p>
 OpenBSD obs³uguje systemy plików o wiele wiêksze ni¿ wynosi pojemno¶æ 
@@ -936,26 +957,24 @@ mniejsza ni¿ teoretyczne maksimum dla OpenBSD.
 Nie wszystkie mo¿liwe kombinacje sprzêtu bêd± poprawnie obs³ugiwane. Nowy,
 250 gigabajtowy, dysk IDE nie bêdzie pracowa³ ze starym (obs³uguj±cym
 napêdy &gt;137 GB) kontrolerem. Podobne problemy mog± dotyczyæ adapterów
-SCSI.
+SCSI, czasem tak¿e niektóre starsze BIOS-y mog± odmówiæ wspó³pracy z
+nowymi du¿ymi dyskami.
 
 <h3>Ograniczenia pojemno¶ci i rozmieszczenia partycji</h3>
 Na nieszczê¶cie wszystkie mo¿liwo¶ci danego OS nie s± dostêpne zanim
-zostanie on za³adowany do pamiêci i ju¿ sam proces bootowania wprowadza
-ograniczenia. Podczas rozruch komputera wykorzystywane s± procedury
-umieszczone w BIOS-ie (i to w³a¶nie jest przyczyn± niektórych ograniczeñ).
-Program ³aduj±ce pierwszego poziomu dla platformy i386
-(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=biosboot&amp;sektion=8&amp;arch=i386">biosboot(8)</a>)
-posiadaja wewnetrzne ograniczenie pojemno¶ci do 8 GB, zwi±zane
-w³a¶nie z ograniczeniami starszych BIOS-ów.
+zostanie on za³adowany do pamiêci. Podczas bootowania wykorzystywany
+jest BIOS komputara i co za tym idzie ograniczenia BIOS-u.
  
 <p>
 Z tej w³a¶nie przyczyny, ca³y plik /bsd (czyli j±dro) musi znajdowaæ
 siê wewn±trz obszaru, który jest dostêpny dla procedur bootuj±cych
-z BIOS-u, lub wewn±trz pierwszych 8 GB dysku, w zale¿no¶ci od tego,
-która granica jest mniejsza. Oznacza to, ¿e niektóre stare komputer
-i386, musz± posiadaæ g³ówn± partycjê znajduj±c± siê w pierwszych
-504 MB, a dla wiêkszo¶ci nowych maszyn partycja '/' musi znajdowaæ
-siê poni¿ej 8 GB.
+z BIOS-u. Oznacza to, ¿e niektóre stare komputer i386, musz± posiadaæ
+g³ówn± partycjê znajduj±c± siê w pierwszych 504 MB, ale nowsze
+maszyny mog± mieæ limit 2G, 8G, 32G, 128G lub wiêcej. Warto zauwa¿yæ, ¿e
+nowe komputery, które umo¿liwiaj± u¿ywanie dysków wiêkszych niz 128G,
+posiadaj± ograniczenie uniemo¿liwiaj±ce bootowanie powy¿ej tej granicy.
+Je¶li u¿ywasz takie systemu zmuszony bêdziesz umie¶ciæ g³ówn± partycjê
+we wnêtrzu pierwszych 128G.
 
 <p>
 Zauwa¿, ¿e mo¿liwe jest zinstalowanie 40 GB dysku i za³adowanie OpenBSD
@@ -975,7 +994,7 @@ szybko prawda mo¿e wyj¶æ na jaw i to w ca³kiem nieprzyjemny sposób:
       on nadpisany przez nowe j±dro.
   <li>Ponowne uruchomienie komputera ...
   <li>... i zamiast ulubionego systemu twoim oczom ukazuje siê
-      komunikat "bsd magic"!
+      komunikat "ERR M" lub podobny!
 </ul>
 
 <p>
@@ -993,27 +1012,31 @@ rozwi±zaæ w bardzo prosty sposób:
 
 <p>
 <b>Ca³a partycja '/' musi znajdowaæ sie wewn±trz obszaru, który jest
-dostêpny dla BIOS-u komputera lub wen±trz pierwszych 8 GB, w zale¿no¶ci,
-która warto¶æ jest mniejsza.</b>
-<br><i>Uwaga: ograniczenie 8 GB dla OpenBSD/i386 zosta³o usuniête w wersji
--current systemu. Nadal jednak nale¿y respektowaæ ograniczenia BIOS-u.</i>
+dostêpny dla BIOS-u (lub boot ROM-u) komputera.</b>
+
+<p>
+Niektóre platformy inne ni¿ i386 mog± zadawæ siê byæ odporne na tego
+typu problemy, jednak i one posiadaj± ograniczenia wynikaj±ce z
+ograniczeñ boot ROM-ów. Jednak dok³adne okre¶leni tych limitów mo¿e
+byæ nieco k³opotliwe.
 
 <p>
 Opisane wy¿ej problemy s± jeszcze jednym dobrym powodem, aby
 <a href="faq4.html#SpaceNeeded">podzieliæ dysk na partycje</a>, zamiast
 u¿ywaæ jednej du¿ej partycji.
 
-+<h3>fsck(8) time and memory requirements</h3>
-+Another consideration with large file systems is the time and memory
-+required to
-+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fsck&amp;sektion=8">fsck(8)</a>
-+the file system after a crash or power interruption.
-+One should not put a 120G file system on a system with 32M of RAM and
-+expect it to successfully fsck(1) after a crash.
-+A rough guideline is the system should have at least 1M of available
-+memory for every 1G of disk space to successfully fsck the disk.
-+The time required to fsck the drive may become a problem as the file
-+system size expands.
+<h3>Wymagania odno¶cie pamiêci i czasu dla fsck(8)</h3>
+Problemem, który wymaga omówienia, a dotyczy du¿ych systemów plików,
+jest ilo¶æ pamiêci i czasu niezbêdnego do sprawdzenia go programem
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fsck&amp;sektion=8">fsck(8)</a>
+po zawieszeniu siê systemu lub przerwy w dop³ywie pr±du. Nie mo¿na
+zainstalowaæ OpenBSD na 120G systemie plików w maszynie wyposa¿onej
+w 32M pamiêci RAM, a nastêpnie oczekiwaæ pomy¶lnego uruchomienia
+fsck(1) po za³amaniu siê systemu. Dobr± zasad± jest za³o¿enie, ¿e
+komputer powinien posiadaæ przynajmniej 1M pamiêci RAM na ka¿dy
+1G przestrzeni dyskowej do poprawnego sprawdzenia systemu plików.
+Wraz ze wzrostem rozmiaru partycji zwiêksza siê tak¿e czas niezbêdny
+do uruchomienia fsck.
 
 <a name="InstBoot"></a>
 <h2>14.8 - Instalacja bootbloku - tylko i386</h2>
@@ -1048,18 +1071,6 @@ posiadasz interfejs IDE bêdzie to wd0, itd.):
 
 <pre>
 # <b>cd /usr/mdec; ./installboot /boot biosboot sd0</b>
-</pre>
-
-<p>
-Je¶li installbot(8) nie zdo³a odczytaæ geometrii z BIOS-u, mo¿na
-wykorzystaæ polecenie programu ³aduj±cego &quot;machine diskinfo&quot;
-(w skrócie &quot;ma di&quot;) aby uzyskaæ interesuj±ce nas informacje.
-Wpisz warto¶ci podane w polach &quot;heads&quot; i &quot;secs&quot;
-jako parametry programu installboot(8), odpowiednio -h i -s. Nowe
-polecenie bêdzie teraz wygl±daæ w ten sposób:
-
-<pre>
-#<b> cd /usr/mdec; ./installboot -h &lt;heads&gt; -s &lt;secs&gt; /boot biosboot sd0</b>
 </pre>
 
 <p>
@@ -1199,14 +1210,14 @@ st0 at scsibus0 targ 5 lun 0: &lt;ARCHIVE, Python 28388-XXX, 5.28&gt;
 
 <p>
 Uwa¿ny Czytelnik zapewne dostrzeg³, ¿e przy archiwizowaniu urz±dzenie 
-ta¶mowe nazywa siê "nrst0", a nie "st0", jak podaje dmesg. Odwo³uj±c
-siê do st0 jako do nrst0 zaznaczamy, ¿e nie chcemy przewijaæ ta¶my
-po dokonaniu archiwizacji, a ¿±damy dostêpu do urz±dzenia w trybie
-surowym. Jest to niezbêdne by zarchiwizowaæ kilka systemów plików na 
-jednej ta¶mie. W przeciwnym przypadku, drugi archiwizowany system
-plików nadpisze pierwszy, trzeci drugi itd. Dok³adniejszy opis ró¿nych
-urz±dzeñ ta¶mowych znale¼æ mo¿na w podrêczniku systemowym polecenia 
-dump.
+ta¶mowe nazywa siê <tt>nrst0</tt>, a nie <tt>st0</tt>, jak podaje
+dmesg. Odwo³uj±c siê do <tt>st0</tt> jako do <tt>nrst0</tt> zaznaczamy,
+¿e nie chcemy przewijaæ ta¶my po dokonaniu archiwizacji, a ¿±damy
+dostêpu do urz±dzenia w trybie surowym. Jest to niezbêdne by
+zarchiwizowaæ kilka systemów plików na jednej ta¶mie. W przeciwnym
+przypadku, drugi archiwizowany system plików nadpisze pierwszy, trzeci
+drugi itd. Dok³adniejszy opis ró¿nych urz±dzeñ ta¶mowych znale¼æ
+mo¿na w podrêczniku systemowym polecenia dump.
 
 <p>
 Napiszemy teraz ma³y skrypt archiwizuj±cy (nazwiemy go "backup")
@@ -1234,7 +1245,7 @@ który bêdzie urchamia³ nasz skrypt "backup" automatycznie.
 <p>
 Bardzo pomocne jest zapisanie sobie (np. na skrawku papieru) jak du¿o
 miejsca na dysku zajmuje ka¿da partycja. Mo¿na do tego celu u¿yæ komendy
-df -h. Bêdzie to przydatne, je¶li napêd zawiedzie i trzeba bêdzie
+<tt>df -h</tt>. Bêdzie to przydatne, je¶li napêd zawiedzie i trzeba bêdzie
 odtworzyæ tablicê partycji na nowym dysku.
 
 <p>
@@ -1246,8 +1257,8 @@ zalogowaniu siê w trybie pojedynczego u¿ytkownika trzeba jednak
 podmontowaæ partycjê root (/) w trybie r/w. W przeciwnym przypadku
 program dump zg³osi b³±d przy zapisywaniu danych o zrzutach. Aby 
 zalogowaæ siê w trybie pojedynczego u¿ytkownika, nale¿y wpisaæ
-"bsd -s" po znaku zachety "boot&gt;", pojawiaj±cym siê w trakcie
-uruchamiania systemu.
+"<tt>bsd -s</tt>" po znaku zachety "boot&gt;", pojawiaj±cym siê
+w trakcie uruchamiania systemu.
 
 <h3>Wy¶wietlanie zawarto¶ci ta¶my</h3>
 
@@ -1508,13 +1519,16 @@ podrêczniku systemowym programu vnconfig(8)</a>.
 
 <a name="pciideErr"></a>
 <h2>14.11 - Pomocy! Otrzymuje komunikaty o b³êdach podczas pracy z urz±dzeniami
-PCIIDE!</h2>
+IDE DMA!</h2>
 
 <p>
-PCI IDE DMA jest niestabilne w wielu konfiguracjach sprzêtowych. Do
+Transfery IDE DMA, obs³ugiwane przez
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pciide&amp;sektion=4">
+pciide(4)</a>, s± niestabilne w wielu konfiguracjach sprzêtowych. Do
 niedawna, wiêkszo¶æ "mainstreamowych" systemów operacyjnych, które 
 chwali³y siê obs³ug± tranferów DMA na dyskach IDE, nie mia³y domy¶lnie
-w³±czonej te opcji.
+w³±czonej tej opcji z powodu problemów ze sprzêtem. Teraz jednak
+wiele z tych maszyn mo¿e byæ u¿ywanych z OpenBSD.
 
 <p>
 OpenBSD jest agresywny i zawsze próbuje uzywaæ najwy¿szych trybów DMA jakie
@@ -1538,9 +1552,21 @@ niezawodny). Je¶li tryb Ultra-DMA osi±gnie w koñcu warto¶æ 0, to napêd
 przechodzi w tryb PIO.
 
 <p>
-Je¶li nie powiedzie siê operacja zmiany trybu na wolniejszy, lub je¶li
-proces ten powoduje, ¿e maszyna siê zawiesza, proszê przes³aæ nam
-<a href="../../pl/report.html">raport o b³êdzie</a>.
+B³êdy w obs³udze UDMA bardzo czêsto powodowane s± przez uszkodzone
+lub kiepskiej jako¶ci kable. I w³a¶nie one powinny byæ brane pod
+uwagê jako g³ówni podejrzani w sprawie b³êdów DMA lub te¿ niskiej
+wydajno¶ci przy transferach. Nie jest tak¿e dobrym pomys³em umieszczanie
+na tym samym kanale dysku twardego i CD-ROM-u.
+
+<p>
+Je¶li wymiana kabli nie rozwi±¿e problemu, a OpenBSD nie bêdzie móg³
+zmniejszyæ szybko¶ci transmisji lub proces ten spowoduje zawieszenie
+komputera lub wy¶wietlenie ogromnej ilo¶ci komunikatów systemowych,
+mo¿na spróbowaæ wymusiæ na systemie domy¶lne u¿ywanie ni¿szego poziomu
+DMA lub UDMA. Mo¿na to osi±gn±æ zmieniaj±c domy¶lne flagi urz±dzenia
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=wd&amp;sektion=4">
+wd(4)</a> przy pomocy <a href="faq5.html#BootConfig">UKC</a> lub
+<a href="faq5.html#config">config(8)</a>
 
 <a name="RAID"></a>
 <h2>14.13 - Macierze RAID dla OpenBSD</h2>
@@ -1625,9 +1651,9 @@ dla tych kart.
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
 <small>
-Originally [OpenBSD: faq14.html,v 1.103 ]<br>
-$Translation: faq14.html,v 1.10 2004/04/24 09:48:50 pl-team Exp $<br>
-$OpenBSD: faq14.html,v 1.8 2004/04/26 18:16:25 jufi Exp $
+Originally [OpenBSD: faq14.html,v 1.105 ]<br>
+$Translation: faq14.html,v 1.12 2004/05/05 20:53:19 pl-team Exp $<br>
+$OpenBSD: faq14.html,v 1.9 2004/05/09 09:48:24 saad Exp $
 </small>
 
 </body>
