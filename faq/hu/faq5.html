@@ -1,0 +1,780 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+  <title>5 - Rendszer Építése Forrásból</title>
+  <link rev="made" href="mailto:www@openbsd.org">
+  <meta name="resource-type" content="document">
+  <meta name="description" content="OpenBSD FAQ oldal">
+  <meta name="keywords" content="openbsd,faq">
+  <meta name="distribution" content="global">
+  <meta name="copyright" content="This document copyright 1998-2004 by OpenBSD.">
+  <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-2">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org.  Please keep it this way -->
+
+<a href="../../hu/index.html">
+<img alt="[OpenBSD]" src="../../images/smalltitle.gif" height="30" width="141" border="0"></a>
+
+<p>
+<font color="#0000e0">
+<a href="index.html">[FAQ Index]</a>
+<a href="faq4.html">[4. Fejezet - Telepítési Útmutató]</a>
+<a href="../faq6.html">[6. Fejezet - Hálózat]</a>
+
+</font>
+<h1><font color="#e00000">5 - Rendszer Építése Forrásból</font></h1>
+<hr>
+
+<p>
+<h3>Tartalom</h3>
+<ul>
+  <li><a href="#Flavors">5.1 - OpenBSD Kiadások</a> 
+  <li><a href="#Why">5.2 - Miért van szükségem egyedi rendszermagra?</a> 
+  <li><a href="#Options">5.3 - Rendszermag konfigurációs fájlok</a> 
+  <li><a href="#Building">5.4 - Egyedi rendszermag építése</a> 
+  <li><a href="#BootConfig">5.5 - Konfigurálás Rendszerindításkor</a> 
+  <li><a href="#VerboseBoot">5.6 - Hogyan kapjunk még bővebb kimenetet
+    rendszerindítás során</a>
+  <li><a href="#config">5.7 - A rendszermag megváltoztatása a config(8)
+    segítségével</a> 
+  <li><a href="#buildprobs">5.8 - Fordításkor és Építéskor tapasztalható
+    általános problémák</a>
+    <ul>
+      <li><a href="#sig11">5.8.1 - Az építés megáll "Signal 11" hibával</a>
+      <li><a href="#snake">5.8.2 - "make build" megáll "cannot open output
+        file snake: is a directory" üzenettel</a> 
+    </ul>
+  <li><a href="#BldRelease">5.9 - Hogyan építsek egy OpenBSD kiadást?</a>
+</ul>
+<hr>
+<br>
+<a name="Flavors"></a>
+<h2>5.1 - az OpenBSD ízek</h2>
+<!-- XXXversion - revise doodle -->
+Az OpenBSD-nek három kiadása (flavor = íz, aroma, illat, ahogy az
+OpenBSD-sek hívják) létezik:
+<ul>
+  <li><b>-release:</b> Az OpenBSD-nek az a verziója, amely 6
+    hónaponként került kiadásra CD-n 
+  <li><b>-stable:</b> A release, plusz azok a kritikus foltok,
+    javítások, amelyek fontosak a biztonságos és stabil működéshez 
+  <li><b>-current:</b> Az OpenBSD ``éppen aktuális'' verziója, amely
+    fejlesztés alatt áll, és amelyből a következő -release lesz 
+</ul>
+Grafikusan az ízek fejlődése valahogy így néz ki:<br>
+<blockquote>
+<pre>
+       ,------o-----------o----X                    3.3 Stable
+       |      .           .
+       |      .    ,------o---------o----X          3.4 Stable
+       |      .    |      .         .
+       |      .    |      .    ,----o----------o--&gt; 3.5 Stable
+       |      .    |      .    |    .          .
+       |      .    |      .    |    .    ,-----o--&gt; 3.6 Stable
+       |      .    |      .    |    .    |     .
+       |      .    |      .    |    .    |     .
+ --&gt;3.3Rel-----&gt;3.4Rel-----&gt;3.5Rel-----&gt;3.6Rel----&gt; Current 
+
+       Idő ---&gt;
+
+
+</pre>
+</blockquote>
+
+<p>
+A kód fa minden hatodik hónapban ágazik el <i>-current</i>, <i>-release</i> és
+<i>-stable</i> ágakra -- <i>-release</i> (kiadás) egy befagyott pont
+(egy "Jelzés") a forrás fa történelmében - sosem változik meg és ez az
+ami fenn van a <a href="../../orders.html">CD-ken</a> és az
+<a href="../../hu/ftp.html">FTP kiszolgálókon</a>. A <i>-Current</i> amelyben az
+aktív munka folyik, és amelyből az OpenBSD következő kiadása (<i>-release</i>)
+lesz.
+
+<p>
+A <i>-stable</i> (avagy más néven a "Folt ág - Patch branch") a <i>-release</i>
+kiadáson alapul, és mint ahogy ez jól látható egy újabb ág az OpenBSD
+fejlesztési útján. Amint fontos javítások kerülnek a <i>-current</i> ágba,
+ezeket belekerülnek ("back port") a <i>-stable</i> ágakba is. A fenti ábrán
+látható&nbsp; függőleges pontvonalak azok a hibajavítások amelyeket
+beleépítettek a <i>-stable</i> ágba. Ezen kívül az is látható a fenti
+példában, hogy a <i>3.3-stable</i> ág befejeződik a <i>3.5-release</i>
+kiadásakor, a <i>3.4-stable</i> ág pedig a <i>3.6-release</i> kiadásakor
+-- régebbi kiadások általában további két kiadásig vannak támogatva.
+Sok erőforrásba és időbe kerül a régebbi kiadások támogatását fenntartani
+és habár szeretnénk a régebbi kiadásokat is támogatni, mégis inkább az új
+szolgáltatásokra koncentrálunk. A <i>-stable</i> ágat a tervezése miatt
+igen könnyű felépíteni az ugyanolyan verziójú <i>-release</i>-ből
+(azaz pl. a <i>3.6-release</i>-ből <i>3.6-stable</i>-re).
+
+<p>A <i>-stable</i> ág egy <i>-release</i> plusz az
+<a href="../../hu/errata.html">errata oldalon</a> megtalálható foltok és néhány
+olyan egyszerűbb javítás, amelyből nem érdemes errata feljegyzést készíteni.
+Általában a <i>-stable</i> működése megegyezik az alapjául szolgáló
+<i>-release</i> működésével. 
+Ha a <a href="http://www.openbsd.org/cgi-bin/man.cgi">kézikönyvet
+(man pages)</a> át kell írni egy változás miatt, akkor az valószínűleg
+nem fog belekerülni a <i>-stable</i>-be. Más szavakkal, új eszköz támogatása
+NEM lesz hozzáadva a <i>-stable</i>-hez és új szolgáltatás is csak akkor ha
+feltétlenül szükséges. 
+<p>
+Vigyázat: <i>-current</i> egy mozgó célpont. Percről percre változik
+és többször megváltozhat az alatt az idő alatt is amíg letöltöd a forráskódot.
+Mint ezt már korábban említettük, nincs arra semmi garancia, hogy a rendszer
+lefordítható, sem arra, hogy működik (persze van rá remény). Teljesen
+lehetséges, mint ahogy gyakran megtörténik, hogy a <i>-current</i>
+forrását nem lehet lefordítani, majd öt perccel későbbi állapot teljesen
+rendben működik. Ha nem akarsz ilyen dolgokkal foglalkozni, akkor jobb ha
+távol maradsz a <b><i>-current</i>-től.</b>
+
+<p>
+A legtöbb felhasználónak a <i>-stable</i> vagy a <i>-release</i> verzió
+a megfelelő. Elmondható, hogy sok ember használja "éles" rendszeren a
+<i>-current</i>-et, mivel fontos, hogy legyenek akik megtalálják a hibákat
+és tesztelik az új szolgáltatásokat. Ha azonban nem tudod, hogy hogyan kell
+megfelelően a hibákkal bánni, jelenteni, elemezni, akkor ne mondd magadnak
+(és másnak sem), hogy azzal segíted a projektet, hogy <i>-current</i>-et
+futtatsz. A "Nem működik!" nem egy
+<a href="../../report.html#bugtypes">használható hibajelentés</a>.
+"A pciide meghajtó legutolsó változtatása nem kompatibilis a Slugchip-alapú
+IDE csatolómmal, a működő és a hibás rendszerem dmesg-je itt van..."
+lehet egy használható jelentés.
+
+<p>
+Előfordulhat azonban, hogy "normál" felhasználók is szeretnének a penge
+élén táncolni és <i>-current</i>-rendszert futtatni. A leggyakoribb ok,
+hogy a felhasználónak van olyan eszköze amelyet nem támogat a <i>-release</i>
+(és így a <i>-stable</i> sem), illetve a <i>-current</i> valamely új
+szolgáltatását kívánja használni. Ebben az esetben két választás lehet:
+a <i>-current</i> használata illetve hogy nem használja az eszközt.
+És valószínűleg a <i>-current</i> használata a kisebbik rossz. De azt ne
+várja, hogy a fejlesztők elkényeztetik majd.
+
+<h3>Snapshot-ok</h3>
+Az OpenBSD hivatalos kiadásai között úgynevezett pillanatképeket (snapshot)
+lehet leölteni az <a href="../../hu/ftp.html">FTP siteok</a>-ról.
+Mint azt a neve is mutatja ezek olyan kiadások, amelyek a kód egy aktuális
+pillanatában készültek, és amit a fejlesztő kivett a forrás fából és egy adott
+platformra felépített. Bizonyos platformokon akár NAPOK is eltelhetnek,
+amíg a snapshot felépül és elkészül és készen áll a terjesztésre. Nincs semmi
+biztosíték arra, hogy egy snapshot teljesen működőképes vagy egyáltalán lehet
+telepíteni. Gyakran egy tesztelésre váró változtatások váltják ki egy snapshot
+elkészítését. Bizonyos platformokon majdnem naponta készülnek snapshotok,
+másokon sokkal ritkábban. Ha <i>-current</i>-et akarsz futtatni, akkor gyakran
+a legutolsó snapshot az amire szükséged van, és egy snapshotra frissíteni jó
+kiinduló pont lehet azelőtt, mielőtt megkísérelsz <i>-current</i>-et építeni.
+
+<p>
+Gyakran felteszik a kérdést, hogy meg lehet-e szerezni a forráskódnak pontosan
+azt a másolatát, amelyből a snapshot készült. A válasz az, hogy nem.
+Először is ennek nincs igazán semmi haszna. Másodszor, snapshotok akkor
+készülnek ha van rá valami igény, ha az idő megengedi illetve ha van
+rá elég erőforrás. Gyors platformokon számos snapshot is készülhet egy nap.
+Lassabbakon akár egy hétig vagy tovább is tarthat amíg elkészül.
+Különböző jelölések vagy megjegyzések elhelyezése a forrásban minden egyes
+snapshot készítésekor pedig nem igazán praktikus.
+
+<h3>A dolgok szinkronban tartása</h3>
+Fontos megérteni, hogy az OpenBSD egy Operációs Rendszer, egy egységként kell
+kezelni, nem pedig egy rendszermag egy csomó segédprogrammal összeragasztva.
+Mindig meg kell róla győződnöd, hogy a rendszermag (kernel), a "userland"
+(a szükséges segédprogramok és fájlok) és a
+<a href="../../ports.html"><tt>ports</tt></a> fa szinkronban van-e, mert ha nem
+akkor kellemetlen dolgok történhetnek. Más szóval (mivel az emberek állandóan
+elkövetik ezt a hibát), nem futtathatod a vadonatúj portokat egy több hónapos
+rendszeren, vagy nem teheted meg, hogy felépítesz egy rendszermagot a
+<i>-current</i> forrásából és elvárod, hogy működjön egy <i>-release</i>
+userland-el. Igen, ez azt jelenti, hogy frissítened kell a rendszered kell az
+egész rendszered, ha egy olyan programot akarsz használni, amit csak
+ma adtak hozzá a ports fához. Elnézést ezért, de az OpenBSD erőforrásai eléggé
+korlátozottak.
+
+<p>
+Azt is meg kell érteni, hogy amikor <a href="../upgrade-minifaq.html">forrásból
+frissíted a rendszert</a>, akkor a frissítés (aktualizálás) csak egy irányba
+működik: régebbiről az újabb felé, illetve a <i>-stable</i>-től a
+<i>-current</i> felé. Nem teheted meg, hogy ha mondjuk <i>3.6-current</i>-et
+(vagy snapshot-ot) futtatsz, majd rájössz, hogy túlságosan veszélyesen élsz és
+inkább visszalépsz a <i>3.6-stable</i>-re. Magadra maradsz hogyha más módszert
+választasz mint ami támogatott arra, hogy újraépítsd a rendszered a semmiből,
+és ne várj segítséget az OpenBSD fejlesztői csapattól.
+
+<p>
+Igen, ez azt jelenti, hogy nagyon jól meg kell gondolnod mielőtt ráveszed
+magad a <i>-current</i> használatára.
+
+<p>
+<a name="Why"></a>
+
+<h2>5.2 - Miért van szükségem egyedi (custom) rendszermagra?</h2>
+
+<p>
+Valójában valószínűleg nincs.
+
+<p>
+Az egyedi rendszermag egy olyan rendszermag, amelyet nem az adott "gyári" ún.
+<tt>GENERIC</tt> konfigurációs fájl segítségével építettek. Az egyedi rendszermag
+alapja lehet a <a href="#Flavors"><i>-release, -stable</i> vagy 
+<i>-current</i></a> kód, ugyanúgy ahogy a <tt>GENERIC</tt> rendszermagé is lehet.
+Amíg az egyedi <tt>GENERIC</tt> rendszermagod fordítását támogatja az OpenBSD csapat,
+addig a custom rendszermagét <i>nem</i>.
+
+<p>
+A szabvány OpenBSD rendszermag konfigurációt (<tt>GENERIC</tt>) arra tervezték,
+hogy megfeleljen a legtöbb embernek. Többen megbontják a rendszerüket azzal,
+hogy megpróbálják a rendszermagot állítgatni, hogy ezzel javítsa a rendszere
+teljesítményét. Néhányan azt hiszik, hogy mindenképpen testre kell szabni a
+rendszermagot és a rendszert a megfelelő teljesítményhez, de ez nem igaz az
+OpenBSD-re. Csak a megfelelően képzett és hozzáértő felhasználóknak és csak
+nagyon szükséges esetekben, bizonyos alkalmazásoknál kell az egyedi,
+testreszabott rendszermaggal vagy rendszerrel.<br>
+
+<p>
+Néhány ok amiért akarhatsz illetve szükséged lehet egyedi rendszermag építésére:
+
+<ul>
+  <li>Tényleg tudod, hogy mit csinálsz és cipőkanállal akarod belegyűrni
+  az OpenBSD-t egy kevés RAM-mal rendelkező rendszerbe úgy, hogy eltávolítod
+  a szükségtelen eszközmeghajtókat. 
+  <li>Tényleg tudod, hogy mit csinálsz és el akarsz távolítani alapbeállítású
+  opciókat vagy be akarsz állítani olyan opciókat amelyek alapértelmezésben
+  nincsenek (és persze erre jó okod van). 
+  <li>Tényleg tudod, hogy mit csinálsz és engedélyezni akarsz kísérleti
+  opciókat.
+  <li>Tényleg tudod, hogy mit csinálsz és van valamilyen különleges igényed
+  ami nincs a <tt>GENERIC</tt>-ben, és nem fogod kérdezgetni, hogy miért nem
+  működik akkor ha valami mégsem menne. 
+</ul>
+
+<p>
+Néhány ok amiért nem kéne egyedi rendszermagot építened:
+
+<ul>
+  <li>Nincs rá szükséged, általában. 
+  <li>Nem lesz gyorsabb a rendszered. 
+  <li>Valószínűleg kevésbé lesz megbízható a rendszered. 
+  <li>Nem fogsz támogatást kapni a fejlesztőktől. 
+  <li>A fejlesztők csak akkor foglalkoznak komolyan egy problémával, ha azt a
+  <tt>GENERIC</tt> rendszermaggal is elő tudod állítani. 
+  <li>A többi felhasználó és a fejlesztők kinevetnek ha elrontod a rendszered. 
+  <li>Az egyedi fordítási opciók sokkal gyakrabban okoznak fordítási problémát
+  mint a rendszerteljesítményt javítanák. 
+</ul>
+
+<p>
+Az eszközmeghajtók eltávolítása gyorsíthatja a rendszerindítást, viszont
+megnehezítik a helyreállítást hardver hiba esetén, sőt gyakran ez nem is
+sikerül. Az eszközmeghajtók eltávolításától <i>nem lesz </i>észrevehetően
+gyorsabb a rendszered, habár a rendszermag mérete kisebb lesz. 
+A debug és hibaellenőrzés eltávolítása számottevően javíthatja a teljesítményt,
+viszont lehetetlenné teszi a hibakeresést ha valami mégis elromlik.
+
+<p>
+Tehát még egyszer: a fejlesztők nem foglalkoznak az olyan hibajelentésekkel
+amelyek egyedi rendszermagról szólnak, kivéve akkor, ha a hibát elő lehet
+állítani a <tt>GENERIC</tt> rendszermaggal is. Mi szóltunk.
+
+<p>
+<a name="Options"></a>
+
+<h2>5.3 - Rendszermag konfigurációs fájlok</h2>
+Az OpenBSD rendszermag előállítását a konfigurációs fájlok határozzák meg,
+amelyek a <tt>/usr/src/sys/arch/<i>&lt;arch&gt;</i>/conf/</tt>
+katalógusban találhatók alapértelmezésben. Minden architektúrának
+saját <tt>GENERIC</tt> fájlja van, amellyel elkészíthető a szabvány OpenBSD
+rendszermag az adott platformra. Lehetnek egyéb konfigurációs fájlok,
+melyekkel egyéb célra szánt rendszermagok készíthetők, pl. kevés RAM-hoz vagy lemez
+nélküli munkaállomásokhoz.
+
+<p>
+A konfigurációs fájlt a
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=config&amp;sektion=8">config(8)</a>
+dolgozza fel, amely elkészíti és feltölti a fordítási katalógust a 
+<tt>../compile</tt> alatt, amely egy tipikus telepítésben az
+<tt>/usr/src/sys/arch/<i>&lt;arch&gt;</i>/compile/</tt> katalógusban
+van. A config(8) ezen kívül elkészíti egy
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=make&amp;sektion=1">Makefile</a>-t
+és egyéb fájlokat amelyek szükségesek a rendszermag sikeres felépítéséhez.
+
+<p>
+Rendszermag Konfigurációs Opciók azok az opciók amelyeket hozzáadsz a rendszermag
+konfigurációhoz, hogy benne legyenek bizonyos szolgáltatásokat a saját
+rendszermagodban. Ennek segítségével pontosan csak azok a támogatások lesznek
+belefordítva amiket akarsz a felesleges támogatások nélkül. Rengeteg opció
+van amelyekkel testre szabhatod a rendszermagod. Itt most csak azokról lesz
+szó amelyek a leggyakrabban használatosak. Az opciók teljes listájához nézd
+meg az
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=options&amp;sektion=4">options(4)</a>
+kézikönyv (man) oldalt. Mivel ezek változhatnak időről időre, ezért
+bizonyosodj meg arról, hogy a man oldal verziója ugyan az mint az
+OpenBSD-jé amelyet építesz. Ezen kívül tanulmányozhatod az
+architektúrádhoz tartozó példa konfigurációs fájlt is.
+
+Ne adj hozzá, törölj vagy változtass meg opciókat a rendszermagban
+hacsak nincs rá igazán jó okod! Az egyetlen konfiguráció amit az
+OpenBSD csapat támogat a GENERIC, az
+<tt>/usr/src/sys/arch/&lt;<i>arch</i>&gt;/conf/GENERIC</tt>
+és az <tt>/usr/src/sys/conf/GENERIC</tt> fájlokban lévő opciók
+kombinációja, <i>abban a formában ahogy az OpenBSD
+csapat szállította</i> (azaz NINCS átszerkesztve). Egy átszerkesztett
+rendszermag hibajelentésekor a szinte mindig azt mondják, hogy
+próbáld reprodukálni a hibát egy GENERIC rendszermaggal. Nem minden
+opció kompatibilis egymással és bizonyos opciókra mindenképp szükség
+van a rendszer működéséhez. Arra sincs garancia, hogy ha sikerül is
+lefordítanod egy egyedi rendszermagot az tényleg futni is fog.
+
+<p>
+Itt láthatók a platform specifikus konfigurációs fájlok:
+
+<ul>
+<li><a href="http://www.openbsd.org/cgi-bin/cvsweb/src/sys/arch/alpha/conf/">alpha Rendszermag Konfigurációs Fájlok </a> 
+<li><a href="http://www.openbsd.org/cgi-bin/cvsweb/src/sys/arch/i386/conf/">i386 Rendszermag Konfigurációs Fájlok</a> 
+<li><a href="http://www.openbsd.org/cgi-bin/cvsweb/src/sys/arch/macppc/conf/">macppc Rendszermag Konfigurációs Fájlok</a> 
+<li><a href="http://www.openbsd.org/cgi-bin/cvsweb/src/sys/arch/sparc/conf/">sparc Rendszermag Konfigurációs Fájlok</a> 
+<li><a href="http://www.openbsd.org/cgi-bin/cvsweb/src/sys/arch/sparc64/conf/">sparc64 Rendszermag Konfigurációs Fájlok</a> 
+<li><a href="http://www.openbsd.org/cgi-bin/cvsweb/src/sys/arch/vax/conf/">vax Rendszermag Konfigurációs Fájlok</a> 
+<li><a href="http://www.openbsd.org/cgi-bin/cvsweb/src/sys/arch/hppa/conf/">hppa Rendszermag Konfigurációs Fájlok</a> 
+<li><a href="http://www.openbsd.org/cgi-bin/cvsweb/src/sys/arch/">Egyéb Architektúrák</a> 
+</ul>
+
+<p>
+Ha jól megnézed ezeket a fájlokat akkor észrevehetsz egy ehhez
+hasonló sort a fájl tetejéhez közel:
+
+<pre>
+     include "../../../conf/GENERIC"
+</pre>
+
+Ez egy hivatkozás egy másik konfigurációs fájlra, amely a platform független
+opciókat tartalmazza. Amikor elkészíted a saját Rendszermag Config-od,
+mindenképpen nézd át a
+<a href="http://www.openbsd.org/cgi-bin/cvsweb/src/sys/conf/GENERIC">sys/conf/GENERIC</a>
+fájlt.
+
+<p>
+A rendszermag konfigurációs opcióknak a következő formában kell lenniük a
+konfigurációs fájlban:
+
+<blockquote>
+<tt>option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</tt><i>név</i>
+</blockquote>
+Például a "DEBUG" opció engedélyezéséhe a rendszermagban a következő sort
+kell beírni:
+<pre>
+     option      DEBUG
+</pre>
+Az OpenBSD rendszermagban lévő opciók le lesznek fordítva compiler 
+előfeldolgozó (preprocessor) opciókká, így egy olyan opciót mint a
+DEBUG meg lehetett volna adni fordításkor a -DDEBUG kapcsolóval,
+ami viszont egyenértékű egy <tt>#define DEBUG</tt>-gal a rendszermag forrásban.
+
+<p>
+Előfordulhat, hogy ki akarsz kapcsolni egy olyan opciót amely korábban
+engedélyezett volt, tipikusan a "<tt>src/sys/conf/GENERIC</tt>" fájlban.
+Ugyan tudnád szerkeszteni ennek a fájlnak egy másolatát is, de sokkal jobb
+megoldás lehet az <i>rmoption</i> utasítás használata. Például ha tényleg
+ki akarod kapcsolni a a rendszermagban lévő hibakeresőt - debugger - 
+(<i>ami nem ajánlott!</i>), akkor hozzáadhatsz egy ilyen sort mint ez
+<pre>
+     rmoption DDB
+</pre>
+a rendszermag konfigurációs fájlhoz. A <tt>option DDB</tt> definiálva van a
+<tt>src/sys/conf/GENERIC</tt> fájlban, de a fenti <tt>rmoption</tt> sor
+inaktiválja.
+
+<p>
+Még egyszer kérünk, nézd meg a
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=options&amp;sektion=4">options(4)</a>
+kézikönyv (man) oldalt további információkért az opciók leírásával kapcsolatban.
+Ezen kívül sok olyan opció van, amelyeknek van saját man oldaluk -- mindig
+olvass el mindent egy opcióról mielőtt hozzáadod vagy eltávolítod a
+rendszermagból.
+
+<p><a name="Building"></a>
+
+<h2>5.4 - Egyedi rendszermag építése</h2>
+
+<p>
+Az egyedi rendszermag készítésének teljes leírása megtalálható a
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=afterboot&amp;sektion=8">afterboot(8)</a>
+man oldalon.
+
+<p>
+A rendszermag lefordításához először is szükséged van az forráskódra. 
+Ez megtalálható mind a 
+<a href="../../orders.html">hivatalos CD-ROM</a>-on (3. lemez) és az
+<a href="../../hu/ftp.html">FTP helyeken</a>. A következő példa feltételezi,
+hogy a CD3 fel van csatolva az /mnt katalógusba:
+
+<blockquote>
+<pre>
+# <strong>cd /usr/src</strong>
+# <strong>tar xvzf /mnt/src.tar.gz</strong>
+</pre>
+</blockquote>
+
+<b>Megjegyzés:</b> Ha FTP-n keresztül töltesz le, akkor KÉT fájlt fogsz
+találni, az <i>src.tar.gz</i>-t és a <i>sys.tar.gz</i>-t. Az első az ún.
+"userland" -- a rendszermagon kívül minden, a második maga a rendszermag
+forrása. Töltsd le és csomagold ki mindkettőt, mivel a legtöbb felhasználónak
+mindkettőre szüksége van. A CD-ROM-on ezek egy fájlban vannak.
+
+<p>
+Ezek után a saját rendszermag készítéséhez a legegyszerűbb a GENERIC
+rendszermag használata. Ez a <tt>/usr/src/sys/arch/$ARCH/conf/GENERIC</tt>
+katalógusban található, ahol az $ARCH a te architektúrád. Egyéb példa
+konfigurációs fájlok is vannak ugyanebben a katalógusban. 
+Most nézzünk két példát a rendszermag fordításra. Az első egy 
+rendszermag fordítás csak olvasható forrásfa esetén. A második pedig
+egy írható forrásfa fordítása.
+
+<blockquote>
+<pre>
+# <strong>cd /akarhova</strong>
+# <strong>cp /usr/src/sys/arch/$ARCH/conf/VALAMIFILE .</strong>
+# <strong>vi VALAMIFILE</strong>   <i>(a kívánt változtatások elvégzése)</i>
+# <strong>config -s /usr/src/sys -b . VALAMIFILE</strong>
+</pre>
+ezután vagy:
+<pre>
+    # <strong>make depend</strong>
+         <b><i>- VAGY -</i></b>
+    # <strong>make clean && make depend</strong>
+# <strong>make</strong>
+</pre>
+</blockquote>
+
+Akkor kell futtatnod a '<tt>make depend</tt>' parancsot, ha valamit
+változtattál a forrásfában (ebbe beletartozik a rendszerfrissítés és a
+foltozás is), más szavakkal, szinte mindig. Ha a config azt mondja,
+hogy futtasd a '<tt>make clean</tt>'-t is, akkor azt a '<tt>make depend</tt>'
+futtatása előtt kell megtenned.
+
+<p>
+Ha megváltoztattad a rendszermag konfigurációs beállításokat, és/vagy
+jelentősebb változtatásokat végeztél a forrásfában, akkor a
+'<tt>make clean</tt>' parancsot kell használnod a fenti '<tt>make depend</tt>'
+helyett. Mindig biztonságos a '<tt>make clean</tt>' használata, habár hosszabb
+fordítási időt eredményez, mivel sokkal többet kell újrafordítani.
+
+<p>
+Egy írható forrásfában való rendszermag fordításhoz a következőt kell tenni:
+
+<blockquote>
+<tt>
+# <strong>cd sys/arch/$ARCH/conf</strong><br>
+# <strong>vi VALAMIFILE</strong><i> (a kívánt változtatások elvégzése)</i><br>
+# <strong>config VALAMIFILE</strong><i> (itt olvashatsz róla többet:
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=config&amp;sektion=8">config(8)</a>)</i><br>
+# <strong>cd ../compile/VALAMIFILE</strong><br>
+# <strong>make</strong><br>
+</tt>
+</blockquote>
+
+<p>
+Ahol az $ARCH az általad használt architektúra (pl. i386).
+Ezen kívül csinálhatsz egy <strong>make depend</strong> is, hogy
+beállítsd a függőségeket a következő rendszermag fordításhoz.
+
+<p>
+A rendszermag elhelyezése a megfelelő helyre:
+
+<blockquote>
+<pre>
+# <strong>cp /bsd /bsd.old</strong>
+# <strong>cp /sys/arch/$ARCH/compile/VALAMIFILE/bsd /bsd</strong>
+</pre>
+</blockquote>
+
+Ha a régi rendszermaggal akarsz indítani rendszerindításkor, akkor írd be a
+boot promptnál:
+<blockquote>
+<pre>
+boot&gt; <strong>bsd.old</strong>
+</pre>
+</blockquote>
+és a régi rendszermag töltődik be a /bsd helyett.
+
+<p>
+Néha, ha új rendszermagot építesz szükséges lehet új bootblokkokat
+telepíteni. Ehhez olvasd el a <a href="../faq14.html#InstBoot">FAQ 14,
+Bootblokkok Telepítése</a> oldalt, amely elmagyarázza az OpenBSD
+Bootloader használatát.
+
+<p>
+<a name="BootConfig"></a>
+<h2>5.5 - Konfigurálás Rendszerindításkor</h2>
+
+<p>
+Néha azt veheted észre, hogy a rendszermag ugyan megtalálja az eszközöd
+de nem jó IRQ-n. Viszont azonnal szeretnéd használni az eszközt.
+Semmi gond. Anélkül, hogy újra kellene fordítani a rendszermagot
+megoldhatod a problémát az OpenBSD a rendszermag rendszerindításkori
+konfigurálásával. Ez csak egyetlen alkalomra segít ki, ha újraindítod a
+gépet akkor meg kell ismételned az eljárást. Tehát ez csak egy
+átmeneti megoldás, később ki kell javítanod és újrafordítanod a
+rendszermagot. Ehhez a rendszermagban benne kell lennie a
+<strong>option BOOT_CONFIG</strong> opciónak. Ez benne van a
+GENERIC rendszermagban.
+
+<p>
+Ennek a dokumentumnak a nagy része megtalálható a
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=boot_config&amp;sektion=8">boot_config(8)</a>
+kézikönyv oldalon.
+
+<p>
+A Felhasználói Rendszermag Konfigurációhoz (User Kernel Config - UKC)
+a -c opciót kell használni rendszerindításkor.
+
+<blockquote>
+<pre>
+boot&gt; <strong>boot hd0a:/bsd -c</strong>
+</pre>
+</blockquote>
+Illetve az a rendszermag amit be akarsz tölteni. Ekkor feljön az UKC
+prompt. Itt kiadhatsz parancsokat közvetlenül a rendszermagnak amelyekkel
+meghatározhatsz eszközöket amelyeket meg akarsz változtatni, letiltani
+vagy akár engedélyezni. 
+
+<p>
+Itt a listája a legáltalánosabb UKC parancsoknak:
+
+<ul>
+<li><tt>add <strong>eszköz</strong></tt> - Eszköz hozzáadása egy másik
+    lemásolásával
+<li><tt>change <strong>eszközszám | eszköz </strong></tt> - Egy vagy több
+    eszköz megváltoztatása
+<li><tt>disable <strong>eszközszám | eszköz </strong></tt> - Egy vagy több
+    eszköz letiltása
+<li><tt>enable <strong>eszközszám | eszköz </strong></tt> - Egy vagy több
+    eszköz engedélyezése
+<li><tt>find <strong>eszközszám | eszköz </strong></tt> - Egy vagy több
+    eszköz keresése
+<li><tt>help</tt> - A parancsok rövid leírása
+<li><tt>list</tt> - MINDEN ismert eszköz listázása
+<li><tt>exit/quit</tt> - Rendszerindítás folytatása
+<li><tt>show <strong>[attr [érték]]</strong></tt> - Az attribútummal ill.
+    opcionálisan az adott értékkel rendelkező eszközök megmutatása.
+</ul>
+
+<p>
+Miután bekonfiguráltad az eszközeidet használd a <tt>quit</tt> vagy az
+<tt>exit</tt> parancsot a rendszerindítás folytatásához. Majd ezután
+ezt a változást véglegesítsd a rendszermag image -ben,
+<a href="faq5.html#config">A rendszermag
+megváltoztatása a config(8) segítségével</a> fejezetben leírt módon.
+
+<p><a name="VerboseBoot"></a>
+<h2>5.6 - Hogyan kapjunk még bővebb kimenetet rendszerindítás során</h2>
+A bőségesebb kimenet nagyon hasznos lehet a rendszerindításkori problémák
+megoldásához. Ha például az a probléma, hogy a rendszer nem indul el
+egy rendszerindító flopiról és több információra van szükséged, akkor
+egyszerűen csak indítsd újra a rendszert. Amikor megkapod a boot
+promptot akkor add meg a -c opciót. Ekkor bekerülsz az UKC-be, ahol
+a következőt írd be:
+<blockquote>
+<pre>
+UKC&gt; <strong>verbose</strong>
+autoconf verbose enabled
+UKC&gt; <strong>quit</strong>
+</pre>
+</blockquote>
+
+<p>
+Most már rendkívül bőséges kimenetet fogsz kapni.
+
+<p>
+<a name="config"></a>
+<h2>5.7 - A rendszermag megváltoztatása a config(8) segítségével</h2>
+
+<p>
+Az <b>-e</b> és az <b>-u</b> opciók a
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=config&amp;sektion=8">config(8)</a>
+használatakor nagyon hasznos lehet és megtakaríthatjuk vele a rendszermag
+újrafordításának idejét.
+Az <b>-e</b> flag engedélyezi, hogy beléphessünk az UKC-be
+(Felhasználói Rendszermag Konfiguráció - User Kernel Config) egy futó
+rendszeren. Ezek a változások azután a következő rendszerindításkor
+lépnek életbe. Az <b>-u</b> flag leteszteli, vajon történt-e valamilyen
+változás a futó rendszermagban rendszerindításkor, azaz használtad a
+<b>boot -c</b> kapcsolót, hogy belépj az UKC-ba mikor indult a rendszered.
+
+<p>
+A következő példa megmutatja hogyan kell letiltani az ep* eszközöket a
+rendszermagban. A biztonság kedvéért használd a <b>-o</b> opciót, amely
+egy általad megadott fájlba írja ki a változtatást.
+Például: <strong>config -e -o bsd.new /bsd</strong> 
+a bsd.new fájlba írja a változásokat. A következő példa nem használja az
+<b>-o</b> opciót, ezért a változások figyelmen kívül maradnak és nem
+kerülnek kiírásra a rendszermag binárisába. A hiba és figyelmeztető
+üzenetekkel kapcsolatos további információkért olvasd el a
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=config&amp;sektion=8">config(8)</a>
+man oldalt.
+
+<blockquote>
+<pre>
+$ <strong>sudo config -e /bsd</strong>
+OpenBSD 3.6 (GENERIC) #59: Fri Sep 17 12:32:57 MST 2004
+    deraadt@i386.openbsd.org:/usr/src/sys/arch/i386/compile/GENERIC
+warning: no output file specified
+Enter 'help' for information
+ukc&gt; ?
+        help                            Command help list
+        add         dev                 Add a device
+        base        8|10|16             Base on large numbers
+        change      devno|dev           Change device
+        disable     attr val|devno|dev  Disable device
+        enable      attr val|devno|dev  Enable device
+        find        devno|dev           Find device
+        list                            List configuration
+        lines       count               # of lines per page
+        show        [attr [val]]        Show attribute
+        exit                            Exit, without saving changes
+        quit                            Quit, saving current changes
+        timezone    [mins [dst]]        Show/change timezone
+        nmbclust    [number]            Show/change NMBCLUSTERS
+        cachepct    [number]            Show/change BUFCACHEPERCENT
+        nkmempg     [number]            Show/change NKMEMPAGES
+        shmseg      [number]            Show/change SHMSEG
+        shmmaxpgs   [number]            Show/change SHMMAXPGS
+ukc&gt; <strong>list</strong>
+  0 audio* at sb0|sb*|gus0|pas0|sp0|ess*|wss0|wss*|ym*|eap*|eso*|sv*|neo*|cmpci*
+|clcs*|clct*|auich*|autri*|auvia*|fms*|uaudio*|maestro*|esa*|yds*|emu* flags 0x0
+  1 midi* at sb0|sb*|opl*|opl*|opl*|opl*|ym*|mpu*|autri* flags 0x0
+  2 nsphy* at aue*|xe*|ef*|gx*|stge*|bge*|nge*|sk*|ste*|sis*|sf*|wb*|tx*|tl*|vr*
+|ne0|ne1|ne2|ne*|ne*|ne*|dc*|dc*|rl*|fxp*|fxp*|xl*|xl*|ep0|ep0|ep0|ep*|ep*|ep*|e
+p*|ep* phy -1 flags 0x0
+  3 nsphyter* at aue*|xe*|ef*|gx*|stge*|bge*|nge*|sk*|ste*|sis*|sf*|wb*|tx*|tl*|
+vr*|ne0|ne1|ne2|ne*|ne*|ne*|dc*|dc*|rl*|fxp*|fxp*|xl*|xl*|ep0|ep0|ep0|ep*|ep*|ep
+*|ep*|ep* phy -1 flags 0x0
+  4 qsphy* at aue*|xe*|ef*|gx*|stge*|bge*|nge*|sk*|ste*|sis*|sf*|wb*|tx*|tl*|vr*
+|ne0|ne1|ne2|ne*|ne*|ne*|dc*|dc*|rl*|fxp*|fxp*|xl*|xl*|ep0|ep0|ep0|ep*|ep*|ep*|e
+p*|ep* phy -1 flags 0x0
+  5 inphy* at aue*|xe*|ef*|gx*|stge*|bge*|nge*|sk*|ste*|sis*|sf*|wb*|tx*|tl*|vr*
+|ne0|ne1|ne2|ne*|ne*|ne*|dc*|dc*|rl*|fxp*|fxp*|xl*|xl*|ep0|ep0|ep0|ep*|ep*|ep*|e
+p*|ep* phy -1 flags 0x0
+  6 iophy* at aue*|xe*|ef*|gx*|stge*|bge*|nge*|sk*|ste*|sis*|sf*|wb*|tx*|tl*|vr*
+|ne0|ne1|ne2|ne*|ne*|ne*|dc*|dc*|rl*|fxp*|fxp*|xl*|xl*|ep0|ep0|ep0|ep*|ep*|ep*|e
+p*|ep* phy -1 flags 0x0
+  7 eephy* at aue*|xe*|ef*|gx*|stge*|bge*|nge*|sk*|ste*|sis*|sf*|wb*|tx*|tl*|vr*
+|ne0|ne1|ne2|ne*|ne*|ne*|dc*|dc*|rl*|fxp*|fxp*|xl*|xl*|ep0|ep0|ep0|ep*|ep*|ep*|e
+p*|ep* phy -1 flags 0x0
+  8 exphy* at aue*|xe*|ef*|gx*|stge*|bge*|nge*|sk*|ste*|sis*|sf*|wb*|tx*|tl*|vr*
+|ne0|ne1|ne2|ne*|ne*|ne*|dc*|dc*|rl*|fxp*|fxp*|xl*|xl*|ep0|ep0|ep0|ep*|ep*|ep*|e
+p*|ep* phy -1 flags 0x0
+[...snip...]
+ukc&gt; <strong>disable ep</strong>
+ 67 ep0 disabled
+ 68 ep* disabled
+ 69 ep* disabled
+155 ep0 disabled
+156 ep0 disabled
+157 ep* disabled
+158 ep* disabled
+210 ep* disabled
+ukc&gt; <strong>quit</strong>
+not forced
+  </pre>
+</blockquote>
+
+<p>
+A fenti példában minden ep* eszköz le van tiltva a rendszermagban és nem is
+lesznek lepróbálva. Bizonyos esetekben amikor az UKC-t használod
+rendszerindításkor a <b>boot -c</b> segítségével, szükséges lehet, hogy a
+változásokat véglegesen kiírd. Ehhez a <b>-u</b> opciót kell használnod.
+A következő példában belépünk az UKC-be, letiltjuk a wi(4) eszközt.
+Mivel ezeket a változásokat a boot -c segítségével csináltuk, ezért
+NEM véglegesek, csak akkor lesznek azok ha külön kiírjuk. Ez a példa
+kiírja a boot -c használatával végzett változtatásokat egy új 
+rendszermag binárisba, a bsd.new-ba.
+
+<blockquote>
+<pre>
+$ <strong>sudo config -e -u -o bsd.new /bsd</strong>
+OpenBSD 3.6 (GENERIC) #59: Fri Sep 17 12:32:57 MST 2004
+    deraadt@i386.openbsd.org:/usr/src/sys/arch/i386/compile/GENERIC
+Processing history...
+105 wi* disabled
+106 wi* disabled
+Enter 'help' for information
+ukc&gt; <strong>quit</strong>
+</pre>
+</blockquote>
+
+<p>
+<a name="buildprobs"></a>
+<h2>5.8 - Fordításkor és Építéskor Tapasztalható Általános Problémák</h2>
+<a name="sig11"></a>
+<h3>5.8.1 - Az építés megáll "Signal 11" hibával</h3>
+
+<p>
+OpenBSD és más programok építése forrásból sokkal jobban leterheli
+hardvert mint más feladatok, erőteljesebben használva a  CPU-t,
+a merevlemezt és a memóriát. Ezért ha a hardverednek van valamilyen
+problémája, ekkor sokkal nagyobb valószínűséggel fog előjönni mint
+máskor. Signal 11 hibák <i>tipikusan</i> hardver problémából erednek,
+gyakran memória hibából, de lehet CPU, alaplap, vagy túlmelegedés
+is az oka. Lehet, hogy a rendszered egyébként stabilan működik, mégsem
+tudsz vele lefordítani programokat.
+
+<p>
+A leghelyesebb ha kijavítod vagy kicseréled azokat az alkatrészeke
+amelyek a hibát okozzák, mivel ezek később is okozhatnak akár másmilyen
+problémákat is. Ha mégis van olyan hardvered amit mindenképpen szeretnél
+használni és egyéb más problémát nem okoz, akkor telepíts egy kiadás
+(release) vagy pillanatkép (snapshot) verziót.
+
+<p>További információkért nézd meg a
+<a href="http://www.bitwizard.nl/sig11/">Sig11 FAQ</a> oldalt.
+<a name="snake"></a>
+<h3>5.8.2 - "make build" megáll "cannot open output file snake: is
+a directory" üzenettel</h3>
+Ez két különböző hiba eredménye lehet:
+<ul>
+<li><b>Nem töltötted le vagy nem frissítetted megfelelően a CVS fát.</b>
+Mikor csinálsz egy CVS checkout-ot, mindenképpen használd a "<tt>-P</tt>"
+opciót. Mikor frissíted (update) a forrásfát CVS-szel, akkor használnod
+kell a "<tt>-Pd</tt>" opciókat a
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=cvs&amp;sektion=1">cvs(1)</a>
+-hez, mint ahogy ez olvasható az <a href="../../hu/anoncvs.html">anoncvs útmutató</a>,
+a <a href="../upgrade-minifaq.html">frissítés-minifaq</a> és a <a
+ href="../faq8.html#CVS">FAQ</a> leírásokban.
+Ezek az opciók biztosítják, hogy az új katalógusok hozzáadódjanak ill.
+a töröltek eltávolításra kerüljenek a fából ahogy az OpenBSD forrás változik.
+<li><b>Nem hoztad létre megfelelően az <tt>obj</tt> katalógust a
+rendszerépítés előtt.</b> A fa építése az <tt>/usr/obj</tt> katalógus
+nélkül nem támogatott.
+</ul>
+
+Fontos, hogy figyelmesen kövesd az utasításokat amikor
+<a href="../../hu/anoncvs.html">megszerzed és frissíted</a> a forráskódot
+és amikor <a href="../upgrade-minifaq.html">építed</a> a rendszert.
+<a name="BldRelease"></a>
+<h2>5.9 - Hogyan építsek egy OpenBSD kiadást?</h2>
+Miután felépítetted a rendszered elkészíthetsz egy OpenBSD
+<a href="faq4.html#FilesNeeded">fájlkészletet</a> amit ezután arra használhatsz,
+hogy más gépekre is feltelepítsd ugyanazt a rendszert.
+
+<p>
+Ennek részletei megtalálhatók a
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=release&amp;sektion=8">release(8)</a>
+oldalon.
+
+<p>
+<font color="#0000e0"><a href="index.html">[FAQ Index]</a>
+<a href="faq4.html">[4. Fejezet - Telepítési Útmutató]</a>
+<a href="../faq6.html">[6. Fejezet - Hálózat]</a>
+</font>
+
+<p>
+<hr><a href="index.html"><img src="../../images/back.gif" alt="[back]"
+ border="0" height="24" width="24"></a><a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+$Originally [OpenBSD: faq5.html,v 1.99 ]<br>
+$Translation: faq5.html,v 1.2 2004/11/18 17:49:34 ishida Exp $<br>
+$OpenBSD: faq5.html,v 1.1 2004/11/18 20:55:08 jufi Exp $
+</small>
+</body>
+</html>
