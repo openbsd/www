@@ -30,10 +30,14 @@ $1 == "0" {
 $1 == "C" { country = substr($0, 3);
 	if (country == "USA")
 		country = "United States"
+	else if (country == "UAE")
+		country = "United Arab Emirates"
 	if (country != oldCountry) {
 		print "<tr><td bgcolor=\"#99FFFF\" colspan=\"2\" align=\"center\">"
 		if (country == "United States") {
 			n = split("USA", labels, " ")
+		} else if (country == "United Arab Emirates") {
+			n = split("UAE", labels, " ")
 		} else {
 			n = split(country, labels, " ")
 		}
