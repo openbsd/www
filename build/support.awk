@@ -1,17 +1,17 @@
 #!/usr/bin/nawk -f
 
-# used by support.bld to generate the table in support.html
+# Called from makefile to convert from support.dat to ../support.html
 
 # convert data like this (order doesn't matter except 0 at front)
 # 0
-# C Canada
+# C Erewhon
 # P Ontario
-# T Palgrave
+# T Dictionopolis
 # A R R # 1
 # Z L0N 1P0
 # O Consultant
 # I Ian F. Darwin
-# M ian@darwinsys.com
+# M ian@ougge.erewhon
 # U http://www.darwinsys.com
 # N Author of lots of kool stuff.
 

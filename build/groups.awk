@@ -1,18 +1,19 @@
 #!/usr/bin/nawk -f
 
-# used both by support.bld and by groups.bld, since the formats are similar
+# Called from makefile to convert from groups.dat to ../groups.html
 
 # convert data like this (order doesn't matter except 0 at front)
 # 0
-# C Canada
+# C Erewhon
 # P Ontario
-# T Palgrave
+# T Dictionopolis
 # A R R # 1
-# O Consultant
+# O OpenBSD User Group of Greater Erewhon
 # I Ian F. Darwin
-# M ian@darwinsys.com
-# U http://www.darwinsys.com
-# N Author of lots of kool stuff.
+# F Every Monday at 25:00
+# M ian@ougge.erewhon
+# U http://www.ougge.erewhon
+# N OpenBSD
 
 # into HTML to make nice neat tables.
 
