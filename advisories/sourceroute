@@ -1,0 +1,310 @@
+
+----------------------------------------------------------------------------
+
+NOTICE
+
+Due to confusion over the meaning of our "CREDITS" section in our
+advisories, we would like to clarify the matter of Perry Metzger and
+his support for OpenBSD. At this time we would like to make it clear
+that these comments were meant in jest, as a reaction to a large body
+of public commentary by Mr. Metzger regarding OpenBSD. As far as we
+know, Mr. Metzger in no way supports the OpenBSD project. 
+
+----------------------------------------------------------------------------
+
+			OpenBSD Security Advisory
+
+		  	    February 15, 1998
+
+			IP Source Routing Problem
+
+----------------------------------------------------------------------------
+
+SYNOPSIS
+
+Due to implementation problems, the system configuration control for "do
+source route" does not prevent source routed packets from being accepted
+by 4.4BSD kernels. Additionally, if source routing is enabled, the
+"forward IP packets" control does not prevent source routed packets from
+being forwarded.
+
+This allows remote attackers to trivially spoof TCP connections against
+BSD hosts on networks that do not filter source routed packets via router
+packet filters.
+
+----------------------------------------------------------------------------
+
+AFFECTED SYSTEMS
+
+This vulnerability has been confirmed against OpenBSD 2.2 (and below), and
+FreeBSD 2.2.5 (and below). Also FreeBSD 2.2-current (before 1998/02/16) 
+and FreeBSD-stable (before 1998/02/23) are vulnerable.
+
+----------------------------------------------------------------------------
+
+DETAILS
+
+4.4BSD allows "kernel state" variables, which control certain
+configuration options inside the kernel, to be changed via the "sysctl"
+facility. "sysctl" is used to define whether a 4.4BSD system accepts
+source routed packets, via the variable "net.inet.ip.dosourceroute". 
+This variable is set to "0" by default, meaning "do not perform IP source
+routing".
+
+Additionally, the sysctl variable "net.inet.ip.forwarding" dictates
+whether the system will act as an IP router, forwarding any received
+packets that are not destined to the host. This variable is also turned
+off by default.
+
+Due to the manner in which the check against the "dosourceroute" variable
+is implemented in the kernel, it is possible to send source routed packets
+to a 4.4BSD host, even when the flag is set to "0". The "dosourceroute"
+flag only prevents forwarding of source routed packets, not delivery to
+the local system. 
+
+Source routed packets can be used to spoof TCP connections that appear to
+come from arbitrary hosts. A host receiving a source-routed packet sends
+replies to that packet using the reverse of the specified route; an
+attacker can route TCP message responses (such as the server SYN+ACK of
+the TCP three-way-handshake) back to her machine, to obtain the server's
+initial sequence number and complete a TCP active open.
+
+Additionally, the "forwarding" variable does not apply to the forwarding
+of source routed packets. If source routing is enabled, source routed
+packets will be forwarded regardless of whether the "forwarding" variable
+is set. 
+
+----------------------------------------------------------------------------
+
+TECHNICAL DETAILS
+
+These problems exist due to the manner in which the kernel state variables
+"dosourceroute" and "forwarding" are checked inside the kernel IP input
+processing code. Both problems are the result of code within the kernel
+function "ip_dooptions()", which processes IP options in incoming
+datagrams.
+
+The IP source routing check in 4.4BSD is performed only after a packet is
+checked to see if it is at the end of it's source route, in which case the
+packet is delivered if it is destined to the processing host. The
+destination of a source routed packet will usually be the end of a source
+route;  hence, this check will almost always result in the delivery of the
+source routed packet.
+
+IP packets can be "forwarded", via the "ip_forward()" function, in two
+places in the IP input processing code. The first place IP packets are
+forwarded at is the initial IP input processing function "ip_input()",
+which handles the general case of forwarding arbitrary packets. This code
+checks the variable "forwarding" to verify that the system is configured
+to forward IP packets.
+
+IP packets can also be forwarded in the "ip_dooptions()" function, in the
+case of source routed packets. This can only occur if the "dosourceroute"
+variable is enabled; however, the "forwarding" variable is not checked
+from within "ip_dooptions()", meaning that a system configured to allow
+source routing will forward source routed packets even with IP forwarding
+disabled.
+
+Additionally, if IP forwarding is enabled, and IP source routing is
+disabled, source routed packets can be forwarded as long as the recipient
+isn't listed in the source route.
+
+----------------------------------------------------------------------------
+
+RESOLUTION
+
+This is a kernel problem that can only be fixed by patching or upgrading
+the problematic system code. Patches for the OpenBSD and FreeBSD operating
+systems are provided in this advisory. This problem is fixed in
+OpenBSD-current and must be patched in versions 2.2 and below. The
+attached FreeBSD patch is against version 2.2.5.
+
+The attached OpenBSD patch modifies the kernel to check the
+"dosourceroute" variable immediately upon detecting a source-route option
+in a recieved IP packet. If source routing is disabled, the packet will be
+logged and dropped before any further processing is performed.
+Additionally, the variable "forwarding" is now checked from within the
+"ip_dooptions()" function, meaning that source routed packets can only be
+forwarded when IP forwarding is enabled.
+
+The attached FreeBSD patch adds a new sysctl kernel variable,
+"accept_sourceroute", which determines whether the OS will deliver
+source routed packets locally if they have the source route option set.
+Additionally, source routed packets are dropped automatically if
+"dosourceroute" is set to zero, and the "ip_forwarding" variable is
+checked before packets are forwarded from ip_dooptions(), preventing
+source routed packets from being forwarded when IP forwarding is disabled.  
+
+More information about the OpenBSD resolution to the problem is available
+at "http://www.openbsd.org/errata.html#sourceroute".
+
+Sites that cannot patch their kernels (or run operating systems without
+available patches) can address this problem by packet filtering source
+routed packets at routers or via kernel packet filters such as IP-filter.
+
+----------------------------------------------------------------------------
+
+CREDITS
+
+Documentation and testing of this problem was conducted by Theo de Raadt
+and the OpenBSD development team with the assistance of Secure Networks
+Inc. Helpful information and FreeBSD's response to this problem were
+provided by Guido van Rooij. 
+
+The developers of OpenBSD and the author of this advisory would like
+to again confirm the fact that Perry Metzger does not in any way support
+their project.
+
+----------------------------------------------------------------------------
+
+OPENBSD PATCH
+
+Index: ip_input.c
+===================================================================
+RCS file: /cvs/src/sys/netinet/ip_input.c,v
+retrieving revision 1.28
+retrieving revision 1.29
+diff -u -r1.28 -r1.29
+--- ip_input.c  1998/02/01 21:46:02     1.28
++++ ip_input.c  1998/02/03 21:11:08     1.29
+@@ -1,4 +1,4 @@
+-/*     $OpenBSD: sourceroute,v 1.1 1998/02/26 22:45:44 deraadt Exp $   */
++/*     $OpenBSD: sourceroute,v 1.1 1998/02/26 22:45:44 deraadt Exp $   */
+ /*     $NetBSD: ip_input.c,v 1.30 1996/03/16 23:53:58 christos Exp $   */
+ 
+ /*
+@@ -744,6 +744,17 @@
+                 */
+                case IPOPT_LSRR:
+                case IPOPT_SSRR:
++                       if (!ip_dosourceroute) {
++                               char buf[4*sizeof "123"];
++
++                               strcpy(buf, inet_ntoa(ip->ip_dst));
++                               log(LOG_WARNING,
++                                   "attempted source route from %s to
+%s\n",
++                                   inet_ntoa(ip->ip_src), buf);
++                               type = ICMP_UNREACH;
++                               code = ICMP_UNREACH_SRCFAIL;
++                               goto bad;
++                       }
+                        if ((off = cp[IPOPT_OFFSET]) < IPOPT_MINOFF) {
+                                code = &cp[IPOPT_OFFSET] - (u_char *)ip;
+                                goto bad;
+@@ -771,18 +782,6 @@
+                                break;
+                        }
+ 
+-                       if (!ip_dosourceroute) {
+-                               char buf[4*sizeof "123"];
+-
+-                               strcpy(buf, inet_ntoa(ip->ip_dst));
+-                               log(LOG_WARNING,
+-                                   "attempted source route from %s to
+%s\n",
+-                                   inet_ntoa(ip->ip_src), buf);
+-                               type = ICMP_UNREACH;
+-                               code = ICMP_UNREACH_SRCFAIL;
+-                               goto bad;
+-                       }
+-
+                        /*
+                         * locate outgoing interface
+                         */
+@@ -889,7 +888,7 @@
+                        ipt->ipt_ptr += sizeof(n_time);
+                }
+        }
+-       if (forward) {
++       if (forward && ipforwarding) {
+                ip_forward(m, 1);
+                return (1);
+        }
+
+----------------------------------------------------------------------------
+
+FREEBSD PATCH
+
+    Index: in.h
+    ===================================================================
+    RCS file: /home/cvsup/freebsd/CVS/src/sys/netinet/in.h,v
+    retrieving revision 1.22.2.1
+    diff -u -r1.22.2.1 in.h
+    --- in.h	1996/11/11 23:40:37	1.22.2.1
+    +++ in.h	1998/02/24 18:31:44
+    @@ -301,7 +301,8 @@
+     #define	IPCTL_DIRECTEDBROADCAST	9	/* may re-broadcast received packets */
+     #define IPCTL_INTRQMAXLEN	10	/* max length of netisr queue */
+     #define IPCTL_INTRQDROPS	11	/* number of netisr q drops */
+    -#define	IPCTL_MAXID		12
+    +#define	IPCTL_ACCEPTSOURCEROUTE	13	/* may accept source routed packets */
+    +#define	IPCTL_MAXID		13
+     
+     #define	IPCTL_NAMES { \
+     	{ 0, 0 }, \
+    @@ -316,6 +317,7 @@
+      	{ "directed-broadcast", CTLTYPE_INT }, \
+     	{ "intr-queue-maxlen", CTLTYPE_INT }, \
+     	{ "intr-queue-drops", CTLTYPE_INT }, \
+    +	{ "accept_sourceroute", CTLTYPE_INT }, \
+     }
+     
+     
+    Index: ip_input.c
+    ===================================================================
+    RCS file: /home/cvsup/freebsd/CVS/src/sys/netinet/ip_input.c,v
+    retrieving revision 1.50.2.8
+    diff -u -r1.50.2.8 ip_input.c
+    --- ip_input.c	1997/09/15 23:10:55	1.50.2.8
+    +++ ip_input.c	1998/02/24 18:30:43
+    @@ -94,6 +94,10 @@
+     static int	ip_dosourceroute = 0;
+     SYSCTL_INT(_net_inet_ip, IPCTL_SOURCEROUTE, sourceroute, CTLFLAG_RW,
+     	&ip_dosourceroute, 0, "");
+    +
+    +static int	ip_acceptsourceroute = 0;
+    +SYSCTL_INT(_net_inet_ip, IPCTL_ACCEPTSOURCEROUTE, accept_sourceroute,
+    +	CTLFLAG_RW, &ip_acceptsourceroute, 0, "");
+     #ifdef DIAGNOSTIC
+     static int	ipprintfs = 0;
+     #endif
+    @@ -923,6 +927,8 @@
+     					code = ICMP_UNREACH_SRCFAIL;
+     					goto bad;
+     				}
+    +				if (!ip_dosourceroute)
+    +					goto nosourcerouting;
+     				/*
+     				 * Loose routing, and not at next destination
+     				 * yet; nothing to do except forward.
+    @@ -934,14 +940,17 @@
+     				/*
+     				 * End of source route.  Should be for us.
+     				 */
+    +				if (!ip_acceptsourceroute)
+    +					goto nosourcerouting;
+     				save_rte(cp, ip->ip_src);
+     				break;
+     			}
+     
+     			if (!ip_dosourceroute) {
+     				char buf[4*sizeof "123"];
+    -				strcpy(buf, inet_ntoa(ip->ip_dst));
+     
+    +nosourcerouting:
+    +				strcpy(buf, inet_ntoa(ip->ip_dst));
+     				log(LOG_WARNING, 
+     				    "attempted source route from %s to %s\n",
+     				    inet_ntoa(ip->ip_src), buf);
+    @@ -1056,7 +1065,7 @@
+     			ipt->ipt_ptr += sizeof(n_time);
+     		}
+     	}
+    -	if (forward) {
+    +	if (forward && ipforwarding) {
+     		ip_forward(m, 1);
+     		return (1);
+     	}
+
+

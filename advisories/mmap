@@ -1,0 +1,290 @@
+
+-------------------------------------------------------------------------
+
+                        OpenBSD Security Advisory
+
+                            February 20, 1998
+
+                       4.4BSD mmap() Vulnerability
+
+-------------------------------------------------------------------------
+
+SYNOPSIS
+
+Due to a 4.4BSD VM system problem, it is possible to memory-map a
+read-only descriptor to a character device in read-write mode. This
+allows group "kmem" programs to become root, and root to lower the
+system securelevel, both by writing to the kernel memory device.
+
+-------------------------------------------------------------------------
+
+AFFECTED SYSTEMS
+
+This vulnerability has been confirmed against OpenBSD 2.2 (and below),
+FreeBSD 2.2.5 (and below), and BSDI 3.0. NetBSD-current (without UVM)
+and below is also affected.
+
+-------------------------------------------------------------------------
+
+DETAILS
+
+The 4.4BSD VM system allows files to be "memory mapped", which causes
+the specified contents of a file to be made available to a process via
+its address space. Manipulations of that file can then be performed
+simply by manipulating memory, rather than using filesystem I/O calls.
+This technique is used to simplify code, speed up access to files, and
+provide interprocess communication.
+
+Memory mappings can be "private" or "shared". In a private memory mapping,
+changes to the mapped memory are not committed back to the original file.
+Multiple processes with private mappings of the same file will not see
+each other's changes. In a shared mapping, changes to the mapped memory
+are reflected in the original file, and all processes mapping the same
+file see each others's changes.
+
+In order to create a writeable mapping for a file descriptor, that file
+descriptor must be open in read-write mode. This prevents users from using
+read-only access to system files to change the system configuration (by
+taking the read-only descriptors and mapping them read-write). The 4.4BSD
+VM system verifies that an open file descriptor is read-write before
+allowing a shared read-write mapping.
+
+4.4BSD does not perform this access check when the mapping is not shared;
+a process with a private mapping cannot modify the original file, so the
+potential for danger is minimized. Unfortunately, the 4.4BSD VM system
+automatically changes any private mapping of a character device to
+"shared", regardless of the flags passed to mmap(), after the access check
+is performed.
+
+This allows a user with read-only access to a character device to create a
+read-write mapping to that device, and thus write to the device. This can
+be used against the raw memory device ("/dev/mem") to write arbitrary
+bytes directly to physical memory; if a process has read-only access to
+"/dev/mem" (processes in group "kmem" have this access), it can become
+"root" by altering kernel data structures.
+
+Furthermore, a process with a read-write mapping on "/dev/mem" can rewrite
+the system securelevel back to zero after it has been raised. This allows
+an attacker to bypass the "immutable" and "append-only" filesystem flags,
+along with any other securelevel protections.
+
+-------------------------------------------------------------------------
+
+TECHNICAL DETAILS
+
+The code exhibiting this problem is located in "sys/vm/vm_mmap.c", in the
+functions "mmap()" (the mmap system call handler), and "vm_mmap()", the VM
+function that actually performs memory mapping. The problem is due to a
+faulty access check in mmap(), combined with a side-effect of character
+device mapping in vm_mmap().
+
+The mmap() system call handler performs a read-write access check by
+examining the file descriptor passed in as an argument to the system call.
+Before allowing a shared read-write mapping, the system verifies that the
+file being mapped is open in write mode:
+
+        if (flags & MAP_SHARED) {
+                if (fp->f_flag & FWRITE)
+                        maxprot |= VM_PROT_WRITE;
+                else if (prot & PROT_WRITE)
+                        return (EACCES);
+        }
+
+If the requested mapping is not shared, the access check against the
+file (the check for FWRITE in fp->f_flag, which is the file structure
+for the descriptor passed to mmap) is not performed. For regular files,
+this check is sufficient; a non-shared mapping will not allow a process
+to write to the actual file, only to a private copy in memory.
+
+The vm_mmap() kernel VM function handles memory mapping for all of the
+kernel facilities that require this capability, including execve(),
+System V shared memory, and the mmap() system call. vm_mmap() checks
+to see if a mapping is requested is associated with a character device,
+and, if so, automatically creates a shared mapping (comments from original
+source code):
+
+        if (vp->v_type == VCHR) {
+                type = OBJT_DEVICE;
+                handle = (caddr_t) vp->v_rdev;
+        }
+
+        ...
+
+        /*
+         * Force device mappings to be shared.
+         */
+        if (type == OBJT_DEVICE) {
+                flags &= ~(MAP_PRIVATE|MAP_COPY);
+                flags |= MAP_SHARED;
+        }
+
+As a result of this code, it is possible to request a non-shared mapping
+of a character device (which will appear innocuous to the mmap() access
+checking code), and receive a shared, writeable mapping. This can be used
+to obtain write access to any readable character device.
+
+This problem is particularly serious when a hostile process has read
+access to kernel memory devices. The system status utilities "ps",
+"netstat", "systat", and others operate setgid "kmem", allowing them to
+use the KVM library to directly access kernel memory. A bug in any of
+these programs can allow an attacker to trivially obtain root access, by
+mmap()'ing a read-only descriptor to "/dev/mem" and altering process
+credential structures.
+
+This issue also directly subverts the system securelevel. 4.4BSD has a
+facility called "securelevels" which adds restrictions to the kernel that
+take effect only when a flag in the kernel (the "securelevel") is set.
+These restrictions include "immutable" files, which cannot be altered
+(even by root), and "append-only" files, which can only have data appended
+to. The former is useful for system binaries (to prevent attackers from
+backdooring libraries and executables), and the latter is useful for logs
+(to prevent attackers from covering their tracks by deleting log data).
+
+The 4.4BSD securelevel features are active when the securelevel is
+nonzero. The securelevel is set using the "sysctl" facility. The system
+does not allow the securelevel to be lowered once it is nonzero; if
+an attacker can lower the securelevel, she can evade securelevels
+protections by turning them off.
+
+The 4.4BSD kernel does not allow processes to write directly to kernel
+memory when the securelevel is nonzero; this prevents "root" from
+bypassing the securelevel simply by writing to "/dev/kmem". This is
+controlled by an access check in "sys/miscfs/specfs/spec_vnops.c", which
+provides vnode operations (open, read, write, etc) for special files (like
+character devices).
+
+The access check is performed in the "spec_open()" function, which handles
+the "open" system call for special files. When the securelevel is nonzero,
+the system explicitly checks for attempts to open devices in read-write
+mode, and prevents read-write opens for disk and kernel memory devices.
+
+Unfortunately, the mmap() bug allows a process to write to a descriptor
+even if it is open read-only; the assumption made in spec_open() thus
+fails to catch attempts to reset the securelevel using mmap().
+
+-------------------------------------------------------------------------
+
+RESOLUTION
+
+This is a kernel problem that can only be fixed by patching or upgrading
+the problematic system code. Patches for the OpenBSD operating system are
+provided in this advisory. The problem is fixed in OpenBSD-current and
+must be patched in versions 2.2 and below.
+
+The attached OpenBSD patch causes any attempt to create a private mapping
+of a character device to fail, and enhances access checking in mmap() to
+explicitly verify that the mapping requested is consistant with the open
+mode on the file descriptor being mapped.
+
+Accelerated X from X Inside relies on this bug to operate correctly; this
+patch thus breaks the Accelerated X server. Contact your Accelerated X
+vendor for more information about this. XFree86 is not believed to be
+affected by the problem.
+
+More information about the OpenBSD resolution to the problem is available
+at "http://www.openbsd.org/errata.html".
+
+-------------------------------------------------------------------------
+
+CREDITS
+
+Documentation and testing of this problem was conducted by Theo de Raadt
+and Chuck Cranor. Theo de Raadt, Chuck Cranor, and Niklas Hallqvist of the
+OpenBSD project provided the OpenBSD patch for the problem.
+
+The developers at OpenBSD would like to extend their gratitude to Perry
+"Scare Bear" Metzger for his continued support of their efforts.
+
+-------------------------------------------------------------------------
+
+OPENBSD PATCH
+
+Index: vm_mmap.c
+===================================================================
+RCS file: /cvs/src/sys/vm/vm_mmap.c,v
+retrieving revision 1.10
+retrieving revision 1.13
+diff -u -9 -u -r1.10 -r1.13
+--- vm_mmap.c   1997/11/14 20:56:08     1.10
++++ vm_mmap.c   1998/02/25 22:13:46     1.13
+@@ -1,10 +1,10 @@
+-/*     $OpenBSD: mmap,v 1.1 1998/02/26 22:45:44 deraadt Exp $    */
++/*     $OpenBSD: mmap,v 1.1 1998/02/26 22:45:44 deraadt Exp $    */
+ /*     $NetBSD: vm_mmap.c,v 1.47 1996/03/16 23:15:23 christos Exp $    */
+
+ /*
+  * Copyright (c) 1988 University of Utah.
+  * Copyright (c) 1991, 1993
+  *     The Regents of the University of California.  All rights reserved.
+  *
+  * This code is derived from software contributed to Berkeley by
+  * the Systems Programming Group of the University of Utah Computer
+@@ -207,48 +207,60 @@
+                 * Mapping file, get fp for validation.
+                 * Obtain vnode and make sure it is of appropriate type.
+                 */
+                if (((unsigned)fd) >= fdp->fd_nfiles ||
+                    (fp = fdp->fd_ofiles[fd]) == NULL)
+                        return (EBADF);
+                if (fp->f_type != DTYPE_VNODE)
+                        return (EINVAL);
+                vp = (struct vnode *)fp->f_data;
+-               if (vp->v_type != VREG && vp->v_type != VCHR)
+-                       return (EINVAL);
++
+                /*
+                 * XXX hack to handle use of /dev/zero to map anon
+                 * memory (ala SunOS).
+                 */
+                if (vp->v_type == VCHR && iszerodev(vp->v_rdev)) {
+                        flags |= MAP_ANON;
+                        goto is_anon;
+                }
++
++               /*
++                * Only files and cdevs are mappable, and cdevs does not
++                * provide private mappings of any kind.
++                */
++               if (vp->v_type != VREG &&
++                   (vp->v_type != VCHR || (flags & (MAP_PRIVATE|MAP_COPY))))
++                       return (EINVAL);
+                /*
+                 * Ensure that file and memory protections are
+                 * compatible.  Note that we only worry about
+                 * writability if mapping is shared; in this case,
+                 * current and max prot are dictated by the open file.
+                 * XXX use the vnode instead?  Problem is: what
+                 * credentials do we use for determination?
+                 * What if proc does a setuid?
+                 */
+                maxprot = VM_PROT_EXECUTE;      /* ??? */
+                if (fp->f_flag & FREAD)
+                        maxprot |= VM_PROT_READ;
+                else if (prot & PROT_READ)
++                       return (EACCES);
++
++               /*
++                * If we are sharing potential changes (either via MAP_SHARED
++                * or via the implicit sharing of character device mappings),
++                * and we are trying to get write permission although we
++                * opened it without asking for it, bail out.
++                */
++               if (((flags & MAP_SHARED) != 0 || vp->v_type == VCHR) &&
++                   (fp->f_flag & FWRITE) == 0 && (prot & PROT_WRITE) != 0)
+                        return (EACCES);
+-               if (flags & MAP_SHARED) {
+-                       if (fp->f_flag & FWRITE)
+-                               maxprot |= VM_PROT_WRITE;
+-                       else if (prot & PROT_WRITE)
+-                               return (EACCES);
+-               } else
++               else
+                        maxprot |= VM_PROT_WRITE;
+                handle = (caddr_t)vp;
+        } else {
+                /*
+                 * (flags & MAP_ANON) == TRUE
+                 * Mapping blank space is trivial.
+                 */
+                if (fd != -1)
+                        return (EINVAL);
