@@ -1,0 +1,421 @@
+<!DOCTYPE HTML PUBLIC  "-//IETF//DTD HTML Strict Level 2//EN//2.0">
+<html>
+<head>
+<title>Cryptography in OpenBSD</title>
+<link rev=made href=mailto:www@openbsd.org>
+<meta name="resource-type" content="document">
+<meta name="description" content="OpenBSD cryptography">
+<meta name="keywords" content="openbsd,cryptography,openssh,openssl,kerberos">
+<meta name="keywords" content="ipsec,isakmp,ike,blowfish,des,rsa,dsa">
+<meta name="distribution" content="global">
+<meta name="copyright" content="This document copyright 1997-2002 by OpenBSD.">
+</head>
+
+<BODY BGCOLOR="#FFFFFF" TEXT="#000000" LINK="#23238E">
+<img align=left alt="[OpenBSD]" height=166 width=197 SRC="../images/blowfish-notext.jpg">
+<br>
+<br>
+<br>
+"每一位優秀的安全領域工程師咸信: " 安全並非一個結果，而是一種過程。
+"安全的定義遠遠超過系統上的密碼系統；安全是在整個系統的設計上，將所
+有系統安全相關的各方面，包括密碼系統等，全部整合在一起"。<br>
+<br>
+-- 節錄自 Bruce Schneier，"Applied Cryptography" 此書作者所言。
+<br clear=all>
+<h2><font color=#e00000>密碼安全整合</font><hr></h2>
+
+<strong>目錄</strong><br>
+<a href=#why>為何我們要裝載密碼安全整合?</a>.<br> 
+<a href=#ssh>OpenSSH</a>.<br> 
+<a href=#prng>準亂數產生器</a> (PRNG): ARC4, ...<br>
+<a href=#hash>密碼安全雜湊函數</a>: MD5, SHA1, ...<br>
+<a href=#trans>密碼安全系統轉換</a>: DES, Blowfish, ...<br>
+<a href=#hardware>對密碼安全硬體的支援</a><br>
+<a href=#people>徵求國際密碼安全專家</a><br>
+<a href=#papers>進階閱讀</a><br>
+<p>
+<hr>
+
+<a name=why></a>
+<h3><font color=#e00000>為何我們要裝載密碼安全整合?</font></h3><p>
+
+簡而言之:  <strong>因為我們有這個能力</strong>.<p>
+
+OpenBSD 的計畫是在加拿大發展的。<p>
+
+<a href=ECL.html>加拿大輸出管制列表</a>中並沒有對密碼安全軟體做出任何
+嚴格的輸出限制，甚至明文允許自由免費密碼安全軟體的自由輸出。Marc Plumb
+已經做了<a href=http://insight.mcmaster.ca/org/efc/pages/doc/crypto-export.html>
+一些密碼安全法條的相關檢驗</a>。
+<p>
+
+因此，OpenBSD 計畫早已整合許多密碼安全機制到作業系統內部。我們要求自己使用
+這些<a href=policy.html>可自由免費取得，並且有著良好版權使用許可</a>的密碼
+安全軟體。
+我們並不直接使用有專利權問題的密碼安全方案。我們也要求所使用的密碼安全軟體
+是從有輸出許可的國家所輸出的，畢竟我們也不想違反任何國家的法律。我們目前使
+用的密碼安全軟體元件包含從阿根廷、澳大利亞、加拿大、德國、希臘、挪威以及瑞
+典等各國輸出。
+<p>
+
+當我們製造 OpenBSD 正式釋出版或搶鮮版時，我們會在自由輸出的國家製造，以確
+保我們提供的原始程式碼以及已編譯的檔案，可供使用者自由使用。之前所提供的
+編譯檔版本是在加拿大、瑞典及德國所製作的。<p>
+
+OpenBSD 上也裝載了 Kerberos IV 以及 Kerberos V. 這兩份程式碼是源自瑞典的
+KTH-based 可輸出版。我們的 X11 原始碼也已經擴增，可使用 Kerveros 作為認證
+機制。<p>
+
+
+<img align=right src="../images/vpnc-test-partner.gif">
+OpenBSD 是第一個裝載 IPsec stack 的作業系統。我們自一九九七年 OpenBSD 2.1
+正式釋出版時，就已經裝載了 IPsec. 我們內嵌在系統核心的 IPsec stack 已可利
+用硬體加解密卡做到加速的功能，我們自己自由免費的 ISAKMP daemon 也被使用於
+<a href="http://www.vpnc.org">VPNC</a> 的 IPsec 相容測試環境的其中一台
+主機。
+<br clear=all>
+<p>
+
+如今密碼安全已經是增進作業系統<a href=security.html>安全</a>的重要途徑。
+在 OpenBSD 中密碼安全的運用可以分為以下各項。<p>
+
+<a name=ssh></a>
+<h3><font color=#e00000>OpenSSH</font></h3><p>
+
+大多數人安裝完 OpenBSD 後所做的第一件事是什麼? 他們會從 ports 集安裝 
+Secure Shell
+(<a href=http://www.openbsd.org/cgi-bin/man.cgi?query=ssh>ssh</a>)
+或者從 FTP 網站上下載 packages 直接安裝使用。這情況一直延續到現在。<p>
+
+自 2.6 版的正式釋出版開始，OpenBSD 就包含了
+<a href="http://www.openssh.com/">OpenSSH</a>, 一個絕對自由免費而且沒有專利權
+累贅的 ssh 版本。
+自 OpenBSD 2.6 正式釋出版發行那一天起，
+<a href="http://www.openssh.com/">OpenSSH</a> 除了符合 ssh 第一版協定外，也
+新增許多功能。
+<ul>
+<li>
+所有包含嚴格限制的軟體元件(也就是指專利權問題，請參考
+<a href=http://www.openbsd.org/cgi-bin/man.cgi?query=ssl>ssl</a>)
+都已經直接從原始碼中移除；包括任何有版權的或有專利權等使用外部
+函式庫的軟體元件。
+</li>
+<li>
+已經更新到支援 ssh 1.5 版協定。
+</li>
+<li>
+包括新增的
+<a href=http://www.openbsd.org/cgi-bin/man.cgi?query=kerberos>kerberos</a>
+認證及 ticket 傳遞等支援。
+</li>
+<li>
+支援使用
+<a href=http://www.openbsd.org/cgi-bin/man.cgi?query=skey>skey</a>.
+的 one-time password 認證。
+</li>
+</ul>
+<p>
+
+大略上來說，我們發行的是 OpenBSD 自由免費的相容版 ssh.
+在約一年之後，我們擴增了 OpenSSH 使她相容於 SSH 2 版協定，也就是支援
+了三種 SSH 主要協定: 1.3, 1.5, 2.0 版。
+
+<a name=prng></a>
+<h3><font color=#e00000>準亂數產生器</font></h3><p>
+
+一個準亂數產生器(PRNG)提供給應用程式一串數字流，並且為系統安全提供了一些重要
+的特點:<p>
+
+<ul>
+<li>外界假使已獲知前一個輸出，應該不可能從之前一個輸出值，推測出下一個輸出值。
+<li>所產生的準亂數應該不能出現重複的數字流，這意味著 PRNG 應該擁有一個相當長
+    的週期。
+</ul>
+<p>
+
+一個 PRNG 通常在相同的起始值並經演算法計算後，會產生相同序列的輸出值。
+在一個多工作業系統中，我們有許多的方法為 PRNG 尋找亂數資料做為起始值依據。
+OpenBSD 系統核心使用的是滑鼠中斷的速度、網路資料中斷的延遲時間、鍵盤按鍵
+的間隔時間、以及硬碟輸出輸入等等混沌性質資料堆作為起始參考值。亂數的
+產生，可以藉由系統核心呼叫，並藉由 device 檔案供使用者應用程式使用。
+目前為止，亂數已經應用在下列情況中:<p>
+
+<ul>
+<li>Dynamic sin_port allocation in bind(2).
+<li>PIDs of processes.
+<li>IP datagram IDs.
+<li>RPC transaction IDs (XID).
+<li>NFS RPC transaction IDs (XID).
+<li>DNS Query-IDs.
+<li>Inode generation numbers, see getfh(2) and fsirand(8).
+<li>Timing perturbance in traceroute(8).
+<li>Stronger temporary names for mktemp(3) and mkstemp(3)
+<li>Randomness added to the TCP ISS value for protection against
+	spoofing attacks.
+<li>random padding in IPsec esp_old packets.
+<li>To generate salts for the various password algorithms.
+<li>For generating fake S/Key challenges.
+<li>In <a href=http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd>isakmpd</a>
+	to provide liveness proof of key exchanges.
+</ul>
+
+<p>
+<a name=hash></a>
+<h3><font color=#e00000>密碼安全雜湊函數</font></h3><p>
+
+一個雜湊函數將接收到的輸入資料壓縮之後，產生一組固定長度的字串。對於一個
+密碼安全雜湊函數，你將不可能找到以下的情況:
+
+<ul>
+<li>藉由計算找出兩個輸入值產生同樣的輸出(防止輸出碰撞產生),
+<li>在已知某個輸入值產生某輸出狀況下，能另外找到一輸入值產生同樣輸出結果
+	(2nd preimage resistant)。
+</ul>
+<p>
+
+ OpenBSD 使用了 MD5, SHA1, RIPEMD-160 等密碼安全雜湊函數，並應用在以下幾點:<p>
+<ul> 
+<li>在 <a href=http://www.openbsd.org/cgi-bin/man.cgi?query=skey>S/Key</a>
+    中提供 one-time passwords.
+<li>在 <a href=http://www.openbsd.org/cgi-bin/man.cgi?query=ipsec>IPsec</a>
+    以及
+    <a href=http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd>isakmpd(8)</a>
+    中，提供對封包來源及封包完整性的驗證。
+<li>提供 FreeBSD 模式的 MD5 密碼儲存(預設安裝未啟用)，請參考
+    <a href=http://www.openbsd.org/cgi-bin/man.cgi?query=passwd.conf&sektion=5>
+    passwd.conf(5)</a>
+<li>支援 TCP SYN cookie 防護(預設安裝未啟用)，請參考
+    <a href=http://www.openbsd.org/cgi-bin/man.cgi?query=options&sektion=4>
+    options(4)</a> 手冊。
+<li>利用 libssl 對訊息做數位簽章。
+</ul>
+<p>
+
+<p>
+<a name="trans"></a>
+<h3><font color=#e00000>密碼安全系統轉換</font></h3><p>
+
+密碼安全系統轉換是使用在資料加密與解密上。通常是用在資料加密與解密的金鑰上。
+一個密碼安全系統轉換的安全性只能繫於所輸入的密秘金鑰上。<p>
+
+OpenBSD 提供的密碼安全系統轉換有 DES, 3DES, Blowfish, Cast 供系統核心與
+應用程式使用，並能夠應用在許多地方，諸如:<p>
+<ul>
+<li>在 libc 中製作
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=blf_key">Blowfish</a>
+    密碼。有關這點可以參考 <a href="papers/bcrypt-paper.ps">USENIX 論文</a>。
+<li>在
+    <a href=http://www.openbsd.org/cgi-bin/man.cgi?query=ipsec>IPsec</a>
+    提供網路層的私密性。
+<li>在 Kerberos 中提供許多可利用 kerberos 認證的應用程式，如
+    <a href=http://www.openbsd.org/cgi-bin/man.cgi?query=telnet>telnet</a>,
+    <a href=http://www.openbsd.org/cgi-bin/man.cgi?query=cvs>cvs</a>,
+    <a href=http://www.openbsd.org/cgi-bin/man.cgi?query=rsh>rsh</a>,
+    <a href=http://www.openbsd.org/cgi-bin/man.cgi?query=rcp>rcp</a>,
+    以及
+    <a href=http://www.openbsd.org/cgi-bin/man.cgi?query=rlogin>rlogin</a>.
+<li>在 <a href=http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd>isakmpd</a>
+    中保護 IPsec 所需的金鑰等資訊交換。
+<li>在 AFS 中保護經由網路傳輸的訊息，為遠端檔案系統的存取提供私密性。
+<li>在 libssl 中讓應用程式能藉由既定標準的密碼安全 SSL 協定進行溝通。
+</ul>
+
+<p>
+<a name=hardware></a>
+<h3><font color=#e00000>對密碼安全硬體的支援</font></h3><p>
+
+OpenBSD 自 2.7 版發行開始，已經支援一些密碼安全加速硬體，及硬體亂數產生器。
+<ul>
+<li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=crypto&sektion=9">
+    IPsec crypto dequeue</a></b><br>
+    我們的 IPsec stack 已經為配合硬體密碼安全函數的使用而修改過。大部份簡單
+    的 IPsec stack 軟體需要對每一個封包個別做密碼安全處理。這造成了同步化問
+    題的效能低落。如果要正確並更快速的使用硬體做加解密，你需要像我們一樣把
+    這分成兩個軟體元件。事實上，我們的處理方法在純軟體加解密上也得到了效能
+    的提升效果。
+<p>
+<li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hifn&sektion=4">
+    Hifn 7751</a></b><br>
+    使用 Hifn 7751 的卡可以用來做對稱式加解密的加速器，也就是如
+    <a href="http://www.soekris.com/vpn1201.htm">Soekris VPN1201 or VPN1211</a>
+    (<a href="http://www.soekris.com/how_to_buy.htm">購買</a>)
+    或
+    <a href="http://www.powercrypt.com">PowerCrypt</a>.
+    目前雙邊各使用單一 Hifn 7751 的 3DES/SHA1 ESP tunnel 傳輸效能可達 
+    64Mbit/sec，根使用 P3/550 CPU 的效能比較約是 600% 的效能提升。更進
+    一步的效能提升可以在解決一些問題之後達到。在西元兩千年四月十三
+    日之前，這部份的程式碼已經到達穩定階段。我們撰寫自己的驅動程式來支
+    援這個晶片，而非使用(在美國撰寫的)
+    <a href="http://www.powercrypt.com">PowerCrypt</a>驅動程式，我們的
+    驅動程式也跟 IPsec stack 做了相當好的結合。
+    目前業界認為 7751 太慢，並且有許多廠商有更快的晶片(即使現在 Hifn 
+    有了更快價錢也更高的晶片)。在 3DES SHA1 ESP 的尖峰效能表現約 64Mbit/sec.
+    <p>
+    在 2.9 版釋出之後，我們新增了對 Hifn 7951 晶片的支援，一個 7751 的
+    簡化版本，並且也加入公開金鑰的加速(未支援)，及亂數產生器的加速(有支援)
+    功能。這張卡是由
+    <a href="http://www.soekris.com/">Soekris Engineering</a> 捐贈。
+    <p>
+    在 3.0 版釋出後，新增了 Hifn 7811 晶片的支援，一個比 7751 更快速的
+    (約可達到 130Mbit/s)版本，並支援亂數產生器。這張卡是由
+    <a href="http://www.gtgi.com/">GTGI</a> 捐贈。
+    <p>
+    (題外話，Hifn 這家公司很難應付；因為我們所撰寫的非美國版本對他們的密碼
+     安全演算法做了逆向工程的工作，他們甚至威脅要告我們)。
+    <p>
+
+<li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=lofn&sektion=4">
+    Hifn 6500</a></b><br>
+    這個裝置使用在非對稱加解密上。它有支援 RSA, DSA, DH 演算法，並且有其他
+    大數功能。它也包含了效能非常高的亂數產生器。我們有的這個裝置，包括完整
+    的文件說明，以及範例程式。截至 OpenBSD 3.1 版，亂數產生器以及大數的支
+    援都已經可以運作了。
+    <p>
+
+<li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=nofn&sektion=4">
+    Hifn 7814/7851/7854</a></b><br>
+    這個裝置有封包處理及非對稱加解密的功能。它包含了 RSA, DSA, DH 演算法，
+    以及大數運功能，並且也有亂數產生器。目前只有大數及亂數產生器有支援(沒
+    有封包處理的轉換功能)。
+    <p>
+
+<li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ubsec&sektion=4">
+    Broadcom BCM5801/BCM5802/BCM5805/BCM5820/BCM5821/BCM5822
+    (或是測試晶片 Bluesteelnet 5501/5601)</a></b><br>
+    就在 OpenBSD 2.7 正式釋出版以後，我們成功的對這些廠商提供的先期版本
+    新增了基本支援，特別是 5501 測試晶片。這些裝置提供的對稱式加解密是
+    我們所知中效能最佳的一組晶片。
+    <p>
+    Bluesteelnet 已經被 Broadcom 併購並且開始產出新產品。他們新的 
+    BCM5805 也是有類似表現，只是它是用在 DSA, RSA 等非對稱式加解密演算
+    法上。這組晶片與 Hifn 比起來，至少快了四倍以上，希望這個晶片可以更
+    常見。
+    <p>
+    Broadcom/Bluesteelnet 的人較好相處。他們給我們完整的文件資料，以及
+    範例程式碼，並且提供了足夠數量的硬體加速卡供我們測試。
+    <p>
+    在 2.8 版之前，這個驅動程式在經過修改之後，已經可以在 BCM5805 及
+    類似的晶片版本上產生亂數，並且提供資料到系統核心混沌性質資料堆中。
+    <p>
+    自 2.9 版起，加入了 BCM5820 的支援，這只是一個 BCM5805 的更快速版本
+    (64bit, 更快的時脈速度)。未經測試的 BCM5821 支援也在 3.0 版之後加入。
+    <p>
+    自 3.1 版起，大數處理已經獲得支援，因此 RSA/DH/DSA 的運算也可獲得
+    更多加速效果。
+    <p>
+    OpenBSD 3.2 版已經新增了 BCM5801, BCM5802, BCM5821 及 BCM5822 的支援。
+    (在 3.1 版中未經測試的 BCM5821 因為某些未在文件中說明的中斷處理需求，
+    目前無法使用)
+    <p>
+
+<li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ises&sektion=4">
+    Securealink PCC-ISES</a></b><br>
+    <a href="http://www.safenet-inc.com/technology/chips/safexcel_ises.asp">PCC-ISES</a> 是荷蘭來的一組新晶片。我們已經收到了硬體樣品及文件，並且也正在撰寫
+    驅動程式。截至此刻，驅動程式已經能產生亂數到系統核心的混沌資料堆中。
+    pool.
+    <p>
+	
+<li><b>SafeNet SafeXcel 2141</b><br>
+    我們已經收到
+    <a href="http://www.safenet-inc.com/technology/chips/safexcel_2141.asp">SafeNet</a>
+    加解密卡的硬體樣品及文件。先期的對稱式加解密支援已經開始動工。
+    <p>
+
+<li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=txp&sektion=4">
+    3com 3cr990</a></b><br>
+    3com 已給我們一個驅動程式以支援這個晶片的乙太網路模組。我們也藉由這個驅
+    動程式撰寫了自己的乙太網卡驅動程式。在取得微處理程式碼的自由免費版權後，
+    這個驅動程式目前已經整合進去了。由於文件以及技術支援的缺乏
+    (部份是因為 3Com 頻繁的反反覆覆)這個晶片的 IPsec 功能尚未支援...因此這
+    變成一個無法達到完整運作的驅動程式。
+    <p>
+
+<li><b>Intel IPsec card</b><br>
+    就像 Intel 對他們所有的網路組件一樣，而和其他廠商不同的是，Intel 絲毫不
+    猶疑的拒絕提供我們任何文件。我們已經和五名相關產品的研發技術人員談過。
+    他們都想要提供文件給我們以幫助研發。他們也對我們目前的工作成果表示讚揚。
+    但是受限於管理階層認為提供我們文件對 Intel 不會帶來好處的觀點，而無法提
+    供文件給我們。對 Intel 不應再寄與希望了。(假如你想買 gigabit 乙太網路硬
+    體，我們建議你買任何非 Intel 品牌...基於同樣的理由: 大部份的 Intel 網路
+    硬體是在沒有文件提供的狀況下撰寫的)。
+    <p>
+
+<li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pchb&sektion=4">
+    Intel 82802AB/82802AC Firmware Hub RNG</a></b><br>
+    82802 FWH 晶片 (在 i810, i820, i840, i850, 及 i860 主機版上皆有)
+    包含一個亂數產生器(RNG). 高效能的 IPsec 也需要更多的亂數混沌資料。
+    直到西元兩千年，四月十日，我們已經支援 RNG. 我們將會增加對其他有硬
+    體產生亂數功能的加解密晶片的支援。
+    <p>
+
+<li><b>OpenSSL</b><br>
+    數年以前，我們曾有藉由 OpenSSL 呼叫，自動加解密 RSA/DH/DSA 的硬體卡
+    支援計畫。直到 OpenBSD 3.2 版為止，這項支援已可運作，任何有此功能的
+    硬體加速卡，我們都可以自動使用到硬體的加速功能，其中包括 OpenSSH 及
+    支援 SSL 模式的 httpd. 在應用程式端並不需要做任何修改。
+</ul>
+
+<p>
+<b>假如有人想要幫忙撰寫驅動程式，
+<a href=#people>請加入我們的行列</a>。</b>
+
+<p>
+<a name=people></a>
+<h3><font color=#e00000>徵求國際密碼安全專家</font></h3><p>
+
+當然，我們的密碼安全整合計畫也需要人力加入。如果有任何非居住在美國的密碼
+安全專家符合上列條件，並且對幫助發展 OpenBSD 上的嵌入式密碼安全整合有興趣
+者，請與我們聯絡。<p>
+
+<p>
+<a name=papers></a>
+<h3><font color=#e00000>進階閱讀</font></h3><p>
+
+有許多由 OpenBSD 團隊成員撰寫的資料，記載了他們在 OpenBSD 中所做關於
+密碼安全整合的更新記錄。這些文件的 postscript 版本可以在下列網址中取得。<p>
+
+<ul>
+<li>A Future-Adaptable Password Scheme.<br>
+    <a href=events.html#usenix99>Usenix 1999</a>,
+    by <a href=mailto:provos@openbsd.org>Niels Provos</a>,
+    <a href=mailto:dm@openbsd.org>David Mazieres</a>.<br>
+    <a href=papers/bcrypt-paper.ps>paper</a> and
+    <a href=papers/bcrypt-slides.ps>slides</a>.
+<p>
+<li>Cryptography in OpenBSD: An Overview.<br>
+    <a href=events.html#usenix99>Usenix 1999</a>,
+    by <a href=mailto:deraadt@openbsd.org>Theo de Raadt</a>,
+    <a href=mailto:niklas@openbsd.org>Niklas Hallqvist</a>,
+    <a href=mailto:art@openbsd.org>Artur Grabowski</a>,
+    <a href=mailto:angelos@openbsd.org>Angelos D. Keromytis</a>,
+    <a href=mailto:provos@openbsd.org>Niels Provos</a>.<br>
+    <a href=papers/crypt-paper.ps>paper</a> and
+    <a href=papers/crypt-slides.ps>slides</a>.
+<p>
+<li>Implementing Internet Key Exchange (IKE).<br>
+    <a href=events.html#usenix2000>Usenix 2000</a>,
+    by <a href=mailto:niklas@openbsd.org>Niklas Hallqvist</a> and
+    <a href=mailto:angelos@openbsd.org>Angelos D. Keromytis</a>.<br>
+    <a href=papers/ikepaper.ps>paper</a> and
+    <a href=papers/ikeslides.ps>slides</a>.
+<p>
+<li>Encrypting Virtual Memory</a><br>
+    <a href=events.html#sec2000>Usenix Security 2000</a>,
+    <a href=mailto:provos@openbsd.org>Niels Provos</a>.<br>
+    <a href=papers/swapencrypt.ps>paper</a> and 
+    <a href=papers/swapencrypt-slides.ps>slides</a>.
+</ul>
+
+<p>
+<hr>
+<a href=index.html><img height=24 width=24 src=../back.gif border=0 alt=OpenBSD></a>
+<a href=mailto:www@openbsd.org>www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: crypto.html,v 1.113 ]<br>
+$Translation: crypto.html,v 1.1 2003/06/18 16:57:12 sjhuang Exp $<br>
+$OpenBSD: crypto.html,v 1.1 2003/06/21 12:24:00 jufi Exp $
+</small>
+
+</body>
+</html>
