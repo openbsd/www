@@ -14,12 +14,287 @@
 <a name="6.1"</a>
 <h2> 6.1 - Initial Network Setup </h2>
 <p>
-This section is not yet completed. Please Check back soon.
+<strong>
+Interfaces<br>
+----------
+</strong>
+<p>
+Here we assume you have all your network interfaces working, and a basic
+TCP/IP knowledge. If not, go to the <a href="./faq5.html">Kernel
+Configuration and Setup</a> section, and/or read a nice intro to TCP/IP.
+Other recommended reading is the 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&apropos=0&sektion=8&format=html">ifconfig(8)</a>
+and 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=netstat&apropos=0&sektion=1&format=html">netstat(1)</a> 
+man pages.<p>
+All your interfaces should be listed with:
+<pre><strong>
+# ifconfig -a
+
+lo0: flags=8009<UP,LOOPBACK,MULTICAST>
+        inet 127.0.0.1 netmask 0xff000000
+lo1: flags=8008<LOOPBACK,MULTICAST>
+xl0: flags=8843<UP,BROADCAST,RUNNING,SIMPLEX,MULTICAST>
+        media: Ethernet 100baseTX half-duplex
+        inet 10.1.1.1 netmask 0xffffff00 broadcast 10.1.1.255
+sl0: flags=c010<POINTOPOINT,LINK2,MULTICAST>
+        inet 10.1.1.1 netmask 0xffffff00 broadcast 10.1.1.255
+sl0: flags=c010<POINTOPOINT,LINK2,MULTICAST>
+sl1: flags=c010<POINTOPOINT,LINK2,MULTICAST>
+ppp0: flags=8010<POINTOPOINT,MULTICAST>
+ppp1: flags=8010<POINTOPOINT,MULTICAST>
+tun0: flags=10<POINTOPOINT>
+tun1: flags=10<POINTOPOINT>
+enc0: flags=8<LOOPBACK>
+</strong></pre>
+
+First there is lo0 the loopback interface. It MUST have assigned address
+127.0.0.1 no matter what network setup you use. The next important one is
+xl0 in this example (could be neX or epX depending on the brand),  wich is
+a board itself. Look it has UP and
+ RUNNING flags on, as lo0 but no other interface have them. That means
+oviously  they are working. Your interface could be down if you never
+configured it, and look like the othe interfaces. The others are not part
+of this section, as sl and ppp are for serial line comunication, tun is a pseudo-device for tunneling and enc a
+pseudo-device for encryption. 
+<p>
+If xl0 was uninitialized, you can assign it an address creating a ascii
+file /etc/hostname.xl0 having a string like this:
+<p><strong>
+inet mona 255.255.255.0 NONE
+</strong><p>        
+Here "mona" is a name that exists as a record in /etc/hosts:<br><strong> 
+<p>
+<pre>
+10.1.1.1        mona    mona.openbsd.org.ar </strong>
+</pre>
+<p>
+Now check that you have a file /etc/myname and a file /etc/mygate. If you
+don't have them, you need to create them. If your gateway is a machine
+named "wintermute" wich is also in the /etc/hosts, use this commands:
+<p>
+<strong>
+# echo "mona" >> /etc/myname; echo "wintermute" >> /etc/mygate
+</strong>
+<p>
+Ok, you are done for a standalone system, but to activate your
+configuration now (without rebooting) do:<p>
+<strong>
+# sh /etc/netstart<br>
+</strong>
+<p>
+This will give you a few errors, but don't worry as all them are
+concerning 127.0.0.x (loopback)
+<p>
+Note: if you want to use the system as a gateway, later there's a
+"Firewall Setup" section, but you need to read all this first.
+<p>
+Now check your routes are ok (here we use -n aso to make it simpler to
+look at):
+<p>
+<pre><strong>
+# netstat -rn
+Routing tables
+
+Internet:
+Destination        Gateway            Flags     Refs     Use    Mtu
+Interface
+default            10.1.1.254         UGS         0        0      -  xl0
+10.1.1/24          link#1             UC          0        0      -  xl0
+10.1.1.1           127.0.0.1          UGHS        0        0      -  lo0
+10.1.1.254         link#1             UHL         1        0      -  xl0
+127/8              127.0.0.1          UGRS        0        0      -  lo0
+127.0.0.1          127.0.0.1          UH          3       24      -  lo0
+224/8              link#1             UCS         0        0      -  xl0
+
+Encap:
+Source address/netmask          Port  Destination address/netmask     Port Proto SA(Address/SPI/Proto)
+
+</pre></strong>
+<p>
+(The gateway here is shown as 10.1.1.254)
+<p>
+<strong>
+IP Aliasing<br>   
+-----------<br>
+</strong>
+<p>
+If you want to map more than one IP address on a single network interface,
+you  need to assign an "alias" to it. The way to do it on openbsd is
+simply assigning the interface another IP with the "alias" option like
+this:<p>
+<strong>
+# ifconfig xl0 alias 10.1.1.2 netmask 255.255.255.255
+</strong>
+<p>
+Here ne2 is assigned another IP number (remember it already has 10.1.1.1).
+Note the netmask used! Don't use 255.255.255.0 in this kind of cases (both
+numbers are on the same subnet), only ONE address shoud handle the subnet.
+If you do such kind of misconfiguration the following error appears:
+<p>
+<strong>
+ifconfig:SIOCAIFADDR: File exists
+</strong>
+<p>
+Now let's change the configuration file for this, /etc/ifaliases. Add to
+it this line:
+<p>
+<strong>
+xl0   10.1.1.2 255.255.255.255
+</strong>
+<p>
+<strong>
+DNS Client Setup<br>
+----------------<br>
+</strong>
+<p>
+Let's assume your DNS servers are 125.2.3.4 and 125.2.3.5, and your
+machine namme belongs to the domain yourdomain.com. Add the following
+lines to your /etc/resolv.conf file:<p>
+<strong>
+domain yourdomain.com<br>
+nameserver 125.2.3.4<br>
+nameserver 125.2.3.5
+<p>
+Gateway Setup<br>
+-------------<br>
+</strong>
+<p>
+This is a minimal explanation, only for internal/secure networks! Read
+Firewall Setup if you plan to put a gateway to internet.
+
+If you want to put a host that connects two subnets, and you want it to
+"forward" any packet from them modify /etc/sysctl.conf line that toggles
+the forwarding variable on bootup:
+<p>
+net.inet.forwarding=1
+<p>
+To make the changes without booting:
+<p>
+<strong>
+# sysctl -w net.inet.ip.forwarding=1<br>
+net.inet.ip.forwarding: 0 -> 1
+</strong>
+<p>
+Now modify the routes on the other hosts on both sides.
 <p>
 <a name="6.2"></a>
 <h2> 6.2 - IPF/NAT Setup </h2>
+<p><strong>
+IPF and IPNAT Setup<br>
+-------------------
+<p></strong>
+The IPFilter package was created to handle with two tasks, dealing with
+packet level forwarding 
+permissions and mapping hosts/subnets to a range of external addresses.
+The configuration files are /etc/ipf.rules and /etc/ipnat.rules, and also
+part of /etc/
 <p>
-This section is not yet completed. Please Check back soon.
+rc.conf to activate them at boot time. You also need to have
+net.inet.ip.forwarding=1! You also need a kernel compiled with 
+ option IPFILTER and IPFILTER_LOG (the GENERIC one present in the
+installation have them).
+<p>
+There are a lot of nice examples on /usr/share/ipf/ for both. We recommend
+you to choose the one closer 
+to what you want, and modify it to fit your needs.
+<strong><p>
+IPF<br>
+---
+<p></strong>
+Modify rc.conf so it has IPFILTER=YES. The file /etc/ipf.rules has a
+simple yet powerful syntax.
+Here we deal with the most common ways of usage, for a more strict
+definition see man 5 ipf.
+Here is assumed xl0 as the external interface to internet, on this one
+uses to have more rules than internal interfaces.
+<p>
+Configurations usually start letting everything come and go, and then
+apply the necesary rules to block offending packets. So this is first:
+<strong><p>
+pass out from any to any
+pass in from any to any 
+<p></strong>
+Now lets block any incoming connection to port 82 tcp (eg. there's an
+internal network report agent using http running on several hosts):
+<strong><p>
+block in on xl0 proto tcp from any to any port = 82
+<p></strong>
+This rule means:<br>
+"Block all incoming packets on xl0 interface whose protocol is TCP no
+matter destination/origin using port 82"
+<p>
+If you want to log all rejected packets add "log" after "block in", or
+"log quick" if you dont want
+it to send a message to every console root is logged in.
+<p>
+Also a typical rule is to block rpc portmap:
+<p><strong>
+block in log on xl0 proto udp from any to any port = sunrpc
+<p>
+IPNAT<br>
+-----
+<p></strong>
+Based on RFC 1631, ipnat provides an easy way to map internal networks on
+a range of external addresses.
+This is very useful if you don't have officially asigned addresses for
+every host on your internal network. When  you set up private/internal
+networks you can take advantage of reserved address blocks like:
+<p><strong>
+10.0.0.0, 192.168.0.0, and 172.16.0.0
+<p></strong>
+If you have an internal network using 192.168.0.0 and you want to give
+them access to internet using
+OpenBSD (of course!) and a ppp connection using address 200.1.2.3, use
+this rule:
+<strong><p>
+map ppp0 192.168.0.0/16 -> 200.1.2.3/32
+<p></strong>
+Note the /16 and /32, this means:<br>
+"Any outgoing connection whose comming from an address matching the first
+16 bits of 192.168.0.0 should 
+be mapped on local address 200.1.2.3 (only one address since /32 means
+every bit)"
+<p>
+But here arises a pproblem. You are assigning a lot of addresses to only
+ona (or a few) address. 
+The way to go arount it is to map TCP and UDP ports to a certain range
+with the option "portmap".
+But remember ICMP doesnt work this way, it only has an ID field (usually
+based on process number). So now its like this:<p>
+<strong>
+map ppp0 192.168.0.0/16 -> 200.1.2.3/32 portmap tcp/udp 1024:65000<br>
+map ppp0 192.168.0.0/16 -> 200.1.2.3/32
+</strong>
+<p>
+This way things work better. If you have a dynamic address assignment
+(like regular dialup modem account), you can do this:<p>
+<strong>
+map ppp0 192.168.0.0/16 -> ppp0/32 portmap tcp/udp 1024:65000<br>
+map ppp0 192.168.0.0/16 -> ppp0/32<br>
+<p>
+Redirecting ports<br>
+-----------------<p>
+</strong>
+This is another very handy feature of IPNAT. If you have a host on the
+internal network (using private addresses), and you want to let incoming
+connections to it, you just need a simple redirect rule. For example, if you have a web
+server on internal network at 10.2.2.7 listening on port 80, and want it to be
+accesible from the outside simply redirecting external IP 120.2.3.4 on xl0, just
+add this rule to <strong>/etc/ipnat.rules:<p>
+
+rdr xl0 120.2.3.4 port 80 -> 10.2.2.7 port 80<p>
+</strong>
+Thiis is a little graph:<p>
+<pre><strong>
+Internet <--> (xl0) OpenBSD (xl1) <--> LAN <--> 10.2.2.7
+            128.2.3.4      whatever  10.2.2.0   Web server
+</strong></pre><p>
+
+Remember to activate kernel must have option IP FORWARDING. Also remember that EVERY packet
+MUST pass through the OpenBSD box, i.e. you cant redirect ports to hosts on the
+same network and address external to the OpenBSD box.
+
 <p>
 <a name="6.3"></a>
 <h2> 6.3 - IPSEC</h2>
@@ -146,7 +421,7 @@ In this example, your ip is 209.115.93.18, and the peer side ip is
 <a href=index.html><img height=24 width=24 src=../back.gif border=0
 alt=OpenBSD$
 <a href=mailto:www@openbsd.org>www@openbsd.org</a>
-<br><small>$OpenBSD: faq6.html,v 1.4 1999/01/05 02:52:18 ericj Exp $</small>
+<br><small>$OpenBSD: faq6.html,v 1.5 1999/02/11 18:10:11 ericj Exp $</small>
 </body>
 </html>
 
