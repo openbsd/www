@@ -34,6 +34,7 @@
 <li><a href="#NewDisk"    >14.3 - Adding extra disks in OpenBSD</a>
 <li><a href="#SwapFile"   >14.4 - How to swap to a file</a>
 <li><a href="#SoftUpdates">14.5 - Soft Updates</a>
+<li><a href="#Boot386"    >14.6 - How does OpenBSD/i386 boot?</a>
 <li><a href="#LargeDrive" >14.7 - What are the issues regarding large
     drives with OpenBSD?</a>
 <li><a href="#InstBoot"   >14.8 - Installing Bootblocks - i386 specific</a>
@@ -709,6 +710,199 @@ machines.  These architectures support only a very limited amount of
 kernel memory and cannot use this feature.  However, sun4m machines are
 fine.
 
+<a name="Boot386"></a>
+<h2>14.6 - How does OpenBSD/i386 boot?</h2>
+The boot process for OpenBSD/i386 is not trivial, and understanding how
+it works can be useful to troubleshoot a problem when things don't work.
+There are four key pieces to the boot process:
+<ol>
+<li><b><i>Master Boot Record (MBR):</i></b> The Master Boot Record is the 
+first physical sector (512 bytes) on the disk.
+It contains the primary partition table and a small program to load
+the Partition Boot Record (PBR).
+Note that in some environments, the term "MBR" is used to refer to only
+the code portion of this first block on the disk, rather than the whole
+first block (including the partition table).
+It is critical to understand the meaning of "initialize the MBR" -- in
+the terminology of OpenBSD, it would involve rewriting the entire MBR
+sector, not just the code, as it might on some systems.
+You will rarely want to do this.
+Instead, use fdisk(8)'s "update" command.
+
+<p>
+While OpenBSD includes an MBR, you are not obliged
+to use it, as virtually any MBR can boot OpenBSD.  
+The MBR is manipulated by the fdisk(8) program, which is used both to 
+edit the partition table, and also to install the MBR code on the 
+disk.
+
+<p>
+OpenBSD's MBR announces itself with the message:
+<pre>
+    Using Drive: 0 Partition: 3
+</pre>
+showing the disk and partition it is about to load the PBR from.
+
+<li><b><i>Partition Boot Record (PBR):</i></b>
+The Partition Boot Record, also called the PBR or 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=biosboot&amp;sektion=8&amp;arch=i386">biosboot(8)</a>
+(after the name of the file that holds the code) is the first physical
+sector of the OpenBSD partition of the disk.
+The PBR is the "first-stage boot loader" for OpenBSD.
+It is loaded by the MBR code,
+and has the task of loading the OpenBSD second-stage boot loader,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=boot&amp;sektion=8&amp;arch=i386">boot(8)</a>.
+Like the MBR, the PBR is a very tiny section of code and data,
+only 512 bytes, total.
+That's not enough to have a fully filesystem-aware application, so
+rather than having the PBR locate <tt>/boot</tt> on the disk, the 
+BIOS-accessible location of <tt>/boot</tt> is physically coded into the
+PBR at installation time.
+
+<p>
+The PBR is installed by
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=installboot&amp;sektion=8&amp;arch=i386">installboot</a>,
+which is further described <a href="faq14.html#InstBoot">later in this
+document</a>.
+The PBR announces itself with the message:
+<pre>
+    reading boot....
+</pre>
+printing the dots as it reads sectors from the disk.
+
+<li><b><i>Second Stage Boot Loader, <tt>/boot</tt>:</i></b> <tt>/boot</tt> is
+loaded by the PBR, and has the task of accessing the OpenBSD file system
+through the machine's BIOS, and locating and loading the actual kernel.  
+boot(8) also passes various options and information to the kernel.
+<p>
+boot(8) is an interactive program.  After it loads, it attempts to locate 
+and read <tt>/etc/boot.conf</tt>, if it exists (which it does not on a 
+default install), and processes any commands in it.  Unless instructed
+otherwise by <tt>/etc/boot.conf</tt>, it then gives the user a prompt:
+
+<pre>
+     probing: pc0 com0 com1 apm mem[636k 190M a20=on]
+     disk: fd0 hd0+
+     >> OpenBSD/i386 BOOT 2.02
+     boot>
+</pre>
+It gives the user (by default) five seconds to start giving it other
+tasks, but if none are given before the timeout, it starts its default
+behavior: loading the kernel, <tt>bsd</tt>, from the root partition of
+the first hard drive.
+The second-stage boot loader probes (examines) your system hardware,
+through the BIOS (as the OpenBSD kernel is not loaded).
+Above, you can see a few things it looked for and found:
+<ul>
+<li><b>pc0</b> - the standard keyboard and video display of a i386
+system.
+<li><b>com0, com1</b> - Two serial ports
+<li><b>apm</b> - Advanced Power Management BIOS functions
+<li><b>636k 190M</b> - The amount of conventional (below 1M) and
+extended (above 1M) memory it found
+<li><b>fd0 hd0+</b> - The BIOS disk devices found, in this case, one floppy and one hard
+disk.
+</ul>
+
+The '+' character after the "hd0" indicates that the BIOS has told
+<tt>/boot</tt> that this disk can be accessed via LBA.
+When doing a first-time install, you will sometimes see a '*' after a
+hard disk -- this indicates a disk that does not seem to have a valid
+OpenBSD disk label on it. 
+
+
+<li><b><i>Kernel: <tt>/bsd</tt></i>:</b>  This is the goal of the boot process,
+to have the OpenBSD kernel loaded into RAM and properly running.
+Once the kernel has loaded, OpenBSD accesses the hardware directly,
+no longer through the BIOS.
+
+</ol>
+
+So, the very start of the boot process could look like this:
+<blockquote><pre>
+Using Drive: 0 Partition: 3                      <b><i>&lt;- MBR</i></b>
+reading boot....                                 <b><i>&lt;- PBR</i></b>
+probing: pc0 com0 com1 apm mem[636k 190M a20=on] <b><i>&lt;- /boot</i></b>
+disk: fd0 hd0+
+>> OpenBSD/i386 BOOT 2.02
+boot>
+booting hd0a:/bsd 4464500+838332 [58+204240+181750]=0x56cfd0
+entry point at 0x100120
+
+[ using 386464 bytes of bsd ELF symbol table ]
+Copyright (c) 1982, 1986, 1989, 1991, 1993       <b><i><- Kernel</i></b>
+        The Regents of the University of California.  All rights reserved.
+Copyright (c) 1995-2003 OpenBSD.  All rights reserved.  http://www.OpenBSD.org
+
+OpenBSD 3.4 (GENERIC) #18: Wed Sep 17 03:34:47 MDT 2003
+   ...
+</pre></blockquote>
+
+
+<h3>What can go wrong</h3>
+<ul>
+<li><b>Bad/invalid/incompatible MBR:</b>
+Usually, a used hard disk has some MBR code in place, but if the
+disk is new or moved from a different platform, AND you don't answer "Yes"
+to the "Use entire disk" question of the <a href="faq4.html#Disks">installation
+process</a>, you may end up with a disk without a valid MBR, and thus,
+will not be bootable, even though it has a valid partition table.
+
+<p>
+You may install the OpenBSD MBR on your hard disk using the fdisk
+program.  Boot from your install media, choose "Shell" to get a command
+prompt:
+
+<pre>
+    # <b>fdisk -u wd0</b>
+</pre>
+
+You may also install a specific MBR to disk using fdisk:
+<pre>
+    # <b>fdisk -u -f /usr/mdec/mbr wd0 </b>
+</pre> 
+
+which will install the file <tt>/usr/mdec/mbr</tt> as your system's
+MBR.
+This particular file on a standard OpenBSD install happens
+to be the standard MBR that is also built into fdisk, but any other
+MBR could be specified here.
+
+<li><b>Invalid <tt>/boot</tt> location installed in PBR:</b>
+When installboot(8) installs the partition boot record, it writes the
+physical location of <tt>/boot</tt>'s disk sectors into the PBR.
+Therefore, deleting and replacing <tt>/boot</tt> without re-running
+<a href="faq14.html#InstBoot">installboot(8)</a> will render
+your system unbootable, as the PBR will load whatever happens to be at
+the blocks specified in it, which will almost certainly no longer be the
+second-stage boot loader!
+Since <tt>/boot</tt> is being read using BIOS calls, if you alter the
+drive's geometry (i.e., taking it out of one computer that uses CHS
+translation and moving it into one that uses LBA translation, or even
+changing a translation option in your BIOS), it will <i>appear to the BIOS</i>
+to be in a different location (a different numerical block must be accessed
+to get the same data from the disk), so again, you will have to run
+installboot(8) before the system can be rebooted.
+As the PBR is very small, its range of error messages is pretty limited:
+
+<ul>
+<li><b>Read Error</b> -- BIOS returned an error when trying to read a
+block from the disk.
+Could be a physical problem with the disk, or an invalid sector was
+called for (i.e., geometry problem).
+<li><b>Bad magic</b> -- An invalid 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=magic&amp;sektion=5">magic(5)</a>
+number was read in the second-stage bootloader's header.
+This generally means whatever it was that was read in was NOT
+<tt>/boot</tt>.
+Usually, this is due to a drive geometry problem, having replaced 
+<tt>/boot</tt> on your disk or ignoring the
+<a href="faq14.html#LargeDrive">8G or BIOS limitations</a> of your 
+system, and having <tt>/boot</tt> end up somewhere the PBR can't 
+reach it.
+</ul>
+</ul>
+
 
 <a name="LargeDrive"></a>
 <h2>14.7 - What are the issues regarding large drives with OpenBSD?</h2>
@@ -730,7 +924,7 @@ You must respect the abilities of your hardware, of course.
 Unfortunately, the full ability of the OS isn't available until AFTER
 the OS has been loaded into memory, and the booting process introduces
 limits of its own.  The boot process has to utilize (and is thus limited
-by) the system's boot ROM.  The OpenBSD i386 first stage boot loader
+by) the system's boot ROM.  The OpenBSD i386 first-stage boot loader
 (<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=biosboot&amp;sektion=8&amp;arch=i386">biosboot(8)</a>)
 also has its own internal 8G limitation, from an older BIOS limit.
  
@@ -806,8 +1000,8 @@ something that fits within MS-DOS' ability.  However, not all BIOS chips
 "translate" the geometry in the same way.  If you change your BIOS
 (either with a new motherboard or a new SCSI controller), and the new
 one uses a different "translated" geometry, you will be unable to load
-the second stage boot loader (and thus unable to load the kernel).
-(This is because the first stage boot loader contains a list of the
+the second-stage boot loader (and thus unable to load the kernel).
+(This is because the first-stage boot loader contains a list of the
 blocks that comprise /boot in terms of the original "translated"
 geometry).  If you are using IDE disks, and you make changes to your
 BIOS settings, you can (unknowingly) change its translation also (most
@@ -815,7 +1009,7 @@ IDE BIOS offer 3 different translations). To fix your boot block so that
 you can boot normally, just put a boot floppy in your drive (or use a
 bootable CD-ROM) and at the boot prompt, type "b hd0a:/bsd" to force it
 to boot from the first hard disk (and not the floppy).  Your machine
-should come up normally.  You now need to update the first stage boot
+should come up normally.  You now need to update the first-stage boot
 loader to see the new geometry (and re-write the boot block
 accordingly).  <br> Our example will assume your boot disk is sd0 (but
 for IDE it would be wd0, etc..):
@@ -1376,7 +1570,7 @@ special support for these cards.
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq14.html,v 1.97 2004/01/01 20:34:06 nick Exp $</small>
+<small>$OpenBSD: faq14.html,v 1.98 2004/01/02 01:14:16 nick Exp $</small>
 
 </body>
 </html>
