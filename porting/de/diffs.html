@@ -1,0 +1,365 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+<head>
+<meta name="generator" content="HTML Tidy, see www.w3.org">
+<meta http-equiv="Content-Type" content=
+"text/html; charset=iso-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description" content=
+"Differences with other BSD porting systems.">
+<meta name="keywords" content="openbsd,ports">
+<meta name="distribution" content="global">
+<meta name="copyright" content=
+"This document copyright 2000 by OpenBSD.">
+<title>Unterschiede zu anderen BSD Port Systemen</title>
+</head>
+<body text="Black" bgcolor="White" link="#23238E">
+<img height="30" width="141" src="../../images/smalltitle.gif" alt=
+"[OpenBSD]"> 
+
+<h1>OpenBSD Porting Informationen</h1>
+
+<h2><font color="#e00000">Wichtige Unterschiede zu anderen
+BSD Projekten</font></h2>
+
+<p>
+NetBSD benutzt den Ausdruck <em>ports</em> f&uuml;r Architektur-abh‰ngige
+Dinge. Ihre ports Struktur heisst stattdessen <em>packages</em>. 
+</p>
+
+<h3>Infrastruktur</h3>
+
+<p>
+Du kannst auf das Vorhandensein einer speziellen Version von <code>bsd.port.mk</code> 
+mittels Setzen von NEED_VERSION pr&uuml;fen.
+</p>
+
+<p>
+Setze die NEED_VERSION Zeile direkt unter die CATEGORIES Zeile, um
+das automatische Verarbeiten zu erleichtern.
+</p>
+
+<p>
+OpenBSD's make unterst&uuml;tzt <code>${VAR:U}</code> und
+<code>${VAR:L}</code> um den Wert einer Variablen in Groﬂ- oder
+Kleinschreibung zu &auml;ndern. Dementsprechend sollte 'make test' 
+auch unabh&auml;ngig von Gross- und Kleinschreibung programmiert sein,
+also z.B.:
+</p>
+
+<pre>
+	.if ${NEED_XXX:L} == "yes"
+	do stuff if yes
+	.else
+	do other stuff
+	.endif
+</pre>
+
+<p>
+Es gibt eine M&ouml;glichkeit sicherzustellen, dass alle Variablen, die von
+<code>bsd.port.mk</code> erkannt werden, auch definiert sind, so dass wir eventuell
+<code>defined(USE_GMAKE)</code> loswerden und stattdessen
+<code>${USE_GMAKE:L} != "no"</code> benutzen k&ouml;nnen. 
+</p>
+
+<p>
+Die Haupt <code>bsd.port.mk</code> Datei wurde deutlich ver&auml;ndert und
+schlanker gemacht. Insbesondere ist sie jetzt bereit f&uuml;r 
+parallel-make. 
+Das <code>scripts/{pre,do,post}-*</code> Feature ging w&auml;hrend des Prozesses
+verloren. Um das Skript wieder auferstehen zu lassen, rufe es per Hand aus dem
+Makefile auf.
+</p>
+
+<h3>make sauber benutzen</h3>
+
+<p>
+Denk daran, wenn du make mit <code>make VAR=value</code> aufrufst, wird 
+die Zuweisung jeden Wert <em>&uuml;berschreiben</em> den VAR vom Makefile
+erhalten kann. Also sind viele Makefile patches nicht mehr notwendig, es ist viel
+besser die MAKE_FLAGS korrekt zu setzen, um den Wartungsaufwand zu verringern.
+</p>
+
+<h3>Sources holen</h3>
+
+<p>
+Es gibt zwei Arten von Archiven: DISTFILES und PATCHFILES.
+OpenBSD behandelt sie in gleicher Art und Weise, und holt standardm&auml;ssig alles
+von den MASTER_SITES. Es gibt <strong>keine</strong> 
+PATCH_SITES oder PATCH_SITES_SUBDIR.
+</p>
+
+<p>
+Wenn nicht alle zu holenden Dateien von der selben Site kommen, erlaubt
+OpenBSD die erweiterten Dateinamen:0 bis Dateiname:9, in diesem Fall wird
+es die Dateien von den
+MASTER_SITES0 bis MASTER_SITES9 holen.
+</p>
+
+<p>
+Manche Architekturen ben&ouml;tigen m&ouml;glicherweise spezielle distfiles. In der Vergangenheit
+gab es Probleme damit, soweit das Spiegeln von distfiles betroffen war. OpenBSD
+unterst&uuml;tzt eine dritte Art von Dateien: SUPDISTFILES. Diese werden nur
+zum Erzeugen von Checksummen und beim Spiegeln verwendet. Denk dran, dass
+SUPDISTFILES m&ouml;glicherweise mit DISTFILES oder PATCHFILES kollidieren.
+Z.B.: 
+</p>
+
+<pre>
+	DISTFILES=foo-1.0.tgz
+	.if ${ARCH} == "i386"
+	DISTFILES+=foo-i386.tgz
+	.elif ${ARCHI} == "sparc"
+	DISTFILES+=foo-sparc.tgz
+	.endif
+	SUPDISTFILES=foo-i386.tgz foo-sparc.tgz
+</pre>
+
+<h3>Die <code>Arbeits</code> Infrastruktur</h3>
+
+<p>
+Wir wollen nicht, dass ports <code>NO_WRKDIR</code> benutzen. Alle OpenBSD
+ports m&uuml;ssen ein 'work directory' haben. Die Details der Namensgebung sollten
+keine Angelegenheit des porters sein. Wenn du einen solchen Namen erfahren musst, 
+frage einfach das Makefile:
+<code>cd that_ports_dir
+&amp;&amp; make show VARNAME=WRKDIR</code> wird die Vorstellung des Codes von seinem 
+<code>WRKDIR</code> offenlegen.
+</p>
+
+<p>
+Der Hauptgrund hinter dieser Annahme ist, dass OpenBSD's
+<code>bsd.port.mk</code> wie ein echtes Makefile agiert, allerdings mit ein paar Abh&auml;ngigkeiten.
+Die <code>fetch</code> Stufe h&auml;ngt von den distfiles und patchfiles ab, alle anderen Stufen
+sind von echten Dateien im 'working directory' (cookies) abh&auml;ngig, so dass sie gar nicht ohne
+ein 'working directory' existieren k&ouml;nnen.
+</p>
+
+<p>
+Aufgrund eines historischen Unfalls erzeugt das <code>do-extract</code> Fragment
+das 'working directory'.Dementsprechend sollten  
+<code>pre-extract</code> und <code>do-extract</code> <em>
+niemals</em> &uuml;berschrieben werden. Wenn die DISTFILES Extraktion eine besondere ist,
+setze 
+</p>
+
+<pre>
+EXTRACT_ONLY=
+</pre> 
+
+<p>
+und mache die Extraktion in <code>post-extract.</code>
+</p>
+
+<dl>
+<dt>WRKDIR</dt>
+
+<dd>Das port working directory, wo es seine eigenen cookies unterbringt.
+</dd>
+
+<dt>WRKDIST</dt>
+
+<dd>Unterverzeichnis von WRKDIR indem der port tats&auml;chlich ausgepackt wird.
+Das ist auch das Basisvberzeichnis f&uuml;r Patches. Andere BSD's haben zur Zeit keine
+WRKDIST/WRKSRC Aufteilung, sondern nur
+WRKSRC.</dd>
+
+<dt>WRKSRC</dt>
+
+<dd>Unterverzeichnis von WRKDIST in dem der tats&auml;chliche Source
+lebt.</dd>
+
+<dt>WRKBUILD</dt>
+
+<dd>Unterverzeichnis von WRKDIR wo das Konfigurieren und Erzeugen (build) des port
+geschehen wird. Andere BSD's haben die WRKBUILD/WRKSRC Aufteilung nicht.
+Programme, die (gr&ouml;&szlig;tenteils) auf autoconf basieren, k&ouml;nnen f&uuml;r 
+gew&ouml;hnlich SEPARATE_BUILD setzen, damit der port in einem anderen Verzeichnis
+(WRKBUILD) als
+WRKSRC geschieht.</dd>
+
+<dt>WRKINST</dt>
+
+<dd>Verzeichnis, in dem der port installiert wird, bevor er gepackt wird (packaged)
+(siehe auch 'Faking ports' weiter unten).</dd>
+</dl>
+
+<p>
+<em>Denk dran, dass es NO_WRKSUBDIR nicht mehr gibt: seine Funktionalit&auml;t kann stattdessen
+mit dem Setzen von  WRKDIST=$(WRKDIR) erreicht werden.</em>
+</p>
+
+<h3>Faking ports</h3>
+
+<h4>Einf&uuml;hrung</h4>
+
+<p>
+Nachdem ein 'build' komplett ist gehen andere BSDs dazu &uuml;ber den port
+zu installieren, und erzeugen dann ein package vom installierten port.
+OpenBSD benutzt stattdessen 'faked installation'. Der ports tree is noch nicht
+komplett auf FAKE umgestellt, aber wir arbeiten daran.
+</p>
+
+<ul>
+<li>Ein 'faked port' wird ganz normal konfiguriert und erzeugt (z.B., um unter
+<code>PREFIX</code> installiert zu werden, normalerweise
+<code>/usr/local</code>).</li>
+
+<li>Aber es wird ihm gesagt, er solle sich woanders installieren, namentlich unter WRKINST, was f&uuml;r
+gew&ouml;hnlich ein Unterverzeichnis von WRKDIR ist.</li>
+
+<li>Dann wird die angebliche Installation gepackt (packaged), indem die -s Option von
+pkg_create benutzt wird.</li>
+
+<li>Schlussendlich wird das daraus resultierende Paket (package) mittels pkg_add installiert.</li>
+</ul>
+
+<h4>Vorteile</h4>
+
+<ul>
+<li>F&uuml;r einen 'package builder' bedeutet es, dass die meisten ports
+nicht wirklich installiert werden m&uuml;ssen, was eine Menge potentieller
+Kompromisse und allgemeine Probleme vermeidet.
+Es erlaubt auch das Erzeugen von mehreren Paketen, die einen Konflikt erzeugen,
+d.h. zum Beispiel verschiedene Versionen derselben Software, auf einer Maschine.
+Schlussendlich erlaubt es das Erzeugen von neuen, ungestesteten Paketen ohne
+eine funktionierende Installation zu gef&auml;hrden.
+</li>
+
+<li>F&uuml;r einen 'port writer' vereinfacht es das Ziel Probleme in den
+'packing lists' zu finden, da die 'fake area of installation' leer ist,
+bevor der port installiert wird. Zudem ist es nicht mehr n&ouml;tig die port
+Installation zu beeinflussen, wenn ein port zu viele Dateien installiert, es reicht
+die unwesentlichen Dateien einfach nicht in der 'packing list' aufzuf&uuml;hren.</li>
+
+<li>F&uuml;r den User verbessert es die Qualit&auml;t der packages: da der letzliche port
+mit pkg_add installiert wird, erh&auml;lt der User 
+<em>exakt</em> die gleiche Software, wie die, die auf der Maschine des porters vorbereitet wurde.
+</li>
+</ul>
+
+<h4>Wie man es macht</h4>
+
+<p>
+Um das 'fake framework' zu aktivieren, musst du lediglich die Variable FAKE=Yes im
+Makefile des port setzen.
+</p>
+
+<p>
+Die Ziele (targets), die <code>make fake</code> aufruft, sind die &uuml;blichen
+Installationsziele, mit einigen Ausnahmen : 
+</p>
+
+<ul>
+<li>FAKE_FLAGS wird anstelle von MAKE_FLAGS benutzt. Standardm&auml;ssig setzt
+FAKE_FLAGS auf DESTDIR=${WRKINST}.</li>
+
+<li>FAKE_TARGET wird anstelle von INSTALL_TARGET benutzt.</li>
+
+<li>Die {pre,do,post}-Installationsfragmente werden mittels Setzen von TRUEPREFIX
+auf $(PREFIX), PREFIX auf $(WRKINST)$(PREFIX), und DESTDIR
+auf $(WRKINST) in Gang gebracht.</li>
+</ul>
+
+<p>
+Ports, die imake benutzen, sollten so wie sie sind funktionieren, da die imake Fragmente 
+konfiguriert sind, um DESTDIR zu benutzen. Genauso sollten neuere gnu-configure ports
+keine &Auml;nderungen ben&ouml;tigen.
+</p>
+
+<p>
+Eine weitere gute Technik ist ein `late binding' Trick: konfiguriere die
+ports so, dass sie einen Pr&auml;fix von $(DESTDIR)/usr/local benutzen, so dass das resultierende
+Makefile den Pr&auml;fix 
+</p>
+
+<pre>
+prefix=$(DESTDIR)/usr/local
+</pre>
+<p>
+hat. Wenn der 'port' erzeugt wird, und DESTDIR nichts enth&auml;t, wird /usr/local benutzt.
+Und die fake-Installation wird alles unter
+WRKINST/usr/local installieren (also f&uuml;r gnu configure benutze 
+<code>CONFIGURE_ARGS=--prefix='$$(DESTDIR)$(PREFIX)'</code>).
+</p>
+
+<h4>Fallen</h4>
+
+<ul>
+<li>Einige ports sind inkonstistent in ihrer DESTDIR Verarbeitung: die 
+meisten Teile des port sind zufrieden mit dem gesetzten DESTDIR, mit Ausnahme
+von zwei oder drei Ausreissern. Patche das Problem weg.</li>
+
+<li>Unterscheide immer die wirkliche Stelle, an der port installiert wird und
+die, die in den Konfigurationsdateien des packages aufgef&uuml;hrt ist.
+Das kann man leicht &uuml;bersehen, ist aber leicht durch die Verwendung von
+TRUEPREFIX zu vermeiden.</li>
+
+<li>Absolute Symlinks m&uuml;ssen immer angepasst werden. Gl&uuml;cklicherweise 
+wird <code>bsd.port.mk</code> hier alle Probleme bemerken.</li>
+
+<li>Ein paar ports wollen $(DESTDIR) nicht alleine dem 
+configure Schritt &uuml;berlassen. Ein post-configure Fragment, dass allen 
+Makefiles das DESTDIR hinzuf&uuml;gt wird ben&ouml;tigt.</li>
+
+<li>Sehr selten wird ein port allen vern&uuml;nftigen Versuchen widerstehen, FAKE
+zu benutzen. Ein Versuch mit roher Gewalt sollte funktionieren: benutze pre-fake
+um alles, was der port im WRKINST Bereich ben&ouml;tigt, zu linken oder zu kopieren,
+danach installiere unter chroot.</li>
+</ul>
+
+<h3>Flavors</h3>
+
+<p>
+Options wurden zu flavors zusammengefasst, so dass das Erzeugen von packages
+(package building) konsistent sein kann.
+Ein port mit options sollte FLAVORS all der
+Optionen setzen, die Sinn f&uuml;r diesen port machen (also
+FLAVORS=foo bar zoinx); benutze 'FLAVOR' um zu testen, welche Optionen
+tats&auml;chlich gesetzt wurden (also: FLAVOR=zoinx foo).
+<code>bsd.port.mk</code> bietet einige Unterst&uuml;tzung: 
+</p>
+
+<ul>
+<li>Der PKGNAME wird angepasst, um mit Bindestrich getrennte Optionen zu enthalten(z.B.,
+package-foo-zoinx).</li>
+
+<li>Das WRKDIR wird so angepasst, dass konkurrierende flavors erzeugt werden k&ouml;nnen,
+ohne zu kollidieren.</li>
+
+<li>Wenn die packing list PLIST.sed heisst, werden Konstrukte der Form
+%%flavor%% die Einbeziehung von pfrag.Flavor ausl&ouml;sen. Das
+%%SHARED%% Konstrukt l&ouml;st die Einbeziehung von PFRAG.shared aus.</li>
+
+<li>bsd.port.subdir.mk versteht die Erweiterung von
+SUBDIR=directory:opt1,opt2  um sagen zu wollen: `baue den port in directory mit
+FLAVOR=opt1 opt2.'</li>
+</ul>
+
+<p>
+&Uuml;berpr&uuml;fen ob ein gegebener flavor ausgew&auml;hlt wurde ist recht leicht: 
+</p>
+
+<pre>
+.if ${FLAVOR:L}="zoinx foo"
+</pre>
+
+<p>
+&Uuml;berpr&uuml;fen ob ein flavor eine bestimmte Option enth&auml;lt ist etwas 
+schwieriger:
+</p>
+
+<pre>
+.if ${FLAVOR:L:Mzoinx}
+</pre>
+
+<hr>
+<small>
+Originally [OpenBSD: diffs.html,v 1.5 ]
+<br>
+$Translation: diffs.html,v 1.1 2000/07/04 17:12:59 jufi Exp $
+<br></small>
+<small>$OpenBSD: diffs.html,v 1.1 2000/07/08 20:36:30 jufi Exp $</small>
+
+</body>
+</html>
