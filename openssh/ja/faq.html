@@ -7,7 +7,7 @@
 <meta name="description"   content="the OpenSSH FAQ page">
 <meta name="keywords"      content="OpenSSH,SSH,Secure Shell,faq">
 <meta name="distribution"  content="global">
-<meta name="copyright"     content="This document copyright 1999-2004 OpenBSD">
+<meta name="copyright"     content="This document copyright 1999-2005 OpenBSD">
 <title>OpenSSH FAQ</title>
 <style>
 <!--
@@ -23,7 +23,7 @@ body { line-height: 130%; }
 
 <h1>OpenSSH FAQ (よくある質問と答え)</h1>
 
-<strong>更新: 2004/04/12</strong>
+<strong>更新: 2005/01/25</strong>
 
 <hr>
 
@@ -62,7 +62,7 @@ body { line-height: 130%; }
 <li><a href="#3.2">3.2 - PAM 認証では、空のパスワードは許されないの?</a>
 <li><a href="#3.3">3.3 - ssh(1) が接続する、あるいはログインするのに時間がかかる。</a>
 <li><a href="#3.4">3.4 - Linux で、ログに "Can't locate module net-pf-10" というメッセージが残るんだけど。</a>
-<li><a href="#3.5">3.5 - Slackware 7.0 や Red Hat Linux 6.x で、パスワード認証がうまくいかない。</a>
+<li><a href="#3.5">3.5 - (Slackware 7.0 や Red Hat Linux 6.x などで) パスワード認証がうまくいかない。</a>
 <li><a href="#3.6">3.6 - Configure や sshd に、 RSA あるいは DSA がサポートされていない、と文句を言われるんだけど。</a>
 <li><a href="#3.7">3.7 - "scp: command not found" エラーがでる。</a>
 <li><a href="#3.8">3.8 - パスフレーズが入力できない。</a>
@@ -72,6 +72,7 @@ body { line-height: 130%; }
 <li><a href="#3.12">3.12 - OpenSSH 3.1 にアップグレードしたら、X11 転送が効かなくなった。</a>
 <li><a href="#3.13">3.13 - OpenSSH 3.8 にアップグレードしたら、いくつかの X11 プログラムが動かなくなった。</a>
 <li><a href="#3.14">3.14 - 公開鍵を authorized_keys にコピーしたんだけど、まだ公開鍵認証がうまくいかない。</a>
+<li><a href="#3.15">3.15 - OpenSSH のバージョンと PAM のふるまいについて。</a>
 </ul>
 </blockquote>
 
@@ -864,43 +865,73 @@ IPv6 を禁止するかのいずれかを行ってください。
 いくつかのおバカな理由により、 <I>/etc/modules.conf</I> は
 <I>/etc/conf.modules</I> という名前になっていることもあり得ます。
 
-<h2><a name="3.5">3.5 - Slackware 7.0 や Red Hat Linux 6.x で、パスワード認証がうまくいかない。</a></h2>
+<h2><a name="3.5">3.5 - (Slackware 7.0 や Red Hat Linux 6.x などで) パスワード認証がうまくいかない。</a></h2>
 
 <p>
-Slackware 7.0 では、OpenSSH を libcrypt とリンクする必要があります:
+パスワードを正しく入力したのにログインが拒否される場合、
+よくあるケースは、お使いのシステムが MD5 形式のパスワードを使うよう
+設定されているのにもかかわらず、sshd の使っている
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=crypt&amp;sektion=3">crypt(3)</a> 関数が
+それを理解できていないというものです。
+
+<p>
+このような場合に影響を受けるアカウントは、<i>/etc/passwd</i> あるいは
+<i>/etc/shadow</i> 中のパスワード文字列が <b>$1$</b> で始まっています。
+古くからあるアカウントではパスワード認証に成功するのに、
+新しく作成したアカウント、または最近できたアカウントでは失敗するという
+ケースでしたら、おそらくこれが犯人でしょう。
+
+<p>
+これが起こる要因は、あるバージョンの OpenSSL にある crypt(3) 関数が
+md5 パスワードを理解できておらず、さらに sshd をリンクする際の順序により
+OpenSSL の crypt(3) がシステムの crypt(3) よりも優先されて使われるためです。
+OpensSSH の configure はこの順序を正しくしようとしますが、これがつねに
+成功するとは限りません。
+
+<p>
+とりうる解決策はいくつかあります:
+
+<ul>
+<li>
+<p>
+sshd をビルドする際、MD5 パスワードのサポートをビルトインする。
 
 <blockquote>
 <table border="0" width="800">
         <tr>
                 <td nowrap bgcolor="#EEEEEE">
-LIBS=-lcrypt ./configure [options]
+./configure --with-md5-passwords [オプション]
                 </td>
         </tr>
 </table>
 </blockquote>
 
 <p>
-Red Hat Linux のいくつかのバージョンには MD5 形式のパスワードを生成する
-パスワード管理ツールがありますが、システムの crypt() 関数はそれらを
-理解しません。古いアカウントではパスワード認証が動くにもかかわらず、
-新しいアカウントや、最近パスワードを変更したアカウントでは
-動かない場合、これは考えられる原因のひとつです。
-(問題となるアカウントは、<i>/etc/shadow</i> 内にある
-暗号化されたパスワード文字列の最初が <code>$1$</code> で始まっています。)
+この方法では sshd がそれぞれのアカウントに対して正しいアルゴリズムを
+自動的に選ぶので、パスワードが両方のタイプで暗号化されているときでも安全です。
 
 <p>
-この問題を解決するには、sshd をビルトするときに MD5 パスワードの
-サポートを許可するようにします:
+お使いのシステムに個別の libcrypt ライブラリがある場合 (Slackware 7 など) は、
+LIBS のリストに -lcrypt を 手動で追加することでこちらが OpenSSL の関数のかわりに
+使われます:
 
 <blockquote>
 <table border=0 width="800">
         <tr>
                 <td nowrap bgcolor="#EEEEEE">
-./configure --with-md5-passwords [options]
+LIBS=-lcrypt ./configure [オプション]
                 </td>
         </tr>
 </table>
 </blockquote>
+
+<li>
+<p>
+お使いのシステムが PAM をサポートしている場合、sshd にそれを使わせることも
+できます (<a href="#3.15" >3.15 節</a> を参照)。こうするとパスワードは sshd 自身が
+検証するのではなく、あらかじめ設定された PAM モジュールに検証が委ねられることになります。
+
+</ul>
 
 <h2><a name="3.6">3.6 - Configure や sshd に、 RSA あるいは DSA がサポートされていない、と文句を言われるんだけど。</a></h2>
 
@@ -1090,16 +1121,92 @@ $ <b>chmod 600 $HOME/.ssh/authorized_keys</b>
 <b>StrictModes no</b> に設定するという方法があります。
 しかし、これはおすすめできません。
 
+<h2><a name="3.15">3.15 - OpenSSH のバージョンと PAM のふるまいについて。</a></h2>
+
+移植版 OpenSSH は configure する際にオプションを指定することによって、
+sshd に <a href="http://www.opengroup.org/onlinepubs/008329799/">PAM</a>
+(Pluggable Authentication Modules) インターフェイスを使わせることができます。
+
+<blockquote>
+<table border=0 width="800">
+        <tr>
+                <td nowrap bgcolor="#EEEEEE">
+./configure --with-pam [オプション]
+                </td>
+        </tr>
+</table>
+</blockquote>
+
+PAM を使う場合、最低限このオプションはビルド時に指定する必要があります。
+PAM が組み込まれた場合の実行時のふるまいは 移植版 OpenSSH のバージョンによって
+違います。新しいバージョンの場合は <i>sshd_config</i> で
+<b>UsePAM</b> を <b>yes</b> に設定しておく必要があります。
+
+<p>
+PAM を使っている場合、妥当な認証を選ぶ方法については以下の表を見てください。
+
+<p>
+<table border="1">
+  <tr> <th>バージョン</th> <th>UsePAM の値</th> <th>PasswordAuthentication</th> <th>ChallengeResponseAuthentication</th> </tr>
+  <tr>
+    <td>&lt;=3.6.1p2</td>
+    <td>存在せず</td>
+    <td>PAM を使う</td>
+    <td><b>PAMAuthenticationViaKbdInt</b> が許可されていれば PAM を使う</td>
+  </tr>
+  <tr>
+    <td>3.7p1 〜 3.7.1p1</td>
+    <td>デフォルトは <b>yes</b></td>
+    <td>PAM を使わない</td>
+    <td><b>UsePAM</b> が許可されていれば PAM を使う</td>
+  </tr>
+  <tr>
+    <td>3.7.1p2 - 3.8.1p1</td>
+    <td>デフォルトは <b>no</b></td>
+    <td>PAM を使わない <a href="#3.15fn1">[1]</a></td>
+    <td><b>UsePAM</b> が許可されていれば PAM を使う</td>
+  </tr>
+  <tr>
+    <td>3.9p1</td>
+    <td>デフォルトは <b>no</b></td>
+    <td><b>UsePAM</b> が許可されていれば PAM を使う</td>
+    <td><b>UsePAM</b> が許可されていれば PAM を使う</td>
+  </tr>
+</table>
+<p>
+
+<a name="3.15fn1">[1]</a> 
+いくつかのベンダ、とりわけ Redhat/Fedora では、3.9p1 の
+PasswordAuthentication 部分をベンダが提供している 3.8x ベースのパッケージに
+バックポートしています。これらのベンダが提供しているパッケージを
+お使いの場合は、ベンダのドキュメントを参照してください。
+
+<p>
+移植版 OpenSSH PAM インターフェイスには、まだいくつかのモジュールで問題があります。
+問題の数は将来にわたって減少することを期待してはいますが。3.9p1 リリースの時点で
+判明している問題は以下のとおりです:
+
+<ul>
+  <li> モジュールがそのプライベートなデータに依存しているもの
+  (pam_dhkeys, pam_krb5, AFS など) については、<b>ChallengeResponseAuthentication</b> を
+  使用して認証したとき、正しく承認を確立できないことがある (bug <a
+  href="http://bugzilla.mindrot.org/show_bug.cgi?id=688">#688</a>)。
+  <b>PasswordAuthentication</b> については 3.9p1 およびそれ以降の場合は問題ないはずです。
+</ul>
+
+<a href="http://bugzilla.mindrot.org/buglist.cgi?product=Portable+OpenSSH&amp;bug_status=RESOLVED&amp;bug_status=NEW&amp;bug_status=ACCEPTED&amp;component=PAM+support">bugzilla: 現在わかっている PAM の問題</a>
+も参考にしてください。
+
 <hr>
 <a href="index.html"><img height="24" width="24" src="../back.gif" border="0" alt="OpenSSH"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
 <small>
 <!--
-Originally [OpenBSD: faq.html,v 1.91 ]
-$Translation: faq.html,v 1.37 2005/01/20 20:12:23 euske Exp $
+Originally [OpenBSD: faq.html,v 1.97 ]
+$Translation: faq.html,v 1.38 2005/01/28 20:19:38 euske Exp $
 -->
-$OpenBSD: faq.html,v 1.37 2005/01/20 20:29:28 jufi Exp $
+$OpenBSD: faq.html,v 1.38 2005/01/29 16:59:30 jufi Exp $
 </small>
 </body>
 </html>
