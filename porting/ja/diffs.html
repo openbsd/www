@@ -1,0 +1,340 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+<head>
+<meta name="generator" content="HTML Tidy, see www.w3.org">
+<meta http-equiv="Content-Type" content=
+"text/html; charset=iso-2022-jp">
+<meta name="resource-type" content="document">
+<meta name="description" content=
+"Differences with other BSD porting systems.">
+<meta name="keywords" content="openbsd,ports">
+<meta name="distribution" content="global">
+<meta name="copyright" content="This document copyright 2000 by OpenBSD.">
+<title>Differences from other BSD port systems</title>
+</head>
+<body text="Black" bgcolor="White" link="#23238E">
+<img height="30" width="141" src="../../images/smalltitle.gif" alt=
+"[OpenBSD]"> 
+
+<h1>OpenBSD 移植情報</h1>
+
+<h2><font color="#e00000">他の BSD プロジェクトとの
+重要な差異</font></h2>
+
+<p>
+NetBSD では、<em>ports</em> という用語を、アーキテクチャ依存のものとして使用しています。
+その代わりに、彼らの ports の枠組は <em>packages</em> と呼ばれています。
+</p>
+
+<h3>Generic infrastructure issues</h3>
+
+<p>
+OpenBSD の make は、変数の値を大文字や小文字に変換するために、
+<code>${VAR:U}</code> および <code>${VAR:L}</code> をサポートします。
+このため、make の条件テストは、たとえば以下の例のように、
+大文字・小文字に依存しない形でコーディングすべきです。
+</p>
+
+<pre>
+	.if ${NEED_XXX:L} == "yes"
+	do stuff if yes
+	.else
+	do other stuff
+	.endif
+</pre>
+
+<p>
+最終的に <code>defined(USE_GMAKE)</code> を除去し、代わりに
+<code>${USE_GMAKE:L} != "no"</code> を使用するようにするため、
+<code>bsd.port.mk</code> に認識されるすべての変数が
+常に定義されていることを確実にしようとする動きがあります。
+</p>
+
+<p>
+主となる <code>bsd.port.mk</code> ファイルは、大変効率化され、
+修正されました。特に、並列 make が可能になっています。
+<code>scripts/{pre,do,post}-*</code> の機能は、このプロセスから
+なくなりました。この機能を置き換えるため、Makefile から手動で
+スクリプトを呼び出してください。
+</p>
+
+<h3>make の正しい使用法</h3>
+
+<p>
+もし、<code>make VAR=value</code> として make を実行する場合には、Makefile
+から得られた VAR の値がどのようなものであっても、その値の割り当てに優先することに
+注意してください。ですから、多くの場合、Makefile のパッチは不要ですので、
+メンテナンスの負荷を軽減するためには、MAKE_FLAGS を正確に設定する方が
+ずっと良いでしょう。
+</p>
+
+<h3>ソースの取得</h3>
+
+<p>
+ソースアーカイブには、DISTFILES と PATCHFILES の 2 種類があります。
+OpenBSD ではそれらを同じ方法で処理し、デフォルトでは MASTER_SITES
+からすべてのものを受け取ります。PATCH_SITES や PATCH_SITES_SUBDIR
+は存在<strong>しない</strong>のです。
+</p>
+
+<p>
+OpenBSD は filename:0 から filename:9 までの拡張を許していますので、
+もし、同一のサイトから必要なすべてのファイルを取得できなかった場合には、
+たとえば、ファイルを受け取るために MASTER_SITES0 から MASTER_SITES9
+まで使用されることになります。
+</p>
+
+<p>
+いくつかのアーキテクチャでは、特定の配布ファイルが必要になるかも知れません。以前は
+これが原因で、配布ファイルのミラーリングが関係したトラブルになることがありました。
+OpenBSD は、SUPDISTFILES で 3 つ目のファイルのセットをサポートしています。これらは、
+チェックサムの生成やミラーリングの目的のためだけに用意されているものと考えられます。
+SUPDISTFILES は、たとえば、以下の例のように DISTFILES や PATCHFILES と重複している
+かも知れないということに注意してください。
+</p>
+
+<pre>
+	DISTFILES=foo-1.0.tgz
+	.if ${ARCH} == "i386"
+	DISTFILES+=foo-i386.tgz
+	.elif ${ARCHI} == "sparc"
+	DISTFILES+=foo-sparc.tgz
+	.endif
+	SUPDISTFILES=foo-i386.tgz foo-sparc.tgz
+</pre>
+
+<h3><code>作業用</code>インフラストラクチャ</h3>
+
+<p>
+私たちは <code>NO_WRKDIR</code> を使用するような ports は欲しくはありません。
+すべての OpenBSD の ports は作業用ディレクトリが指定されていなければなりません。
+これらの作業用ディレクトリの命名の詳細は、移植者に関係のないようにすべきです。
+もし、これらの名前を見つけたい場合には、Makefile を参照してください。
+<code>cd that_ports_dir &amp;&amp; make show VARNAME=WRKDIR</code> とすれば、
+その ports の <code>WRKDIR</code> を見ることができるはずです。
+</p>
+
+<p>
+作業用ディレクトリない ports を禁止する主な理由は、OpenBSD の <code>bsd.port.mk</code>
+が、実際の Makefile のように振る舞い、依存性があるからです。
+<code>fetch</code> のステージは、配布ファイルやパッチファイルに依存し、
+これ以外のすべてのステージは、作業用ディレクトリ (やクッキー) に存在する
+実際のファイルに依存しているので、これらのファイルは
+作業用ディレクトリなしに存在することができないのです。
+</p>
+
+<p>
+歴史的な偶然性により、<code>do-extract</code> の断片が
+作業用ディレクトリを作成します。ですので、
+<code>pre-extract</code> と <code>do-extract</code> は、
+<em>決して</em>無効にすべきではありません。もし、DISTFILES
+の展開が特殊である場合には、
+</p>
+
+<pre>
+EXTRACT_ONLY=
+</pre> 
+
+<p>
+を設定し、そして <code>post-extract</code> の展開を実行してください。
+</p>
+
+<dl>
+<dt>WRKDIR</dt>
+
+<dd>ports が自分自身のクッキーを置くための
+作業用ディレクトリです。</dd>
+
+<dt>WRKDIST</dt>
+
+<dd>WRKDIR のサブディレクトリで、ここで ports が実際に展開されます。
+ここはまた、パッチを適用するためのベースディレクトリでもあります。
+他の BSD は、現状では WRKDIST/WRKSRC を区別せず、WRKSRC 
+を持つのみです。</dd>
+
+<dt>WRKSRC</dt>
+
+<dd>WRKDIST のサブディレクトリで、ここに実際のソースが
+置かれます。</dd>
+
+<dt>WRKBUILD</dt>
+
+<dd>WRKDIR のサブディレクトリで、ここで ports のコンフィギュアとビルドが
+行われます。他の BSD は、WRKBUILD/WRKSRC を区別していません。
+autoconf に基づくプログラムは、WRKSRC と区別された WRKBUILD の中で
+ports のビルドを行わせるようにするため、SEPARATE_BUILD を (ほぼ)
+普通にセットすることができます。</dd>
+
+<dt>WRKINST</dt>
+
+<dd>packages を作成するために ports がインストールされるディレクトリです
+(下記の ports の仮インストールを参照してください)。</dd>
+</dl>
+
+<p>
+<em>NO_WRKSUBDIR は削除されたことに注意してください。WRKDIST=$(WRKDIR)
+を設定することで、この機能を代替可能です。</em>
+</p>
+
+<h3>ports の仮インストール</h3>
+
+<h4>はじめに</h4>
+
+<p>
+ビルドの完了後、他の BSD では ports のインストールが行われ、その後に
+インストールされた ports から packages のビルドが行われます。OpenBSD
+では、その代わりに仮のインストールが使用されます。ports ツリーは、FAKE
+を使用することで、その全体の変換が行われませんが、目的は達成できます。
+</p>
+
+<ul>
+<li>仮の ports は普通にコンフィギュアが行われ、ビルドされます
+(たとえば、通常は <code>/usr/local</code> である <code>PREFIX</code>
+の下にインストールされるように...)。</li>
+
+<li>しかし、実際には他の場所、通常は WRKDIR のサブディレクトリの WRKINST
+と名付けられたところの下にインストールされるよう指示されます。</li>
+
+<li>そして、本物ではないインストールされた物は、pkg_create の -s
+オプションを使用して packages として作成されます。</li>
+
+<li>最終的に、pkg_add を使用してインストール可能な packages 
+が得られます。</li>
+</ul>
+
+<h4>優位性</h4>
+
+<ul>
+<li>packages 作成者にとって、これはほとんどの ports は実際にはインストールされる
+必要がないことを意味し、多数の潜在的な妥協や正常にインストールされなかった ports
+による一般的な障害を回避することができます。それはまた、同じマシン上で、
+いくつかの互いに対立するような packages を構築できるということも意味していますし、
+そしてさらには、正常なインストールを行わなくても、テストが行われていない新しい
+packages を構築できるということでもあるのです。</li>
+
+<li>ports の作者にとっては、ports がインストールされるまでは、仮の
+インストール場所は空の領域ですので、パックするリストの問題点を見つける作業が
+非常に簡単になります。そしてまた、ports が非常に多数のファイルをインストール
+する場合でも、特に ports のインストールに関する微調整を行う必要はありません。
+なぜなら、パックするリストの中に無関係なファイルを書かないようにするだけで
+十分だからです。</li>
+
+<li>エンドユーザにとっては、これは packages の質を改善します。なぜなら、
+最終的な ports は pkg_add を使用してインストールされ、エンドユーザは
+移植者のマシン上に用意されたソフトウェアと<em>厳密に</em>同じものが
+得られるからです。</li>
+</ul>
+
+<h4>その方法</h4>
+
+<p>
+以下のようなわずかな違いを除いて、<code>make fake</code> で呼び出される
+ターゲットが、通常はインストールされるターゲットになります。
+</p>
+
+<ul>
+<li>MAKE_FLAGS の代わりに FAKE_FLAGS が使用されます。デフォルトでは、
+FAKE_FLAGS は DESTDIR=${WRKINST} をセットします。</li>
+
+<li>INSTALL_TARGET の代わりに FAKE_TARGET が使用されます。</li>
+
+<li>{pre,do,post}-install という要素が TRUEPREFIX を $(PREFIX) に、
+PREFIX を $(WRKINST)$(PREFIX) に、そして DESTDIR を $(WRKINST) に
+セットした上で呼び出されます。</li>
+</ul>
+
+<p>
+imake の要素は DESTDIR を使用するように構成されるので、imake を使用する
+ports も、そのとおりに動作すべきです。同様にして、最近の GNU configure
+を使用する ports も無変更で動作すべきです。
+</p>
+
+<p>
+もうひとつの良いテクニックは、「遅延構築」の裏技です。Makefile
+が以下の行を含むようにするため、ports が $(DESTDIR)/usr/local
+を使用するように構成します。 
+</p>
+
+<pre>
+prefix=$(DESTDIR)/usr/local
+</pre>
+
+<p>
+ports がビルドされる際に、DESTDIR には何もセットされていないので、
+/usr/local が使用されます。そして、仮インストールでは、すべてのものが
+WRKINST/usr/local の下に置かれます (例: GNU configure では、
+<code>CONFIGURE_STYLE= gnu dest</code> を使用します)。
+</p>
+
+<h4>落とし穴</h4>
+
+<ul>
+<li>いくつかの ports は、その DESTDIR の処理に一貫性がありません。
+ひとつかふたつの違反を除けば、ほとんどの ports は DESTDIR の組み合わせに
+問題を抱えてはいません。パッチを当てて問題を解決してください。</li>
+
+<li>ports がインストールされる実際の場所と packages
+の構成ファイルに記録されている場所との区別には、
+十分に注意してください。これはいとも簡単に見過ごしてしまうことですが、
+TRUEPREFIX を使用して修正するもの簡単なことなのです。</li>
+
+<li>絶対的なシンボリックリンクは、必ず微調整を必要とします。幸運にも
+<code>bsd.port.mk</code> は、この領域の問題に対して警告してくれます。</li>
+
+<li>少数の ports は、configure の段階で $(DESTDIR)
+をそのままにしておいてくれません。すべての Makefiles に対して DESTDIR
+を追加するしてくれる post-configure の要素が必要になります。</li>
+
+<li>めったにないことですが、ports の仮インストールを行おうとする正当な試みが
+すべて失敗することがあります。ports が見つけようとするすべてのものを WRKINST
+の領域にコピーするかリンクするという pre-fake を使用するという、強引なアプローチを
+使用できる場合があります。その場合、chroot 環境下でインストールを実行してください。</li>
+</ul>
+
+<h3>フレーバ</h3>
+
+<p>
+オプションはフレーバとして合理化されていますので、packages の構築に一貫性を
+持たせることができます。オプションを持つ ports は、その ports が理解可能な
+すべてのオプションのリストを、(たとえば、FLAVORS=foo bar zoinx のように)
+FLAVORS に設定すべきです。そして、実際に選択されたオプションが何であるのかを
+テストするには、(たとえば、FLAVOR=zoinx foo のように) FLAVOR を使用します。
+<code>bsd.port.mk</code> は、以下のようなものをいくつかサポートしています。
+</p>
+
+<ul>
+<li>PKGNAME は、(たとえば package-foo-zoinx のように) ハイフンで
+分けられたオプションを含むよう調整されます。</li>
+
+<li>WRKDIR は、衝突することなく同時に構築できるフレーバを区別するために
+調整されます。</li>
+
+<li>%%flavor%% という形態での構築は、PFRAG.flavor を含む
+きっかけとなります。また、%%SHARED%% という構成は、PFRAG.shared
+を含むきっかけとなります。</li>
+
+<li>bsd.port.subdir.mk は、`FLAVOR=opt1 opt2 用のディレクトリで ports
+をビルドする' ということを宣言するための SUBDIR=directory,opt1,opt2
+という拡張を理解します。</li>
+</ul>
+
+<p>
+与えられたフレーバが選択されたかどうかは、以下のように簡単にチェックすることができます。
+</p>
+
+<pre>
+.if ${FLAVOR:L:Mzoinx}
+</pre>
+
+<hr>
+
+<small>
+Originally [OpenBSD: diffs.html,v 1.12 ]
+<br>
+$Translation: diffs.html,v 1.1 2003/08/17 12:13:18 toshi Exp $
+<br>
+$OpenBSD: diffs.html,v 1.1 2003/09/02 15:08:08 jufi Exp $
+</small>
+
+</body>
+</html>
