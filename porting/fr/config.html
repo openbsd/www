@@ -1,0 +1,163 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description" content="Porting guide: autoconf">
+<meta name="keywords" content="openbsd,ports,autoconf">
+<meta name="distribution" content="global">
+<meta name="copyright" content="This document copyright 2004 by OpenBSD.">
+<title>Manuel du porteur: gérer les fichiers de configuration</title>
+</head>
+<body>
+<img height="30" width="141" src="../../images/smalltitle.gif" alt="[OpenBSD]"> 
+<h1>Manuel du porteur: gérer les fichiers de configuration</h1>
+
+Les paquets ne devraient installer leurs fichiers que sous
+<code>${PREFIX}</code>, qui correspond par défaut à <code>/usr/local</code>.
+D'un autre côté, la règle sous OpenBSD est d'installer la plupart des fichiers
+de configuration sous <code>${SYSCONFDIR}</code>, à savoir <code>/etc</code> par
+défaut.
+</p>
+<i>Notez qu'il est parfaitement acceptable pour un paquet d'avoir ${PREFIX} et
+${SYSCONFDIR} configurés "en dur": PREFIX et SYSCONFDIR sont principalement des
+options de configuration utilisateur influençant la construction du paquet.</i>
+</p>
+<h2>Explication de @sample</h2>
+Les "packing-lists" possèdent un mécanisme spécifique nommé <code>@sample</code>
+permettant de gérer les fichiers de configuration:
+<ul>
+<li>Pendant la phase d'installation "fake", le port installera un fichier de
+configuration exemple comme ${PREFIX}/share/examples/PKGNAME/foo.rc.
+<li>La "packing-list" devra contenir la ligne <code>@sample
+${SYSCONFDIR}/foo.rc</code> juste en-dessous de celle concernant le fichier de
+configuration exemple.
+<li>A l'installation, le fichier de configuration exemple sera copié à
+l'emplacement où le véritable fichier de configuration devra se trouver.
+<li>Au moment d'une désinstallation et d'une mise à jour, si un fichier de
+configuration existe déja, il sera comparé au fichier de configuration exemple.
+S'ils diffèrent, l'utilisateur en sera informé lui laissant le choix de le
+mettre à jour/remplacer lui-même. S'ils sont identiques, l'outil d'installation
+saura qu'il pourra procéder à la suppression/mise à jour sans autre précaution.
+</ul>
+<h2>Autres spécificités de @sample</h2>
+Au contraire des autres entrées d'une "packing-list", les entrées
+<code>@sample</code> peuvent avoir un chemin absolu.
+</p>
+Certains gros paquets auront aussi besoin de leur propre répertoire de
+configuration, <code>@sample ${SYSCONFDIR}/directory/</code> sera capable de
+gérer cette situation.
+</p>
+L'utilisation de <code>@sample directory/</code> pour créer des répertoires
+spécifiques à un paquet et ne contenant aucun fichier de configuration est aussi
+supporté. <code>@sample</code> interprète parfaitement les définitions
+<code>@mode</code>, <code>@owner</code> et <code>@group</code>. Ceci peut
+paraître un peu laborieux car vous aurez souvent besoin de passer d'un mode par
+défaut à un mode spécifique à un fichier de configuration et vice-versa.
+<h2>Astuces.</h2>
+<code>make update-plist</code> est capable de copier <code>@sample</code> vers
+la nouvelle PLIST mais n'est pas capable de les créer, il faudra donc qu'ils
+soient définis une première fois.
+</p>
+Notez la différence entre un fichier de configuration et un fichier de
+configuration exemple: le port doit être configuré pour utiliser les fichiers
+sous <code>${SYSCONFDIR}</code> ; seule l'installation "fake" doit placer des
+éléments sous <code>${PREFIX}/share/examples</code>. Une manière simple de gérer
+cela est de copier les fichiers avec <code>post-install</code>.
+</p>
+Une astuce intéressante fonctionnant la plupart du temps est de regarder le
+Makefile du program et de remplacer le répertoire de configuration durant la
+phase d'installation "fake" grâce à l'utilisation de <code>FAKE_FLAGS</code>
+spécifiques, par exemple:
+<pre>FAKE_FLAGS=DESTDIR=${WRKINST} sysconfdir=${WRKINST}${TRUEPREFIX}/share/examples/PKGNAME
+</pre>
+Vous devez juste faire attention aux programmes qui définissent le répertoire de
+configuration dans certains fichiers à l'installation.
+<h2>Exemples</h2>
+<ul>
+<li>Le port security/integrit utilise un dossier de configuration contenant
+plusieurs fichiers. Sa "packing-list" est la suivante:
+<pre>
+@comment $OpenBSD: config.html,v 1.1 2004/11/28 18:54:11 jufi Exp $
+bin/i-ls
+@info info/integrit.info
+@man man/man1/i-ls.1
+@man man/man1/i-viewdb.1
+@man man/man1/integrit.1
+sbin/i-viewdb
+sbin/integrit
+share/doc/integrit/
+share/doc/integrit/README
+share/doc/integrit/crontab
+share/doc/integrit/install_db
+share/doc/integrit/integrit_check
+share/doc/integrit/viewreport
+share/examples/integrit/
+@sample ${SYSCONFDIR}/integrit/
+share/examples/integrit/root.conf
+@sample ${SYSCONFDIR}/integrit/root.conf
+share/examples/integrit/src.conf
+@sample ${SYSCONFDIR}/integrit/src.conf
+share/examples/integrit/usr.conf
+@sample ${SYSCONFDIR}/integrit/usr.conf
+</pre>
+<li>Le port security/nessus utilise <code>@sample dir/</code> afin de créer des
+répertoires privés.
+<pre>
+...
+sbin/uninstall-nessus
+@sample ${SYSCONFDIR}/nessus/
+@mode 0700
+@sample /var/nessus/
+@sample /var/nessus/jobs/
+@sample /var/nessus/logs/
+@sample /var/nessus/users/
+@extraunexec rm -fr %D/lib/nessus/plugins/*
+@extraunexec rm -fr %D/nessus
+@extraunexec rm -fr /var/nessus
+</pre>
+<li>Le port sysutils/nut définit un propriétaire spécifique pour ses fichiers de
+configuration.
+<pre>
+@comment $OpenBSD: config.html,v 1.1 2004/11/28 18:54:11 jufi Exp $
+@conflict upsd-*
+@newuser ${NUT_USER}:${NUT_ID}:::UPS User:/var/empty:/sbin/nologin
+...
+share/examples/nut/
+@sample ${SYSCONFDIR}/nut/
+@owner ${NUT_USER}
+share/examples/nut/ups.conf
+@sample ${SYSCONFDIR}/nut/ups.conf
+share/examples/nut/upsd.conf
+@mode 600
+@sample ${SYSCONFDIR}/nut/upsd.conf
+@mode
+share/examples/nut/upsd.users
+@mode 600
+@sample ${SYSCONFDIR}/nut/upsd.users
+@mode
+share/examples/nut/upsmon.conf
+@mode 600
+@sample ${SYSCONFDIR}/nut/upsmon.conf
+@mode
+share/examples/nut/upssched.conf
+@sample ${SYSCONFDIR}/nut/upssched.conf
+@mode 700
+@sample /var/db/nut/
+@mode
+@owner
+share/ups/
+share/ups/cmdvartab
+share/ups/driver.list
+</pre>
+  <hr>
+  <a href="../../index.html"><img height=24 width=24 src=../../back.gif border=0 alt=OpenBSD></a> 
+  <a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: config.html,v 1.1 ]<br>
+$Translation: config.html,v 1.1 2004/11/28 17:44:38 ajacoutot Exp $<br>
+$OpenBSD: config.html,v 1.1 2004/11/28 18:54:11 jufi Exp $
+</small>
+</body>
+</html>
