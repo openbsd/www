@@ -57,17 +57,18 @@ function dump() {
 	print "<TD BGCOLOR=\"White\">" 
 		if (indv != "")
 			print indv "<BR>" 
-		print org "<BR>" addr
-	print "	<TD>" city "<BR>" prov
+		print "<B>" org "</B><BR>" addr "</TD>"
+	print "	<TD>" city "<BR>" prov "</TD>"
 	print "	<TD>" 
 		if (phone != "")
 			print phone "<BR>" 
-		print fax
+		print fax "</TD>"
 	print "	<TD>"
 		if (email != "")
 			print "<A HREF=\"mailto:" email "\">" email "</A>" "<BR>"
-		print "<A HREF=\"" url "\">" url "</A>"
-	print "	<TD>" note
+		print "<A HREF=\"" url "\">" url "</A>" "</TD>"
+	print "	<TD>" note "</TD>"
+	print "</TR>"
 }
 
 function reset() {
