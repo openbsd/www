@@ -736,9 +736,19 @@ disk.
 <p>
 OpenBSD's MBR announces itself with the message:
 <pre>
-    Using Drive: 0 Partition: 3
+    Using drive 0, partition 3.
 </pre>
 showing the disk and partition it is about to load the PBR from.
+In addition to the obvious, it also shows a trailing period ("."), which
+indicates this machine is capable of using LBA translation to boot.
+If the machine were incapable of using LBA translation, the above
+period would have have been replaced with a semicolon (";"), indicating
+CHS translation:
+<pre>
+    Using Drive 0, Partition 3;
+</pre>
+Note that the trailing period or semicolon can be used as an indicator
+of the "new" OpenBSD MBR, introduced with OpenBSD 3.5.
 
 <li><b><i>Partition Boot Record (PBR):</i></b>
 The Partition Boot Record, also called the PBR or 
@@ -763,9 +773,17 @@ which is further described <a href="faq14.html#InstBoot">later in this
 document</a>.
 The PBR announces itself with the message:
 <pre>
-    reading boot....
+    Loading...
 </pre>
-printing the dots as it reads sectors from the disk.
+printing a dot for every file system block it attempts to load.
+Again, the PBR shows if it is using LBA or CHS to load, if it has 
+to use CHS translation, it displays a message with a semicolon:
+<pre>
+    Loading;... 
+</pre>
+The older (pre v3.5) biosboot(8) showed the message "<tt>reading
+boot...</tt>.
+
 
 <li><b><i>Second Stage Boot Loader, <tt>/boot</tt>:</i></b> <tt>/boot</tt> is
 loaded by the PBR, and has the task of accessing the OpenBSD file system
@@ -780,7 +798,7 @@ otherwise by <tt>/etc/boot.conf</tt>, it then gives the user a prompt:
 <pre>
      probing: pc0 com0 com1 apm mem[636k 190M a20=on]
      disk: fd0 hd0+
-     >> OpenBSD/i386 BOOT 2.02
+     >> OpenBSD/i386 BOOT 2.06
      boot>
 </pre>
 It gives the user (by default) five seconds to start giving it other
@@ -817,11 +835,11 @@ no longer through the BIOS.
 
 So, the very start of the boot process could look like this:
 <blockquote><pre>
-Using Drive: 0 Partition: 3                      <b><i>&lt;- MBR</i></b>
-reading boot....                                 <b><i>&lt;- PBR</i></b>
+Using drive 0, partition 3.                      <b><i>&lt;- MBR</i></b>
+Loading....                                      <b><i>&lt;- PBR</i></b>
 probing: pc0 com0 com1 apm mem[636k 190M a20=on] <b><i>&lt;- /boot</i></b>
 disk: fd0 hd0+
->> OpenBSD/i386 BOOT 2.02
+>> OpenBSD/i386 BOOT 2.06
 boot>
 booting hd0a:/bsd 4464500+838332 [58+204240+181750]=0x56cfd0
 entry point at 0x100120
@@ -831,7 +849,7 @@ Copyright (c) 1982, 1986, 1989, 1991, 1993       <b><i><- Kernel</i></b>
         The Regents of the University of California.  All rights reserved.
 Copyright (c) 1995-2003 OpenBSD.  All rights reserved.  http://www.OpenBSD.org
 
-OpenBSD 3.4 (GENERIC) #18: Wed Sep 17 03:34:47 MDT 2003
+OpenBSD 3.5 (GENERIC) #34: Mon Mar 29 12:24:55 MST 2004
    ...
 </pre></blockquote>
 
@@ -867,38 +885,44 @@ MBR could be specified here.
 
 <li><b>Invalid <tt>/boot</tt> location installed in PBR:</b>
 When installboot(8) installs the partition boot record, it writes the
-physical location of <tt>/boot</tt>'s disk sectors into the PBR.
+block number and offset of <tt>/boot</tt>'s inode into the PBR.
 Therefore, deleting and replacing <tt>/boot</tt> without re-running
 <a href="faq14.html#InstBoot">installboot(8)</a> will render
-your system unbootable, as the PBR will load whatever happens to be at
-the blocks specified in it, which will almost certainly no longer be the
-second-stage boot loader!
-Since <tt>/boot</tt> is being read using BIOS calls, if you alter the
-drive's geometry (i.e., taking it out of one computer that uses CHS
+your system unbootable, as the PBR will load whatever happens to be 
+pointed to by the inode specified in it, which will almost certainly no
+longer be the desired second-stage boot loader!
+
+Since <tt>/boot</tt> is being read using BIOS calls, old verions of 
+the PBR were sensitive to BIOS disk translation.
+If you altered the
+drive's geometry (i.e., took it out of one computer that uses CHS
 translation and moving it into one that uses LBA translation, or even
-changing a translation option in your BIOS), it will <i>appear to the BIOS</i>
+changed a translation option in your BIOS), it would have <i>appeared to the BIOS</i>
 to be in a different location (a different numerical block must be accessed
-to get the same data from the disk), so again, you will have to run
-installboot(8) before the system can be rebooted.
-As the PBR is very small, its range of error messages is pretty limited:
+to get the same data from the disk), so you would have had to run
+installboot(8) before the system could be rebooted.
+The new (as of OpenBSD 3.5 and later) PBR is much more tollerant to 
+changes in translation.
+</ul>
+
+As the PBR is very small, its range of error messages is pretty limited,
+and somewhat cryptic.  Most likely messages are:
 
 <ul>
-<li><b>Read Error</b> -- BIOS returned an error when trying to read a
+<li><b>ERR R</b> -- BIOS returned an error when trying to read a
 block from the disk.
-Could be a physical problem with the disk, or an invalid sector was
-called for (i.e., geometry problem).
-<li><b>Bad magic</b> -- An invalid 
+Usually means exactly what it says: your disk wasn't readable.
+<li><b>ERR M</b> -- An invalid 
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=magic&amp;sektion=5">magic(5)</a>
 number was read in the second-stage bootloader's header.
 This generally means whatever it was that was read in was NOT
-<tt>/boot</tt>.
-Usually, this is due to a drive geometry problem, having replaced 
-<tt>/boot</tt> on your disk or ignoring the
-<a href="faq14.html#LargeDrive">8G or BIOS limitations</a> of your 
-system, and having <tt>/boot</tt> end up somewhere the PBR can't 
-reach it.
+<tt>/boot</tt>, usually meaning installboot(8) was run incorrectly
+or the /boot file was altered.
 </ul>
-</ul>
+Other error messages are detailed in the 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=biosboot&amp;sektion=8">biosboot(8)
+manual page</a>
+
 
 For more information on the i386 boot process, see
 <ul>
@@ -909,7 +933,6 @@ For more information on the i386 boot process, see
 
 <a name="LargeDrive"></a>
 <h2>14.7 - What are the issues regarding large drives with OpenBSD?</h2>
-<!-- XXXversion i386 changes for 3.5 -->
 
 <p>
 OpenBSD has support for file systems of sizes much larger than any
@@ -920,26 +943,29 @@ maximum of OpenBSD.
 <p>
 Not all hardware combinations are possible, of course.
 A new 250G IDE hard disk will not work on an older (pre >137G
-standards) interfaces, and some very old SCSI adapters have been 
-seen to have problems with more modern drives.
+standards) interfaces, and some very old SCSI adapters have been seen to
+have problems with more modern drives, and some older BIOSs will hang
+when they encounter a modern sized hard disk.
 You must respect the abilities of your hardware, of course.
 
 <h3>Partition size and location limitations</h3>
 Unfortunately, the full ability of the OS isn't available until AFTER
-the OS has been loaded into memory, and the booting process introduces
-limits of its own.  The boot process has to utilize (and is thus limited
-by) the system's boot ROM.  The OpenBSD i386 first-stage boot loader
-(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=biosboot&amp;sektion=8&amp;arch=i386">biosboot(8)</a>)
-also has its own internal 8G limitation, from an older BIOS limit.
+the OS has been loaded into memory.
+The boot process has to utilize (and is thus limited
+by) the system's boot ROM.
  
 <p>
 For this reason, the entire /bsd file (the kernel) must be located on
-the disk within the boot ROM addressable area, or within the first 8G of
-the disk, whichever is smaller.  This means that on some older i386
-systems, the root partition must be completely within the first 504M,
-but for most newer computers, the root partition may be anywhere within
-the first 8G.
-
+the disk within the boot ROM addressable area.
+This means that on some older i386 systems, the root partition must be
+completely within the first 504M, but newer computers may have limits of
+2G, 8G, 32G, 128G or more.
+It is worth noting that many relatively new computers which support 
+larger than 128G drives actually have BIOS limitations of booting 
+only from within the first 128G.
+You can use these systems with large drives, but your root partition
+must be within the first 128G.
+ 
 <p>
 Note that it is possible to install a 40G drive on an old 486 and load
 OpenBSD on it as one huge partition, and think you have successfully
@@ -953,7 +979,7 @@ OS and all its files (including /bsd) are within the first 504M.
   <li>You upgrade, build your own kernel, whatever, and copy your 
     new /bsd over the old one. 
   <li>You reboot.
-  <li>You get a message such as "bad magic"
+  <li>You get a message such as "ERR M" or other problems on boot.
 </ul>
 <p>
 Why?  Because when you copied "over" the new /bsd file, it didn't 
@@ -969,10 +995,13 @@ boot ROM's supported range, and within their own abilities.
 To play it safe, the rule is simple:
 
 <p>
-<b>The entire root partition must be within the computer's BIOS (or boot
-ROM) addressable space or within the first 8G, whichever is smaller.</b>
-<br><i>Note: the OpenBSD/i386 8G limit has been removed in -current.
-You must still respect your system's BIOS limit, however</i>
+<b>the entire root partition must be within the computer's BIOS
+(or boot ROM) addressable space.</b>
+
+<p>
+Some non-i386 users think they are immune to this, however most platforms
+have some kind of boot ROM limitation on disk size.
+Finding out for sure what the limit is, however, can be difficult.
 
 <p>
 This is another good reason to <a href="faq4.html#SpaceNeeded">partition 
@@ -1014,24 +1043,12 @@ you can boot normally, just put a boot floppy in your drive (or use a
 bootable CD-ROM) and at the boot prompt, type "b hd0a:/bsd" to force it
 to boot from the first hard disk (and not the floppy).  Your machine
 should come up normally.  You now need to update the first-stage boot
-loader to see the new geometry (and re-write the boot block
+Loader to see the new geometry (and re-write the boot block
 accordingly).  <br> Our example will assume your boot disk is sd0 (but
 for IDE it would be wd0, etc..):
 
 <pre>
 # <b>cd /usr/mdec; ./installboot /boot biosboot sd0</b>
-</pre>
-
-<p>
-If installboot complains that it is unable to read the BIOS geometry, at
-the boot&gt; prompt you may issue the &quot;machine diskinfo&quot; (or
-&quot;ma di&quot; for short) command to print the information you need.
-Feed the &quot;heads&quot; and &quot;secs&quot; values to installboot's
--h and -s flags, respectively, so that the modified installboot command
-is the following:
-
-<pre>
-#<b> cd /usr/mdec; ./installboot -h &lt;heads&gt; -s &lt;secs&gt; /boot biosboot sd0</b>
 </pre>
 
 <p>
@@ -1165,12 +1182,12 @@ st0 at scsibus0 targ 5 lun 0: &lt;ARCHIVE, Python 28388-XXX, 5.28&gt;
 
 <p>
 You may have noticed that when backing up, the tape drive is accessed as
-device name "nrst0" instead of the "st0" name that is seen in dmesg.
-When you access st0 as nrst0 you are accessing the same physical tape
+device name "<tt>nrst0</tt>" instead of the "<tt>st0</tt>" name that is seen in dmesg.
+When you access <tt>st0</tt> as <tt>nrst0</tt> you are accessing the same physical tape
 drive but telling the drive to not rewind at the end of the job and
 access the device in raw mode. To back up multiple file systems to a
 single tape, be sure you use the non-rewind device, if you use a rewind
-device (rst0) to back up multiple file systems, you'll end up
+device (<tt>rst0</tt>) to back up multiple file systems, you'll end up
 overwriting the prior filesystem with the next one dump tries to write
 to tape. You can find a more elaborate description of various tape drive
 devices in the dump man page.
@@ -1199,7 +1216,7 @@ could be used to launch your backup script automatically.
 
 <p>
 It will also be helpful to document (on a scrap of paper) how large each
-file system needs to be. You can use df -h to determine how much space
+file system needs to be. You can use "<tt>df -h</tt>" to determine how much space
 each partition is currently using. This will be handy when the drive
 fails and you need to recreate your partition table on the new drive.
 
@@ -1209,7 +1226,7 @@ get all files, the best way of backing up is rebooting your system in
 single user mode. File systems do not need to be mounted to be backed
 up. Don't forget to mount root (/) r/w after rebooting in single user
 mode or your dump will fail when trying to write out dumpdates. Enter
-bsd -s at the boot&gt; prompt for single user mode.
+"<tt>bsd -s</tt> at the boot&gt; prompt for single user mode.
 
 <h3>Viewing the contents of a dump tape:</h3>
 
@@ -1589,7 +1606,7 @@ special support for these cards.
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq14.html,v 1.104 2004/04/23 16:18:57 nick Exp $</small>
+<small>$OpenBSD: faq14.html,v 1.105 2004/04/30 18:04:29 nick Exp $</small>
 
 </body>
 </html>
