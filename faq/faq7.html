@@ -33,6 +33,7 @@ please, use a max of 72 chars per line -->
 <li><a href= "#SwitchConsole">7.5 - How do I switch consoles? (i386)</a>
 <li><a href= "#80x50"        >7.6 - How can I use a console resolution 
     of 80x50? (i386)</a>
+<li><a href= "#SerCon"       >7.7 - How do I use a serial console?</a>
 </ul>
 <hr>
 
@@ -228,6 +229,205 @@ requires to achieve the 80x50 text mode.  In these cases, you might wish
 to consider running X.
 
 
+<a name="SerCon"></a>
+<h2>7.7 - How do I use a serial console?</h2>
+
+There are many reasons you may wish to use a serial console for your 
+OpenBSD system:
+<ul>
+<li>Recording console output (for documentation). 
+<li>Remote management.
+<li>Easier maintenance of a large quantity of machines
+<li>Providing a useful dmesg from machines which might otherwise be
+  difficult to get one from.
+<li>Providing an accurate "trace" and "ps" output if your system
+  crashes so developers can have a chance to fix the problem.
+</ul>
+OpenBSD supports serial console on most platforms, however details
+vary greatly between platforms.
+
+<p>
+Note that serial interfacing is NOT a trivial task -- you will often
+need unusual cables, and ports are not standardized between machines, in
+some cases, not even consistent on one machine.  It is assumed you know
+how to select the appropriate cable to go between your computer and the
+device acting as your serial terminal. A full tutorial on serial
+interfacing is beyond the scope of this article, however, we offer one
+hint: just because the ends plug in doesn't mean it will work.
+
+<a name="SerContty"></a>
+<h3><i>/etc/ttys</i> change</h3>
+There are two parts to getting a functional serial console on an OpenBSD
+system.  First, you must have OpenBSD to use your serial port as a
+console for status and single user mode.  This part is very platform
+dependent.  Second, you must enable the serial port to be used as an
+interactive terminal, so a user can log into it when running multi-user.
+This part is fairly similar between platforms, and is detailed here.
+
+<p>
+Terminal sessions are controlled by the 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ttys&amp;sektion=5"><i>/etc/ttys</i></a>
+file.  Before OpenBSD will give you a "<tt>login:</tt>" prompt at a
+device, it has to be enabled in <i>/etc/ttys</i>, after all, there are
+other uses for a serial port other than for a terminal.  In platforms
+which typically have an attached keyboard and screen as a console, the
+serial terminal is typically disabled by default. We'll use the i386
+platform as an example.  In this case, you must edit the line that
+reads:
+
+<pre>
+     tty00   "/usr/libexec/getty std.9600"   unknown off
+</pre>
+to read:
+<pre>
+     tty00   "/usr/libexec/getty std.9600"   vt100   on secure
+</pre>
+
+Here, <tt>tty00</tt> is the serial port we are using as a console.
+The "<tt>on</tt>" activates the 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=getty&amp;sektion=8"><i>getty</i></a>
+for that serial port so it can a "<tt>login:</tt>" prompt will be
+presented, the "<tt>secure</tt>" permits a root (uid 0) login at this
+console (which may or may not be what you desire), and the
+"<tt>9600</tt>" is the terminal baud rate.  Note that you can use a
+serial console for install without doing this step, as the system is
+running in single user mode, and not using <i>getty</i> for login.
+
+<p>
+On some platforms and some configurations, you must bring the system up
+in single user mode to make this change if a serial console is all you
+have available.
+
+<h3>i386</h3>
+To direct the boot process to use the serial port as a console, 
+create or edit your 
+<i><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=boot.conf&amp;sektion=8&amp;arch=i386">/etc/boot.conf</a></i>
+file to include the line:
+<pre>
+     set tty com0
+</pre>
+
+assuming you want the first serial port to be used as your console.  The
+default baud rate is 9600bps, this can be changed with a
+<i>/etc/boot.conf</i> line using the stty option.  This file is put on
+your boot drive, which could also be your install floppy, or the command
+can be entered at the <tt>boot></tt> prompt from the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=boot&amp;sektion=8&amp;arch=i386">OpenBSD
+second-stage boot loader</a> for a one-time (or first time) serial
+console usage.
+
+
+<p>
+<h4>i386 notes:</h4>
+<ul>
+<li>OpenBSD numbers the serial ports starting at <i>tty00</i>,
+DOS/Windows labels them starting at <i>COM1</i>.  So, keep in mind
+<i>tty02</i> is <i>COM3</i>, not <i>COM2</i>
+
+<li>Some systems may be able to operate without a video card in the
+machine, but certainly not all -- many systems consider this an error
+condition.  Some machines will even refuse to work easily without a
+keyboard attached.
+
+<li>Some i386 systems are capable of using a serial port as the
+console device.  Your results may vary -- this port may not be available
+to the operating system once booted, thus requiring monitoring using TWO
+serial ports.
+
+<li>PC compatible computers are not designed to be run from a serial
+console, unlike some other platforms.  Even those systems that support a
+serial console usually have it as a BIOS configuration option -- and
+should the configuration information get corrupted, you will find the
+system looking for a standard monitor and keyboard again.  You generally
+must have some way to get a monitor and keyboard to your i386 systems in
+an emergency.
+
+<li>You will need to edit <i>/etc/ttys</i> as 
+<a href="#SerContty">above</a>.
+</ul>
+
+
+<h3>SPARC and UltraSPARC</h3>
+These machines are designed to be completely maintainable with a serial
+console.  Simply remove the keyboard from the machine, and the system
+will run serial.
+
+<h4>SPARC and UltraSPARC notes</h4>
+<ul>
+<li>The two serial ports on a SPARC are labeled <i>ttya</i> and
+<i>ttyb</i>.
+
+<li>Unlike some other platforms, it is not necessary to make any
+changes to <i>/etc/ttys</i> to use a serial console.
+
+<li>The SPARC/UltraSPARC systems interpret a BREAK signal on the console
+port to be the same as a STOP-A command, and kicks the system back to
+the Forth prompt, stopping any application and operating system at that
+point.  This is handy when desired, but unfortunately, some serial
+terminals at power-down and some RS-232 switching devices send something
+the computer interprets as a break signal, halting the machine.  Test
+before you go into production.
+
+<li>If you have a keyboard and monitor attached, you can still force 
+the serial console to be used instead by using the following commands 
+at the <tt>ok</tt> prompt:
+ <pre>
+     ok <b>setenv input-device ttya</b>
+     ok <b>setenv output-device ttya</b>
+     ok <b>reset</b>
+ </pre>
+If the keyboard and monitor (ttyC0) are active in <i>/etc/ttys</i>
+(<a href="#SerContty">above</a>), you may be able to use the keyboard
+and monitor, as well, though some combinations of SPARC hardware have
+trouble with the keyboard when doing this.
+</ul>
+
+<h3>MacPPC</h3>
+The MacPPC machines are configured for a serial console through
+OpenFirmware.  Use the commands:
+ <pre>
+     ok <b>setenv output-device scca</b>
+     ok <b>setenv input-device scca</b>
+     ok <b>reset-all</b>
+ </pre>
+Set your serial console to 57600bps, 8N1.
+
+<h4>MacPPC notes</h4>
+<ul>
+<li>Unfortunately, serial console is not directly possible on most
+MacPPCs.  While most of these machines do have serial hardware, it isn't
+accessible outside the machine.  Fortunately, a few companies offer
+add-on devices for several Macintosh models which will make this port
+available for use as a serial console (or other uses).  Use your
+favorite search engine and look for "Macintosh internal serial port".
+
+<li>You will have to change <tt>tty00</tt> in <i>/etc/ttys</i> to
+<tt>on</tt> and set the speed to 57600 instead of the default of 9600 as
+detailed <a href="#SerContty">above</a> in single user mode before
+booting multi-user and having the serial console functional.  </ul>
+
+
+<h3>Mac68k</h3>
+Serial console is selected in the <i>Booter</i> program, under the
+"<tt>Options</tt>" pull-down menu, then "<tt>Serial Ports</tt>".  Check
+the "Serial Console" button, then choose the Modem or Printer port.  You
+will need a Macintosh modem or printer cable to attach to the Mac's
+serial ports.  If you wish to have this as default, tell the Booter
+program to save your options.
+
+
+<h4>Mac68k Notes</h4>
+<ul>
+<li>The modem port is <i>tty00</i>, the printer port is <i>tty01</i>.
+
+<li>The Mac68k doesn't turn on its serial port until called upon, so
+your breakout box may not show any signals on the Mac's serial port
+until the OpenBSD boot process has started.
+
+<li>You will have to enable the port (<i>tty00</i> or <i>tty01</i>) as
+indicated <a href="#SerContty">above</a>.  </ul>
+
+
 <p>
 <font color= "#0000e0">
 <a href= "index.html">[Back to Main Index]</a>
@@ -240,6 +440,6 @@ to consider running X.
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt= "[back]"></a> 
 <a href= "mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq7.html,v 1.41 2002/11/19 21:16:10 nick Exp $</small>
+<small>$OpenBSD: faq7.html,v 1.42 2002/12/08 16:44:48 nick Exp $</small>
 </body>
 </html>
