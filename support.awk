@@ -1,5 +1,7 @@
 #!/usr/bin/nawk -f
 
+# used both by support.bld and by groups.bld, since the formats are similar
+
 # convert data like this (order doesn't matter except 0 at front)
 # 0
 # C Canada
@@ -49,15 +51,19 @@ $1 == "N" { note = substr($0, 2); next }
 	}
 
 function dump() {
-	print "<TR><TD>" 
-	if (indv != "")
-		print indv "<BR>" 
-	print org "<BR>" addr
+	print "<TR>"
+	print "<TD>" 
+		if (indv != "")
+			print indv "<BR>" 
+		print org "<BR>" addr
 	print "	<TD>" city "<BR>" prov
-	print "	<TD>" phone "<BR>" fax
+	print "	<TD>" 
+		if (phone != "")
+			print phone "<BR>" 
+		print fax
 	print "	<TD>"
-		print "<A HREF=\"mailto:" email "\">" email "</A>"
-		print "<BR>"
+		if (email != "")
+			print "<A HREF=\"mailto:" email "\">" email "</A>" "<BR>"
 		print "<A HREF=\"" url "\">" url "</A>"
 	print "	<TD>" note
 }
