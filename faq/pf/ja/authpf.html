@@ -1,0 +1,366 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: authpf: User Shell for Authenticating Gateways</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-2022-JP">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 2003 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
+<p>
+[<a href="ftp.html">前に戻る: FTP における問題</a>]
+[<a href="index.html">目次</a>]
+[<a href="example1.html">次に進む: 例 #1: 自宅や小規模事務所用
+ファイアウォール</a>]
+
+<h1><font color="#e00000">PF: authpf: 認証ゲートウェイ用
+ユーザシェル</font></h1>
+
+<hr>
+
+<h3>目次</h3>
+<ul>
+<li><a href="#intro">はじめに</a>
+<li><a href="#config">設定</a>
+	<ul>
+	<li><a href="#linkmain">authpf の主ルールセットへのリンク</a>
+	<li><a href="#loadrules">ロード済ルールの設定</a>
+	<li><a href="#acl">アクセス制御リスト</a>
+	<li><a href="#shell">authpf のユーザシェルとしての割り当て</a>
+	</ul>
+<li><a href="#wholog">誰がログイン中かを見る</a>
+<li><a href="#moreinfo">より詳しい情報</a>
+<li><a href="#example">例</a>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>はじめに</h2>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=authpf&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>authpf(8)</a> は、認証ゲートウェイ用のユーザシェルのことです。認証ゲートウェイとは、
+(ルータとも呼ばれる) 普通のネットワークゲートウェイの機能を持ち、
+そのゲートウェイを通過するために、
+最初にユーザが認証を受ける必要があるもののことです。
+ユーザのシェルが、
+(たとえば、
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ksh&amp;sektion=1&amp;manpath=OpenBSD+3.3"
+>ksh(1)</a>、
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=csh&amp;sektion=1&amp;manpath=OpenBSD+3.3"
+>csh(1)</a> などの代わりに) <tt>/usr/sbin/authpf</tt> に設定されていて、ユーザが SSH
+を使用してログインする場合、authpf はユーザのトラフィックがフィルタを通過できるようにしたり、
+ネットワークアドレス変換 (NAT) やリダイレクションを使用してアドレスが変換されるよう、アクティブな
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+3.3"
+>pf(4)</a> ルールセットに対して必要な変更を行います。
+ユーザがログアウトしたり、その接続が切断されたりした場合、
+authpf はこのユーザのためにロードされたルールをすべて除去し、ユーザがオープンしていた
+状態を持つ接続をすべて切断します。このため、SSH のセッションを
+開いている間のみ、そのユーザはゲートウェイを通してトラフィックを
+やり取りすることができます。
+
+<p>
+authpf は、
+<a href="anchors.html">アンカー点</a>に割り当てられた
+<a href="anchors.html#named">名前付きルールセット</a>を追加することで
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+3.3"
+>pf(4)</a> のルールセットを変更します。ユーザの認証ごとに
+authpf は新しい名前付きルールセットを生成し、設定済
+<a href="filter.html">フィルタ</a>、<a href="nat.html"><tt>nat</tt></a>、
+<a href="nat.html#binat"><tt>binat</tt></a> および
+<a href="rdr.html"><tt>rdr</tt></a> の各ルールを、生成したルールセットにロードします。
+authpf がロードするルールは、ユーザ単位、もしくはすべてのユーザに対して設定可能です。
+
+<p>
+authpf の使用例は次のものを含みます。
+<ul>
+<li>インターネットアクセスを許可する前にユーザの認証を要求します。
+<li>たとえば管理者などのユーザに対して、
+ネットワークの制限された部分へのアクセスを承認します。
+<li>無線ネットワークセグメントからネットワークの他の部分やインターネットへのアクセスを、
+既知のユーザに対してのみ許可します。
+<li>自宅や出張先から、従業員が会社のネットワーク上の
+リソースへアクセスすることを許可します。
+この時、オフィスの外にいるユーザが会社のネットワークに自由にアクセスできるのではなく、
+その認証時のユーザ名に基づいて、特定のリソース (たとえばそのユーザ自身のデスクトップなど)
+だけにアクセスを限定することもできます。
+<li>図書館や他の公衆インターネット端末のある施設では、
+PF を使用してゲストユーザに対して限定的なインターネットアクセスを許可するよう設定できます。
+authpf は、登録ユーザに対して制限のないアクセスを提供するために使用することも
+できます。
+</ul>
+
+<p>
+authpf は、ユーザ認証に成功したそれぞれのユーザのユーザ名と
+IP アドレス、ログインセッションの
+開始時刻と終了時刻を
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=syslogd&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>syslogd(8)</a> 経由でログに記録します。この情報を使用して、管理者は
+誰がいつログインしたのかを決定することができるようになり、そのネットワークの
+トラフィック上のユーザのアカウンティングが可能にもなります。
+
+<a name="config"></a>
+<h2>設定</h2>
+authpf の設定に必要な基本的な手順の概要をこちらに示します。
+authpf の設定の完全な説明は、
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=authpf&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>authpf man ページ</a>を参照してください。
+
+<a name="linkmain"></a>
+<h3>authpf の主ルールセットへのリンク</h3>
+authpf は、以下のように <tt>anchor</tt> ルールを使用して主ルールセットにリンクされます。
+<blockquote>
+<tt>
+nat-anchor authpf<br>
+rdr-anchor authpf<br>
+binat-anchor authpf<br>
+anchor authpf<br>
+</tt>
+</blockquote>
+
+<p>
+<tt>anchor</tt> ルールをルールセット中のどこに置いても、PF は authpf
+のルールを評価するため、主ルールセットから分岐します。
+4 つの <tt>anchor</tt> ルールすべてに必要なものではありません。
+たとえば、authpf がひとつも <tt>nat</tt> ルールをロードしていない場合、
+<tt>nat-anchor</tt> ルールは省略することができます。
+
+<a name="loadrules"></a>
+<h3>ロード済ルールの設定</h3>
+authpf は以下のふたつのファイルのひとつから、そのルールをロードします。
+<ul>
+<li><tt>/etc/authpf/users/$USER/authpf.rules</tt>
+<li><tt>/etc/authpf/authpf.rules</tt>
+</ul>
+
+<p>
+ひとつ目のファイルは、ユーザ <tt>$USER</tt> (これはユーザのユーザ名と
+置換されます) がログインする場合にのみロードされるルールが含まれています。
+ユーザごとのルールの設定は、管理者のような特定のユーザがデフォルトの
+ユーザとは異なるルールを必要とする場合に使用されるものです。
+ふたつ目のファイルは、自分自身の <tt>authpf.rules</tt> ファイルを持たない
+すべてのユーザ用にロードされるデフォルトのルールが含まれています。もし、
+ユーザ固有のファイルが存在する場合、それはデフォルトのファイルに優先します。少なくとも、
+いずれかひとつのファイルが存在していなければ、authpf を実行することはできません。
+
+<p>
+フィルタと変換のルールは、他のすべての PF のルールセットと
+同じシンタクスになっています。ただし authpf では、そのシンタクスに加えて、
+次の予め定義されたふたつのマクロが使用可能です。
+<ul>
+<li><tt>$user_ip</tt> - ログインしたユーザの IP アドレス
+<li><tt>$user_id</tt> - ログインしたユーザのユーザ名
+</ul>
+
+<p>
+<tt>$user_ip</tt> マクロは、認証されたユーザのコンピュータからの
+ゲートウェイを通過するトラフィックを許可するためだけに使用することが
+推奨されます。
+
+<a name="acl"></a>
+<h3>アクセス制御リスト</h3>
+<tt>/etc/authpf/banned/</tt> ディレクトリに、アクセスを拒否したいユーザのユーザ名を
+ファイル名とするファイルを生成することで、そのユーザに authpf を使用させないように
+することができます。authpf は当該ユーザの接続を拒否する際に、そのユーザに対応する
+ファイルの内容を表示します。これは、そのユーザがどうしてアクセスを許可されないのか、
+そして、そのアクセスを回復するためには誰にコンタクトを取れば良いのかなどの
+注意を促すための簡便な方法を提供しているのです。
+
+<p>
+これとは逆に、<tt>/etc/authpf/authpf.allow</tt> ファイル内にユーザ名を
+記述することで、特定のユーザにだけアクセスを許可することもできます。
+もし、<tt>/etc/authpf/authpf.allow</tt> ファイルが存在しないか、その内容が
+"<tt>*</tt>" だった場合、明示的にアクセスが禁止されていない限り、authpf は
+SSH でのログインに成功したすべてのユーザに対してアクセスを許可します。
+
+<p>
+そのユーザ名が許可されているのか拒否されているのかを authpf が決定できない場合、
+短かいメッセージを出力してそのユーザを切断します。また、
+<tt>/etc/authpf/banned/</tt> にあるエントリは常に
+<tt>/etc/authpf/authpf.allow</tt> にあるエントリに優先します。
+
+<a name="shell"></a>
+<h3>authpf のユーザシェルとしての割り当て</h3>
+authpf を動作させるには、それがユーザのログインシェルとして
+割り当てられていなければなりません。ユーザの
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sshd&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>sshd(8)</a> による認証が成功した場合、authpf はそのユーザのシェルとして実行されます。
+そして authpf は、そのユーザが authpf の使用を許可されているかどうかをチェックし、
+適正なファイルからのルールのロードなどを実行します。
+
+<p>
+authpf をユーザのシェルとして割り当てるには、以下のようにふたつの方法があります。
+<ol>
+<li>それぞれのユーザごとに、手動で
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=chsh&amp;sektion=1&amp;manpath=OpenBSD+3.3"
+>chsh(1)</a>、
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vipw&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>vipw(8)</a>、
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=useradd&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>useradd(8)</a>、
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=usermod&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>usermod(8)</a> などを使用。
+<li>ユーザをあるログインクラスに割り当て、そのクラスの
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=login.conf&amp;sektion=5&amp;manpath=OpenBSD+3.3"
+><tt>/etc/login.conf</tt></a> 中の
+<tt>shell</tt> オプションを変更。
+</ol>
+
+<a name="wholog"></a>
+<h2>誰がログイン中かを見る</h2>
+ユーザがログインに成功し、authpf が PF のルールを調整すると、
+authpf はログインユーザのユーザ名と IP アドレスを表示するよう、
+そのプロセスのタイトルを変更します。
+<pre>
+    # ps -ax | grep authpf
+    23664 p0  Is+     0:00.11 -authpf: charlie@192.168.1.3 (authpf)
+</pre>
+
+<p>
+ここでは、ユーザ <tt>charlie</tt> がマシン 192.168.1.3 からログインしています。
+この authpf プロセスに SIGTERM シグナルを送信することによって、このユーザを
+強制的にログアウトさせることができます。その場合、authpf はそのユーザ用にロードした
+ルールを除去し、すのユーザがオープンしていた状態を持つ接続をすべて切断します。
+<pre>
+    # kill -TERM 23664
+</pre>
+
+<a name="moreinfo"></a>
+<h2>より詳しい情報</h2>
+authpf の運用に関するより詳しい説明は、
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=authpf&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>authpf man ページ</a>を参照してください。
+
+<a name="example"></a>
+<h2>例</h2>
+authpf は、より大きなキャンパスネットワークの一部となっている無線ネットワーク上の
+OpenBSD ゲートウェイ上で、ユーザを認証するために使用されています。
+禁止リスト上に登録されていなければ、ユーザの認証が行われ、
+SSH で外に出ることや (安全な web サイトを含む) web ブラウズを許可されます。
+さらに、キャンパスの DNS サーバへもアクセスすることができるようになります。
+
+<p>
+<tt>/etc/authpf/authpf.rules</tt> ファイルには、次のルールが含まれています。<br>
+<br>
+
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+wifi_if = "wi0"
+dns_servers = "{ 10.0.1.56, 10.0.2.56 }"
+
+pass in quick on $wifi_if proto udp from $user_ip to $dns_servers \
+   port domain keep state
+pass in quick on $wifi_if proto tcp from $user_ip to port { ssh, http, \
+   https } flags S/SA keep state
+</pre>
+</td></tr>
+</table>
+
+<p>
+管理用ユーザ <tt>charlie</tt> は、そのキャンパスの
+SMTP、POP3 サーバへのアクセス、および web ブラウズや SSH
+でのアクセスができる必要があります。以下のルールは、ゲートウェイの
+<tt>/etc/authpf/users/charlie/authpf.rules</tt> に含まれる設定です。<br>
+<br>
+
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+wifi_if = "wi0"
+smtp_server = "10.0.1.50"
+pop3_server = "10.0.1.51"
+dns_servers = "{ 10.0.1.56, 10.0.2.56 }"
+
+pass in quick on $wifi_if proto udp from $user_ip to $dns_servers \
+   port domain keep state
+pass in quick on $wifi_if proto tcp from $user_ip to $smtp_server \
+   port smtp flags S/SA keep state
+pass in quick on $wifi_if proto tcp from $user_ip to $pop3_server \
+   port pop3 flags S/SA keep state
+pass in quick on $wifi_if proto tcp from $user_ip to port { ssh, http, \
+   https } flags S/SA keep state
+</pre>
+</td></tr>
+</table>
+
+<p>
+The main ruleset -- located in <tt>/etc/pf.conf</tt> -- is setup
+as follows:<br>
+<br>
+
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+# macros
+wifi_if = "wi0"
+ext_if  = "fxp0"
+
+scrub in all
+
+# filter
+block drop all
+
+pass out quick on $ext_if proto tcp from $wifi_if:network flags S/SA \
+   modulate state
+pass out quick on $ext_if proto { udp, icmp } from $wifi_if:network \
+   keep state
+
+pass in quick on $wifi_if proto tcp from $wifi_if:network to $wifi_if \
+   port ssh flags S/SA keep state
+
+anchor authpf in on $wifi_if
+</pre>
+</td></tr>
+</table>
+
+<p>
+このルールセットは非常に単純であり、以下のことを実行します。
+<ul>
+<li>すべてのものをブロックします (デフォルトで拒否)。
+<li>無線ネットワークから送出され、外部インターフェイスを経由する
+TCP、UDP および ICMP トラフィックを通過させます。
+<li>無線ネットワークから送出され、宛先がゲートウェイ自身である SSH
+トラフィックを通過させます。このルールはユーザのログインを許可するために必要。
+<li>無線インターフェイス上の着信トラフィック用のアンカー点 "authpf"
+を生成します。
+</ul>
+
+<p>
+主ルールセットの基本的な考え方は、すべてのものをブロックし、
+可能な限り最小限度の通過トラフィックを許可するというものです。
+トラフィックが外部インターフェイスから出て行くのは自由ですが、デフォルトで拒否する
+ポリシーにより、無線インターフェイスからのトラフィックはブロックされます。
+ユーザが認証されると、認証ユーザのトラフィックは無線インターフェイスを通過し、
+ゲートウェイを通過してネットワークの他の部分に送出されるのを許可されるようになります。
+<tt>quick</tt> キーワードは、新しい接続がゲートウェイを通過する際に、PF
+がそれぞれの名前付きルールセットを全体にわたって評価する必要がないようにするために
+使用されるものです。
+
+<p>
+[<a href="ftp.html">前に戻る: FTP における問題</a>]
+[<a href="index.html">目次</a>]
+[<a href="example1.html">次に進む: 例 #1: 自宅や小規模事務所用
+ファイアウォール</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[back]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: authpf.html,v 1.1 ]
+<br>
+$Translation: authpf.html,v 1.1 2003/07/10 15:18:32 toshi Exp $
+<br>
+$OpenBSD: authpf.html,v 1.1 2003/07/11 20:33:06 jufi Exp $
+</small>
+
+</body>
+</html> 
