@@ -59,247 +59,213 @@ The RFCs define many (thousands) of standards for protocols on the
 internet and how they are supposed to work.
 
 
-<p>
-<a name= "6.1"></a>
 <h2>6.1 - Initial Network Setup</h2>
+
+<ul>Table Of Contents
+	<li><a href="#6.1.1">6.1.1 - Identifying and Setting Up Your Network Interfaces</a></li>
+	<li><a href="#6.1.2">6.1.2 - Setting up your OpenBSD box as a Gateway</a>
+</ul>
+
+<p>
+<a name="6.1.1"></a>
+<h3>6.1.1 - Identifying and Setting Up Your Network Interfaces</h3>
 </p>
 
 <p>
-<h3>Interfaces</h3>
+To start off, you must first identify your network interface. In OpenBSD, interfaces are named for the type
+of card, not for the type of connection. You can see your network card get initialized during boot, or after
+boot using the <strong>dmesg(8)</strong> command. You also have the ability of seeing your network interface
+using the <strong>ifconfig(8)</strong> command. For example, Here is the output in dmesg for a ne2k network
+card, which uses the device name ne*.
 </p>
 
-<p>
-Here we assume you have all your network interfaces working, and a basic
-TCP/IP knowledge. 
+<ul><pre>
+ne3 at pcmcia1 function 0 "Linksys, EtherFast 10/100 PC Card (PCMPC100), " port 0x340/16 irq 9
+ne3: address 00:e0:98:04:95:ba
+</ul></pre>
 
 <p>
-All your interfaces should be listed with:
+If you don't know what your device name is, here is a list of common cards and their device names.
+</p>
 
 <ul>
-<pre>
-# <strong>ifconfig -a</strong>
+<li>ne2000 Network Cards - <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ne&sektion=4&format=html">ne*</a> 
+<li>3Com EtherLink III and Fast EtherLink III Ethernet - <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ep&sektion=4&format=html">ep*</a>
+<li>3Com EtherLink XL and Fast EtherLink XL Ethernet (3C9xx) - <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=xl&sektion=4&format=html">xl*</a>
+<li>Intel 82586 chip Ethernet device driver - <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ie&sektion=4&format=html">ie*</a>
+<ul>Which Includes Cards Such As:
+	<li>3Com 3C507
+	<li>AT&T StarLAN 10
+	<li>AT&T EN100
+	<li>AT&T StarLan Fiber
+	<li>Intel EtherExpress 16
+</ul>
+</ul>
 
+<p>
+Again, you can check to see what interfaces have been identified by using the <strong>ifconfig(8)</strong>
+utility. Here is output which will show an ne2k device.
+</p>
+
+<ul><pre>
+$ <strong>ifconfig -a</strong>
 lo0: flags=8009&lt;UP,LOOPBACK,MULTICAST&gt;
         inet 127.0.0.1 netmask 0xff000000
 lo1: flags=8008&lt;LOOPBACK,MULTICAST&gt;
-xl0: flags=8843&lt;UP,BROADCAST,RUNNING,SIMPLEX,MULTICAST&gt;
-        media: Ethernet 100baseTX half-duplex
-        inet 10.1.1.1 netmask 0xffffff00 broadcast 10.1.1.255
-sl0: flags=c010&lt;POINTOPOINT,LINK2,MULTICAST&gt;
-        inet 10.1.1.1 netmask 0xffffff00 broadcast 10.1.1.255
+ne3: flags=8863&lt;UP,BROADCAST,NOTRAILERS,RUNNING,SIMPLEX,MULTICAST&gt;
+        media: Ethernet manual
+        inet 10.0.0.38 netmask 0xffffff00 broadcast 10.0.0.255
 sl0: flags=c010&lt;POINTOPOINT,LINK2,MULTICAST&gt;
 sl1: flags=c010&lt;POINTOPOINT,LINK2,MULTICAST&gt;
 ppp0: flags=8010&lt;POINTOPOINT,MULTICAST&gt;
 ppp1: flags=8010&lt;POINTOPOINT,MULTICAST&gt;
 tun0: flags=10&lt;POINTOPOINT&gt;
 tun1: flags=10&lt;POINTOPOINT&gt;
-enc0: flags=8&lt;LOOPBACK&gt;
-</pre>
-</ul>
+enc0: flags=0&lt;&gt;
+bridge0: flags=0&lt;&gt;
+bridge1: flags=0&lt;&gt;
+</ul></pre>
 
 <p>
-First there is lo0 the loopback interface. It normally should be assigned address
-of 127.0.0.1 no matter what the rest of your network looks like. The next important one is
-xl0 in this example (could be ne<i>X</i>, ep<i>X</i>, or one of many other names,
-depending on the chipset that your network card uses), which is
-a board itself.
-<P>In this example, xl0 it has UP and RUNNING flags on, along with le0.
-That means that they are working (for the most part, anyways.) Your interface
-could be down if you never configured it, and then it would look like the other interfaces.
-Or, your interface could be up but incorrectly configured (wrong IP address
-or wrong netmask) and thus won't work properly.
-The other interfaces in this example are not part of this section, as sl and ppp are for serial line
-comunication, tun is a pseudo-device for tunneling and enc a pseudo-device for
-encryption.  They are covered later in this document.
-</p>
-
-<p>
-If xl0 was uninitialized, you can assign it an address by creating an ascii
-file, /etc/hostname.xl0, containing a string like this:
+As you can see here, <strong>ifconfig(8)</strong> gives us alot more information than we are needing at this
+point. But it still allows us to see our interface. In the above example, the interface card is already
+configured. You can tell this by seeing that vaulues are already set in &quot;inet 10.0.0.38 netmask
+0xffffff00 broadcast 10.0.0.255&quot;, and that the <strong>UP</strong> and <strong>RUNNING</strong> flags
+are turned on. Also, you will notice many other interfaces. Here is a list of interfaces that will be
+expected to be there.
 </p>
 
 <ul>
-<pre>
-inet 10.1.1.1 255.255.255.0 NONE
-</pre>
+<li>lo* - Loopback Interface
+<li>sl* - Slip Network Interface
+<li>ppp* - Point to Point Protocol
+<li>tun* - Tunnel Network Interface
+<li>enc* - Encapsulating Interface
+<li>bridge* - Ethernet bridge interface
 </ul>
 
 <p>
-In the above example we show <i>inet 10.1.1.1</i>, where the second
-argument is our IP address. <i>255.255.255.0</i> is our netmask and
-<i>NONE</i> shows no media tags. (full-duplex, etc).
+If you don't have your interface configured the first step is to create the <strong>/etc/hostname.${IF}</strong>
+file. Where the name of your interface will take the place of ${IF}. From the information in the examples
+above, the name would be <strong>/etc/hostname.ne3</strong>. The layout of this file is like so:
 </p>
-
-<P>
-In /etc/hosts we then put a hostname for ip address <i>10.1.1.1</i>:
 
 <ul><pre>
-10.1.1.1        mona    mona.openbsd.org.ar
-</pre></ul>
+[address_family] [your_ip] [your_netmask] [media options]
+</ul></pre>
 
 <p>
-Now check that you have a file /etc/myname and a file /etc/mygate. If you
-don't have them, you need to create them. If your gateway is a machine
-named "wintermute" which is also in the /etc/hosts, use these commands:
+So for the above example, a proper file would look like this:
 </p>
 
-<ul>
-<pre>
-# echo "mona" > /etc/myname
-# echo "wintermute" > /etc/mygate
-</pre>
-</ul>
+<ul><pre>
+$ <strong>cat /etc/hostname.ne3</strong>
+inet 10.0.0.38 255.255.255.0 NONE
+</ul></pre>
 
 <p>
-Ok, you are done for a standalone system, but to activate your
-configuration now (without rebooting) do:
+Next step from here is to setup your gateway. To do this, simply put the IP of your gateway in the file
+<strong>/etc/mygate</strong>. This will allow for your gateway to be set upon boot. From here you should
+setup your nameservers, and your <strong>/etc/hosts</strong> file. To setup your nameservers, you will
+create a file called <strong>/etc/resolv.conf</strong>. You can read more about the format of this file in
+the <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=resolv.conf&sektion=5&format=html">resolv.conf(5)</a>
+man page. But for a standard usage, here is an example. In this example your domain servers are 125.2.3.4
+and 125.2.3.5. You also belong in the domain &quot;yourdomain.com&quot;.
 </p>
 
-<ul>
-<pre>
-# sh /etc/netstart
-</pre>
-</ul>
-
-<p>
-This will give you a few errors, but don't worry as all them are
-concerning 127.0.0.x (loopback)
-</p>
-
-<p>
-Note: if you want to use the system as a gateway, later there's a
-"Firewall Setup" section, but you need to read all this first.
-</p>
-
-<p>
-Now check your routes are ok (here we use -n to make it simpler to
-look at):
-</p>
-
-<ul>
-<pre>
-# <strong>netstat -rn</strong>
-Routing tables
-
-Internet:
-Destination        Gateway            Flags     Refs     Use    Mtu
-Interface
-default            10.1.1.254         UGS         0        0      -  xl0
-10.1.1/24          link#1             UC          0        0      -  xl0
-10.1.1.1           127.0.0.1          UGHS        0        0      -  lo0
-10.1.1.254         link#1             UHL         1        0      -  xl0
-127/8              127.0.0.1          UGRS        0        0      -  lo0
-127.0.0.1          127.0.0.1          UH          3       24      -  lo0
-224/8              link#1             UCS         0        0      -  xl0
-
-Encap:
-Source address/netmask          Port  Destination address/netmask     Port Proto SA(Address/SPI/Proto)
-</pre>
-</ul>
-
-<p>
-(The <tt>default</tt> gateway here is 10.1.1.254)
-</p>
-
-<p>
-<h3>IP Aliasing</h3>
-</p>
-
-<p>
-If you want to map more than one IP address on a single network interface,
-you need to assign an "alias" to it. The way to do it on OpenBSD is
-simply assigning the interface another IP with the "alias" option like
-this:
-</p>
-
-<p>
-<pre>
-# ifconfig xl0 alias 10.1.1.2 netmask 255.255.255.255
-</pre>
-</p>
-
-<p>
-Here xl0 is assigned another IP number (remember it already has 10.1.1.1).
-Note the netmask used! Don't use 255.255.255.0 in this kind of case (both
-numbers are on the same subnet), only ONE address should handle the subnet.
-If you do such kind of misconfiguration, the following error appears:
-</p>
-
-<p>
-<pre>
-ifconfig:SIOCAIFADDR: File exists
-</pre>
-</p>
-
-<p>
-Now let's change the configuration file for this, /etc/ifaliases. Add to
-it this line:
-</p>
-
-<p>
-<pre>
-xl0   10.1.1.2 255.255.255.255
-</pre>
-This means, simply, interface <tt>xl0</tt> should have an alias <tt>10.1.1.2</tt> with the netmask <tt>255.255.255.255</tt>.
-</p>
-
-
-<p>
-<h3>DNS Client Setup</h3>
-</p>
-
-<p>
-Let's assume your DNS servers are 125.2.3.4 and 125.2.3.5, and your
-machine name belongs to the domain yourdomain.com.  You should have the following
-lines to your /etc/resolv.conf file:
-</p>
-
-<ul>
-<pre>
-domain yourdomain.com
+<ul><pre>
+$ <strong>cat /etc/resolv.conf</strong>
+search yourdomain.com
 nameserver 125.2.3.4
 nameserver 125.2.3.5
 lookup file bind
-</pre>
-</ul>
+</ul></pre>
 
 <p>
-<h3>Gateway Setup</h3>
+From here, you can either reboot or run the <strong>/etc/netstart</strong> script. You can do this by simply
+typing (as root):
+</p>
+
+<ul><pre>
+$ <strong>sh /etc/netstart</strong>
+$ sudo sh /etc/netstart
+writing to routing socket: File exists
+add net 127: gateway 127.0.0.1: File exists
+writing to routing socket: File exists
+add net 224.0.0.0: gateway 127.0.0.1: File exists
+</ul></pre>
+
+<p>
+Notice that a few errors were produced, but this is in regards to the loopback interface. So this can be
+ignored. From here your system should be up and running. Again you can check to make sure that your
+interface was setup correctly with <strong>ifconfig(8)</strong>. You can also check your routes via
+<strong>netstat(1)</strong> or <strong>route(8)</strong>. Here is an example of viewing your routing tables
+using both.
+</p>
+
+<ul><pre>
+$ <strong>netstat -rn</strong>
+Routing tables
+
+Internet:
+Destination        Gateway            Flags     Refs     Use    Mtu  Interface
+default            10.0.0.1           UGS         0       86      -  ne3
+127/8              127.0.0.1          UGRS        0        0      -  lo0
+127.0.0.1          127.0.0.1          UH          0        0      -  lo0
+10.0.0/24          link#1             UC          0        0      -  ne3
+10.0.0.1           aa:0:4:0:81:d      UHL         1        0      -  ne3
+10.0.0.38          127.0.0.1          UGHS        0        0      -  lo0
+224/4              127.0.0.1          URS         0        0      -  lo0
+
+Encap:
+Source             Port  Destination        Port  Proto SA(Address/SPI/Proto)
+$ <strong>route show</strong>
+Routing tables
+
+Internet:
+Destination      Gateway            Flags
+default          10.0.0.1           UG
+127.0.0.0        LOCALHOST          UG
+localhost        LOCALHOST          UH
+10.0.0.0         link#1             U
+10.0.0.1         aa:0:4:0:81:d      UH
+10.0.0.38        LOCALHOST          UGH
+BASE-ADDRESS.MCA LOCALHOST          U
+</ul></pre>
+
+<p>
+<a name="6.1.2"></a>
+<h3>6.1.2 - Setting up your OpenBSD box as a Gateway</h3>
 </p>
 
 <p>
-This is the basic information you need to set up your OpenBSD box as a gateway (also called a router.)  If you are using OpenBSD as a router on the Internet, we suggest that you also read the IP Filter setup instructions below
-to block potentially malicious traffic.  Also, due to the low availability of IPv4 addresses from network service providers
-and regional registries, you may want to look at Network Address Translation (next section of this document)
-for information on conserving your IP address space.
+This is the basic information you need to set up your OpenBSD box as a gateway (also called a router). If
+you are using OpenBSD as a router on the Internet, we suggest that you also read the IP Filter setup
+instructions below to block potentially malicious traffic. Also, due to the low availability of IPv4
+addresses from network service providers and regional registries, you may want to look at Network Address
+Translation for information on conserving your IP address space. 
 </p>
 
 <p>
-If you want your OpenBSD machine to act as a dedicated router, and you
-are building a custom kernel configuration for it, you can either compile
-your kernel with options IPFORWARDING or GATEWAY.  (See <A HREF="faq11.html">section 11</a>
-for further information on tuning NMBCLUSTERS if you are doing this.)  For the rest of us,
-OpenBSD now has a sysctl mechanism to turn on and off IP Forwarding at boot.
-If you want it to "forward" any packets between your interfaces, modify the /etc/sysctl.conf line that toggles
-the forwarding variable on bootup:
+The GENERIC kernel is already has the ability to allow IP Forwarding, but needs to be turned on. You should
+do this using the <strong>sysctl(8)</strong> utility. To change this permenantly you should edit the file 
+<strong>/etc/sysctl.conf</strong> to allow for IP Forwarding. To do so add this line in that configuration
+file.
 </p>
 
-<ul>
-<pre>
+<ul><pre>
 net.inet.ip.forwarding=1
-</pre>
-</ul>
+</ul></pre>
 
 <p>
-To make the changes without booting:
+To make this change without rebooting you would use the <strong>sysctl(8)</strong> utility
+directly. Remember though that this change will not still exist after a reboot, and needs to be run as root.
 </p>
 
-<ul>
-<pre>
+<ul><pre>
 # <strong>sysctl -w net.inet.ip.forwarding=1</strong>
 net.inet.ip.forwarding: 0 -> 1
-</pre>
-</ul>
+</ul></pre>
 
 <p>
 Now modify the routes on the other hosts on both sides.  There are many possible uses of OpenBSD as a router, using software
@@ -1347,7 +1313,8 @@ It is also possible to add or remove ports from the current list.
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt= "[back]"></a>
 <a href= "mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq6.html,v 1.40 1999/11/01 06:15:36 ericj Exp $</small>
+<small>$OpenBSD: faq6.html,v 1.41 1999/11/11 00:29:40 ericj Exp $</small>
 </p>
 </body>
 </html>
+
