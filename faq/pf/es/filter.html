@@ -18,9 +18,10 @@ please, use a max of 72 chars per line -->
 
 <img alt="[OpenBSD]" height="30" width="141" src="../../../images/smalltitle.gif">
 <p>
-[<a href="rdr.html">Anterior: Redireccionamiento de Tr&aacute;fico</a>]
+[<a href="tables.html">Anterior: Tablas</a>]
 [<a href="index.html">Contenido</a>]
-[<a href="logging.html">Siguiente: Registros de Bit&aacute;cora</a>]
+[<a href="nat.html">Siguiente: Traducci&oacute;n de Direcciones de
+Red</a>]
 
 <h1><font color="#e00000">PF: Filtrado de Paquetes</font></h1>
 
@@ -32,10 +33,11 @@ please, use a max of 72 chars per line -->
 <li><a href="#syntax">Sintaxis de las Reglas</a>
 <li><a href="#defdeny">Denegaci&oacute;n Predeterminada</a>
 <li><a href="#pass">Paso de Tr&aacute;fico</a>
+<li><a href="#quick">La Clave <tt>quick</tt></a>
 <li><a href="#state">Mantenimiento del Estado</a>
 <li><a href="#udpstate">Mantenimiento del Estado para UDP</a>
 <li><a href="#tcpflags">Indicadores de TCP</a>
-<li><a href="#quick">La Clave <tt>quick</tt></a>
+<li><a href="#synproxy">Proxy TCP SYN</a>
 <li><a href="#antispoof">Bloqueo de Paquetes Falsificados</a>
 <li><a href="#ipopts">Opciones de IP</a>
 <li><a href="#example">Ejemplo de Grupo de Reglas de Filtrado</a>
@@ -86,7 +88,7 @@ La sintaxis general, <i>muy simplificada</i>, para las reglas de
 filtrado es:
 <blockquote>
 <tt>
-<i>action</i> <i>direction</i> [log] [quick] on <i>int</i> [<i>af</i>] 
+<i>action</i> <i>direction</i> [log] [quick] on <i>interfaz</i> [<i>af</i>] 
 [proto <i>protocol</i>] \<br>
 &nbsp;&nbsp;&nbsp;from <i>src_addr</i> [port <i>src_port</i>] to 
 <i>dst_addr</i> [port <i>dst_port</i>] \<br>
@@ -114,18 +116,20 @@ que ser&aacute; <tt>in</tt> (entrante) o <tt>out</tt> (saliente).
 <dt><tt>log</tt>
 <dd>Indica que se debe registrar el paquete por medio de
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+3.4">pflogd(8)</a>.
-Si la regla especifica la opci&oacute;n <tt>keep state</tt> o
-<tt>modulate state</tt>, entonces s&oacute;lo se registrar&aacute; el
-paquete que establezca el estado.  Para registrar todos los paquetes hay
-que usar la opci&oacute;n <tt>log-all</tt>.
+Si la regla especifica la opci&oacute;n <tt>keep state</tt>,
+<tt>modulate state</tt>, o <tt>synproxy state</tt> entonces s&oacute;lo
+se registrar&aacute; el paquete que establezca el estado.  Para
+registrar todos los paquetes hay que usar la opci&oacute;n
+<tt>log-all</tt>.
 
 <dt><tt>quick</tt>
 <dd>Si un paquete concuerda con una regla que especifique la
 opci&oacute;n <tt>quick</tt>, entonces esa regla se considera como la
 regla final de concordancia para el paquete, y se tomar&aacute; la
-acci&oacute;n que se lleve especificada sin m&aacute;s dilaci&oacute;n.
+acci&oacute;n que est&eacute; especificada en <tt><i>action</i></tt>
+sin m&aacute;s dilaci&oacute;n.
 
-<dt><tt><i>int</i></tt>
+<dt><tt><i>interfaz</i></tt>
 <dd>El nombre de la interfaz de red a trav&eacute;s de la cual se mueve
 el paquete.
 
@@ -231,6 +235,10 @@ paquetes que concuerden con esta regla.
 generar&aacute; &laquo;N&uacute;meros de Secuencia Inicial&raquo; (ISNs,
 <i>Initial Sequence Numbers</i>) consistentes para los paquetes que
 concuerden con esta regla.
+<li><tt>synproxy state</tt> - hace de proxy para las conexiones TCP
+entrantes con el fin de ayudar a proteger a los servidores de
+desbordamientos TCP SYN falsificados.  Esta opci&oacute;n incluye las
+funcionalidades <tt>keep state</tt> y <tt>modulate state</tt>.
 </ul>
 </dl>
 
@@ -293,6 +301,50 @@ pass out on dc0 from 192.168.0.1 to 192.168.0.0/24<br>
 pass in on fxp0 proto tcp from any to fxp0 port www
 </tt>
 </blockquote>
+
+<a name="quick"></a>
+<h2>La Clave <tt>quick</tt></h2>
+<p>
+Como se ha indicado anteriormente, cada paquete se eval&uacute;a con el
+grupo de reglas de filtrado, desde la primera hasta la &uacute;ltima.
+El resultado predeterminado es el de marcar el paquete para que se le
+permita el paso;  esto puede cambiar con cualquiera de las reglas por
+las que pasa, y podr&iacute;a cambiar varias veces antes de llegar al
+final de las reglas de filtrado.  <b>La &uacute;ltima regla con la que
+concuerde marcar&aacute; el resultado.</b>  Existe una excepci&oacute;n
+para esto:  la opci&oacute;n <tt>quick</tt> en una regla de filtrado
+tiene el efecto de cancelar el procesamiento de cualquier regla
+consiguiente, y provoca que se ejecute la acci&oacute;n especificada sin
+m&aacute;s dilaci&oacute;n.  Veamos un par de ejemplos:
+
+<p>
+Mal:
+<blockquote>
+<tt>
+block in on fxp0 proto tcp from any to any port ssh<br>
+pass &nbsp;in all
+</tt>
+</blockquote>
+
+<p>
+En este caso, la l&iacute;nea <tt>block</tt> puede ser evaluada, pero
+nunca tendr&aacute; ning&uacute;n efecto, ya que va seguida por una
+l&iacute;nea que permite el paso de todo.
+
+<p>
+Mejor:
+<blockquote>
+<tt>
+block in quick on fxp0 proto tcp from any to any port ssh<br>
+pass &nbsp;in all
+</tt>
+</blockquote>
+
+<p>
+Estas reglas se eval&uacute;an de una forma algo diferente.  Si un
+paquete concuerda con la l&iacute;nea <tt>block</tt>, debido a la
+naturaleza de la opci&oacute;n <tt>quick</tt>, se bloquear&aacute; el
+paso a dicho paquete y se ignorar&aacute; el resto del grupo de reglas.
 
 <a name="state"></a>
 <h2>Mantenimiento del Estado</h2>
@@ -409,7 +461,7 @@ una sesi&oacute;n de UDP.  En el caso de protocolos sin paquetes de
 seguimiento del tiempo transcurrido desde que ha pasado un paquete que
 concuerde.  Los valores del tiempo agotado (<i>timeout</i>) se pueden
 configurar en la secci&oacute;n de <a href="options.html">opciones</a>
-del fichero <tt>/etc/pf.conf</tt>.
+del fichero <tt>pf.conf</tt>.
 
 <a name="tcpflags"></a>
 <h2>Indicadores de TCP</h2>
@@ -528,49 +580,47 @@ pass in on fxp0 proto tcp from any to any port ssh flags S/SA \<br>
 </tt>
 </blockquote>
 
-<a name="quick"></a>
-<h2>La Clave <tt>quick</tt></h2>
+<a name="synproxy"></a>
+<h2>Proxy TCP SYN</h2>
 <p>
-Como se ha indicado anteriormente, cada paquete se eval&uacute;a con el
-grupo de reglas de filtrado, desde la primera hasta la &uacute;ltima.
-El resultado predeterminado es el de marcar el paquete para que se le
-permita el paso;  esto puede cambiar con cualquiera de las reglas por
-las que pasa, y podr&iacute;a cambiar varias veces antes de llegar al
-final de las reglas de filtrado.  <b>La &uacute;ltima regla con la que
-concuerde marcar&aacute; el resultado.</b>  Existe una excepci&oacute;n
-para esto:  la opci&oacute;n <tt>quick</tt> en una regla de filtrado
-tiene el efecto de cancelar el procesamiento de cualquier regla
-consiguiente, y provoca que se ejecute la acci&oacute;n especificada sin
-m&aacute;s dilaci&oacute;n.  Veamos un par de ejemplos:
+Normalmente, cuando un cliente inicia una conexi&oacute;n TCP a un
+servidor, PF pasa los paquetes del saludo inicial
+<a href="http://www.inetdaemon.com/tutorials/internet/tcp/connections.html"
+>(<i>handshake</i>)</a> entre los dos extremos seg&uacute;n llegan.
+Sin embargo, PF tambi&eacute;n puede hacer de proxy para el saludo
+inicial.  Con el modo proxy, PF completar&aacute; el saludo inicial con
+el cliente, iniciar&aacute; un saludo inicial con el servidor, y
+pasar&aacute; los paquetes entre los dos.  La ventaja de este proceso es
+que no se enviar&aacute; ning&uacute;n paquete al servidor antes de que
+el cliente complete el saludo inicial.  Esto elimina la amenaza de que
+desbordamientos TCP SYN falseados puedan afectar al servidor, debido a
+que una conexi&oacute;n de un cliente falseado no podr&aacute; completar
+el saludo inicial.
 
 <p>
-Mal:
+La proxy TCP SYN se activa usando la clave <tt>synproxy state</tt> en
+las reglas de filtrado.  Ejemplo:
+
 <blockquote>
 <tt>
-block in on fxp0 proto tcp from any to any port ssh<br>
-pass &nbsp;in all
+pass in on $ext_if proto tcp from any to $web_server port www \<br>
+&nbsp;&nbsp;&nbsp;flags S/SA synproxy state
 </tt>
 </blockquote>
 
 <p>
-En este caso, la l&iacute;nea <tt>block</tt> puede ser evaluada, pero
-nunca tendr&aacute; ning&uacute;n efecto, ya que va seguida por una
-l&iacute;nea que permite el paso de todo.
+En este ejemplo, PF har&aacute; de proxy TCP para las conexiones del
+servidor de web.
 
 <p>
-Mejor:
-<blockquote>
-<tt>
-block in quick on fxp0 proto tcp from any to any port ssh<br>
-pass &nbsp;in all
-</tt>
-</blockquote>
+Debido al modo en que funciona <tt>synproxy state</tt>, tambi&eacute;n
+incluye la misma funcionalidad que <tt>keep state</tt> y <tt>modulate
+state</tt>.
 
 <p>
-Estas reglas se eval&uacute;an de una forma algo diferente.  Si un
-paquete concuerda con la l&iacute;nea <tt>block</tt>, debido a la
-naturaleza de la opci&oacute;n <tt>quick</tt>, se bloquear&aacute; el
-paso a dicho paquete y se ignorar&aacute; el resto del grupo de reglas.
+La proxy SYN no funcionar&aacute; si PF est&aacute; funcionando sobre un
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridge&amp;sektion=4&amp;manpath=OpenBSD+3.4"
+>bridge(4)</a>.
 
 <a name="antispoof"></a>
 <h2>Bloqueo de Paquetes Falsificados (<i>Spoofed Packets</i>)</h2>
@@ -628,9 +678,10 @@ antispoof for fxp0 inet
 <p>
 Cuando se carga un grupo de reglas, cualquier suceso de la clave
 <tt>antispoof</tt> se expandir&aacute; en dos reglas de filtrado.
-Asumiendo que la interfaz fxp0 tuviera una direcci&oacute;n IP 10.0.0.1
-y una m&aacute;scara de subred de 255.255.255.0 (o sea, un /24), la
-regla <tt>antispoof</tt> anterior se expandir&iacute;a as&iacute;:
+Asumiendo que la interfaz <tt>fxp0</tt> tuviera una direcci&oacute;n IP
+10.0.0.1 y una m&aacute;scara de subred de 255.255.255.0 (o sea, un
+/24), la regla <tt>antispoof</tt> anterior se expandir&iacute;a
+as&iacute;:
 
 <blockquote>
 <tt>
@@ -644,12 +695,12 @@ Estas reglas realizan dos funciones:
 
 <ul>
 <li>Bloquean todo el tr&aacute;fico que viene desde la red 10.0.0.0/24
-que <i>no</i> pase a trav&eacute;s de fxp0.  Como la red 10.0.0.0/24
-est&aacute; en la interfaz fxp0, los paquetes que tengan una
-direcci&oacute;n de origen en ese bloque de red nunca entrar&aacute;n
-por ninguna otra interfaz.
+que <i>no</i> pase a trav&eacute;s de <tt>fxp0</tt>.  Como la red
+10.0.0.0/24 est&aacute; en la interfaz <tt>fxp0</tt>, los paquetes que
+tengan una direcci&oacute;n de origen en ese bloque de red nunca
+entrar&aacute;n por ninguna otra interfaz.
 <li>Bloquean todo el tr&aacute;fico entrante desde 10.0.0.1, la
-direcci&oacute;n IP en fxp0.  La m&aacute;quina anfitriona no
+direcci&oacute;n IP en <tt>fxp0</tt>.  La m&aacute;quina anfitriona no
 deber&iacute;a enviar nunca paquetes a s&iacute; misma a trav&eacute;s
 de una interfaz externa;  por lo tanto, se puede considerar que
 cualquier paquete entrante con una direcci&oacute;n de origen que
@@ -763,16 +814,18 @@ pass out on $ext_if proto { udp, icmp } all keep state
 # el cortafuegos (o sea, aqu&eacute;llas cuyo destino sea
 # una m&aacute;quina en la red local);  registrar el paquete inicial
 # para que podamos ver m&aacute;s tarde qui&eacute;n intenta conectar.
+# Usar la proxy tcp syn para la conexi&oacute;n.
 pass in log on $ext_if proto tcp from any to { !$ext_if, !$int_if } \
-   port ssh flags S/SA keep state
+   port ssh flags S/SA synproxy state
 </pre>
 </td></tr>
 </table>
 
 <p>
-[<a href="rdr.html">Anterior: Redireccionamiento de Tr&aacute;fico</a>]
+[<a href="tables.html">Anterior: Tablas</a>]
 [<a href="index.html">Contenido</a>]
-[<a href="logging.html">Next: Registros de Bit&aacute;cora</a>]
+[<a href="nat.html">Siguiente: Traducci&oacute;n de Direcciones de
+Red</a>]
 
 <p>
 <hr>
@@ -780,9 +833,9 @@ pass in log on $ext_if proto tcp from any to { !$ext_if, !$int_if } \
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
 <small>
-Originally [OpenBSD: filter.html,v 1.14 ]<br>
-$Translation: filter.html,v 1.11 2003/11/17 19:22:08 horacio Exp $<br>
-$OpenBSD: filter.html,v 1.10 2003/11/17 19:44:24 horacio Exp $
+Originally [OpenBSD: filter.html,v 1.15 ]<br>
+$Translation: filter.html,v 1.12 2003/12/01 22:53:16 horacio Exp $<br>
+$OpenBSD: filter.html,v 1.11 2003/12/03 21:40:56 horacio Exp $
 </small>
 </body>
 </html> 

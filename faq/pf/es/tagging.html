@@ -1,0 +1,310 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: <i>Tagging:</i> Marcado de Paquetes</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta http-equiv="Content-Language" content="es">
+<meta name="resource-type" content="documento">
+<meta name="description"   content="Preguntas Frecuentes de OpenBSD">
+<meta name="keywords"      content="openbsd,preguntas frecuentes,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="Este documento es copyright 2003 de OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<img alt="[OpenBSD]" height="30" width="141" src="../../../images/smalltitle.gif">
+<p>
+[<a href="pools.html">Anterior: <i>Pools</i> de Direcciones y Balanceo
+de Carga</a>]
+[<a href="index.html">Contenido</a>]
+[<a href="logging.html">Siguiente: <i>Logging:</i> Registros de
+Bit&aacute;cora</a>]
+
+<p>
+<h1><font color="#e00000">PF: <i>Tagging:</i> Marcado de
+Paquetes</font></h1>
+
+<hr>
+
+<h3>&Iacute;ndice de Contenidos</h3>
+<ul>
+<li><a href="#intro">Introducci&oacute;n</a>
+<li><a href="#assign">Asignaci&oacute;n de Marcas a los Paquetes</a>
+<li><a href="#check">Comprobaci&oacute;n de las Marcas Aplicadas</a>
+<li><a href="#policy">Pol&iacute;tica de Filtrado</a>
+<li><a href="#ethernet">Marcado de Marcos de <i>Ethernet</i></a>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Introducci&oacute;n</h2>
+<p>
+El marcado de paquetes es una forma de marcar paquetes con un
+identificador interno que m&aacute;s tarde se puede usar para el
+criterio de las reglas de filtrado y traducci&oacute;n.
+Mediante el marcado se pueden realizar tareas como la creaci&oacute;n de
+&laquo;anillos de confianza&raquo; entre interfaces y determinar si los
+paquetes han sido procesados por las reglas de traducci&oacute;n.
+Tambi&eacute;n es posible alejarse del filtrado basado en reglas e
+iniciar un filtrado basado en pol&iacute;ticas.
+
+<a name="assign"></a>
+<h2>Asignaci&oacute;n de Marcas a los Paquetes</h2>
+<p>
+Para a&ntilde;adir una marca a un paquete, hay que usar la clave
+<tt>tag</tt>:
+<blockquote>
+<tt>
+pass in on $int_if all tag INTERNAL_NET keep state
+</tt>
+</blockquote>
+
+<p>
+De este modo, la marca <tt>INTERNAL_NET</tt> ser&aacute; a&ntilde;adida
+a cualquier paquete que concuerde con la regla.  N&oacute;tese que se ha
+usado <tt>keep state</tt>;  para marcar los paquetes es necesario usar
+<tt>keep state</tt> (o <tt>modulate state</tt>, o <tt>synproxy
+state</tt>) en las reglas <tt>pass</tt>.
+
+<p>
+El proceso de marcado sigue estas reglas:
+<ul>
+<li>Las marcas son &laquo;fijas&raquo;.  Una vez que una regla
+concordante aplica una marca a un paquete, &eacute;sta ya no se elimina
+nunca.  Aunque se puede sustituir por una marca diferente.
+<li>Debido de la &laquo;fijeza&raquo; de una marca, un paquete puede
+tener una marca aunque la &uacute;ltima regla concordante no use la
+clave <tt>tag</tt>.
+<li>A un paquete s&oacute;lo se le asigna un m&aacute;ximo de una marca
+por vez.
+<li>Las marcas son identificadores <i>internos</i>.  Las marcas no se
+env&iacute;an fuera a trav&eacute;s de la conexi&oacute;n.
+</ul>
+
+<p>
+Tomemos el siguiente conjunto de reglas como ejemplo:
+<blockquote>
+<tt>
+(1) pass in on $int_if tag INT_NET keep state<br>
+(2) pass in quick on $int_if proto tcp to port 80 tag \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;INT_NET_HTTP keep state<br>
+(3) pass in quick on $int_if from 192.168.1.5 keep state
+</tt>
+</blockquote>
+
+<p>
+<ul>
+<li>A los paquetes que entren por <tt>$int_if</tt> se les
+asignar&aacute; una marca de <tt>INT_NET</tt>, de acuerdo con la regla
+#1.
+<li>A los paquetes TCP entrantes por <tt>$int_if</tt> y destinados al
+puerto 80 se les asignar&aacute; una marca de <tt>INT_NET</tt>, de
+acuerdo con la regla #1.  A continuaci&oacute;n se sustituir&aacute; esa
+marca con la marca <tt>INT_NET_HTTP</tt>, de acuerdo con la regla #2.
+<li>A los paquetes entrantes por <tt>$int_if</tt> desde 192.168.1.5 se
+les permitir&aacute; pasar, de acuerdo con la regla #3, ya que es la
+&uacute;ltima regla que concuerda.
+Sin embargo, si estos paquetes tienen como destino el puerto TCP 80, se
+les marcar&aacute; con la marca <tt>INT_NET_HTTP</tt>;  de otro modo se
+les marcar&aacute; con la marca <tt>INT_NET</tt>.
+</ul>
+
+<p>
+Adem&aacute;s de aplicar marcas con reglas de filtrado, con las reglas
+de traducci&oacute;n de <tt>nat</tt>, <tt>rdr</tt> y <tt>binat</tt>
+tambi&eacute;n se puede aplicar marcas a los paquetes si se usa la clave
+<tt>tag</tt>.
+
+<a name="check"></a>
+<h2>Comprobaci&oacute;n de las Marcas Aplicadas</h2>
+<p>
+Para comprobar las marcas que se hayan aplicado hay que usar la clave
+<tt>tagged</tt>:
+<blockquote>
+<tt>
+pass out on $ext_if tagged INT_NET keep state
+</tt>
+</blockquote>
+
+<p>
+Outgoing packets on <tt>$ext_if</tt> must be tagged with the
+<tt>INT_NET</tt> tag in order to match the above rule. Inverse matching
+can also be done by using the <tt>!</tt> operator:
+Los paquetes salientes por <tt>$ext_if</tt> deben ir marcados con la
+marca <tt>INT_NET</tt> para que coincidan con la regla anterior.
+Tambi&eacute;n se pueden realizar comprobaciones a la inversa usando el
+operador `<tt>!</tt>':
+<blockquote>
+<tt>
+pass out on $ext_if tagged ! WIFI_NET keep state
+</tt>
+</blockquote>
+
+<a name="policy"></a>
+<h2>Pol&iacute;tica de Filtrado</h2>
+<p>
+La pol&iacute;tica de filtrado es un acercamiento diferente al de los
+conjuntos de reglas de filtrado.
+Para empezar se define una pol&iacute;tica que configura las reglas
+seg&uacute;n las cuales se dejar&aacute; pasar a unos tipos de
+tr&aacute;fico y se bloquear&aacute; a otros.
+Entonces se clasifican los paquetes dentro de esta pol&iacute;tica en
+base al criterio tradicional de direcci&oacute;n/puerto IP de
+origen/destino, protocolo, etc.
+Por ejemplo, examinemos la siguiente pol&iacute;tica de cortafuegos:
+<ul>
+<li>Se permite el paso del tr&aacute;fico desde la LAN interna hacia la
+DMZ (LAN_DMZ)
+<li>Se permite el paso del tr&aacute;fico desde Internet hacia los
+servidores en la DMZ (INET_DMZ)
+<li>Se permite el paso del tr&aacute;fico desde Internet que est&eacute;
+siendo redireccionado a
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=spamd&amp;sektion=8&amp;manpath=OpenBSD+3.4"
+>spamd(8)</a> (SPAMD)
+<li>Se bloquear&aacute; cualquier otro tr&aacute;fico
+</ul>
+
+<p>
+N&oacute;tese que la pol&iacute;tica cubre <i>todo</i> el tr&aacute;fico
+que pasar&aacute; a trav&eacute;s del cortafuegos.
+La palabra que va entre par&eacute;ntesis indica la marca que se
+usar&aacute; para esa pol&iacute;tica.
+
+<p>
+Ahora hay que escribir las reglas de filtrado y traducci&oacute;n para
+clasificar los paquetes dentro de la pol&iacute;tica.
+<blockquote>
+<tt>
+rdr on $ext_if proto tcp from &lt;spamd&gt; to port smtp \<br>
+&nbsp;&nbsp;&nbsp;tag SPAMD -&gt; 127.0.0.1 port 8025<br>
+<br>
+block all<br>
+pass in on $int_if from $int_net tag LAN_INET keep state<br>
+pass in on $int_if from $int_net to $dmz_net tag LAN_DMZ keep state<br>
+pass in on $ext_if proto tcp to $www_server port 80 tag INET_DMZ keep state
+</tt>
+</blockquote>
+
+<p>
+A continuaci&oacute;n hay que configurar las reglas que definen esa
+pol&iacute;tica.
+<blockquote>
+<tt>
+pass in &nbsp;quick on $ext_if tagged SPAMD keep state<br>
+pass out quick on $ext_if tagged LAN_INET keep state<br>
+pass out quick on $dmz_if tagged LAN_DMZ keep state<br>
+pass out quick on $dmz_if tagged INET_DMZ keep state
+</tt>
+</blockquote>
+
+<p>
+Ahora que ya se ha configurado el conjunto de reglas, para efectuar
+cualquier cambio basta con modificar las reglas de clasificaci&oacute;n.
+Por ejemplo, si se a&ntilde;ade un servidor de POP3/SMTP a la DMZ,
+habr&aacute; que a&ntilde;adir reglas de clasificaci&oacute;n para el
+tr&aacute;fico tipo POP3 y SMTP, como lo siguiente:
+<blockquote>
+<tt>
+mail_server = &quot;192.168.0.10&quot;<br>
+...<br>
+pass in on $ext_if proto tcp to $mail_server port { smtp, pop3 } \<br>
+&nbsp;&nbsp;&nbsp;tag INET_DMZ keep state
+</tt>
+</blockquote>
+
+<p>
+Con esto se permitir&aacute; el paso al tr&aacute;fico de correo
+electr&oacute;nico como parte de la entrada de pol&iacute;tica INET_DMZ.
+
+<p>
+Finalmente, el conjunto completo de reglas:
+<table border="0" width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+# macros
+int_if  = &quot;dc0&quot;
+dmz_if  = &quot;dc1&quot;
+ext_if  = &quot;ep0&quot;
+int_net = &quot;10.0.0.0/24&quot;
+dmz_net = &quot;192.168.0.0/24&quot;
+www_server = &quot;192.168.0.5&quot;
+mail_server = &quot;192.168.0.10&quot;
+
+table &lt;spamd&gt; persist file &quot;/etc/spammers&quot;
+
+# clasificaci&oacute;n -- clasificar los paquetes bas&aacute;ndose en la pol&iacute;tica
+# definida del cortafuegos
+rdr on $ext_if proto tcp from &lt;spamd&gt; to port smtp \
+    tag SPAMD -&gt; 127.0.0.1 port 8025
+
+block all
+pass in on $int_if from $int_net tag LAN_INET keep state
+pass in on $int_if from $int_net to $dmz_net tag LAN_DMZ keep state
+pass in on $ext_if proto tcp to $www_server port 80 tag INET_DMZ keep state 
+pass in on $ext_if proto tcp to $mail_server port { smtp, pop3 } \
+    tag INET_DMZ keep state 
+
+# imposici&oacute;n de la pol&iacute;tica -- pasar/bloquear bas&aacute;ndose en la pol&iacute;tica
+# definida del cortafuegos
+pass in  quick on $ext_if tagged SPAMD keep state
+pass out quick on $ext_if tagged LAN_INET keep state
+pass out quick on $dmz_if tagged LAN_DMZ keep state
+pass out quick on $dmz_if tagged INET_DMZ keep state 
+</pre>
+</td></tr>
+</table>
+
+<a name="ethernet"></a>
+<h2>Marcado de Marcos de Ethernet</h2>
+<p>
+Si la m&aacute;quina que est&aacute; realizando el marcado/filtrado
+tambi&eacute;n hace la vez de puente de red
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridge&amp;sektion=4&amp;manpath=OpenBSD+3.4"
+>bridge(4)</a>), el marcado tambi&eacute;n se puede aplicar a nivel de
+la Ethernet.
+Creando reglas de filtrado para bridge(4) que usen la clave
+<tt>tag</tt>, se puede hacer que PF filtre bas&aacute;ndose en la
+direcci&oacute;n MAC de origen/destino.
+Las reglas para bridge(4) se crean usando la orden
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=brconfig&amp;sektion=8&amp;manpath=OpenBSD+3.4"
+>brconfig(8)</a>.  Ejemplo:
+<blockquote>
+<tt>
+# brconfig bridge0 rule pass in on fxp0 src 0:de:ad:be:ef:0 \<br>
+&nbsp;&nbsp;&nbsp;tag USER1
+</tt>
+</blockquote>
+
+<p>
+Y a continuaci&oacute;n, en el fichero <tt>pf.conf</tt>:
+<blockquote>
+<tt>
+pass in on fxp0 tagged USER1
+</tt>
+</blockquote>
+
+<p>
+[<a href="pools.html">Anterior: <i>Pools</i> de Direcciones y Balanceo
+de Carga</a>]
+[<a href="index.html">Contenido</a>]
+[<a href="logging.html">Siguiente: <i>Logging:</i> Registros de
+Bit&aacute;cora</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[&Iacute;ndice]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: tagging.html,v 1.1 2003/11/30 23:14:31 nick Exp ]<br>
+$Translation: tagging.html,v 1.1 2003/12/02 15:35:12 horacio Exp $<br>
+$OpenBSD: tagging.html,v 1.1 2003/12/03 21:40:57 horacio Exp $
+</small>
+
+</body>
+</html> 
