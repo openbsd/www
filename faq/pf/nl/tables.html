@@ -1,0 +1,243 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Tabellen</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+</head>
+
+<!--
+Copyright (c) 2003, 2004 Joel Knight <enabled@myrealbox.com>
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<a href="../../../nl/index.html">
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif" border="0">
+</a>
+<p>
+[<a href="macros.html">Vorige: Lijsten en Macro's</a>]
+[<a href="index.html">Inhoud</a>]
+[<a href="filter.html">Volgende: Pakketen Filteren</a>]
+
+<p>
+<h1><font color="#e00000">PF: Tabellen</font></h1>
+
+<hr>
+
+<h3>Inhoudstafel</h3>
+<ul>
+<li><a href="#intro">Inleiding</a>
+<li><a href="#config">Configuratie</a>
+<li><a href="#manip">Manipulatie met <tt>pfctl</tt></a>
+<li><a href="#addr">Adressen Specificeren</a>
+<li><a href="#match">Adres Overeenstemming</a>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Inleiding</h2>
+Een tabel wordt gebruikt om een groep van IPv4 en/of IPv6 adressen te
+bevatten. Opzoekingen in een tabel zijn heel snel en verbruiken minder
+geheugen en processortijd dan <a href="macros.html#lists">lijsten</a>.
+Om deze reden is een tabel ideaal om een grote groep adressen te bevatten
+aangezien de opzoekingstijd in een tabel die 50.000 adressen bevat slechts
+iets langer is dan voor één die 50 adressen bevat. Tabellen kunnen op de
+volgende manieren gebruikt worden:
+<ul>
+<li>bron- en/of bestemmingsadres in
+<a href="filter.html">filter</a>, <a href="../scrub.html">scrub</a>,
+<a href="nat.html">NAT</a>, en <a href="../rdr.html">omleiding</a>
+regels.
+<li>vertalingsadres in <a href="nat.html">NAT</a> regels.
+<li>omleidingsadres in <a href="../rdr.html">omleidings</a>regels.
+<li>bestemmingsadres in <tt>route-to</tt>, <tt>reply-to</tt> en
+<tt>dup-to</tt> filterregelopties.
+</ul>
+
+<p>
+Tabellen worden aangemaakt ofwel in
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+3.6"
+><tt>pf.conf</tt></a> ofwel met
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>pfctl(8)</a>.
+
+<a name="config"></a>
+<h2>Configuratie</h2>
+In <tt>pf.conf</tt> worden tabellen aangemaakt met de <tt>table</tt>
+instructie. De volgende kenmerken mogen voor elke tabel gespecificeerd worden:
+<ul>
+<li><tt>const</tt> - de inhoud van de tabel kan niet gewijzigd worden zodra
+de tabel is aangemaakt. Wanneer dit kenmerk niet gespecificeerd wordt, kan
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>pfctl(8)</a> gebruikt worden om op elk ogenblik adressen toe te voegen aan
+of te verwijderen uit de tabel, zelfs wanneer men met een
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=securelevel&amp;sektion=7&amp;manpath=OpenBSD+3.6"
+>securelevel(7)</a> van twee of hoger draait.
+<li><tt>persist</tt> - zorgt ervoor dat de kernel de tabel in het geheugen
+houdt zelfs als er geen regels naar verwijzen. Zonder dit kenmerk zal de
+kernel automatisch de tabel verwijderen wanneer de laatste regel die ernaar
+verwijst doorgespoeld ("flushed") wordt.
+</ul>
+
+<p>
+Voorbeeld:
+<blockquote>
+<tt>
+table &lt;goodguys&gt; { 192.0.2.0/24 }<br>
+table &lt;rfc1918&gt; const { 192.168.0.0/16, 172.16.0.0/12, \<br>
+&nbsp;&nbsp;&nbsp;10.0.0.0/8 }<br>
+table &lt;spammers&gt; persist<br>
+<br>
+block in on fxp0 from { &lt;rfc1918&gt;, &lt;spammers&gt; } to any<br>
+pass&nbsp; in on fxp0 from &lt;goodguys&gt; to any<br>
+</tt>
+</blockquote>
+
+<p>
+Adressen kunnen ook als volgt gespecificeerd worden met een negatie (of "not")
+door ze te laten voorafgaan door een !
+<blockquote>
+<tt>
+table &lt;goodguys&gt; { 192.0.2.0/24, !192.0.2.5 }
+</tt>
+</blockquote>
+
+<p>
+De <tt>goodguys</tt> tabel zal nu overeenstemmen met alle adressen in het
+192.0.2.0/24 netwerk behalve 192.0.2.5.
+
+<p>
+Merk op dat tabelnamen altijd besloten zijn in &lt; &gt;. 
+
+<p>
+Tabellen kunnen ook gevuld worden vanuit tekstbestanden die een lijst
+met IP adressen en netwerken bevatten:
+<blockquote>
+<tt>
+table &lt;spammers&gt; persist file "/etc/spammers"<br>
+<br>
+block in on fxp0 from &lt;spammers&gt; to any<br>
+</tt>
+</blockquote>
+
+<p>
+Het bestand <tt>/etc/spammers</tt> zou een lijst van IP adressen
+en/of <a href="http://public.pacbell.net/dedicated/cidr.html">CIDR</a> 
+netwerkblokken bevatten, één per lijn.
+Gelijk welke lijn die begint met <tt>#</tt> wordt behandeld als commentaar
+en wordt genegeerd.
+
+<a name="manip"></a>
+<h2>Manipulatie met <tt>pfctl</tt></h2>
+Tabellen kunnen "on the fly" gemanipuleerd worden met
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>pfctl(8)</a>. Om
+bijvoorbeeld entries toe te voegen aan de &lt;spammers&gt; tabel die hoger
+aangemaakt werd:
+<blockquote>
+<tt># pfctl -t spammers -T add 218.70.0.0/16</tt>
+</blockquote>
+
+<p>
+Dit zal ook de &lt;spammers&gt; tabel aanmaken als die nog niet bestaat.
+Om de adressen in een tabel op te sommen:
+<blockquote>
+<tt># pfctl -t spammers -T show</tt>
+</blockquote>
+Het <tt>-v</tt> argument kan ook gebruikt worden bij <tt>-Tshow</tt> om
+statistieken voor elke entry in de tabel te tonen. Om adressen uit een
+tabel te verwijderen:
+<blockquote>
+<tt>
+# pfctl -t spammers -T delete 218.70.0.0/16
+</tt>
+</blockquote>
+
+<p>
+Raadpleeg voor meer informatie over het bewerken van tabellen met
+<tt>pfctl</tt> alstublieft
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>pfctl(8)</a>.
+
+<a name="addr"></a>
+<h2>Adressen Specificeren</h2>
+Naast het gespecificeerd zijn met IP adres, kunnen hosts ook gespecificeerd
+worden met hun hostname. Wanneer de hostname vertaald kan worden naar een IP
+adres, worden alle resulterende IPv4 en IPv6 adressen in de tabel geplaatst.
+IP adressen kunnen ook in een tabel ingegeven worden door een geldige
+interfacenaam of het <tt>self</tt> sleutelwoord te specificeren.
+De tabel zal dan alle IP adressen bevatten die respectievelijk toegekend
+zijn aan die interface of aan de machine (loopback adressen inbegrepen).<br>
+<br>
+Eén beperking bij het specificeren van adressen is dat <tt>0.0.0.0/0</tt>
+en <tt>0/0</tt> niet zullen werken in tabellen.
+Het alternatief is om dat adres hard te coderen of een
+<a href="macros.html#macros">macro</a> te gebruiken.
+
+<a name="match"></a>
+<h2>Adres Overeenstemming</h2>
+Een adresopzoeking in een tabel zal de meest nauw overeenstemmende entry
+teruggeven. Dit laat toe tabellen aan te maken zoals:
+<blockquote>
+<tt>
+table &lt;goodguys&gt; { 172.16.0.0/16, !172.16.1.0/24, 172.16.1.100 }<br>
+<br>
+block in on dc0 all<br>
+pass &nbsp;in on dc0 from &lt;goodguys&gt; to any<br>
+</tt>
+</blockquote>
+
+<p>
+Gelijk welk pakket dat binnenkomt via <tt>dc0</tt> zal zijn bronadres
+zien overeenstemmen in de tabel <tt>&lt;goodguys&gt;</tt>:
+<ul>
+<li>172.16.50.5 - nauwste overeenstemming is 172.16.0.0/16; pakket stemt
+overeen met de tabel en zal doorgelaten worden
+<li>172.16.1.25 - nauwste overeenstemming is !172.16.1.0/24; pakket stemt
+overeen met een entry in de tabel maar die entry wordt ontkend (gebruikt de
+"!" modifier); pakket stemt niet overeen met de tabel en zal geblokkeerd
+worden
+<li>172.16.1.100 - stemt precies overeen met 172.16.1.100; pakket stemt
+overeen met de tabel en zal doorgelaten worden
+<li>10.1.4.55 - stemt niet overeen met de tabel en zal geblokkeerd worden
+</ul>
+
+<p>
+[<a href="macros.html">Vorige: Lijsten en Macro's</a>]
+[<a href="index.html">Inhoud</a>]
+[<a href="filter.html">Volgende: Pakketten Filteren</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[terug]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [ OpenBSD: tables.html,v 1.14 ]<br>
+$Translation: tables.html,v 1.1 2005/02/13 00:43:27 smestdag Exp $<br>
+$OpenBSD: tables.html,v 1.1 2005/02/13 11:15:53 jufi Exp $
+</small>
+
+</body>
+</html> 

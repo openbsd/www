@@ -1,0 +1,883 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Pakketten Filteren</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+</head>
+
+<!--
+Copyright (c) 2003, 2004 Joel Knight <enabled@myrealbox.com>
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<a href="../../../nl/index.html">
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif" border="0">
+</a>
+<p>
+[<a href="tables.html">Vorige: Tabellen</a>]
+[<a href="index.html">Inhoud</a>]
+[<a href="nat.html">Volgende: Network Address Translation</a>]
+
+<h1><font color="#e00000">PF: Pakketten Filteren</font></h1>
+
+<hr>
+
+<h3>Inhoudstafel</h3>
+<ul>
+<li><a href="#intro">Inleiding</a>
+<li><a href="#syntax">Regelsyntaxis</a>
+<li><a href="#defdeny">Standaard Weigeren</a>
+<li><a href="#pass">Verkeer Doorlaten</a>
+<li><a href="#quick">Het <tt>quick</tt> Sleutelwoord</a>
+<li><a href="#state">Toestand ("state") Bijhouden</a>
+<li><a href="#udpstate">Toestand ("state") Bijhouden voor UDP</a>
+<li><a href="#tcpflags">TCP Vlaggen</a>
+<li><a href="#synproxy">TCP SYN Proxy</a>
+<li><a href="#antispoof">Gespoofte Pakketten Blokkeren</a>
+<li><a href="#osfp">Passieve Besturingssysteem "Fingerprinting"</a>
+<li><a href="#ipopts">IP Opties</a>
+<li><a href="#example">Filterregelset Voorbeeld</a>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Inleiding</h2>
+Pakketten filteren is het selectief doorlaten of blokkeren van
+gegevenspakketten naarmate ze doorheen een netwerkinterface passeren.
+De criteria die
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+3.6"
+>pf(4)</a> gebruikt bij het inspecteren van pakketten zijn gebaseerd op de
+Layer 3 
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ip&amp;sektion=4&amp;manpath=OpenBSD+3.6"
+>IPv4</a> en
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ip6&amp;sektion=4&amp;manpath=OpenBSD+3.6"
+>IPv6</a>) en Layer 4
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tcp&amp;sektion=4&amp;manpath=OpenBSD+3.6"
+>TCP</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=udp&amp;sektion=4&amp;manpath=OpenBSD+3.6"
+>UDP</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=icmp&amp;sektion=4&amp;manpath=OpenBSD+3.6"
+>ICMP</a> en
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=icmp6&amp;sektion=4&amp;manpath=OpenBSD+3.6"
+>ICMPv6</a>) hoofdingen ("headers"). De vaakst gebruikte criteria zijn
+bron- en bestemmingsadres, bron- en bestemmingspoort, en protocol.
+
+<p>
+Filterregels specificeren de criteria waaraan een pakket moet voldoen en de
+resulterende actie, ofwel blokkeren ofwel passeren, die ondernomen wordt wanneer
+een overeenstemming gevonden wordt. Filterregels worden in na elkaar komende
+volgorde geëvalueerd, eerste tot laatste.
+Tenzij het pakket overeenstemt met een regel die het <tt>quick</tt>
+sleutelwoord bevat, zal het pakket geëvalueerd worden met <i>alle</i>
+filterregels alvorens de uiteindelijke actie ondernomen wordt. De laatste
+regel die overeenstemt is de "winnaar" en zal dicteren welke actie er
+met het pakket ondernomen moet worden. Er is een impliciete
+<tt>pass all</tt> bij het begin van een filterregelset, wat betekent dat
+als een pakket met geen enkele filterregel overeenstemt, de resulterende
+actie <tt>pass</tt> zal zijn.
+
+<a name="syntax"></a>
+<h2>Regelsyntaxis</h2>
+De algemene, <i>erg vereenvoudigde</i> syntaxis voor filterregels is:
+<blockquote>
+<tt>
+<i>actie</i> [<i>richting</i>] [log] [quick] [on <i>interface</i>] 
+[<i>af</i>] [proto <i>protocol</i>] \<br>
+&nbsp;&nbsp;&nbsp;[from <i>src_addr</i> [port <i>src_port</i>]] [to 
+<i>dst_addr</i> [port <i>dst_port</i>]] \<br>
+&nbsp;&nbsp;&nbsp;[flags <i>tcp_flags</i>] [<i>state</i>]
+</tt>
+</blockquote>
+
+<dl>
+<dt><tt><i>actie</i></tt>
+<dd>De actie die moet ondernomen worden voor overeenstemmende pakketten, ofwel
+<tt>pass</tt> ofwel <tt>block</tt>. De <tt>pass</tt> actie zal het pakket
+terug naar de kernel sturen voor verdere verwerking terwijl de
+<tt>block</tt> actie zal reageren op basis van de instelling van de
+<a href="options.html#block-policy"><tt>block-policy</tt></a> optie. 
+De standaard reactie kan opgeheven worden door ofwel <tt>block
+drop</tt> ofwel <tt>block return</tt> te specificeren.
+
+<dt><tt><i>richting</i></tt>
+<dd>De richting waarin het pakket beweegt op een interface, ofwel
+<tt>in</tt> ofwel <tt>out</tt>.
+
+<dt><tt>log</tt>
+<dd>Specificeert dat het pakket gelogd moet worden via
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>pflogd(8)</a>. Als de regel de <tt>keep state</tt>,
+<tt>modulate state</tt> of <tt>synproxy state</tt> optie specificeert, dan
+wordt alleen het pakket dat de toestand ("state") opricht gelogd.
+Om toch alle pakketten te loggen, gebruikt u <tt>log-all</tt>.
+
+<dt><tt>quick</tt>
+<dd>Als een pakket overeenstemt met een regel die <tt>quick</tt>
+specificeert, dan wordt die regel als de laatste overeenstemmende regel
+beschouwd en wordt de gespecificeerde <tt><i>actie</i></tt> ondernomen.
+
+<dt><tt><i>interface</i></tt>
+<dd>De naam of groep van de netwerkinterface waar het pakket doorheen
+beweegt.
+Een interfacegroep wordt gespecificeerd als de naam van de interface maar
+zonder het geheel getal er aan geplakt.
+Bijvoorbeeld: <tt>ppp</tt> of <tt>fxp</tt>.
+Dit zou ervoor zorgen dat de regel overeenstemt met gelijk welk pakket dat
+respectievelijk gelijk welke <tt>ppp</tt> of <tt>fxp</tt> interface
+doorkruist.
+
+<dt><tt><i>af</i></tt>
+<dd>De adresfamilie van het pakket, ofwel <tt>inet</tt> voor IPv4 ofwel
+<tt>inet6</tt> voor IPv6. PF kan deze parameter gewoonlijk bepalen
+op basis van het (de) bron- en/of bestemmingsadres(sen).
+
+<dt><tt><i>protocol</i></tt>
+<dd>Het Layer 4 protocol van het pakket:
+<ul>
+<li><tt>tcp</tt>
+<li><tt>udp</tt>
+<li><tt>icmp</tt>
+<li><tt>icmp6</tt>
+<li>Een geldige protocolnaam uit
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=protocols&amp;sektion=5&amp;manpath=OpenBSD+3.6"
+><tt>/etc/protocols</tt></a>
+<li>Een protocolnummer tussen 0 en 255
+<li>Een reeks protocols gebruik makend van een
+<a href="macros.html#lists">lijst</a>.
+</ul>
+
+<dt><tt><i>src_addr</i></tt>, <tt><i>dst_addr</i></tt> 
+<dd>Het bron/bestemmingsadres in de IP header. Adressen kunnen
+gespecificeerd worden als:
+<ul>
+<li>Een enkel IPv4 of IPv6 adres.
+<li>Een <a href="http://public.pacbell.net/dedicated/cidr.html">CIDR</a> 
+netwerkblok.
+<li>Een "fully qualified domain name" die via DNS zal vertaald worden wanneer
+de regelset geladen wordt. Alle resulterende IP adressen zullen
+gesubstitueerd worden in de regel.
+<li>De naam van een netwerkinterface. Gelijk welke IP adressen toegekend
+aan de interface zullen gesubstitueerd worden in de regel.
+<li>De naam van een netwerkinterface gevolgd door een
+<tt>/<i>netmask</i></tt> (i.e., <tt>/24</tt>). Elk IP adres op de interface
+wordt gecombineerd met het netmask om een CIDR netwerkblok te vormen dat
+gesubstitueerd wordt in de regel.
+<li>De naam van een netwerkinterface tussen haakjes <tt>( )</tt>. Dit
+vertelt PF om de regel te updaten als het (de) IP adres(sen) op de genoemde
+interface verandert (veranderen). Dit is nuttig op een interface die haar
+IP adres via DHCP of dial-up verkrijgt aangezien de regelset niet hoeft
+herladen te worden elke keer het adres verandert.
+<li>De naam van een netwerkinterface gevolgd door gelijk welke van deze
+modifiers: 
+  <ul>
+  <li><tt>:network</tt> - substitueert het CIDR netwerkblok (bv.
+  192.168.0.0/24)
+  <li><tt>:broadcast</tt> - substitueert het netwerk broadcast adres
+  (bv. 192.168.0.255)
+  <li><tt>:peer</tt> - substitueert het IP adres van de peer bij een
+  punt-tot-punt verbinding
+  </ul>
+  <dl>
+  <dd>Bijkomend kan de <tt>:0</tt> modifier aan ofwel een interfacenaam
+  of aan gelijk welke van de bovenstaande modifiers vastgehangen worden
+  om aan te geven dat PF geen ge-aliaste IP adressen in de substitutie
+  moet opnemen.
+  Deze modifiers kunnen ook gebruikt worden wanneer de interface tussen
+  haakjes staat.
+  Voorbeeld: <tt>fxp0:network:0</tt>
+  </dl>
+<li>Een <a href="tables.html">tabel</a>.
+<li>Gelijk wat van het bovenstaande maar ontkend met de <tt>!</tt> ("not")
+modifier.
+<li>Een reeks adressen gebruik makend van een
+<a href="macros.html#lists">lijst</a>.
+<li>Het sleutelwoord <tt>any</tt> dat alle adressen betekent
+<li>Het sleutelwoord <tt>all</tt> dat een korte vorm is voor <tt>from any to
+any</tt>.
+</ul>
+
+<dt><tt><i>src_port</i></tt>, <tt><i>dst_port</i></tt>
+<dd>De bron/destinatiepoort in de Layer 4 pakkethoofding. Poorten kunnen
+gespecificeerd worden als:
+<ul>
+<li>Een getal tussen 1 en 65535
+<li>Een geldige servicenaam uit
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=services&amp;sektion=5&amp;manpath=OpenBSD+3.6"
+><tt>/etc/services</tt></a>
+<li>Een reeks poorten gebruik makend van een
+<a href="macros.html#lists">lijst</a>
+<li>Een bereik:
+	<ul>
+	<li><tt>!=</tt> (niet gelijk)
+	<li><tt>&lt;</tt> (kleiner dan)
+	<li><tt>&gt;</tt> (groter dan)
+	<li><tt>&lt;=</tt> (kleiner dan of gelijk)
+	<li><tt>&gt;=</tt> (groter dan of gelijk)
+	<li><tt>&gt;&lt;</tt> (bereik)
+	<li><tt>&lt;&gt;</tt> (tegengesteld bereik)
+	<dl>
+	<dd>De laatste twee zijn binaire operatoren (ze nemen twee argumenten)
+        en bevatten de argumenten in het bereik niet.
+	</dl>
+	<li><tt>:</tt> (inclusief bereik)
+	<dl>
+	<dd>De inclusief bereik operator is ook een binaire operator en
+        bevat de argumenten in het bereik niet.
+	</dl>
+	</ul>
+</ul>
+
+<dt><tt><i>tcp_flags</i></tt>
+<dd>Specificeert de vlaggen die ingesteld moeten zijn in de TCP header
+bij gebruik van
+<tt>proto tcp</tt>. Vlaggen worden gespecificeerd als
+<tt>flags <i>check</i>/<i>mask</i></tt>. Bijvoorbeeld: <tt>flags
+S/SA</tt> - dit draagt PF op om enkel naar de S en A (SYN and ACK)
+vlaggen te kijken en overeenstemming te vinden als alleen de SYN vlag "aan"
+staat.
+
+<dt><tt><i>state</i></tt>
+<dd>Specificeert of toestandsinformatie bijgehouden wordt voor pakketten die
+overeenstemmen met deze regel.
+<ul>
+<li><tt>keep state</tt> - werkt met TCP, UDP en ICMP.
+<li><tt>modulate state</tt> - werkt alleen met TCP. PF zal
+sterke Initial Sequence Numbers (ISNs) genereren voor pakketten die
+overeenstemmen met deze regel.
+<li><tt>synproxy state</tt> - binnenkomende TCP verbindingen worden door
+de proxy behandeld om servers te helpen beschermen tegen gespoofte
+TCP SYN floods.
+Deze optie omvat de functionaliteit van <tt>keep state</tt> en
+<tt>modulate state</tt>.
+</ul>
+</dl>
+
+<a name="defdeny"></a>
+<h2>Standaard Weigeren</h2>
+Het aanbevolen gebruik bij het opzetten van een firewall is om voor een
+"standaard weigeren" aanpak te kiezen. Dat betekent: <i>alles</i>
+weigeren en vervolgens selectief bepaald verkeer doorheen de firewall
+toelaten. Deze aanpak wordt aanbevolen omdat hij het zekere voor het
+onzekere neemt en ook het schrijven van een regelset gemakkelijker maakt.
+
+<p>
+Om een standaard weigeren filterbeleid te creëren, zouden de eerste twee
+filterregels de volgende moeten zijn:
+<blockquote>
+<tt>
+block in &nbsp;all<br>
+block out all
+</tt>
+</blockquote>
+
+<p>
+Dit zal alle verkeer op alle interfaces in elke richting van gelijk waar
+naar gelijk waar blokkeren.
+
+<a name="pass"></a>
+<h2>Verkeer Doorlaten</h2>
+Verkeer moet nu expliciet doorheen de firewall doorgelaten worden ofwel
+zal het standaard weigeren beleid het laten vallen. Dit is waar
+pakketcriteria zoals bron/bestemmingspoort, bron/bestemmingsadres, en
+protocol in het spel komen. Telkens wanneer verkeer toegestaan wordt om
+doorheen de firewall te gaan wordt (worden) de regel(s) best zo
+beperkend mogelijk geschreven. Dit om te verzekeren dat het bedoelde
+verkeer, en alleen het bedoelde verkeer, toegestaan wordt om door te gaan.
+
+<p>
+Enkele voorbeelden:
+<blockquote>
+<tt>
+# Laat verkeer binnen op dc0 vanuit het lokale netwerk,<br>
+# 192.168.0.0/24, naar het IP adres van de OpenBSD machine,<br>
+# 192.168.0.1. Laat ook het terugkerende verkeer naar buiten<br>
+# op dc0.<br>
+pass in &nbsp;on dc0 from 192.168.0.0/24 to 192.168.0.1<br>
+pass out on dc0 from 192.168.0.1 to 192.168.0.0/24<br>
+<br>
+<br>
+# Laat TCP verkeer binnen op fxp0 naar de webserver die draait op<br>
+# de OpenBSD machine. De interfacenaam, fxp0, wordt gebruikt als<br>
+# het bestemmingsadres zodat pakketten enkel met deze regel<br>
+# overeenstemmen als ze bestemd zijn voor de OpenBSD machine.<br>
+pass in on fxp0 proto tcp from any to fxp0 port www
+</tt>
+</blockquote>
+
+<a name="quick"></a>
+<h2>Het <tt>quick</tt> Sleutelwoord</h2>
+Zoals eerder aangegeven, wordt elk pakket geëvalueerd met de filterregelset
+van boven naar onder. Standaard wordt het pakket gemarkeerd voor doorlating,
+wat door gelijk welke regel veranderd kan worden, en verscheidene keren
+heen en weer zou kunnen veranderd worden voor het einde van de filterregels.
+<b>De laatste overeenstemmende regel "wint".</b>  Hierop is een uitzondering:
+de <tt>quick</tt> optie bij een filterregel heeft als effect dat alle
+verdere regelverwerking geannuleerd wordt en zorgt ervoor dat de
+gespecificeerde actie ondernomen wordt. Laten we naar een paar voorbeelden
+kijken:
+
+<p>
+Fout:
+<blockquote>
+<tt>
+block in on fxp0 proto tcp from any to any port ssh<br>
+pass &nbsp;in all
+</tt>
+</blockquote>
+
+<p>
+In dit geval kan de <tt>block</tt> lijn geëvalueerd worden, maar ze zal
+nooit enig effect hebben, aangezien ze gevolgd wordt door een lijn die
+alles zal doorlaten.
+
+<p>
+Beter:
+<blockquote>
+<tt>
+block in quick on fxp0 proto tcp from any to any port ssh<br>
+pass &nbsp;in all
+</tt>
+</blockquote>
+
+<p>
+Deze regels worden een beetje verschillend geëvalueerd. Als de <tt>block</tt>
+overeenstemt, door de <tt>quick</tt> optie, zal het pakket geblokkeerd
+worden, en zal de rest van de regelset genegeerd worden.
+
+<a name="state"></a>
+<h2>Toestand ("state") Bijhouden</h2>
+Eén van Packet Filter's belangrijke mogelijkheden is "toestand bijhouden"
+of "stateful inspection". Stateful inspection verwijst naar PF's mogelijkheid
+om de toestand, of voortgang, van een netwerkverbinding te volgen. Door
+informatie over elke verbinding te bewaren in een toestandstabel ("state
+table"), kan PF snel bepalen of een pakket dat doorheen de firewall gaat
+bij een reeds opgerichte verbinding hoort. Zo ja, dan wordt het doorheen
+de firewall doorgelaten zonder doorheen de evaluatie van de regelset te gaan.
+
+<p>
+Toestand bijhouden heeft vele voordelen waaronder eenvoudigere regelsets
+en betere pakketfilterpresatie. PF kan pakketten die in <i>gelijk welke</i>
+richting bewegen, in overeenstemming brengen met toestandstabel-entries,
+wat betekent dat filterregels die terugkerend verkeer doorlaten niet
+geschreven hoeven te worden. En, aangezien pakketten die overeenstemmen
+met stateful verbindingen niet doorheen regelsetevaluatie hoeven te gaan,
+kan de tijd die PF besteedt aan het verwerken van die pakketten
+enorm verminderd worden.
+
+<p>
+Wanneer een regel de <tt>keep state</tt> optie heeft, creëert het eerste
+pakket dat overeenstemt met de regel een "state" tussen zender en ontvanger.
+Nu stemmen niet alleen pakketten die van zender naar ontvanger gaan, overeen
+met de toestand-entry en ze gaan voorbij aan regelsetevaluatie, maar ook de
+antwoordpakketten van ontvanger naar zender. Bijvoorbeeld:
+<blockquote>
+<tt>
+pass out on fxp0 proto tcp from any to any keep state
+</tt>
+</blockquote>
+
+<p>
+Dit laat gelijk welk uitgaand TCP verkeer toe op de <tt>fxp0</tt> interface
+en staat ook toe dat het antwoordverkeer terug doorheen de firewall gaat.
+Hoewel toestand bijhouden een leuke functionaliteit is, verbetert het gebruik
+ervan aanzienlijk de prestatie van uw firewall aangezien toestandsopzoekingen
+spectaculair sneller zijn dan een pakket doorheen de filterregels laten
+lopen.
+
+<p>
+De <tt>modulate state</tt> optie werkt net zoals <tt>keep state</tt>
+behalve dat ze alleen van toepassing is op TCP pakketten. Met
+<tt>modulate state</tt> wordt het Initial Sequence Number (ISN) van uitgaande
+verbindingen gerandomiseerd. Dit is nuttig om verbindingen te beschermen
+die geïnitieerd werden door bepaalde besturingssystemen die slecht ISNs
+kiezen.
+Beginnend met OpenBSD 3.5, kan de <tt>modulate state</tt> optie gebruikt
+worden in regels die andere protocols dan TCP specificeren.
+
+<p>
+Toestand bijhouden op uitgaande TCP, UDP en ICMP pakketten en TCP ISNs
+moduleren:
+<blockquote>
+<tt>
+pass out on fxp0 proto { tcp, udp, icmp } from any \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;to any modulate state<br>
+</tt>
+</blockquote>
+
+<p>
+Een ander voordeel van toestand bijhouden is dat overeenkomstig ICMP verkeer
+zal doorgelaten worden doorheen de firewall. Als bijvoorbeeld
+<tt>keep state</tt> gespecificeerd wordt voor een TCP verbinding en er
+komt een ICMP source-quench bericht aan dat verwijst naar deze TCP
+verbinding, dan zal het met de gepaste toestand-entry in overeenstemming
+gebracht worden en doorheen de firewall gelaten worden.
+
+<p>
+Het bereik van een toestand-entry wordt globaal gecontroleerd door de
+<a href="options.html#state-policy"><tt>state-policy</tt></a>
+runtime optie en op een per regel basis door de <tt>if-bound</tt>,
+<tt>group-bound</tt> en <tt>floating</tt> state optie sleutelwoorden.
+Deze per regel sleutelwoorden hebben dezelfde betekenis als wanneer
+ze gebruikt worden met de <tt>state-policy</tt> optie. Voorbeeld:
+
+<blockquote>
+<tt>
+pass out on fxp0 proto { tcp, udp, icmp } from any \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;to any modulate state (if-bound)<br>
+</tt>
+</blockquote>
+
+<p>
+Deze regel zou opdragen dat opdat pakketten zouden overeenstemmen met
+de toestand-entry, ze de <tt>fxp0</tt> interface moeten doorkruisen.
+
+
+<p>
+Merk op dat <a href="nat.html"><tt>nat</tt></a>, 
+<a href="nat.html#binat"><tt>binat</tt></a> en
+<a href="rdr.html"><tt>rdr</tt></a> regels impliciet toestand creëren voor
+overeenstemmende verbindingen zolang de verbinding doorgelaten wordt door
+de filterregelset.
+
+<a name="udpstate"></a>
+<h2>Toestand ("state") Bijhouden voor UDP</h2>
+Men zal soms horen zeggen dat, "Men geen toestand mag creëren met UDP
+aangezien UDP een toestandloos protocol is!" Hoewel het waar is dat een UDP
+communicatiesessie geen concept van toestand (een expliciet begin en einde
+van communicatie) heeft, heeft dit geen impact op PF's mogelijkheid om
+toestand te creëren voor een UDP sessie. In het geval van protocols zonder
+"begin" en "eind" pakketten, houdt PF eenvoudigweg bij hoe lang het
+geleden is dat er een overeenstemmend pakket doorgelaten werd. Als de
+timeout bereikt wordt, wordt de toestand leeggemaakt. De timeout-waarden
+kunnen ingesteld worden in de <a href="options.html">opties</a> sectie
+van het <tt>pf.conf</tt> bestand.
+
+<a name="tcpflags"></a>
+<h2>TCP Vlaggen</h2>
+TCP pakketten overeenstemmen op basis van vlaggen wordt het vaakst gebruikt
+om TCP pakketten te filteren die een nieuwe verbinding proberen te openen.
+De TCP vlaggen en hun betekenis worden hier opgesomd:
+<ul>
+<li><b>F</b> : FIN  - Finish; einde van sessie
+<li><b>S</b> : SYN  - Synchronize; geeft een verzoek om sessie te beginnen aan
+<li><b>R</b> : RST  - Reset; een verbinding laten vallen
+<li><b>P</b> : PUSH - Push; pakket wordt onmiddellijk verzonden
+<li><b>A</b> : ACK  - Acknowledgement; ontvangstbevestiging
+<li><b>U</b> : URG  - Urgent; dringend
+<li><b>E</b> : ECE  - Explicit Congestion Notification Echo
+<li><b>W</b> : CWR  - Congestion Window Reduced
+</ul>
+
+<p>
+Om PF de TCP vlaggen te laten inspecteren tijdens de evaluatie van een regel,
+wordt het <tt>flags</tt> sleutelwoord gebruikt met de volgende syntaxis:
+<blockquote>
+<tt>
+flags <i>check</i>/<i>mask</i>
+</tt>
+</blockquote>
+
+<p>
+Het <tt><i>mask</i></tt> gedeelte vertelt PF alleen de gespecificeerde
+vlaggen te inspecteren en het <tt><i>check</i></tt> gedeelte specificeert
+welke vlag(gen) "aan" moeten staan in de hoofding opdat overeenstemming
+zou plaatsvinden.
+<blockquote>
+<tt>
+pass in on fxp0 proto tcp from any to any port ssh flags S/SA
+</tt>
+</blockquote>
+
+<p>
+De bovenstaande regel laat TCP verkeer door met de SYN vlag aangezet
+terwijl hij enkel kijkt naar de SYN en ACK vlaggen. Een pakket met de
+SYN en ECE vlaggen zou overeenstemmen met de bovenstaande regel, maar
+een pakket met SYN en ACK of gewoon ACK niet.
+
+<p>
+Opmerking: in vorige versies van OpenBSD werd de volgende syntaxis
+ondersteund:
+<blockquote>
+<tt>
+. . . flags S
+</tt>
+</blockquote>
+
+<p>
+Dit is niet langer het geval. Een mask moet nu <i>altijd</i>
+gespecificeerd worden.
+
+<p>
+Vlaggen worden vaak gebruikt in samenhang met <tt>keep state</tt> regels
+om het aanmaken van toestand-entries te helpen beheersen:
+<blockquote>
+<tt>
+pass out on fxp0 proto tcp all flags S/SA keep state
+</tt>
+</blockquote>
+
+<p>
+Dit zou het aanmaken van een toestand toestaan op gelijk welk uitgaand TCP
+pakket met de SYN vlag aangezet, uit de SYN en ACK vlaggen.
+
+<p>
+Men moet voorzichtig zijn met het gebruik van vlaggen -- begrijp wat u aan
+het doen bent en waarom, en wees voorzichtig met de raad die mensen geven
+aangezien veel ervan slecht is. Sommige mensen hebben gesuggereerd toestand
+te creëren "alleen als de SYN vlag aangezet is en geen andere". Zo'n regel
+zou eindigen op:
+<pre>
+     . . . flags S/FSRPAUEW  <i>slecht idee!!</i>
+</pre>
+
+<p>
+De theorie is: creëer toestand alleen bij het begin van de TCP sessie, en
+de sessie zou moeten beginnen met een SYN vlag, en geen andere. Het
+probleem is dat sommige sites de ECN vlag beginnen te gebruiken en gelijk
+welke site die ECN gebruikt en met u probeert te verbinden, zou afgewezen
+worden door zulk een regel. Een veel betere richtlijn is:
+<blockquote>
+<tt>
+. . . flags S/SAFR
+</tt>
+</blockquote>
+
+<p>
+Hoewel dit praktisch en veilig is, is het onnodig om de FIN en RST
+vlaggen na te kijken indien trafiek ook
+<a href="scrub.html">geschrobd</a> wordt. Het schrob-proces zal ervoor
+zorgen dat PF binnenkomende pakketten met illegale TCP vlag combinaties
+(zoals SYN en FIN of SYN en RST) laat vallen. Het wordt ten zeerste
+aanbevolen om altijd binnenkomend verkeer te <tt>schrobben</tt> ("scrub"):
+<blockquote>
+<tt>
+scrub in on fxp0<br>
+.<br>
+.<br>
+.<br>
+pass in on fxp0 proto tcp from any to any port ssh flags S/SA \<br>
+&nbsp;&nbsp;&nbsp;keep state
+</tt>
+</blockquote>
+
+<a name="synproxy"></a>
+<h2>TCP SYN Proxy</h2>
+<p>
+Normaal gezien, wanneer een client een TCP verbinding met een server
+initieert, zal PF de
+<a href="http://www.inetdaemon.com/tutorials/internet/tcp/connections.html"
+>handdruk</a> ("handshake") pakketten tussen de twee eindpunten doorlaten
+als ze aankomen.
+PF heeft echter de mogelijkheid om de handdruk te proxy'en.
+Wanneer de handdruk geproxied wordt, zal PF zelf de handdruk met de client
+voltooien, een handdruk met de server initiëren, en vervolgens pakketten
+tussen beide doorsturen.
+Het voordeel van dit proces is dat er geen pakketten naar de server
+gestuurd worden alvorens de client de handdruk voltooit.
+Dit elimineert de bedreiging van gespoofte TCP SYN floods die de server
+treffen omdat een gespoofte client verbinding de handdruk niet zal kunnen
+voltooien.
+
+<p>
+De TCP SYN proxy wordt ingeschakeld met de <tt>synproxy state</tt>
+sleutelwoorden in filterregels. Voorbeeld:
+
+<blockquote>
+<tt>
+pass in on $ext_if proto tcp from any to $web_server port www \<br>
+&nbsp;&nbsp;&nbsp;flags S/SA synproxy state
+</tt>
+</blockquote>
+
+<p>
+Hier zullen verbindingen naar de webserver TCP-geproxied worden door PF.
+
+<p>
+Omwille van de manier waarop <tt>synproxy state</tt> werkt, omvat het ook
+dezelfde functionaliteit als <tt>keep state</tt> en <tt>modulate state</tt>.
+
+<p>
+De SYN proxy zal niet werken als PF draait op een
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridge&amp;sektion=4&amp;manpath=OpenBSD+3.6"
+>bridge(4)</a>.
+
+<a name="antispoof"></a>
+<h2>Gespoofte Pakketten Blokkeren</h2>
+Adres-"spoofing" is wanneer een kwaadwillige gebruiker het bron-IP adres
+vervalst in pakketten die hij verstuurt ofwel om zijn echt adres te verbergen
+ofwel om zich uit te geven voor een ander knooppunt op het netwerk. Zodra
+de gebruiker zijn adres gespooft heeft kan hij een netwerkaanval lanceren
+zonder de ware bron van de aanval te onthullen, of toegang proberen te
+verkrijgen tot netwerkdiensten die beperkt zijn tot bepaalde IP adressen.
+
+<p>
+PF biedt wat bescherming tegen adres-spoofing via het
+<tt>antispoof</tt> sleutelwoord:
+
+<blockquote>
+<tt>
+antispoof [log] [quick] for <i>interface</i> [<i>af</i>]
+</tt>
+</blockquote>
+
+<dl>
+<dt><tt>log</tt>
+<dd>Specificeert dat overeenstemmende pakketten gelogd moeten worden via
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>pflogd(8)</a>.
+
+<dt><tt>quick</tt>
+<dd>Als een pakket overeenstemt met deze regel dan zal deze beschouwd worden
+als de "winnende" regel en zal de regelsetevaluatie stoppen.
+
+<dt><tt><i>interface</i></tt>
+<dd>De netwerkinterface om spoofing-bescherming op te activeren. Dit kan ook
+een <a href="macros.html#lists">lijst</a> van interfaces zijn.
+
+<dt><tt><i>af</i></tt>
+<dd>De adresfamilie om spoofing-bescherming voor te activeren, ofwel
+<tt>inet</tt> voor IPv4 of <tt>inet6</tt> voor IPv6.
+</dl>
+
+<p>
+Voorbeeld:
+<blockquote>
+<tt>
+antispoof for fxp0 inet
+</tt>
+</blockquote>
+
+<p>
+Wanneer een regelset geladen wordt, zal het voorkomen van het
+<tt>antispoof</tt> sleutelwoord ontvouwen worden in twee filterregels.
+In de veronderstelling dat interface <tt>fxp0</tt> IP adres 10.0.0.1 heeft
+en een subnet mask van 255.255.255.0 (dus een /24), zou de bovenstaande
+<tt>antispoof</tt> regel ontvouwen tot:
+
+<blockquote>
+<tt>
+block in on ! fxp0 inet from 10.0.0.0/24 to any<br>
+block in inet from 10.0.0.1 to any
+</tt>
+</blockquote>
+
+<p>
+Deze regels bereiken twee dingen:
+<ul>
+<li>Blokkeert alle verkeer dat afkomstig is van het 10.0.0.0/24 netwerk en
+<i>niet</i> via <tt>fxp0</tt> binnenkomt. Aangezien het 10.0.0.0/24 netwerk
+op de <tt>fxp0</tt> interface zit, zouden pakketten met een bronadres in dat
+netwerkblok nooit via gelijk welke andere interface mogen binnenkomen.
+<li>Blokkeert alle ingaand verkeer vanaf 10.0.0.1, het IP adres op
+<tt>fxp0</tt>.
+De host machine zou nooit pakketten moeten sturen naar zichzelf via een
+externe interface, dus gelijk welke binnenkomende pakketten met een
+bronadres dat toebehoort aan de machine, kunnen als kwaadwillig beschouwd
+worden.
+</ul>
+
+<p>
+<b>OPMERKING</b>: De filterregels waarin de <tt>antispoof</tt> regel
+zich ontvouwt, zullen ook pakketten blokkeren die over de loopback
+interface naar lokale adressen verzonden worden. Deze adressen moeten
+expliciet toegelaten worden. Bijvoorbeeld:
+<blockquote>
+<tt>
+pass quick on lo0 all<br>
+<br>
+antispoof for fxp0 inet
+</tt>
+</blockquote>
+
+<p>
+Gebruik van <tt>antispoof</tt> wordt best beperkt tot interfaces waaraan
+een IP adres is toegekend. Gebruik van <tt>antispoof</tt> op een interface
+zonder IP adres zal leiden tot filterregels als:
+<blockquote>
+<tt>
+block drop in on ! fxp0 inet all<br>
+block drop in inet all
+</tt>
+</blockquote>
+
+<p>
+Met deze regels is er een risico om <i>alle</i> ingaand verkeer op
+<i>alle</i> interfaces te blokkeren.
+
+<a name="osfp"></a>
+<h2>Passieve Besturingssysteem "Fingerprinting"</h2>
+
+<p>
+Passive OS Fingerprinting (OSFP) is een methode om passief het
+besturingssysteem van een remote host te detecteren op basis van bepaalde
+karakteristieken binnen de TCP SYN pakketten van die host.
+Deze informatie kan vervolgens gebruikt worden als criteria binnen
+filterregels.
+
+<p>
+PF bepaalt het remote besturingssysteem door karakteristieken van een
+TCP SYN pakket te vergelijken met het
+<a href="options.html#fingerprints">fingerprints bestand</a>, dat
+standaard
+<a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.os&amp;sektion=5&amp;manpath=OpenBSD+3.6"
+><tt>/etc/pf.os</tt></a> is.
+Zodra PF ingeschakeld wordt, kan de huidige fingerprint lijst bekeken
+worden met dit commando:
+
+<blockquote>
+<tt>
+# pfctl -s osfp
+</tt>
+</blockquote>
+
+<p>
+Binnen een filterregel kan een fingerprint gespecificeerd worden per
+OS klasse, versie, of subtype/patchniveau.
+Elk van deze items wordt opgesomd in de uitvoer van het hierboven
+getoonde <tt>pfctl</tt> commando. Om een fingerprint te specificeren in
+een filterregel, wordt het <tt>os</tt> sleutelwoord gebruikt:
+
+<blockquote>
+<tt>
+pass &nbsp;in on $ext_if any os OpenBSD keep state<br>
+block in on $ext_if any os "Windows 2000"<br>
+block in on $ext_if any os "Linux 2.4 ts"<br>
+block in on $ext_if any os unknown
+</tt>
+</blockquote>
+
+<p>
+De speciale besturingssysteemklasse <tt>unknown</tt> laat toe pakketten
+te laten overeenstemmen wanneer de OS fingerprint niet gekend is.
+
+<p>
+<font color="#ff0000">NOTEER</font> het volgende:
+<ul>
+  <li>Besturingssysteem fingerprints zijn nu en dan verkeerd door gespoofte
+  en/of gekunstelde pakketten die gemaakt zijn om er uit te zien alsof ze
+  van een specifiek besturingssysteem afkomstig zijn.
+  <li>Bepaalde revisies of patchniveau's van een besturingssysteem kunnen
+  het gedrag van de stack veranderen en ervoor zorgen dat het niet
+  overeenstemt met wat er in het fingerprints bestand staat of in het
+  geheel met geen andere entry overeenstemt.
+  <li>OSFP werkt alleen op het TCP SYN pakket; het zal niet werken op
+  andere protocols of op reeds opgerichte verbindingen.
+</ul>
+
+<a name="ipopts"></a>
+<h2>IP Opties</h2>
+
+Standaard blokkeert PF pakketten waarbij IP opties zijn ingesteld. Dit kan
+de taak moeilijker maken voor "OS fingerprinting" utilities zoals nmap.
+Als u een toepassing hebt die het doorlaten van deze pakketten vereist,
+zoals multicast of IGMP, kan u de <tt>allow-opts</tt> opdracht gebruiken:
+<blockquote>
+<tt>
+pass in quick on fxp0 all allow-opts
+</tt>
+</blockquote>
+
+<a name="example"></a>
+<h2>Filterregelset Voorbeeld</h2>
+Hieronder staat een voorbeeld van een filterregelset. De machine die PF
+draait, fungeert als firewall tussen een klein, intern netwerk en het
+Internet.
+Alleen de filterregels zijn getoond;
+<a href="../queueing.html">queueing</a>, 
+<a href="nat.html"><tt>nat</tt></a>, 
+<a href="../rdr.html"><tt>rdr</tt></a>, 
+enz. werden uit dit voorbeeld gelaten.
+<br>
+<br>
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+ext_if  = "fxp0"
+int_if  = "dc0"
+lan_net = "192.168.0.0/24"
+
+# tabel die alle IP adressen bevat die toegekend zijn aan de firewall
+table &lt;firewall&gt; const { self }
+
+# schrob binnenkomende pakketen
+scrub in all
+
+# stel een standaard weigeren beleid in
+block in  all
+block out all
+
+# laat verkeer door op de loopback interface in eender welke richting
+pass quick on lo0 all
+
+# activeer spoofing-bescherming voor de interne interface.
+antispoof quick for $int_if inet
+
+# laat alleen ssh verbindingen toe vanaf het lokale netwerk als het vanaf de
+# vertrouwde computer, 192.168.0.15, komt. gebruik "block return" zodat een
+# TCP RST verzonden wordt om geblokkeerde verbindingen meteen te sluiten.
+# gebruik "quick" zodat deze regel niet opgeheven wordt door de "pass" regels
+# hieronder.
+block return in quick on $int_if proto tcp from ! 192.168.0.15 \
+   to $int_if port ssh flags S/SA
+
+# laat alle verkeer naar en vanuit het lokale netwerk door
+pass in  on $int_if from $lan_net to any
+pass out on $int_if from any to $lan_net
+
+# laat tcp, udp en icmp naar buiten op de externe (Internet) interface. 
+# houd toestand bij op udp en icmp en moduleer toestand op tcp.
+pass out on $ext_if proto tcp all modulate state flags S/SA
+pass out on $ext_if proto { udp, icmp } all keep state
+
+# laat ssh verbindingen binnen op de externe interface zolang ze NIET
+# bestemd zijn voor de firewall (ze zijn dus bestemd voor een machine in
+# het lokale netwerk). log het initiële pakket zodat we later kunnen
+# zeggen wie er probeert te verbinden. gebruik de tcp syn proxy om de
+# verbinding te proxy'en.
+pass in log on $ext_if proto tcp from any to ! &lt;firewall&gt; \
+   port ssh flags S/SA synproxy state
+</pre>
+</td></tr>
+</table>
+
+<p>
+[<a href="tables.html">Vorige: Tabellen</a>]
+[<a href="index.html">Inhoud</a>]
+[<a href="nat.html">Volgende: Network Address Translation</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[terug]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [ OpenBSD: filter.html,v 1.27 ]<br>
+$Translation: filter.html,v 1.1 2005/02/13 00:43:27 smestdag Exp $<br>
+$OpenBSD: filter.html,v 1.1 2005/02/13 11:15:53 jufi Exp $
+</small>
+
+</body>
+</html> 

@@ -1,0 +1,188 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Lijsten en Macro's</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+</head>
+
+<!--
+Copyright (c) 2003, Nick Holland <nick@openbsd.org>
+Copyright (c) 2003, 2004, Joel Knight <enabled@myrealbox.com>
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<a href="../../../nl/index.html">
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif" border="0">
+</a>
+<p>
+[<a href="config.html">Vorige: Van Start Gaan</a>]
+[<a href="index.html">Inhoud</a>]
+[<a href="tables.html">Volgende: Tabellen</a>]
+
+<h1><font color="#e00000">PF: Lijsten en Macro's</font></h1>
+<hr>
+
+<h3>Inhoudstafel</h3>
+<ul>
+<li><a href="#lists">Lijsten</a>
+<li><a href="#macros">Macro's</a>
+</ul>
+
+<hr>
+
+<a name="lists"></a>
+<h2>Lijsten</h2>
+Een lijst laat de specificatie toe van meerdere gelijkaardige criteria binnen
+een regel. Bijvoorbeeld meerdere protocols, poortnummers, adressen, enz.
+Dus, in plaats van één filterregel te schrijven voor elk IP adres dat
+geblokkeerd moet worden, kan één regel geschreven worden door de IP adressen
+in een lijst te specificeren. Lijsten worden gedefinieerd door items
+binnen <tt>{ }</tt> accolades te specificeren.
+
+<p>
+Wanneer
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>pfctl(8)</a> een lijst tegenkomt tijdens het laden van een regelset, creëert
+het meerdere regels, één voor elk item in de lijst. Bijvoorbeeld:
+<blockquote>
+<tt>
+block out on fxp0 from { 192.168.0.1, 10.5.32.6 } to any
+</tt>
+</blockquote>
+
+<p>
+wordt ontvouwen in:
+<blockquote>
+<tt>
+block out on fxp0 from 192.168.0.1 to any<br>
+block out on fxp0 from 10.5.32.6 to any
+</tt>
+</blockquote>
+
+<p>
+Meerdere lijsten kunnen binnen een regel gespecificeerd worden en zijn
+niet beperkt tot enkel filterregels:
+<blockquote>
+<tt>
+rdr on fxp0 proto tcp from any to any port { 22 80 } -&gt; \<br>
+&nbsp;&nbsp;&nbsp;192.168.0.6<br>
+block out on fxp0 proto { tcp udp } from { 192.168.0.1, \<br> 
+&nbsp;&nbsp;&nbsp;10.5.32.6 } to any port { ssh telnet }
+</tt>
+</blockquote>
+
+<p>
+Merk op dat de komma's tussen items in de lijst optioneel zijn.
+
+<p>
+Behoed u voor constructies zoals de volgende, ook wel bekend als 
+"uitgesloten lijsten", die een veel voorkomende fout zijn:
+<blockquote>
+<tt>
+pass in on fxp0 from { 10.0.0.0/8, !10.1.2.3 }
+</tt>
+</blockquote>
+
+<p>
+Hoewel de bedoelde betekenis gewoonlijk is om overeen te stemmen met
+"gelijk welk adres binnen 10.0.0.0/8, behalve 10.1.2.3",
+ontvouwt de regel tot:
+<blockquote>
+<tt>
+pass in on fxp0 from 10.0.0.0/8<br>
+pass in on fxp0 from !10.1.2.3
+</tt>
+</blockquote>
+
+<p>
+wat overeenstemt met gelijk welk mogelijk adres. In plaats hiervan
+wordt beter een <a href="tables.html">tabel</a> gebruikt.
+
+<a name="macros"></a>
+<h2>Macro's</h2>
+Macro's zijn door de gebruiker gedefinieerde variabelen die IP adressen,
+poortnummers, interfacenamen, enz. kunnen bevatten. Macro's kunnen de
+complexiteit van een PF regelset verminderen en ook het onderhouden van
+een regelset veel gemakkelijker maken.
+
+<p>
+Macronamen moeten beginnen met een letter en mogen letters, cijfers en
+underscores bevatten. Macronamen mogen geen gereserveerde woorden zijn
+zoals <tt>pass</tt>, 
+<tt>out</tt> of <tt>queue</tt>.
+<blockquote>
+<tt>
+ext_if = "fxp0"<br>
+<br>
+block in on $ext_if from any to any<br>
+</tt>
+</blockquote>
+
+<p>
+Dit creëert een macro met de naam <tt>ext_if</tt>. Wanneer naar een macro
+verwezen wordt nadat hij aangemaakt is, wordt zijn naam voorafgegaan door
+een <tt>$</tt> teken.
+
+<p>
+Macro's kunnen ook ontvouwen tot lijsten, zoals:
+<blockquote>
+<tt>
+friends = "{ 192.168.1.1, 10.0.2.5, 192.168.43.53 }"
+</tt>
+</blockquote>
+
+<p>
+Macro's kunnen recursief gedefinieerd worden. Aangezien macro's niet
+ontvouwen worden binnen aanhalingstekens, moet de volgende syntaxis
+gebruikt worden:
+<blockquote>
+<tt>
+host1      = "192.168.1.1"<br>
+host2      = "192.168.1.2"<br>
+all_hosts  = "{" $host1 $host2 "}"<br>
+</tt>
+</blockquote>
+
+<p>
+De macro <tt>$all_hosts</tt> ontvouwt nu tot 192.168.1.1, 192.168.1.2.
+
+<p>
+[<a href="config.html">Vorige: Van Start Gaan</a>]
+[<a href="index.html">Inhoud</a>]
+[<a href="tables.html">Volgende: Tabellen</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[terug]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally  [ OpenBSD: macros.html,v 1.15 ]<br>
+$Translation: macros.html,v 1.1 2005/02/13 00:43:27 smestdag Exp $<br>
+$OpenBSD: macros.html,v 1.1 2005/02/13 11:15:53 jufi Exp $
+</small>
+
+
+</body>
+</html> 
