@@ -441,7 +441,8 @@ Dit kan gespecificeerd worden als absolute waarde met de suffixen <tt>b</tt>,
 megabits en gigabits per seconde voor te stellen, of als percentage van de
 bandbreedte van de ouder-wachtrij.
 Deze parameter is alleen van toepassing bij gebruik van de <tt>cbq</tt>
-scheduler.
+scheduler. Indien hij niet gespeficiceerd wordt, is de standaardwaarde
+100% van de bandbreedte van de ouder-wachtrij.
 <li><tt><i>pri</i></tt> - de prioriteit van de wachtrij. Voor <tt>cbq</tt> is
 het prioriteitsbereik 0 tot 7 en voor <tt>priq</tt> is het bereik 0 tot 15.
 Prioriteit 0 is de laagste prioriteit. Wanneer ze niet gespecificeerd wordt,
@@ -478,9 +479,9 @@ Verdergaand met het voorbeeld hierboven:
 <blockquote>
 <tt>
 queue std bandwidth 50% cbq(default)<br>
-queue ssh { ssh_login, ssh_bulk }<br>
-&nbsp;&nbsp;queue ssh_login  priority 4 cbq(ecn)<br>
-&nbsp;&nbsp;queue ssh_bulk   cbq(ecn)<br>
+queue ssh bandwidth 25% { ssh_login, ssh_bulk }<br>
+&nbsp;&nbsp;queue ssh_login bandwidth 25% priority 4 cbq(ecn)<br>
+&nbsp;&nbsp;queue ssh_bulk  bandwidth 75% cbq(ecn)<br>
 queue ftp bandwidth 500Kb priority 3 cbq(borrow red)<br>
 </tt>
 </blockquote>
@@ -489,12 +490,22 @@ queue ftp bandwidth 500Kb priority 3 cbq(borrow red)<br>
 Hier worden de parameters van de voorheen gedefinieerde wachtrijen ingesteld.
 Aan de <tt>std</tt> wachtrij wordt een bandbreedte van 50% van de
 root-wachtrij (of 1Mbps) toegekend en deze wachtrij wordt als de
-standaardwachtrij ingesteld. De <tt>ssh</tt> wachtrij definieert twee
+standaardwachtrij ingesteld. De <tt>ssh</tt> wachtrij wordt 25% van
+de bandbreedte van de root-wachtrij (500kb) toegekend en deze bevat ook twee
 kind-wachtrijen, <tt>ssh_login</tt> en <tt>ssh_bulk</tt>. De <tt>ssh_login</tt>
 wachtrij wordt een hogere prioriteit gegeven dan <tt>ssh_bulk</tt> en beide
 hebben ECN ingeschakeld. De <tt>ftp</tt> wordt een bandbreedte van 500Kbps
 toegekend en een prioriteit van 3 gegeven. Deze kan ook bandbreedte lenen
 wanneer overschot beschikbaar is en heeft RED ingeschakeld.
+
+<p>
+<b>OPMERKING:</b> Voor elke kind-wachtrij definitie wordt de bandbreedte
+gespecificeerd. Zonder de bandbreedte te specificeren, zal PF de wachtrij
+100% van de bandbreedte van de ouder-wachtrij geven.
+In deze situatie zou dat een fout veroorzaken wanneer de regels ingeladen
+worden want als er een wachtrij is met 100% van de bandbreedte, kan er geen
+andere wachtrij op dat niveau gedefinieerd worden aangezien er geen
+bandbreedte meer vrij is om er aan toe te kennen.
 
 <a name="assign"></a>
 <h3>Verkeer Toekennen aan een Wachtrij</h3>
@@ -525,7 +536,7 @@ van degene die in de <tt>altq on</tt> opdracht werd gedefinieerd:
 <blockquote>
 <tt> 
 altq on fxp0 cbq bandwidth 2Mb queue { std, ftp }<br>
-queue std cbq(default)<br>
+queue std bandwidth 500Kb cbq(default)<br>
 queue ftp bandwidth 1.5Mb<br>
 <br>
 pass in on dc0 from any to any port 21 queue ftp<br>
@@ -675,9 +686,9 @@ altq on dc0 cbq bandwidth 2Mb queue { std_in, ssh_im_in, dns_in, bob_in }
 # bob_in      - bandbreedte gereserveerd voor Bobs werkstation. laat
 #               hem toe te lenen.
 
-queue std_in    cbq(default)
-queue ssh_im_in priority 4
-queue dns_in    priority 5
+queue std_in    bandwidth 1.6Mb cbq(default)
+queue ssh_im_in bandwidth 200Kb priority 4
+queue dns_in    bandwidth 200Kb priority 5
 queue bob_in    bandwidth 80Kb cbq(borrow)
 
 
@@ -750,13 +761,18 @@ gebruiken Fast Ethernet (100Mbps).
 <p>
 De netwerkbeheerder heeft over het volgende beleid beslist:
 <ul>
-<li>Beperk verkeer tussen de WWW server en het Internet tot 500Kbps in
+<li>Beperk al het verkeer tussen de WWW server en het Internet tot 500Kbps in
 elke richting.
-<li>Geen bandbreedtebeperking op verkeer tussen de WWW server en het interne
-netwerk.
-<li>Geef HTTP verkeer tussen de WWW server en het Internet een hogere
-prioriteit dan ander verkeer tussen de WWW server en het Internet
-(zoals FTP uploads).
+	<ul>
+	<li>Ken 250Kbps toe aan HTTP verkeer.
+	<li>Ken 250Kbps toe aan "ander" verkeer (bv. niet-HTTP verkeer)
+	<li>Laat elke wachtrij toe om te lenen tot de volledige 500Kbps.
+	<li>Geef HTTP verkeer tussen de WWW server en het Internet een
+	hogere prioriteit dan ander verkeer tussen de WWW server en het
+	Internet (zoals FTP uploads).
+	</ul>
+<li>Verkeer tussen de WWW server en het interne netwerk kan tot de volledige
+100MBps gebruiken die het netwerk biedt.
 <li>Reserveer 500Kbps voor het IT Dept netwerk zodat zij de laatste software
 updates op een geschikte manier kunnen downloaden. Ze zouden meer dan 500Kbps
 moeten kunnen gebruiken wanneer er extra bandbreedte beschikbaar is.
@@ -787,15 +803,15 @@ altq on fxp0 cbq bandwidth 1.5Mb queue { std_ext, www_ext, boss_ext }
 #                  buitengaand verkeer op fxp0.
 # www_ext        - container-wachtrij voor WWW server wachtrijen. beperk
 #                  tot 500Kbps.
-#   www_ext_http - http verkeer van de WWW server
-#   www_ext_misc - alle niet-http verkeer van de WWW server
-# boss_ext       - verkeer afkomstig van de computer van de baas
+#   www_ext_http - http verkeer van de WWW server; hogere prioriteit.
+#   www_ext_misc - alle niet-http verkeer van de WWW server.
+# boss_ext       - verkeer afkomstig van de computer van de baas.
 
-queue std_ext        cbq(default)
+queue std_ext        bandwidth 500Kb cbq(default borrow)
 queue www_ext        bandwidth 500Kb { www_ext_http, www_ext_misc }
-  queue www_ext_http priority 3 cbq(red)
-  queue www_ext_misc priority 1
-queue boss_ext       priority 3
+  queue www_ext_http bandwidth 50% priority 3 cbq(red borrow)
+  queue www_ext_misc bandwidth 50% priority 1 cbq(borrow)
+queue boss_ext       bandwidth 500Kb priority 3 cbq(borrow)
 
 # schakel queueing in op de interne interface om het verkeer te regelen
 # dat van het Internet of de DMZ komt. gebruik de cbq scheduler om de
@@ -812,15 +828,15 @@ altq on dc0 cbq bandwidth 100% queue { net_int, www_int }
 #              bandbreedte is 1.0Mbps.
 #   std_int  - de standaardwachtrij. ook de standaardwachtrij voor uitgaand
 #              verkeer op dc0.
-#   it_int   - verkeer naar het IT Dept netwerk.
-#   boss_int - verkeer naar de PC van de baas.
-# www_int    - verkeer vanaf de WWW server in de DMZ.
+#   it_int   - verkeer naar het IT Dept netwerk; reserveer 500Kbps voor hen.
+#   boss_int - verkeer naar de PC van de baas; ken een hogere priorieit toe.
+# www_int    - verkeer vanaf de WWW server in de DMZ; volle snelheid.
 
 queue net_int    bandwidth 1.0Mb { std_int, it_int, boss_int }
-  queue std_int  cbq(default)
+  queue std_int  bandwidth 250Kb cbq(default borrow)
   queue it_int   bandwidth 500Kb cbq(borrow)
-  queue boss_int priority 3
-queue www_int    cbq(red)
+  queue boss_int bandwidth 250Kb priority 3 cbq(borrow)
+queue www_int    bandwidth 99Mb cbq(red borrow)
 
 # schakel queueing in op de DMZ interface om het verkeer te regelen dat
 # bestemd is voor de WWW server. cbq zal gebruikt worden op deze
@@ -835,13 +851,13 @@ altq on fxp1 cbq bandwidth 100% queue { internal_dmz, net_dmz }
 # definieer de parameters voor de kind-wachtrijen.
 # internal_dmz   - verkeer vanaf het interne netwerk.
 # net_dmz        - container-wachtrij voor verkeer vanaf het Internet.
-#   net_dmz_http - http verkeer.
+#   net_dmz_http - http verkeer; hogere prioriteit.
 #   net_dmz_misc - alle niet-http verkeer. dit is ook de standaardwachtrij.
 
-queue internal_dmz      # geen speciale instellingen nodig
+queue internal_dmz   bandwidth 99Mb cbq(borrow)
 queue net_dmz        bandwidth 500Kb { net_dmz_http, net_dmz_misc }
-  queue net_dmz_http priority 3 cbq(red)
-  queue net_dmz_misc priority 1 cbq(default)
+  queue net_dmz_http bandwidth 50% priority 3 cbq(red borrow)
+  queue net_dmz_misc bandwidth 50% priority 1 cbq(default borrow)
 
 
 # ... in de filtering sectie van pf.conf ...
@@ -904,10 +920,10 @@ pass out on fxp1 proto tcp from $int_nets to $wwwserv port { 80, \
 <br>
 <small>
 <!--
-Originally [OpenBSD: queueing.html,v 1.25 ]<br>
-$Translation: queueing.html,v 1.2 2005/02/21 13:50:22 smestdag Exp $<br>
+Originally [OpenBSD: queueing.html,v 1.26 ]<br>
+$Translation: queueing.html,v 1.3 2005/02/26 15:26:23 smestdag Exp $<br>
 -->
-$OpenBSD: queueing.html,v 1.2 2005/02/22 16:49:24 saad Exp $
+$OpenBSD: queueing.html,v 1.3 2005/02/27 12:05:44 jufi Exp $
 </small>
 
 </body>
