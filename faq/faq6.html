@@ -37,6 +37,7 @@
 <li><a href= "#NFS"   >6.7 - Using NFS</a>
 <li><a href= "#PPTP"  >6.8 - Setting up a PPTP connection in OpenBSD</a>
 <li><a href= "#Bridge">6.9 - Setting up a bridge with OpenBSD</a>
+<li><a href=" #PXE"   >6.10 - How do I boot using PXE?</a>
 </ul>
 
 <hr>
@@ -144,6 +145,8 @@ vlan0: flags=0&lt;&gt; mtu 1500
 vlan1: flags=0&lt;&gt; mtu 1500
         address: 00:00:00:00:00:00
 gre0: flags=9010&lt;POINTOPOINT,LINK0,MULTICAST&gt; mtu 1450
+carp0: flags=0&lt;&gt; mtu 1500
+carp1: flags=0&lt;&gt; mtu 1500
 gif0: flags=8010&lt;POINTOPOINT,MULTICAST&gt; mtu 1280
 gif1: flags=8010&lt;POINTOPOINT,MULTICAST&gt; mtu 1280
 gif2: flags=8010&lt;POINTOPOINT,MULTICAST&gt; mtu 1280
@@ -169,7 +172,7 @@ The following manual pages describe them:
 <!-- XXXrelease -->
 <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=lo&amp;sektion=4">lo</a>
  - Loopback Interface
-<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflog&amp;sektion=4&amp;manpath=OpenBSD+3.4">pflog</a>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflog&amp;sektion=4&amp;manpath=OpenBSD+3.5">pflog</a>
  - Packet Filter Logging Interface
 <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sl&amp;sektion=4">sl</a>
  - SLIP Network Interface
@@ -187,6 +190,8 @@ The following manual pages describe them:
  - GRE/MobileIP Encapsulation Interface
 <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=gif&amp;sektion=4">gif</a>
  - Generic IPv4/IPv6 Tunnel Interface
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=carp&amp;sektion=4">carp</a>
+ - Common Address Redundancy Protocol Interface
 </ul>
 
 <p>
@@ -1309,6 +1314,161 @@ chip
 is an example of a chip that won't work as part of a bridge. 
 </ul>
 
+<a name="PXE"></a>
+<h2>6.10 - How do I boot using PXE? (i386, amd64)</h2>
+The Preboot Execution Environment, or PXE, is a way to boot a computer
+from the network, rather than from a hard disk, a floppy or a CDROM.
+The technology was originally developed by Intel, but is supported
+by most major network card and computer manufacturers now.
+Note that there are several different network boot protocols, PXE is
+relatively recent.
+Many older NICs support network booting but do NOT support PXE;
+OpenBSD/i386 or amd64 cannot currently be booted across the network by these.
+
+<p>
+<h3>How does PXE booting work?</h3>
+First, it is wise to understand how <a href="faq14.html#Boot386">OpenBSD
+boots</a> on i386 and amd64 platforms.
+Upon starting the boot process, the PXE-capable NIC broadcasts a DHCP
+request over the network.
+The DHCP server will assign the adapter an IP address, and gives it
+the name of a file to be retrieved from a 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tftp&amp;sektion=1"
+>tftp(1)</a> server and executed.
+This file then conducts the rest of the boot process.
+For OpenBSD, the file is
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pxeboot&amp;sektion=8&amp;arch=i386"
+>pxeboot</a>, which takes the place of the standard
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=boot&amp;sektion=8&amp;arch=i386">
+boot(8)</a> file.
+pxeboot(8) is then able to load and execute a kernel (such as
+<tt>bsd</tt> or <a href="faq4.html#bsd.rd"><tt>bsd.rd</tt></a> from the
+same tftp(1) server.
+
+<h3>How do I do it?</h3>
+The first and obvious step is you must have a PXE-boot capable computer
+or network adapter.
+Some documentation will indicate all modern NICs and computers are PXE
+capable, but this is clearly not true -- many low cost systems do not
+include PXE ROMs or use an older network boot protocol.
+You also need a properly configured <a href="#DHCP">DHCP</a> and TFTP server.
+
+<p>
+Assuming an OpenBSD machine is the source of the boot files (this is
+NOT required), your DHCP server
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dhcpd.conf&amp;sektion=5">dhcpd.conf</a>
+file will need to have the following line:
+<pre>
+    filename "pxeboot";
+</pre>
+to have the DHCP server offer that file to the booting workstation.
+For example:
+
+<pre>
+    shared-network LOCAL-NET {
+            option  domain-name "example.com";
+            option  domain-name-servers 192.168.1.3, 192.168.1.5;
+
+            subnet 192.168.1.0 netmask 255.255.255.0 {
+                    option routers 192.168.1.1;
+                    <b>filename "pxeboot";</b>
+                    range 192.168.1.32 192.168.1.127;
+                    default-lease-time 86400;
+                    max-lease-time 90000;
+            }
+    }
+</pre>
+
+<p>
+You will also have to activate the 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tftpd&amp;sektion=8">tftpd(8)</a>
+daemon.  This is typically done through 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=inetd&amp;sektion=8"
+>inetd(8)</a>.
+The standard OpenBSD install has a sample line in <tt>inetd.conf</tt>
+which will do nicely for you:
+<pre>
+    #tftp  dgram   udp  wait  root  /usr/libexec/tftpd   tftpd -s /tftpboot
+</pre>
+
+which simply needs to have the '#' character removed and send inetd(8) a 
+-HUP signal to get it to reload <tt>/etc/inetd.conf</tt>.
+tftpd(8) serves files from a particular directory, in the case of this
+line, that directory is <tt>/tftpboot</tt>, which we will use for this
+example. 
+Obviously, this directory needs to be created and populated.
+Typically, you will have only a few files here for PXE booting:
+
+<ul>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pxeboot&amp;sektion=8&amp;arch=i386"
+>pxeboot</a>, the PXE boot loader (serving the same function as
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=boot&amp;sektion=8"
+>boot</a> on a disk-based system).
+<li><a href="#bsd.rd">bsd.rd</a>, the install kernel or <tt>bsd</tt>,
+a customized kernel.
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=boot.conf&amp;sektion=8&amp;arch=i386"
+>boot.conf</a>, a boot configuration file.
+</ul>
+
+Note that <tt>boot.conf</tt> is only needed if the kernel you wish to
+boot from is not named <tt>bsd</tt>, or other pxeboot defaults are not 
+as you need them.
+You can test your tftpd(8) server using a 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tftp&amp;sektion=1"
+>tftp(1)</a> client, making sure you can fetch the needed files.
+
+<p>
+When your DHCP and TFTP servers are running, you are ready to try it.
+You will have to activate the PXE boot on your system or network card;
+consult your system documentation.
+Once you have it set, you should see something similar to the following:
+
+<pre>
+    Intel UNDI, PXE-2.0 (build 067)
+    Copyright (C) 1997,1998 Intel Corporation
+
+    For Realtek RTL 8139(X) PCI Fast Ethernet Controller v1.00 (990420)
+
+    DHCP MAC ADDR: 00 E0 C5 C8 CF E1
+    CLIENT IP: 192.168.1.76  MASK: 255.255.255.0  DHCP IP: 192.168.1.252
+    GATEWAY IP: 192.168.1.1
+    probing: pc0 com0 com1 apm pxe![2.1] mem[540k 28m a20=on]
+    disk: hd0*
+    net: mac 00:e0:c5:c8:cf:e1, ip 192.168.1.76, server 192.168.1.252
+    >> OpenBSD/i386 PXEBOOT 1.00
+    boot>
+</pre>
+
+At this point, you have the standard OpenBSD boot prompt.  
+If you simply type "<tt>bsd.rd</tt> here, you will then fetch the 
+file <tt>bsd.rd</tt> from the TFTP server.
+
+<pre>
+    >> OpenBSD/i386 PXEBOOT 1.00
+    boot> bsd.rd
+    booting tftp:bsd.rd: 4375152+733120 [58+122112+105468]=0x516d04
+    entry point at 0x100120
+
+    Copyright (c) 1982, 1986, 1989, 1991, 1993
+            The Regents of the University of California.  All rights reserved.
+
+    Copyright (c) 1995-2004 OpenBSD.  All rights reserved.  http://www.OpenBSD.org
+
+    OpenBSD 3.5 (RAMDISK_CD) #25: Thu Mar 19 23:16:56 EST 2004
+      ...
+</pre>
+
+The <a name="faq4.html#bsd.rd">bsd.rd install kernel</a> will now boot.
+
+<p>
+
+<h3>Can I boot other kinds of kernels using PXE other than
+<tt>bsd.rd</tt>?</h3>
+
+Yes, although with the tools currently in OpenBSD 3.5, PXE booting is
+primarily intended for installing the OS.
+
+
 
 <p>
 <font color="#0000e0">
@@ -1322,7 +1482,7 @@ is an example of a chip that won't work as part of a bridge.
 <a href="index.html"><img height="24" width="24" src="../images/back.gif" border="0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq6.html,v 1.184 2004/02/06 01:07:52 nick Exp $</small>
+<small>$OpenBSD: faq6.html,v 1.185 2004/04/30 18:02:51 nick Exp $</small>
 
 </body>
 </html>
