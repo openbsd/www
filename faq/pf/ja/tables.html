@@ -1,0 +1,210 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Tables</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-2022-JP">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 2003 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
+<p>
+[<a href="macros.html">前に戻る: リストとマクロ</a>]
+[<a href="index.html">目次</a>]
+[<a href="options.html">次に進む: オプション</a>]
+
+<p>
+<h1><font color="#e00000">PF: テーブル</font></h1>
+
+<hr>
+
+<h3>目次</h3>
+<ul>
+<li><a href="#intro">はじめに</a>
+<li><a href="#config">設定</a>
+<li><a href="#manip"><tt>pfctl</tt> を使用した操作</a>
+<li><a href="#addr">アドレスの指定</a>
+<li><a href="#match">アドレスマッチング</a>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>はじめに</h2>
+テーブルは、IPv4 および/または IPv6 アドレスのグループを保持するために使用されるものです。
+テーブルに対する参照は、<a href="macros.html#lists">リスト</a>に比べて、
+より少ないメモリと CPU 時間で、非常に高速に実行できます。このため、
+テーブルは大規模なアドレスのグループを保持するのに理想的であり、
+50,000 個のアドレスを保持するテーブルの参照時間は 50 個のアドレスを保持するものより
+わずかに余計にかかるだけです。テーブルは、<a href="../filter.html">フィルタ</a>、 
+<a href="scrub.html"><tt>scrub</tt></a>、
+<a href="../nat.html"><tt>ネットワークアドレス変換 (NAT)</tt></a>、
+および<a href="../rdr.html">リダイレクション</a>ルールの中の
+送信元アドレスや送信先アドレスに使用することができますが、
+<tt>ネットワークアドレス変換 (NAT)</tt> ルールの中のリダイレクションアドレスとしてや、
+フィルタルールのルーティングオプション (<tt>route-to</tt>、<tt>reply-to</tt>、
+<tt>dup-to</tt>) として使用することはできません。テーブルは、
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+3.3">
+<tt>/etc/pf.conf</tt></a> の中に記述するか、または
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.3">
+<tt>pfctl(8)</tt></a> を使用するかのいずれかで生成することができます。
+
+<a name="config"></a>
+<h2>設定</h2>
+<tt>pf.conf</tt> の中で、テーブルは <tt>table</tt> ディレクティブを
+使用して作成します。それぞれのテーブル中には、以下の属性を指定できます。
+<ul>
+<li><tt>const</tt> - テーブルの内容は、テーブルが生成された後は変更できません。
+この属性が指定されていない場合には、
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=securelevel&amp;sektion=7&amp;manpath=OpenBSD+3.3">
+securelevel(7)</a> が 2 以上で運用されている場合でも、
+アドレスをテーブルに追加したりテーブルから削除したりするのに、いつでも
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.3">
+<tt>pfctl(8)</tt></a> を使用することができます。
+<li><tt>persist</tt> - 参照ルールがなくなっても、カーネルはテーブルを
+メモリ中に保持します。この属性の指定がない場合には、
+このテーブルを参照する最後のルールがフラッシュされた場合に、
+カーネルはテーブルをメモリから自動的に除去します。
+</ul>
+
+<p>
+例:
+<blockquote>
+<tt>
+table &lt;goodguys&gt; { 192.0.2.0/24 }<br>
+table &lt;rfc1918&gt; const { 192.168.0.0/16, 172.16.0.0/12, \<br>
+&nbsp;&nbsp;&nbsp;10.0.0.0/8 }<br>
+table &lt;spammers&gt; persist<br>
+<br>
+block in on fxp0 from { &lt;rfc1918&gt;, &lt;spammers&gt; } to any<br>
+pass&nbsp; in on fxp0 from &lt;goodguys&gt; to any<br>
+</tt>
+</blockquote>
+
+<p>
+アドレスは、以下のような否定 (あるいは "not") 修飾子を使用して
+指定することができます。
+<blockquote>
+<tt>
+table &lt;goodguys&gt; { 192.0.2.0/24, !192.0.2.5 }
+</tt>
+</blockquote>
+
+<p>
+この例では、<tt>goodguys</tt> テーブルは、192.0.2.5 を除く 192.0.2.0/24
+ネットワークのすべてのアドレスにマッチするようになります。
+
+<p>
+テーブル名は常に &lt; &gt; で囲むということに注意してください。
+
+<p>
+テーブルは IP アドレスやネットワークのリストを含む
+テキストファイルに記述しておくこともできます。
+<blockquote>
+<tt>
+table &lt;spammers&gt; persist file "/etc/spammers"<br>
+<br>
+block in on fxp0 from &lt;spammers&gt; to any<br>
+</tt>
+</blockquote>
+
+<p>
+この <tt>/etc/spammers</tt> ファイルは IP アドレスのリストを、
+一行にひとつ含んでいます。また、<tt>#</tt> から始まるすべての行は
+コメント行と解釈され、無視されます。
+
+<a name="manip"></a>
+<h2><tt>pfctl</tt> を使用した操作</h2>
+テーブルは
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.3">
+<tt>pfctl(8)</tt></a> を使用して、運用中に操作することができます。たとえば、
+上記で作成した &lt;spammers&gt; テーブルにエントリを追加するには、以下のようにします。
+<blockquote>
+<tt># pfctl -t spammers -Tadd 218.70.0.0/16</tt>
+</blockquote>
+
+<p>
+このとき、&lt;spammers&gt; テーブルがまだ存在していない場合には、
+これを生成します。テーブル中のアドレスのリストを取得するには以下のようにします。
+<blockquote>
+<tt># pfctl -t spammers -Tshow</tt>
+</blockquote>
+それぞれのテーブルのエントリの統計情報を表示するため、<tt>-Tshow</tt>
+とともに、引数 <tt>-v</tt> を指定することができます。テーブルから
+アドレスを除去するには以下のようにします。
+<blockquote>
+<tt>
+# pfctl -t spammers -Tdelete 218.70.0.0/16
+</tt>
+</blockquote>
+
+<p>
+<tt>pfctl</tt> を使用したテーブルの操作についてのより詳しい情報は
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.3">
+<tt>pfctl(8)</tt></a>
+を参照してください。
+
+<a name="addr"></a>
+<h2>アドレスの指定</h2>
+IP アドレスを指定する以外にも、ホスト名を使用してホストの指定を
+行うこともできます。ホスト名解決で IP アドレスに変換される際に、
+その結果としてのすべての IPv4 および IPv6 アドレスがテーブルに
+入ります。IP アドレスは、有効なインターフェイス名や <tt>self</tt>
+キーワードを指定してテーブルに入れることもできますが、この場合、
+インターフェイスに割り当てられているすべてのアドレスがテーブルに追加されます。
+
+<a name="match"></a>
+<h2>アドレスマッチング</h2>
+テーブルに対するアドレス参照では、最も狭い範囲でマッチするエントリが返されます。
+これにより、以下のようなテーブルの生成が許されることになります。
+<blockquote>
+<tt>
+table &lt;goodguys&gt; { 172.16.0.0/16, !172.16.1.0/24, 172.16.1.100 }<br>
+<br>
+block in on dc0 all<br>
+pass  in on dc0 from &lt;goodguys&gt; to any<br>
+</tt>
+</blockquote>
+
+<p>
+dc0 を通過して入ってくるすべてのパケットは、<tt>&lt;goodguys&gt;</tt>
+テーブルにマッチする送信元アドレスを持っています。
+<ul>
+<li>172.16.50.5 - 最も狭いマッチは 172.16.0.0/16 です。
+パケットはテーブルにマッチし、通過することができます。
+<li>172.16.1.25 - 最も狭いマッチは !172.16.1.0/24 です。パケットは
+テーブル中のエントリにマッチしますが、このエントリは、("!" 修飾子を使用して)
+否定されています。ですので、パケットはテーブルにマッチせず、ブロックされます。
+<li>172.16.1.100 - これは 172.16.1.100 に正確にマッチしています。
+パケットはテーブルにマッチし、通過することができます。
+<li>10.1.4.55 - これはテーブルにはマッチせず、ブロックされます。
+</ul>
+
+<p>
+[<a href="macros.html">前に戻る: リストとマクロ</a>]
+[<a href="index.html">目次</a>]
+[<a href="options.html">次に進む: オプション</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[back]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: tables.html,v 1.3 ]
+<br>
+$Translation: tables.html,v 1.1 2003/05/29 12:35:12 toshi Exp $
+<br>
+$OpenBSD: tables.html,v 1.1 2003/05/30 10:20:57 jufi Exp $
+</small>
+
+</body>
+</html> 

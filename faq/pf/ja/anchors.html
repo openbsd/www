@@ -1,0 +1,210 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Anchors and Named Rulesets</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-2022-JP">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 2003 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
+<p>
+[<a href="../logging.html">前に戻る: ログの取得</a>]
+[<a href="index.html">目次</a>]
+[<a href="shortcuts.html">次に進む: ルールセット作成の近道</a>]
+
+<p>
+<h1><font color="#e00000">PF: アンカーと名前付きルールセット</font></h1>
+
+<hr>
+
+<h3>目次</h3>
+<ul>
+<li><a href="#intro">はじめに</a>
+<li><a href="#named">名前付きルールセット</a>
+<li><a href="#options">アンカーのオプション</a>
+<li><a href="#manip">名前付きルールセットの操作</a>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>はじめに</h2>
+PF は主ルールセットだけでなく、サブルールセットの評価も行うことができます。
+サブルールセットは、
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.3">
+<tt>pfctl(8)</tt></a> を使用して運用中に操作することもできるので、
+アクティブなルールセットを動的に代替するための便利な方法を提供しています。
+<a href="tables.html">テーブル</a>がアドレスの動的なリストを保持するために使用されるのに対して、
+サブルールセットは filter、<tt>nat</tt>, <tt>rdr</tt>、<tt>binat</tt> ルールの
+動的なセットを保持するために使用されるものです。
+
+<p>
+サブルールセットはアンカーを使用して主ルールセットに連結されます。
+<tt>anchor</tt> ルールには以下のように 4 種類あります。
+<ul>
+<li><tt>anchor <i>名前</i></tt> - <i><tt>名前</tt></i> のアンカー中の
+すべての <a href="../filter.html">filter</a> ルールを評価します。
+<li><tt>binat-anchor <i>名前</i></tt> - <i><tt>名前</tt></i> のアンカー中の
+すべての <a href="../nat.html#binat"><tt>binat</tt></a>
+ルールを評価します。
+<li><tt>nat-anchor <i>名前</i></tt> - <i><tt>名前</tt></i> のアンカー中の
+すべての <a href="../nat.html"><tt>nat</tt></a> ルールを評価します。
+<li><tt>rdr-anchor <i>名前</i></tt> - <i><tt>名前</tt></i> のアンカー中の
+すべての <a href="../rdr.html"><tt>rdr</tt></a> ルールを評価します。 
+</ul>
+
+主ルールセットだけが <tt>anchor</tt> ルールを含むことができます。
+
+<a name="named"></a>
+<h2>名前付きルールセット</h2>
+名前付きルールセットとは、名前の割り付けられたフィルタおよび/または変換ルールの
+グループのことです。<tt>anchor</tt> 点にはひとつ以上のそのようなルールセットが
+含まれているかも知れません。PF は主ルールセット中に <tt>anchor</tt> ルールを
+見つけると、その <tt>anchor</tt> 点に連結されたすべてのルールセットを、
+その名前のアルファベット順に評価しようとします。
+主ルールセットの処理は、<tt>quick</tt> オプション付きの
+フィルタルールか、アンカーの中の変換ルールに
+パケットがマッチするまで継続されますが、このようなケースでは、
+マッチは最終的なものであると見なされますので、主ルールセットと
+アンカーの両方のルールの評価がここで中止されます。
+
+<p>
+たとえば、以下のようになります。
+<blockquote>
+<tt>
+ext_if = "fxp0"<br>
+<br>
+block on $ext_if all<br>
+pass  out on $ext_if all keep state<br>
+anchor goodguys
+</tt>
+</blockquote>
+
+<p>
+このルールセット一式は、fxp0 上の着信ならびに送出トラフィックの両方のための
+デフォルトで拒絶するポリシーとなっています。トラフィックは状態を保存してわたされ、
+<tt><i>goodguys</i></tt> という名前のアンカールールが生成されます。この
+<tt><i>goodguys</i></tt> アンカーにルールを追加するには、以下のコマンドを使用します。
+<blockquote>
+<tt>
+# echo "pass in proto tcp from 192.0.2.3 to any port 22" \<br>
+&nbsp;&nbsp;&nbsp;| pfctl -a goodguys:ssh -f -
+</tt>
+</blockquote>
+
+<p>
+これは、<tt><i>goodguys</i></tt> アンカーに連結された <tt><i>ssh</i></tt>
+という名前のルールセットに <tt>pass</tt> ルールを追加します。
+PF は主ルールセット中の <tt>anchor goodguys</tt> に達したときに、
+このルール (および追加された他のすべてのフィルタルール) を評価します。
+
+<p>
+ルールはテキストファイルに保存し、ここからロードすることも可能です。
+<blockquote>
+<tt>
+# cat &gt;&gt; /etc/anchor-goodguys-www<br>
+pass in proto tcp from 192.0.2.3 to any port 80<br>
+pass in proto tcp from 192.0.2.4 to any port { 80 443 }<br>
+<br>
+# pfctl -a goodguys:www -f /etc/anchor-goodguys-www<br>
+</tt>
+</blockquote>
+
+<p>
+これは <tt>/etc/anchor-goodguys-www</tt> ファイルから
+<tt><i>goodguys</i></tt> アンカー中の
+<tt><i>www</i></tt> という名前のルールセットにルールを読み込みます。
+
+<a name="options"></a>
+<h2>アンカーのオプション</h2>
+<tt>anchor</tt> ルールには、オプションとして、インターフェイス、プロトコル、
+送信元および送信先アドレスなどを、フィルタルールと同様のシンタクスを使用して
+指定することができます。このような情報た与えられた場合には、パケットが <tt>anchor</tt>
+ルールの記述にマッチした場合にのみ、<tt>anchor</tt> ルールは処理されます。
+たとえば、以下のようになります。
+<blockquote>
+<tt>
+ext_if = "fxp0"<br>
+<br>
+block on $ext_if all<br>
+pass  out on $ext_if all keep state<br>
+anchor ssh in on $ext_if proto tcp from any to any port 22<br>
+</tt>
+</blockquote>
+
+<p>
+<tt>anchor <i>ssh</i></tt> 中のルールは、fxp0 に着信したポート 22
+に向かう TCP パケットのために評価されます。そして、ルールが以下のように
+<tt>anchor</tt> に追加されます。
+<blockquote>
+<tt>
+# echo "pass in from 192.0.2.10 to any" | pfctl -a ssh:allowed -f -
+</tt>
+</blockquote>
+
+<p>
+この場合、フィルタルールには、インターフェイス、プロトコルやポートが
+指定されていないにも関わらず、ホスト 192.0.2.10 だけが <tt>anchor</tt>
+ルールの記述に従って、SSH を使用して接続することを許可されています。
+
+<a name="manip"></a>
+<h2>名前付きルールセットの操作</h2>
+名前付きルールセットの操作は、<tt>pfctl</tt> 経由で実行されます。
+これは、主ルールセットをリロードすることなく、ルールのルールセットに追加したり、
+ルールセットから削除したりするのに使用できます。
+
+<p>
+<tt><i>ssh</i></tt> <tt>anchor</tt> に連結された <tt><i>allowed</i></tt>
+ルールセット中のルールをすべてリストするには、以下のようにします。
+<blockquote>
+<tt>
+# pfctl -a ssh:allowed -s rules
+</tt>
+</blockquote>
+
+<p>
+上記と同じルールセットからすべてのフィルタルールをフラッシュするには、以下のようにします。
+<blockquote>
+<tt>
+# pfctl -a ssh:allowed -F rules
+</tt>
+</blockquote>
+
+<p>
+ルールセット名が省略されている場合には、アンカー中のすべてのルールに対して
+動作が適用されます。
+
+<p>
+コマンドのすべてのリストについては、
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.3">
+<tt>pfctl(8)</tt></a> を参照してください。
+
+<p>
+[<a href="../logging.html">前に戻る: ログの取得</a>]
+[<a href="index.html">目次</a>]
+[<a href="shortcuts.html">次に進む: ルールセット作成の近道</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[back]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: anchors.html,v 1.3 ]
+<br>
+$Translation: anchors.html,v 1.1 2003/05/29 12:35:11 toshi Exp $
+<br>
+$OpenBSD: anchors.html,v 1.1 2003/05/30 10:20:56 jufi Exp $
+</small>
+
+</body>
+</html> 
