@@ -1,0 +1,684 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Filtrování paketů</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-2">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 2002-2003 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../images/smalltitle.gif">
+<p>
+[<a href="rdr.html">Předchozí: Přesměrování trafficu</a>]
+[<a href="index.html">Obsah</a>]
+[<a href="logging.html">Dále: Logování</a>]
+
+<h1><font color="#e00000">PF: Filtrování paketů</font></h1>
+
+<hr>
+
+<h3>Obsah</h3>
+<ul>
+<li><a href="#intro">Úvod</a>
+<li><a href="#syntax">Sytax pravidel</a>
+<li><a href="#defdeny">Default Deny</a>
+<li><a href="#pass">Passing Traffic</a>
+<li><a href="#state">Udržování stavu</a>
+<li><a href="#udpstate">Udržování stavu pro UDP</a>
+<li><a href="#tcpflags">TCP Flagy</a>
+<li><a href="#quick">Klíčové slovo <tt>quick</tt></a>
+<li><a href="#antispoof">Blokování spoofnutých paketů</a>
+<li><a href="#ipopts">IP Options</a>
+<li><a href="#example">Příklad množiny pravidel pro filtrování</a>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Úvod</h2>
+Filtrování paketů je selektivní průchod nebo blokování datových paketů tím
+jak procházejí síťovým interfacem. Kriteria, která
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+3.3"
+>pf(4)</a> používá když provádí inspekci paketů jsou založenna na Layer 3 
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ip&amp;sektion=4&amp;manpath=OpenBSD+3.3"
+>IPv4</a> a 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ip6&amp;sektion=4&amp;manpath=OpenBSD+3.3"
+>IPv6</a>) a Layer 4
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tcp&amp;sektion=4&amp;manpath=OpenBSD+3.3"
+>TCP</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=udp&amp;sektion=4&amp;manpath=OpenBSD+3.3"
+>UDP</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=icmp&amp;sektion=4&amp;manpath=OpenBSD+3.3"
+>ICMP</a>, a
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=icmp6&amp;sektion=4&amp;manpath=OpenBSD+3.3"
+>ICMPv6</a>) hlavičkách. Nejčastěji používaná kriteria jsou zdrojová a
+cílová adresa, zdrojový a cílový port a protokol.
+
+<p>
+Filtrovací pravidla specifikují kriteria, která musí paket splňovat a
+akci, buď povolit nebo zakázat, která je provedena, pokud je pravidlo
+splněno. Filtrovací pravidla jsou vyhodnocována v sekvenčním pořadí, od
+prvního do posledního. Dokud není nalezeno pravidlo obsahující klíčové
+slovo <tt>quick</tt>, paket bude vyhodnocován oproti <i>všem</i>
+filtrovacím pravidlům předtím než bude provedena konečná akce. Poslední
+pravidlo, které vyhovuje, "vyhrává" a bude diktovat jaká akce se s paketem
+provede. Na konci množiny filtrovacích pravidel je implicitní <tt>pass
+all</tt>, což znamená, že pokud paket nebude splňovat žádné pravidlo,
+výsledná akce bude <tt>pass</tt>. 
+
+
+<a name="syntax"></a>
+<h2>Syntax pravidel</h2>
+Obecná, <i>velmi zjednodušená</i> syntax pro filtrovací pravidla je:
+<blockquote>
+<tt>
+<i>action</i> <i>direction</i> [log] [quick] on <i>int</i> [<i>af</i>] 
+[proto <i>protocol</i>] \<br>
+&nbsp;&nbsp;&nbsp;from <i>src_addr</i> [port <i>src_port</i>] to 
+<i>dst_addr</i> [port <i>dst_port</i>] \<br>
+&nbsp;&nbsp;&nbsp;[<i>tcp_flags</i>] [<i>state</i>]
+</tt>
+</blockquote>
+
+<dl>
+<dt><tt><i>action</i></tt>
+<dd>Akce, která bude provedena na pakety splňující pravidlo,
+buď <tt>pass</tt> nebo
+<tt>block</tt>. Akce <tt>pass</tt> nechá projít paket zpátky do kernelu
+pro další zpracování, zatímco akce <tt>block</tt> bude reagovat v
+závislosti na volbě
+<a href="options.html#block-policy"><tt>block-policy</tt></a>. 
+Defaultní rekace může být přepsána buď specifikováním 
+<tt>block drop</tt> nebo <tt>block return</tt>.
+
+<dt><tt><i>direction</i></tt>
+<dd>Směr paketu jakým jde na interface, buď 
+<tt>in</tt> nebo <tt>out</tt>.
+
+<dt><tt>log</tt>
+<dd>Specifikuje že by paket měl být zalogován via
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>pflogd(8)</a>. Pokud pravidlo specifikuje volbu <tt>keep state</tt> nebo
+<tt>modulate state</tt> pak pouze pokud paket nastaví stav, je stav
+zalogován. K logování všech paketů, nehledě na to jestli nastaví stav nebo
+ne, použijte
+<tt>log-all</tt>.
+
+<dt><tt>quick</tt>
+<dd>Pokud pakket matchuje pravidlo obsahující <tt>quick</tt> pak 
+je toto pravidlo považováno za poslední splňující a je provedena akce
+specifikovaná v tomto pravidle.
+
+<dt><tt><i>int</i></tt>
+<dd>Jméno síťového interface, kterým prochází paket.
+
+<dt><tt><i>af</i></tt>
+<dd>Address family paketu, buď <tt>inet</tt> pro IPv4 nebo
+<tt>inet6</tt> pro IPv6. PF je obvykle schopen zjistit tento parametr
+v závislosti na zdrojové a cílové adrese (adresách).
+
+<dt><tt><i>protocol</i></tt>
+<dd>Layer 4 protokol:
+<ul>
+<li><tt>tcp</tt>
+<li><tt>udp</tt>
+<li><tt>icmp</tt>
+<li><tt>icmp6</tt>
+<li>Platné jméno protokolu z
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=protocols&amp;sektion=5&amp;manpath=OpenBSD+3.3"
+><tt>/etc/protocols</tt></a>
+<li>Číslo protokolu mezi 0 a 255
+<li>Množina protokolů použitím <a href="macros.html#lists">list</a>.
+</ul>
+
+<dt><tt><i>src_addr</i></tt>, <tt><i>dst_addr</i></tt> 
+<dd>Zdrojová/cílová adresa v IP hlavičce. Adresy mohou být specifkovány
+jako:
+<ul>
+<li>Jedna IPv4 nebo IPv6 adresa.
+<li>Síťový blok v <a href="http://public.pacbell.net/dedicated/cidr.html">CIDR</a> 
+formátu.
+<li>Plně kvalifikované doménové jméno které se resolví via DNS ve chvíli,,
+kdy je množina pravidel nahrána. Všechny výsledné IP adresy budou
+substituovány do tohoto pravidla.
+<li>Jméno síťového interface. Všechny IP adresy přiřazené tomuto síťovému
+interface budou substituované do tohoto pravidla.
+<li>Jméno síťového inteface následovaného 
+<tt>/<i>netmask</tt></i> (např., <tt>/24</tt>). Každá IP adresa na tomto
+zařízení kombinovaná s maskou vytvoří CIDR síťový blok, který jje
+substituován do tohoto pravidla.
+<li>Jméno síťového interface v závorkách <tt>( )</tt>. Toto
+řekne PF aby obnovil pravidlo pokud se IP adresa (adresy) na takto
+pojmenovaném interface změní. Toto je užitečné na interface, které dostane
+svoji IP adresu via DHCP nebo dial-up, protože množina pravidel nemusí být
+znovu nahrána pokaždé, když se adresa změní.
+<li>Jméno síťového interface následované klíčovým slovem <tt>:network</tt> nebo
+<tt>:broadcast</tt>. Výsledná CIDR síť (např.,
+192.168.0.0/24) nebo broadcast adresa (např., 192.168.0.255) bude 
+substituována do pravidla když je množina pravidel nahrána.
+<li><a href="tables.html">table</a>.
+<li>Cokoliv z výše uvedeného, ale negováno pomocí modifiktoru <tt>!</tt> ("not").
+<li>Množina adres použitím <a href="macros.html#lists">list</a>.
+<li>Klíčové slovo <tt>any</tt> představující všechny adresy
+<li>Klíčové slovo <tt>all</tt> což je zkratka za <tt>from any to
+any</tt>.
+</ul>
+
+<dt><tt><i>src_port</i></tt>, <tt><i>dst_port</i></tt>
+<dd>Zdrojový/cílový port v Layer 4 hlavičce paketu. Porty mohou být
+specifikovány jako:
+<ul>
+<li>Číslo mezi 1 a 65535
+<li>Platná jméno služby z
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=services&amp;sektion=5&amp;manpath=OpenBSD+3.3"
+><tt>/etc/services</tt></a>
+<li>Množina portů použitím <a href="macros.html#lists">list</a>
+<li>Rozmezí:
+	<ul>
+	<li><tt>!=</tt> (nerovnost)
+	<li><tt>&lt;</tt> (ostře menší než)
+	<li><tt>&gt;</tt> (ostře větší než)
+	<li><tt>&lt;=</tt> (menší nebo rovno)
+	<li><tt>&gt;=</tt> (větší nebo rovno)
+	<li><tt>&gt;&lt;</tt> (rozmezí)
+	<li><tt>&lt;&gt;</tt> (inverzní rozmezí)
+	</ul>
+	<dl>
+	<dd>Poslední dva jsou binární operátory (berou dva argumenty) a
+	nezahrnují argumenty v rozmezí.
+	</dl>
+</ul>
+
+<dt><tt><i>tcp_flags</i></tt>
+<dd>Specifikuje flagy, které musí být nastaveny v TCP hlavičce při použití
+<tt>proto tcp</tt>. Flagy jsou specifikovány jako
+<tt>flags <i>check</i>/<i>mask</i></tt>. Např. : <tt>flags
+S/SA</tt> - to řekne PF aby se díval pouze na flagy S a A (SYN a ACK)
+a matchoval pokud je "nahozen" SYN flag.
+
+<dt><tt><i>state</i></tt>
+<dd>Specifikuje zda je udržována informace o stavu paketů splňujících toto
+pravidlo.
+<ul>
+<li><tt>keep state</tt> - pracuje s TCP, UDP, a ICMP.
+<li><tt>modulate state</tt> - pracuje pouze s TCP. PF bude generovat 
+silná Initial Sequence Numbers (ISNs) pro paketu splňující toto pravidlo.
+</ul>
+</dl>
+
+<a name="defdeny"></a>
+<h2>Default Deny</h2>
+Doporučená praxe pro nastavení firewallu je 
+"default deny". To znamená, zakázat <i>všechno</i> a pak selektivně
+povolit určitý traffic skrz firewall. Tento přístup je doporučený, protože
+zmenšuje pravděpodobnost chyby v množině pravidel a také dělá množinu
+pravidel přehlednější.
+
+<p>
+Pro vytvoření filtrovací politiky default deny, první dvě pravidla by
+měla být
+<blockquote>
+<tt>
+block in &nbsp;all<br>
+block out all
+</tt>
+</blockquote>
+
+<p>
+To bude blokovat všechen traffic na všech interfacech v obou směrech.
+
+<a name="pass"></a>
+<h2>Passing Traffic</h2>
+Traffic musí být explicitně povolen skrz firewall nebo bude zahozen
+default deny politikou. Toto je chvíle, kdy se ke slovu dostávají 
+zdrojový/cílový port, zdrojová/cílová adresa, a protokol.
+Kdykoliv je traffic povolen skrz firewall nějakým pravidlem, toto pravidlo
+by mělo být napsáno co nejrestriktivněji. Toto zajistí, že projde jen a pouze
+traffic, který chceme nechat projít.
+
+<p>
+Nějaké příklady:
+<blockquote>
+<tt>
+# Povol traffic na dc0 z lokální sítě, 192.168.0.0/24,<br>
+# na IP adresu OpenBSD storje 192.168.0.1. Dále povol<br>
+# vracející se traffic na dc0.<br>
+pass in &nbsp;on dc0 from 192.168.0.0/24 to 192.168.0.1<br>
+pass out on dc0 from 192.168.0.1 to 192.168.0.0/24<br>
+<br>
+<br>
+# Povol TCP traffic na fxp0 na web server běžící na<br>
+# OpenBSD stroji. Jméno interface, fxp0, je použito jako<br>
+# cílová adresa, takže pakety budou splňovat toto pravidlo pouze tehdy,<br>
+# když jsou určeny pro tento OpenBSD stroj.<br>
+pass in on fxp0 proto tcp from any to fxp0 port www
+</tt>
+</blockquote>
+
+<a name="state"></a>
+<h2>Udržování stavu</h2>
+Jedna z důležitých schopností Packet filtru je "udržování stavu" nebo 
+"stavová inspekce". Stavová inspekce se vztahuje k schopnosti PF udržovat
+přehled o stavu nebo průběhu síťového spojení. Uložením informace 
+o každém spojení do stavové tabulky, je PF schopen rychle zjistit, zda
+paket procházející firewallem patří do již ustaveného spojení. Pokud
+patří, projde firewallem bez vyhodnocování rulesetu.
+
+<p>
+Udržování stavu má mnoho výhod včetně jednodušších množin pravidel a
+lepšího výkon filtrování. PF je schopno poznat pakety jdoucí v 
+<i>obou</i> směrech v rámci stavové tabulky, což znamená, že pravidla pro
+vracející se traffic nemusí být v množině pravidel uvedena.
+A protože pakety vyhovující stavovým spojením nemusí projít vyhodnocováním
+rulesetu, čas který PF stráví zpracováním takových paketů může být hodně
+snížen.
+
+<p>
+Pokud obsahuje pravidlo volbu <tt>keep state</tt>, první paket, který
+vyhovuje tomuto pravidlo vytvoří "stav" mezi odesilatelem a příjemcem.
+Od té chvíle nejenom pakety jdoucí od odesilatele k příjemmcci splňují
+záznam ve stavové tabulce, ale také pakety jdoucí od příjemce k
+odesilateli. Např.:
+<blockquote>
+<tt>
+pass out on fxp0 proto tcp from any to any keep state
+</tt>
+</blockquote>
+
+<p>
+To povolí jakýkoliv odchozí TCP traffic na interface <tt>fxp0</tt> 
+a dále povolí traffic v opačném směru.
+Udržování stavu je hezká fíčura, jež znatelně zlepší výkon firewallu,
+protože vyhledávání stavů je rychlejší než vyhodnocování rulesetu.
+
+<p>
+Volba <tt>modulate state</tt> pracuje jako <tt>keep state</tt> s tou
+výjimkou, že se vztahuje pouze k TCP paketům. S
+<tt>modulate state</tt>, Initial Sequence Number (ISN) odchozích spojení
+je náhodné. To je užitečné pro ochranu spojení iniciovaných určitými
+operačními systémy, které mají ubohý způsob volby ISN čísel.
+
+<p>
+Keep state na odchozích TCP, UDP, a ICMP paketech a modulace TCP ISNs:
+<blockquote>
+<tt>
+pass out on fxp0 proto tcp from any to any modulate state<br>
+pass out on fxp0 proto { udp, icmp } from any to any keep state
+</tt>
+</blockquote>
+
+<p>
+Další výhodou udržování stavu je že korespondující ICMP traffic projde
+firewallem. Např. pokud je <tt>keep state</tt> specifikován pro TCP
+spojení a přijde ICMP source-quennch zpráva vztahující se k tomuto TCP
+spojení, bude vyhovovat přislušnému áznamu ve stavové tabulce a povolena.
+
+<p>
+Je důležité poznamenat, že stavové konence jsou limitované na interface,
+na kterém byly vytvořeny. To je obzvláště důležití na routerech a
+firewallech běžících PF, zvlášť když je implementována politika
+"default deny" jak je naznačeno výše. Pokud firewall udržuje stav na všech
+odhchozích spojeních na externím interface, tyto pakety musí být
+explicitně povoleny skrz interní interface.
+
+<p>
+Pravidla <a href="nat.html"><tt>nat</tt></a>, 
+<a href="nat.html#binat"><tt>binat</tt></a>, a
+<a href="rdr.html"><tt>rdr</tt></a> implicitně vytváří stav pro
+vyhovující spojení tak dlouho jak je spojení povoleno množinou filtrovaích
+pravidel.
+
+<a name="udpstate"></a>
+<h2>Udržování stavu pro UDP</h2>
+Někdo jednou řekl, že "Nelze vytvořit stav pro UDP, protože UDP je
+bezstavový protokol!"  I když je pravda, že UDP komunikace 
+nemá žádný stavový koncept (nebo expliticní začátek a konec komunikace),
+to nemá vliv na schopnost PF vytvořit stav pro UDP session. V případě
+protkolů bez "start" a "end" paketů, PF jednoduše sleduje kolik uplynulu
+času od posledního pektu, který vyhovoval pravidlu. Pokud vypršel timeout,
+dojde ke smazání stavu. Hodnoty timeoutů mohou být nastaveny 
+v sekci <a href="options.html">options</a> v souboru
+<tt>/etc/pf.conf</tt>.
+
+<a name="tcpflags"></a>
+<h2>TCP Flagy</h2>
+Vyhodnocování TCP paketů založené na flags je nejčastěji použito k
+filtrování TCP paketů, které se pokouší u ustavení spojení. TCP flagy a
+jejich význam je zde: 
+<ul>
+<li><b>F</b> : FIN  - Finish; konec session
+<li><b>S</b> : SYN  - Synchronize; indikuje žádost o začátek session
+<li><b>R</b> : RST  - Reset; strhni spojení 
+<li><b>P</b> : PUSH - Push; paket je poslán ihned
+<li><b>A</b> : ACK  - Acknowledgement
+<li><b>U</b> : URG  - Urgent
+<li><b>E</b> : ECE  - Explicit Congestion Notification Echo
+<li><b>W</b> : CWR  - Congestion Window Reduced
+</ul>
+
+<p>
+Aby PF prováděl inspekci TCP flagů během vyhodnocování pravidla, je
+použito klíčové slovo <tt>flags</tt> s následující syntaxí:
+<blockquote>
+<tt>
+flags <i>check</i>/<i>mask</i>
+</tt>
+</blockquote>
+
+<p>
+<tt><i>mask</i></tt> řekne PF aby se prováděla inspekce pouze
+specifikovaných flagů a <tt><i>check</i></tt> specifikuje které flagy musí
+být "nahozeny" v hlavičce aby pravidlo vyhovovalo. 
+<blockquote>
+<tt>
+pass in on fxp0 proto tcp from any to any port ssh flags S/SA
+</tt>
+</blockquote>
+
+<p>
+Výše uvedené pravidlo pustí TCP traffic s nastaveným SYN flagem, zkoumá
+pouze přítomnost SYN a ACK flagů. Paket s SYN a ECE flagy bude výše
+uvedenému pravidlu vyhovovat a paket s SYN a ACK nebo jenom ACK nebude.
+
+<p>
+Poznámka: v předchozích verzích OpenBSD, následující syntax byla 
+podporovaná:
+<blockquote>
+<tt>
+. . . flags S
+</tt>
+</blockquote>
+
+<p>
+To už neplatí. Maska musí být nyní <i>vždy</i> specifikována.
+
+<p>
+Flagy jsou často použity ve spojení s pravidly obsahujícími 
+<tt>keep state</tt> pro snadnější vytváření záznamů ve stavové tabulce:
+<blockquote>
+<tt>
+pass out on fxp0 proto tcp all flags S/SA keep state
+</tt>
+</blockquote>
+
+<p>
+Toto povolí vytváření stavu pro odchozí TCP pakety s nastaveným SYN flagem
+z SYN a ACK flagů.
+
+<p>
+Měli byste být opatrní při používání flagů -- rozumějte tomu, co děláte a
+proč a buďte opatrní s radami, které dostanete, protože spousta z nich je
+špatných.
+Někteří lidé navrhují vytvoření stavu "pouze pokud je nastaven SYN flag
+a ne ostatní". Takové pravidlo by skončilo takto: 
+<pre>
+     . . . flags S/FSRPAUEW  <i>špatný nápad!!</i>
+</pre>
+
+<p>
+Teorie je, že stav se vytváří pouze na začátku TCP session a session by
+měla začínat pouze SYN flagem a ne ostatnímmi. Problém je v tom, že
+některé stroje začínají používat ECN flag a pokud se takový stroj pokusí
+připojit, bude takovým pravidlem odmítnuta. O moc lepší pravidlo je:
+<blockquote>
+<tt>
+. . . flags S/SAFR
+</tt>
+</blockquote>
+
+<p>
+Zatímco toto je praktické a bezpečné, je také nezbytné kontrolovat FIN a
+RST flagy pokud traffic také podléhá
+<a href="scrub.html">scrub</a>. Scrub proces způsobí, že PF bude zahazovat
+jakékoliv příchozí pakety s ilegální kombinací TCP flagů (jako např. SYN a
+FIN nebo SYN a RST). Je důrazně doporučeno vždcky používat 
+<tt>scrub</tt> na příchozí traffic:
+<blockquote>
+<tt>
+scrub in on fxp0<br>
+.<br>
+.<br>
+.<br>
+pass in on fxp0 proto tcp from any to any port ssh flags S/SA \<br>
+&nbsp;&nbsp;&nbsp;keep state
+</tt>
+</blockquote>
+
+<a name="quick"></a>
+<h2>Klíčové slovo <tt>quick</tt></h2>
+Jak bylo naznačeno dříve, každý paket je vyhodnocovaný oproti množině
+filtrovacích pravidel od shora dolů. Defaultně, paket je označen pro
+průchod, což může být změměno nějakým pravidlem a může být změněno tam a
+zpátky předtím než vyhodnocování dorazí na konec množiny pravidel.
+<b>Poslední pravidlo, které vyhovuje "vyhrává".</b>  K tomuto chování
+existuje výjimka: Volba <tt>quick</tt> ve filtrovacím pravidle 
+ukončí zpracování a vede k provedení akce s paketem. Podívejme se na
+několik příkladů:
+
+<p>
+Špatně:
+<blockquote>
+<tt>
+block in on fxp0 proto tcp from any to any port ssh<br>
+pass &nbsp;in all
+</tt>
+</blockquote>
+
+<p>
+V tomto případě, může být řádek s <tt>block</tt> vyhodnocen, ale nikdy
+nebude mít žádný efekt, protože následuje řádek, který povolí všechno.
+
+<p>
+Lepší:
+<blockquote>
+<tt>
+block in quick on fxp0 proto tcp from any to any port ssh<br>
+pass &nbsp;in all
+</tt>
+</blockquote>
+
+<p>
+Tato pravidla budou vyhodnocována trochu odlišně. Pokud
+řádek s <tt>block</tt> vyhovuje, kvůli volbě <tt>quick</tt> bude paket
+zablokován a zbytek množiny pravidel bude ignorován.
+
+<a name="antispoof"></a>
+<h2>Blokování Spoofnutých Paketů</h2>
+"spoofování" adres je když nehodný uživatel zfalšuje zdrojovou IP adresu v
+paketech, které přenáší za účelem schovat svoji skutečnou adresu nebo
+vydávat se za nějaký jiný uzel na sítí. Jakmile uživattel spoofnul svoji
+adresu, může spustit síťový útok bez toho, že by odhalil skutečn zdroj
+útoku nebo se může pokusit získat přístup k síťovým službám, které jsou
+restringovány na určité IP adresy.
+
+<p>
+PF naíbízí ochranu proti spoofování adres pomocí klíčového slova
+<tt>antispoof</tt>:
+
+<blockquote>
+<tt>
+antispoof [log] [quick] for <i>interface</i> [<i>af</i>]
+</tt>
+</blockquote>
+
+<dl>
+<dt><tt>log</tt>
+<dd>Specifikuje že vyhovující pakety mají být zalogovány via 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>pflogd(8)</a>.
+
+<dt><tt>quick</tt>
+<dd>Pokud paket vyhovuje tomuto pravidlu, pak bude považováno 
+"výherce" a vyhodnocování rulesetu se zastaví.
+
+<dt><tt><i>interface</i></tt>
+<dd>Síťový interface na kterém aktivovat ochranu proti spoofování.
+Zde může být seznam interfaců via <a href="macros.html#lists">list</a>.
+
+<dt><tt><i>af</i></tt>
+<dd>Address family pro kterou aktivovat ochranu proti spoofování, buď
+<tt>inet</tt> pro IPv4 nebo <tt>inet6</tt> pro IPv6.
+</dl>
+
+<p>
+Příklad:
+<blockquote>
+<tt>
+antispoof for fxp0 inet
+</tt>
+</blockquote>
+
+<p>
+Když je množina pravidel nahrána, všechny výskyty klíčového slova
+<tt>antispoof</tt> jsou expandovány do dvou filtrovacích pravidel.
+Předpokládejme, že interface fxp0 má IP 
+adresu 10.0.0.1 a masku podsítě 255.255.255.0 (tj.
+/24), pak výše uvedené <tt>antispoof</tt> pravidlo se rozvine do:
+
+<blockquote>
+<tt>
+block in on ! fxp0 inet from 10.0.0.0/24 to any<br>
+block in inet from 10.0.0.1 to any
+</tt>
+</blockquote>
+
+<p>
+Tato pravidla provedou dvě věci:
+<ul>
+<li>Zablokuje všechen traffic přicházející ze sítě 10.0.0.0/24 
+<i>not</i> který nejde přes fxp0. Protože síť 10.0.0.0/24 
+je na interface fxp0, pakety se zdrojovou adresou z tohoto síťového bloku
+by neměly nikdy přijít na jiný interface. 
+<li>Zablokuje všechen příchozí traffic z 10.0.0.1, IP addresy na fxp0.
+Stroj by nikdy neměl posílat pakety sobě sama skrz externí interface,
+takže všechny příchozí pakety se zdrojovou adresou náležící stroji by měly
+být považovány za zlomyslné.
+</ul>
+
+<p>
+<b>POZNÁMKA</b>: Filtrovací pravidla do kterých se expanduje pravidlo 
+<tt>antispoof</tt> budou také blokovat pakety poslané přes loopback
+interface na lokální adresu. Tyto adresy by měly být explicitně povoleny.
+Např.:
+<blockquote>
+<tt>
+pass in quick on lo0 all<br>
+<br>
+antispoof for fxp0 inet
+</tt>
+</blockquote>
+
+<p>
+Použití <tt>antispoof</tt> by mělo být omezeno na interfacy, které mají
+přiřazenu IP adresu. Použití
+<tt>antispoof</tt> na interface bez IP adresy vyústí v filtrovací pravidla
+jako
+<blockquote>
+<tt>
+block drop in on ! fxp0 inet all<br>
+block drop in inet all
+</tt>
+</blockquote>
+
+<p>
+S těmito pravidly riskujete blokování <i>veškerého</i> příchozího trafficu
+na <i>všech</i> interfacech.
+
+<a name="ipopts"></a>
+<h2>IP Options</h2>
+Defaultně, PF blokuje všechny pakety s nastavenými IP options. To může
+být dobré pro detekci "OS fingerprinting" utilitami jako nmap. Pokud
+provozujete aplikaci, která vyžaduje povolení takových paketů jako např.
+multicast nebo IGMP, může použít direktivu <tt>allow-opts</tt>:
+<blockquote>
+<tt>
+pass in quick on fxp0 all allow-opts
+</tt>
+</blockquote>
+
+<a name="example"></a>
+<h2>Příklad množiny filtrovacích pravidel</h2>
+Níže je uveden přiklad množiny filtrovacích pravidel. Stroj, na kterém
+běží PF funguje jako firewall mezi malou interní sítí a Internetem.
+Uvedena jsou pouze filtrovcí pravidla.
+<a href="queueing.html">queueing</a>, 
+<a href="nat.html"><tt>nat</tt></a>, 
+<a href="rdr.html"><tt>rdr</tt></a>, 
+atd., byly v tomto příkladu vynechány.
+<br>
+<br>
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+ext_if  = "fxp0"
+int_if  = "dc0"
+lan_net = "192.168.0.0/24"
+
+# scrub incoming packets
+scrub in all
+
+# nastav politiku default deny 
+block in  all
+block out all
+
+# povol traffic na loopback interface v obou směrech
+pass quick on lo0 all
+
+# aktivuj ochranu proti spoofování na interním interface.
+antispoof quick for $int_if inet
+
+# povol pouze ssh spojení z lokální sítě pokud je to důveryhodný počítač
+# 192.168.0.15. použij "block return" takže je poslán TCP RST 
+# pro uzavřených blokovaných spojení. použij "quick" aby nebylo toto
+# pravidlo přepsáno některým z "pass" pravidel pod ním.
+block return in quick on $int_if proto tcp from ! 192.168.0.15 \
+   to $int_if port ssh flags S/SA
+
+# povol všechen traffic z a do lokální sítě
+pass in  on $int_if from $lan_net to any
+pass out on $int_if from any to $lan_net
+
+# povol tcp, udp, a icmp z externího (Internet) interface. 
+# keep state pro udp a icmp a modulate state pro tcp.
+pass out on $ext_if proto tcp all modulate state flags S/SA
+pass out on $ext_if proto { udp, icmp } all keep state
+
+# povol ssh spojení na externí interface pokud NENÍ určen 
+# pro firewall (tj. jsou určeny pro stroj v lokální síti)
+# loguj iniciální pakety takže můžeme později říci, kdo se pokoušel
+# napojit
+pass in log on $ext_if proto tcp from any to { !$ext_if, !$int_if } \
+   port ssh flags S/SA keep state
+</pre>
+</td></tr>
+</table>
+
+<p>
+[<a href="rdr.html">Předchozí: Přesměroování Trafficu</a>]
+[<a href="index.html">Obsah</a>]
+[<a href="logging.html">Další: Logování</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[back]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<small>
+<br>
+Originally: [OpenBSD: filter.html,v 1.13]
+<!--- translation by Vladimir Kotal -->
+<br>
+$Translation: filter.html,v 1.1 2003/11/02 21:53:36 certik Exp $
+<br>
+$OpenBSD: filter.html,v 1.1 2003/11/03 14:24:05 horacio Exp $
+</small>
+
+</body>
+</html> 

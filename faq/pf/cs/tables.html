@@ -1,0 +1,211 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Tabulky</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-2">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 2003 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
+<p>
+[<a href="macros.html">Předchozí: Seznamy a makra</a>]
+[<a href="index.html">Obsah</a>]
+[<a href="options.html">Dále: Options</a>]
+
+<p>
+<h1><font color="#e00000">PF: Tabulky</font></h1>
+
+<hr>
+
+<h3>Obsah</h3>
+<ul>
+<li><a href="#intro">Úvod</a>
+<li><a href="#config">Konfigurace</a>
+<li><a href="#manip">Manipulace pomocí <tt>pfctl</tt></a>
+<li><a href="#addr">Specifikování adres</a>
+<li><a href="#match">Address Matching</a>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Introduction</h2>
+Tabulky jsou používány k uložení skupiny IPv4 a/nebo IPv6 adres.
+Vyhledávání v tabulkách je velmi rychlé a potřebuje méně paměti a
+procesorového času než <a href="macros.html#lists">seznamy</a>.
+Z tohoto důvodu je tabulka ideální pro uložení velké skupiny adres,
+protože vyhledání v tabulce obsahující 50.000 adres je jen o málo
+pomalejší než v tabulce s 50 adresami. Tabulky mohou být použity namísto
+zdrojových a cílových adres v pravidlech
+<a href="filter.html">filter</a>, 
+<a href="scrub.html"><tt>scrub</tt></a>,
+<a href="nat.html"><tt>nat</tt></a>, 
+a <a href="rdr.html">redirection</a>,
+ale nemohou být použity jako cílové adresy v pravidlech <tt>nat</tt>
+nebo v routovacích volbách (<tt>route-to</tt>, <tt>reply-to</tt>,
+<tt>dup-to</tt>) filtrovacích pravidel. Tabulky se vytvářejí v souboru
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+3.3"
+><tt>/etc/pf.conf</tt></a> nebo pomocí
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+><tt>pfctl(8)</tt></a>.
+
+<a name="config"></a>
+<h2>Konfigurace</h2>
+V souboru <tt>pf.conf</tt> se tabulky vytvářejí direktivou
+<tt>table</tt>. Pro každou tabulku mohou být specifikovány následující
+vlastnosti:
+<ul>
+<li><tt>const</tt> - obsah této tabulky nemůže být změněn poté, co je
+vytvořena. Pokud tento atribut není specifikován,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+><tt>pfctl(8)</tt></a> může být kdykoliv použit k přidání nebo odebrání
+adresy z tabulky, i při běhu v úrovni
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=securelevel&amp;sektion=7&amp;manpath=OpenBSD+3.3"
+>securelevel(7)</a> dva nebo vyšší.
+<li><tt>persist</tt> - způsobí, že jádro ponechá tabulku v paměti i když
+ji nepoužívá žádné pravidlo. Bez této volby jádro automaticky odstraní
+tabulku při odstraňovaní posledního pravidla na ní odkazujícího.
+</ul>
+
+<p>
+Příklad:
+<blockquote>
+<tt>
+table &lt;goodguys&gt; { 192.0.2.0/24 }<br>
+table &lt;rfc1918&gt; const { 192.168.0.0/16, 172.16.0.0/12, \<br>
+&nbsp;&nbsp;&nbsp;10.0.0.0/8 }<br>
+table &lt;spammers&gt; persist<br>
+<br>
+block in on fxp0 from { &lt;rfc1918&gt;, &lt;spammers&gt; } to any<br>
+pass&nbsp; in on fxp0 from &lt;goodguys&gt; to any<br>
+</tt>
+</blockquote>
+
+<p>
+Adresy mohou být také specifikovány pomocí negačního modifikátoru (nebo
+"not"), např.:
+<blockquote>
+<tt>
+table &lt;goodguys&gt; { 192.0.2.0/24, !192.0.2.5 }
+</tt>
+</blockquote>
+
+<p>
+Tabulka <tt>goodguys</tt> nyní odpovídá všem adresám v síti 192.0.2.0/24
+s výjimkou 192.0.2.5.
+
+<p>
+Všimněte si, že názvy tabulek jsou vždy uzavřeny mezi &lt; &gt;.
+
+<p>
+Tabulky také mohou být načteny z textového souboru obsahujícího seznam
+IP adres a sítí:
+<blockquote>
+<tt>
+table &lt;spammers&gt; persist file "/etc/spammers"<br>
+<br>
+block in on fxp0 from &lt;spammers&gt; to any<br>
+</tt>
+</blockquote>
+
+<p>
+Soubor <tt>/etc/spammers</tt> y obsahoval seznam IP adres, na každém
+řádku jednu. Každá řádka začínající <tt>#</tt> je považována za komentář
+a je ignorována.
+
+<a name="manip"></a>
+<h2>Manipulace pomocí <tt>pfctl</tt></h2>
+Tabulky mohou být měněny za běhu pomocí
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+><tt>pfctl(8)</tt></a>.
+Například přidání položky do tabulky &lt;spammers&gt; vytvořené výše:
+<blockquote>
+<tt># pfctl -t spammers -Tadd 218.70.0.0/16</tt>
+</blockquote>
+
+<p>
+Tím bude také vytvořena tabulka &lt;spammers&gt;, pokud ještě
+neexistovala. Pro vypsání adres v tabulce:
+<blockquote>
+<tt># pfctl -t spammers -Tshow</tt>
+</blockquote>
+Volba <tt>-v</tt> může být také použita spolu s <tt>-Tshow</tt> k
+vypsání statistik pro každou položku tabulky. Odstranění adresy z
+tabulky:
+<blockquote>
+<tt>
+# pfctl -t spammers -Tdelete 218.70.0.0/16
+</tt>
+</blockquote>
+
+<p>
+Další informace o manipulování s tabulkami pomocí <tt>pfctl</tt>
+naleznete v
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+><tt>pfctl(8)</tt></a>.
+
+<a name="addr"></a>
+<h2>Specifikování adres</h2>
+Kromě specifikování IP adresou může být počítač také určen svým
+hostname. když je jméno převedeno na IP adresu, všechny výsledné IPv4 a
+IPv6 adresy jsou přidány do tabulky. IP adresy mohou být také zadány
+určením platného názvu rozhraní nebo klíčovým slovem <tt>self</tt>,
+které způsobí přidání všech adres asociovaných s rozhraním(i) do
+tabulky.
+
+<a name="match"></a>
+<h2>Address Matching</h2>
+Vyhledání adresy v tabulce vrátí nejpřesněji odpovídající položku. To
+umožňuje vutvoření tabulky jako třeba:
+<blockquote>
+<tt>
+table &lt;goodguys&gt; { 172.16.0.0/16, !172.16.1.0/24, 172.16.1.100 }<br>
+<br>
+block in on dc0 all<br>
+pass &nbsp;in on dc0 from &lt;goodguys&gt; to any<br>
+</tt>
+</blockquote>
+
+<p>
+Zdrojová adresa každého paketu procházejícího rozhraním dc0 bude
+porovnána s tabulkou <tt>&lt;goodguys&gt;</tt>:
+<ul>
+<li>172.16.50.5 - nejpřesnějsí shoda je 172.16.0.0/16; paket odpovídí
+tabulce a bude puštěn
+<li>172.16.1.25 - nejpřesnější shoda je !172.16.1.0/24; paket odpovídá
+položce tabulku, ale tato položko je negovaná (používá modifikátor "!");
+paket neodpovídá tabulce a bude zablokován
+<li>172.16.1.100 - přesně odpovídá 172.16.1.100; paket odpovídá tabulce
+a bude puštěn
+<li>10.1.4.55 - neodpovídá tabulce a bude zablokován
+</ul>
+
+<p>
+[<a href="macros.html">Předchozí: Seznamy a makra</a>]
+[<a href="index.html">Obsah</a>]
+[<a href="options.html">Dále: Options</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[back]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<small>
+<br>
+Originally: [OpenBSD: tables.html,v 1.6]
+<br>
+$Translation: tables.html,v 1.1 2003/11/02 21:53:47 certik Exp $
+<br>
+$OpenBSD: tables.html,v 1.1 2003/11/03 14:24:05 horacio Exp $
+</small>
+
+</body>
+</html> 
