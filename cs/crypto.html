@@ -1,0 +1,273 @@
+<!DOCTYPE HTML PUBLIC  "-//IETF//DTD HTML Strict Level 2//EN//2.0">
+<html>
+<head>
+<meta http-equiv="Content-type" content="text/html; charset=iso-8859-2">
+<title>Kryptografie v OpenBSD</title>
+<link rev=made href=mailto:www@openbsd.org>
+<meta name="resource-type" content="document">
+<meta name="description" content="Kryptografie OpenBSD">
+<meta name="keywords" content="openbsd,cryptography,openssh,openssl,kerberos">
+<meta name="keywords" content="ipsec,photuris,isakmp,ike,blowfish,des,rsa,dsa">
+<meta name="distribution" content="global">
+<meta name="copyright" content="This document copyright 1997 by OpenBSD.">
+</head>
+
+<BODY BGCOLOR="#FFFFFF" TEXT="#000000" LINK="#23238E">
+<img align=left alt="[OpenBSD]" height=166 width=197 SRC="../images//blowfish-notext.jpg">
+<br>
+<br>
+<br>
+"Mantrou každého dobrého odborníka na počítačovou bezpečnost je úsloví:
+"Bezpečnost není produkt, ale proces." Bezpečnost je totiž více než jen implementace silné kryptografie do systému. Bezpečnost znamená návrhnout celý systém tak, aby všechny jeho části včetně kryptografie pracovaly dohromady."<br>
+<br>
+-- Bruce Schneier, autor knihy "Aplikovaná Kryptografie".
+<br clear=all>
+<h2><font color=#e00000>Kryptografie</font><hr></h2>
+
+<strong>Obsah</strong><br>
+<a href=#why>Proč dodáváme kryptografii?</a>.<br> 
+<a href=#ssh>OpenSSH</a>.<br> 
+<a href=#prng>Generátor pseudonáhodných čísel</a> (PRNG): ARC4, ...<br>
+<a href=#hash>Kryptografické hashovací funkce</a>: MD5, SHA1, ...<br>
+<a href=#trans>Kryptografické algoritmy</a>: DES, Blowfish, ...<br>
+<a href=#hardware>Podpora kryptografického hardware</a><br>
+<a href=#people>Sháníme mezinárodní kryptoanalytiky</a><br>
+<a href=#papers>Další zdroje</a><br>
+<p>
+<hr>
+
+<a name=why></a>
+<h3><font color=#e00000>Proč dodáváme kryptografii?</font></h3><p>
+
+Dvěma slovy:  <strong>protože můžeme</strong>.<p>
+
+Projekt OpenBSD je vyvíjen v Kanadě.<p>
+
+<a href=../ECL.html>Seznam exportních omezení v Kanadě</a> nijak výrazně neomezuje export kryptografie a dokonce výslovně povoluje volný export kryptograckého software. Marc Plumb zpracoval toto téma na <a href=http://insight.mcmaster.ca/org/efc/pages/doc/crypto-export.html>své stránce</a>.
+<p>
+
+Z tohoto důvodu je kryptografie zahrnuta do mnoha částí opračního systému. Kryptografický software, který používáme je <a href=policy.html>volně dostupný a distribuovaný pod přijatelnými licensemi</a>. Nepoužíváme kryptografii, na níž se vztahují patenty. Zároveň používáme software ze zemí, dovolujích export kryptografie, abychom neporušovali exportní zákony. Jednotlivé části kryptografického software byly napsány v Argentině, Austrálii, Kanadě, Německu, Řecku, Norsku a Švédsku.
+<p>
+
+Když vydáváme release nebo snapshot OpenBSD, vždy jej vytváříme v zemi, jejíž zákony umožňují kryptografický export, abychom našim uživatelům umožnili volný přístup ke zdrojovým kódům a binárkám. V minulosti byl překlad release proveden v Kanadě, Švédsku a Německu.<p>
+
+OpenBSD je dodáváno se systémem Kerberos IV. Zdrojový kód, který používáme je exportní verze KTH ze Švédska. Zdrojový kód našich X11 byl také rozšířen o podporu Kerberos IV.  Podpora Kerberos V by se měla objevit někdy v roce 2000 (jak vidno, zatím se neobjevila - pozn. překl.), protože zatím jeho volně šiřitelná verze neexistuje.<p>
+
+
+<img align=right src="../images/vpnc-test-partner.gif">
+OpenBSD bylo prvním operačním systémem, dodávaným s IPSEC stackem. Podpora IPSEC je v OpenBSD již od verze 2.1, vydané v roce 1997. IPSEC podporuje hardwarovou akceleraci, poskytovanou síťovými kartami a náš ISAKMP daemon je používán pro jeden z testovacích strojů <a href="http://www.vpnc.org">VPNC</a>.
+<br clear=all>
+<p>
+
+V současnosti má kryptografie značný vliv na zvýšení <a
+href=security.html>bezpečnosti</a> operačního systému. Jednotlivé prvky kryptografické podpory v OpenBSD jsou popsány níže.<p>
+
+<a name=ssh></a>
+<h3><font color=#e00000>OpenSSH</font></h3><p>
+
+Co je prvním krokem většiny lidí po instalaci OpenBSD? Instalace Secure Shellu
+(<a href=http://www.openbsd.org/cgi-bin/man.cgi?query=ssh>ssh</a>) ze stromu portů nebo balíku z FTP. Tedy až doteď.<p>
+
+Od verze 2.6 obsahuje OpenBSD <a href="http://www.openssh.com/">OpenSSH</a>, absolutně bezplatnou a bezpatentní verzi ssh. Od OpenBSD 2.6 podporuje <a href="http://www.openssh.com/">OpenSSH</a> ssh verze 1 a obsahuje řadu dalších vlastností:	
+<ul>
+<li>
+Všechny prvky omezujícího charakteru (např. patenty, viz. <a href=http://www.openbsd.org/cgi-bin/man.cgi?query=ssl>ssl</a>))
+byly z kódu vyřazeny a všechny části podléhající licencím nebo pantentům byly převedeny do externích knihoven.
+</li>
+<li>
+přibyla podpora ssh protokolu 1.5.
+</li>
+<li>
+přibyla podpora autentifikace přes <a href=http://www.openbsd.org/cgi-bin/man.cgi?query=kerberos>kerberos</a>
+a ticket passing.
+</li>
+<li>
+přibyla podpora jednorázových hesel přes <a href=http://www.openbsd.org/cgi-bin/man.cgi?query=skey>skey</a>.
+</li>
+</ul>
+<p>
+
+Stručne (a jasně) řečeno jsme vzali ssh a OpenBSDfikovali jsme jej. 
+Poskytli jsme jednoduchou cestu k automatickému downloadu a instalaci balíku s podporou RSA, který obsahuje sdílené knihovny libcrypto a libssl. Tyto balíky jsou založeny na OpenSSL. Lidé mimo USA tak mohou používat patentovaný kód RSA bez omezení a lidé v USA jej mohou zdarma používat pro nekomerční účely.<p>
+
+Tímto může kdokoliv získat ssh do svého operačního systému.<p>
+
+<strong>OpenSSH nově podporuje i protokol 2.0!</strong><p>
+
+Nově jsme rozšířili OpenSSH o podporu protokolu SSH 2. Ssh démon teď podporuje všechny 3 hlavní SSH protokoly (1.3, 1.5, 2.0). Protokol 2.0 navíc již nepoužívá RSA pro svůj veřejný klíč, jehož funkci nahrazují algoritmy DH a DSA. V OpenBSD 2.7, které obsahuje novou verzi OpenSSH, je tak podpora protokolu 2.0 ihned po instalaci. V případě, že v této verzi stále potřebujete podporu protokolu 1.3 nebo 1.5, jednodue přidejte balík RSA (popsáno v manuálové stánce k <a href=http://www.openbsd.org/cgi-bin/man.cgi?query=ssl>ssl</a>) a restartujte démona.
+
+<a name=prng></a>
+<h3><font color=#e00000>Generátory pseudonáhodných čísel</font></h3><p>
+
+Generátor pseudonáhodných čísel (PRNG) poskytuje proud čísel, která mají velký význam pro systémovou bezpečnost a musí splňovat několik podmínek:<p>
+
+<ul>
+<li>Pro útočníka by mělo být nemožné předpovědět výstup z generátoru, i když zná jeho předchozí výstup.
+<li>Skupiny generovaných čísel by se neměly opakovat, tzn. generátor by měl mít cykly s VELMI dlouhou periodou.
+</ul>
+<p>
+
+PRNG je obvykle pouze algoritmus, kde se náhodná vstupní data objeví ve stejné formě na výstupu. V multiuivatelském prostředí je mnoho zdrojů náhodných dat pro zásobování PRNG. Kernel OpenBSD pouívá pro tuto entropii časování přeruení myi, latenci přeruení ze sítě, prodlevy mezi stisky kláves a diskové IO. Náhodná čísla jsou potom uívána pro rutiny kernelu a přes soubory /dev/ jsou dostupná programům v userlandu. Konkrétní aplikace:<p>
+
+<ul>
+<li>Dynamická alokace sin_port v systémovém volání bind(2).
+<li>PID procesů.
+<li>RPC transaction IDs (XID).
+<li>NFS RPC transaction IDs (XID).
+<li>Query-ID v DNS.
+<li>DNS Query-IDs.
+<li>Čisla inode, viz. getfh(2) a fsirand(8).
+<li>Časování v traceroute(8).
+<li>Silnější (náhodnější) jména dočasných souborů ve funkcích mktemp(3) a mkstemp(3).
+<li>Náhodná hodnota ISS v TCP jako ochrana proti spoofingu.
+<li>Náhodné doplňování (padding) v paketech IPSEC esp_old.
+<li>Generování salt v algoritmech pro uchovávání hesel.
+<li>Pro generování fake S/Key.
+<li>V <a href=http://www.physnet.uni-hamburg.de/provos/photuris/>photurisd</a> a <a href=http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd>isakmpd</a> při výměně klíčů.
+</ul>
+
+<p>
+<a name=hash></a>
+<h3><font color=#e00000>Kryptografické hashovací funkce</font></h3><p>
+
+Hashovací funkce vezme vstupní data libovolné délky a "zkomprimuje" je do výstupního řetězce konstantní délky. Pro tuto funkci by mělo být nemožné:
+
+<ul>
+<li>najít 2 různá vstupní data, která mají po aplikaci algoritmu stejný výstup (odolnost proti kolizi),
+<li>odlišný vstup pro dané stejné výstupy
+	(rezistence druhé kategorie).
+</ul>
+<p>
+
+V OpenBSD se používají hash algoritmy MD5, SHA1 and RIPEMD-160 pro následující účely:
+<p>
+<ul> 
+<li>V <a href=http://www.openbsd.org/cgi-bin/man.cgi?query=skey>S/Key</a> pro vytvoření jednorázového hesla.
+<li>V <a href=http://www.openbsd.org/cgi-bin/man.cgi?query=ipsec>IPsec</a>, <a href=http://www.physnet.uni-hamburg.de/provos/photuris/>photurisd</a> a <a href=http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd>isakmpd(8)</a> pro autentifikaci původu paketů a pro kontrolu jejich integrity.
+<li>Pro MD5 hesla ve FreeBSD stylu (standardně to není povoleno), viz <a href=http://www.openbsd.org/cgi-bin/man.cgi?query=passwd.conf&sektion=5>passwd.conf(5)</a>
+<li>Pro podporu TCP SYN cookie (opět není standardně povoleno), viz. <a href=http://www.openbsd.org/cgi-bin/man.cgi?query=options&sektion=4>options(4)</a>
+<li>V libssl pro digitalní podepsání zpráv.
+</ul>
+<p>
+
+<p>
+<a name="trans"></a>
+<h3><font color=#e00000>Kryptografické algoritmy</font></h3><p>
+
+Kryptografické algoritmy se používají pro šifrování (šifrovacím klíčem) a dešifrování (dešifrovacím klíčem) dat. Bezpečnost by u nich měla záviset na síle klíče.<p>
+
+OpenBSD poskytuje v jádře i uživatelským programům algoritmy DES, 3DES, Blowfish a Cast:<p>
+<ul>
+<li>V libc pro <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=blf_key">Blowfish</a> hesla, viz. také <a href="papers/bcrypt-paper.ps">dokumentace USENIX</a>.
+<li>V <a href=http://www.openbsd.org/cgi-bin/man.cgi?query=ipsec>IPsec</a> pro zachování bezpečnosti síťové vrstvy.
+<li>V Kerberu a Kerberoidních aplikacích <a href=http://www.openbsd.org/cgi-bin/man.cgi?query=telnet>telnet</a>, <a href=http://www.openbsd.org/cgi-bin/man.cgi?query=cvs>cvs</a>, <a href=http://www.openbsd.org/cgi-bin/man.cgi?query=rsh>rsh</a>, <a href=http://www.openbsd.org/cgi-bin/man.cgi?query=rcp>rcp</a> a <a href=http://www.openbsd.org/cgi-bin/man.cgi?query=rlogin>rlogin</a>.
+<li>V <a href=http://www.physnet.uni-hamburg.de/provos/photuris/>photurisd</a> a <a href=http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd>isakmpd</a> pro ochranu výměny klíčů IPsec.
+<li>V AFS k ochraně zpráv jdoucích přes síť, pro bezpečný vzdálený přístup k filesystému.
+<li>V libssl pro komunikaci aplikací přes bezpečný SSL protokol.
+</ul>
+
+<p>
+<a name=hardware></a>
+<h3><font color=#e00000>Podpora kryptografického hardware</font></h3><p>
+
+OpenBSD začalo od verze 2.7 s podporou kryptografického hardware, jako jsou akcelerátory a generátory náhodných čísel.
+<ul>
+<li><b>IPSEC crypto dequeue</b><br>
+Náš IPsec stack byl modifikován, takže se kryptografické funkce provedou takříkajíc out-of-line. Většina IPsec stacků potřebuje zpracovat kryptografii při zpracovávání každého paketu a to má za následek synchronizaci výkonu. Pro správné a rychlé použití hardware je potřeba tyto dvě činnosti oddělit, což se nám podařilo. Tato změna vedla i k lepšímu výkonu po softwarové stránce.
+<p>
+<li><b>HiFn 7751</b><br>
+Karty postavené na čipu <a href="http://www.hifn.com/products/7751.html">HiFn 7751</a> se používají jako akcelerátory symetrické kryptografie (tj. <a href="http://www.powercrypt.com">PowerCrypt</a>).
+Současný výkon při použití jedné karty Hifn 7751 na každé straně tunelu zaručuje propustnost 63Mbit/s pro 3DES/SHA1 ESP, co je téměř šestinásobek oproti použití samotného výkonu procesoru P3/550. Plánujeme ještě několik vylepšení, ale od 13.4.2000 je tento kód považován za stabilní. Místo původního driveru <a href="http://www.powercrypt.com">powercrypt</a> (napsán v USA) jsme napsali vlastní, který navíc správně pracuje s naším IPsec stackem. Čip 7751 je dnes průmyslovými standardy považován za pomalý a dost výrobců poskytuje čipy rychlejší (včetně samotného HiFn). Maximální propustnost s 3DES SHA1 ESP je kolem 63Mbit/s.<p>
+(Mimochodem s HiFn je dosti těžké pořízení. Dokonce nám vyhrožovali soudem, protože jsme mimo USA aplikovali reverzní engineering na jejich kryptoalgoritmus.)<p>
+<li><b>Hifn 6500</b><br>
+Tohle zařízení akceleruje asymetrickou kryptografii. Podporuje algoritmy RSA, DSA a DH a má hromadu dalších funkcí. Obsahuje výkonný generátor náhodných čísel, máme jedno zařízení, kompletní dokumentaci, ukázkový kód a vývoj driveru zatím ještě nezačal.<p>
+
+<li><b>Broadcom BCM5805 (čip Bluesteelnet 5501)</b><br>
+Hned po releasnutí OpenBSD 2.7 se nám podařilo přidat kód pro tyhle staré kusy (půjčil nám je přímo výrobce). Začali jsme s testováním čipu <a href="http://www.bluesteelnet.com/product.html">5501</a> a nutno říci, že poskytuje asi nejlepší výkon v symetrické kryptografii, jaký jsme kdy viděli.<p>
+Bluesteelnet byl koupen Broadcomem a začal s výrobou součástek. Jejich BCM5805 je velmi podobný, ovšem navíc obsahuje asymetrický engine pro DSA, RSA a další algoritmy. Vzhledem k tomu, že ma skoro 4,5 krát vyšší výkon než HiFn, je dost pravděpodobné, že se rozšíří.<p>
+S lidmi z Broadcomu/Bluesteelnetu je radost jednat. Dali nám kompletní dokumentaci, ukázkový kód a dostatečný počet karet pro testování.<p>
+Od verze 2.8 byl driver modifikován, takže kernel využívá entropii z BCM5805.<p>
+
+<li><b>Pijnenburg PCC-ISES</b><br>
+<a href="http://www.pcc.pijnenburg.nl/pcc-ises.htm">PCC-ISES</a> je nový čipset z Holandska. Dostali jsme ukázkový hardware, dokumentaci a na vývoji driveru se pracuje. V současnosti umí driver poskytovat kernelu entropii.<p>
+	
+<li><b>SafeNet 2141</b><br>
+Dostali jsme dokumentaci a hardware pro kryptokarty <a href="http://www.safenet-inc.com/OEM/OEMTechnologyDefault.htm">SafeNet</a> a práce na podpoře symetrické kryptografie začaly.<p>
+
+<li><b><a href="http://www.3com.com/promotions/3c990promo/index.html">
+    3com 3c990</a></b><br>
+3com nám dal driver pro podporu síťových karet, postavených na tomto čipu a ten byl přeportován. Očekáváme, že dostaneme informace pro podporu kryptografických funkcí (což také znamená, že budeme muset trochu předělat sybsystém IPsec).<p>
+
+<li><b>Intel IPSEC karty</b><br>
+Stejně jako 3com nám i Intel odmítá dodat dokumentaci. Mluvili jsme zhruba s 5 lidmi z technického oddělení, kteří zodpovídají za vývoj těchto produktů. Rádi by nám poskytli dokumentaci, ale jejich ruce jsou svázané, protože management nechce dokumentaci vydat.<p>
+
+<li><b>Intel 82802AB/82802AC Firmware Hub RNG</b><br>
+
+Čip 82802 FWH (je na motherboardech i810, i820, i840 a i860) obsahuje generátor náhodných čísel (RNG). Vyšší propustnost IPsec vyžaduje vyšší entropii náhodných čísel. Od 10.4.2000 tento RNG podporujeme. Pokusíme se přidat i podporu dalších RNG krypto čipů.<p>
+
+<li><b>OpenSSL</b><br>
+Vytvořili jsme schémata pro podporu kryptokaret s RSA nebo DSA v OpenSSL, takže i programy v userlandu (<a href="http://www.openssh.com">ssh</a>, <a href="http://www.modssl.org/">apache https</a>, atd.) budou moci využívat hardware.
+</ul>
+
+<p>
+<b>V případě, že nám chcete pomoci s psaním driverů,
+<a href=#people>přijďtě a pomozte</a>.</b>
+
+<p>
+<a name=people></a>
+<h3><font color=#e00000>Sháníme mezinárodní odborníky na kryptografii</font></h3><p>
+
+Pochopitelně náš projekt potřebuje lidi, kteří by pracovali na těchto systémech. V případě, že se najde nějaký neamerický odborník, ochotný nám pomoci s kryptografií v OpenBSD, nechť nás prosím kontaktuje.<p>
+
+<p>
+<a name=papers></a>
+<h3><font color=#e00000>Další čtení</font></h3><p>
+
+O změnách v kryptografii OpenBSD bylo napsáno několik dokumentů. Jejich postscriptové verze jsou dostupné níže.<p>
+
+<ul>
+<li>Heslové schéma pro budoucnost.<br>
+    <a href=events.html#usenix99>Usenix 1999</a>,
+    napsal <a href=mailto:provos@openbsd.org>Niels Provos</a>,
+    <a href=mailto:dm@openbsd.org>David Mazieres</a>.<br>
+    <a href=../papers/bcrypt-paper.ps>paper</a> a
+    <a href=../papers/bcrypt-slides.ps>slides</a>.
+<p>
+<li>Kryptografie v OpenBSD: Přehled.<br>
+    <a href=events.html#usenix99>Usenix 1999</a>,
+    napsal <a href=mailto:deraadt@openbsd.org>Theo de Raadt</a>,
+    <a href=mailto:niklas@openbsd.org>Niklas Hallqvist</a>,
+    <a href=mailto:art@openbsd.org>Artur Grabowski</a>,
+    <a href=mailto:angelos@openbsd.org>Angelos D. Keromytis</a>,
+    <a href=mailto:provos@openbsd.org>Niels Provos</a>.<br>
+    <a href=../papers/crypt-paper.ps>paper</a> a
+    <a href=../papers/crypt-slides.ps>slides</a>.
+<p>
+<li>Implementace Internet Key Exchange (IKE).<br>
+    <a href=events.html#usenix2000>Usenix 2000</a>,
+    napsal <a href=mailto:niklas@openbsd.org>Niklas Hallqvist</a> a
+    <a href=mailto:angelos@openbsd.org>Angelos D. Keromytis</a>.<br>
+    <a href=../papers/ikepaper.ps>paper</a> a
+    <a href=../papers/ikeslides.ps>slides</a>.
+<p>
+<li>Šifrování virtuální paměti</a><br>
+    <a href=events.html#sec2000>Usenix Security 2000</a>,
+    <a href=mailto:provos@openbsd.org>Niels Provos</a>.<br>
+    <a href=../papers/swapencrypt.ps>paper</a> a 
+    <a href=../papers/swapencrypt-slides.ps>slides</a>.
+</ul>
+
+<p>
+<hr>
+<a href=index.html><img height=24 width=24 src=../back.gif border=0 alt=OpenBSD></a>
+<a href=mailto:www@openbsd.org>www@openbsd.org</a>
+<small>
+<br>
+Originally [OpenBSD: crypto.html,v 1.78 ]
+<br>
+$Translation: crypto.html,v 1.3 2001/05/10 20:29:43 certik Exp $
+<br>
+$OpenBSD: crypto.html,v 1.1 2001/05/11 06:07:25 jufi Exp $
+</small>
+</body>
+</html>
