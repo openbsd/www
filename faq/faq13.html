@@ -104,10 +104,10 @@ sender is who he says he is.  IPsec tries to remedy this.  These services
 are considered distinct, but the IPsec supports them in a uniform manner. 
 
 <p>
-<h4>Confidentiality</h4> Make sure it is hard for anyone but the receiver
-to understand what data has been communicated.  You do not want
-anyone to see your passwords when logging into a remote machine
-over the Internet.
+<h4>Confidentiality</h4> Ensure it is hard for anyone but the receiver
+to understand what data has been communicated.  For example, ensuring
+the secrecy of passwords when logging into a remote machine over the
+Internet.
 
 <p>
 <h4>Integrity</h4> Guarantee that the data does not get changed on the
@@ -121,17 +121,14 @@ you that sent it.  It is clearly nice to know that documents
 are not forged.
 
 <p>
-<h4>Replay protection</h4> We need ways to ensure a transaction can only
-be carried out once unless we are authorized to repeat it.  I.e. it
-should not be possible for someone to record a transaction, and
-then replaying it verbatim, in order to get an effect of multiple
-transactions being received by the peer.  Consider the attacker has
-got to know what the traffic is all about by other means than
-cracking the encryption, and that the traffic causes events
-favorable for him, like depositing money into his account.  We
-need to make sure he cannot just replay that traffic later.
-<i>WARNING: as per the standards specification, replay protection is not
-performed when using manual-keyed IPsec (e.g., when using <a
+<h4>Replay protection</h4> We need ways to ensure a datagram is
+processed only once, regardless of how many times it is received.
+I.e. it should not be possible for an attacker to record a transaction
+(such as a bank account withdrawal), and then by replaying it verbatim
+cause the peer to think a new message (withdrawal request) had been
+received.  <i>WARNING: as per the standards specification, replay
+protection is not performed when using manual-keyed IPsec (e.g., when
+using <a
 href="http://www.openbsd.org/cgi-bin/man.cgi?query=ipsecadm&amp;sektion=8">ipsecadm(8)</a>)</i>.
 
 <p>
@@ -141,14 +138,15 @@ href="http://www.openbsd.org/cgi-bin/man.cgi?query=ipsecadm&amp;sektion=8">ipsec
 
 <p>
 IPsec provides confidentiality, integrity, authenticity, and replay
-protection through two new protocols.  These protocols are called AH,
-Authentication header, and ESP, Encapsulated security payload.
+protection through two new protocols.  These protocols are called
+Authentication Header (AH), and Encapsulating Security Payload (ESP).
 
 <p>
 AH provides authentication, integrity, and replay protection (but not
-confidentiality). Its main difference with ESP is that AH also secures
-parts of the IP header of the packet (like the source/destination
-addresses).
+confidentiality).  The main difference between the authentication
+features of AH and ESP is that AH also authenticates portions of the
+IP header of the packet (such as the source/destination addresses).
+ESP authenticates only the packet payload.
 
 <p>
 ESP can provide authentication, integrity, replay protection, and
@@ -157,6 +155,8 @@ the  header). Replay protection requires authentication and integrity
 (these two go always together). Confidentiality (encryption) can be used
 with or without authentication/integrity. Similarly, one could use
 authentication/integrity with or without confidentiality.
+
+<p>In practice, it is recommended that ESP be used for most applications.
 
 <p>
 <a name= "Wire"></a>
@@ -389,38 +389,50 @@ investigate using <a href="http://www.openbsd.org/cgi-bin/cvsweb/src/share/ipsec
 to set this up for you automatically.
 
 <p>
-First, you need to turn on IP AH and IP ESP options in the OpenBSD
-kernel (if you are only using ESP, such as with the rc.vpn script, or
-as with the example below, then <i>you do not need to enable AH</i>. In fact,
-there may even be security concerns related to enabling AH if you are not
-using it).
-
-<p>
-There is a nice sysctl to enable these protocols.
+First, you need to ensure that the IP ESP protocol is
+enabled in the OpenBSD kernel. Though it is enabled by default,
+you should verify this fact by doing the following:
 
 <blockquote><tt>
-# <b>sysctl -w net.inet.esp.enable=1</b><br>
-net.inet.esp.enable: 0 -&gt; 1<br>
-# <b>sysctl -w net.inet.ah.enable=1</b><br>
-net.inet.ah.enable: 0 -&gt; 1
+# <b>sysctl net.inet.esp.enable</b><br>
+net.inet.esp.enable = 1<br>
 </tt></blockquote>
 
+<p>Similarly, if AH is required, verify that it has been enabled:
+<blockquote><tt>
+# <b>sysctl net.inet.ah.enable</b><br>
+net.inet.ah.enable = 1
+</tt></blockquote>
+
+
 <p>
-You can edit <tt>/etc/sysctl.conf</tt> to turn these on at boot time.
-You need to remove the # mark from in front of net.inet.esp.enable and/or
-net.inet.ah.enable
+ If necessary,
+these protocols may be enabled using the <i>-w</i> option to
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&sektion=8"
+>sysctl(8)</a>.
+
+<p>
+You can edit <tt>/etc/sysctl.conf</tt> to turn these on (or off) at boot time.
+You need to remove the <i>#</i> mark from in front of <i>net.inet.esp.enable</i> and/or
+<i>net.inet.ah.enable</i>
 (depending on which you plan to use) and make sure they are set to 1.
 
 <p>
-You also need to generate your manual keys.
+Note that in most cases, such as with the <i>rc.vpn</i> script or with the
+example below, only ESP is required.  In these cases, <i>you do not
+need to enable AH</i>. In fact, there may be security concerns
+related to enabling AH if you are not using it.
+
+<p>
+Next, you will need to generate your manual keys.
 Since the security of the VPN is based on these keys being unguessable,
 it is very important that the keys be chosen using a strong random
 source.  One practical method of generating them is by using the
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=random&amp;sektion=4">random(4)</a>
-device.  To produce 160 bits of randomness, for example, do:
+device. To produce 160 bits (20 bytes) of randomness, for example, do:
 
 <blockquote><tt>
-# <b>dd if=/dev/urandom bs=1024 count=1 | sha1</b>
+# <b>openssl rand 20 | hexdump -e '20/1 "%02x"'</b>
 </tt></blockquote>
 
 <p>
@@ -692,19 +704,11 @@ between the two will be encrypted.
 
 <p>
 By default, OpenBSD comes with the proper binaries for ISAKMP and the
-IPsec stack. Unfortunately, the same
-cannot be said for the sample files. To retrieve them, you need to grab:
-/usr/src/sbin/isakmpd/samples/VPN-east.conf and
-/usr/src/sbin/isakmpd/samples/policy from the source tree.  You can
-either use your CD (if you have one), <a
-href="http://www.openbsd.org/cgi-bin/cvsweb/">cvsweb</a>, or
-the <a href="../anoncvs.html">command line CVS
-client</a>. (Cvsweb has <a
-href="http://www.openbsd.org/cgi-bin/cvsweb/src/sbin/isakmpd/samples/VPN-east.conf">VPN-east.conf</a>
-and <a
-href="http://www.openbsd.org/cgi-bin/cvsweb/src/sbin/isakmpd/samples/policy">policy</a>
-readily available).  For the purposes of this example, copy <i>policy</i>
-to /etc/isakmpd/isakmpd.policy.  Copy <i>VPN-east.conf</i> to /etc/isakmpd/isakmpd.conf.
+IPsec stack. Example configuration files may be found in
+<tt>/usr/share/ipsec/isakmpd</tt>.
+For the purposes of this example, copy <i>policy</i>
+to <tt>/etc/isakmpd/isakmpd.policy</tt>.  Copy <i>VPN-east.conf</i> to
+<tt>/etc/isakmpd/isakmpd.conf</tt>.
 Here we attempt to show you how to setup a VPN (tunnel).  If you want to
 use isakmpd between single hosts, there are other configuration files in
 the <i>samples</i> directory.
@@ -713,11 +717,13 @@ The manual pages have detailed information..  Don't forget
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd.policy&amp;sektion=5">isakmpd.policy(5)</a>.
 
 <p>
-Your first step is to turn on esp.  The top of the FAQ section on <a href="#ManKey">
-Manual Keying</a> tells you how to do this both for run-time and boot.
-Next, you need to edit /etc/isakmpd/isakmpd.policy.  
+Although both the ESP and AH protocols are enabled in the kernel by default,
+you should verify the protocols you need are available by the procedure
+outlined in the FAQ section on <a href="#ManKey">
+Manual Keying</a>.
+Next, you need to edit <tt>/etc/isakmpd/isakmpd.policy</tt>.  
 This file tells ISAKMP who can access IPsec. In this scenario, the policy file states that anybody who sends data
-using Encapsulate Security Payload(ESP), and has authenticated with the passphrase mekmitasdigoat (or whatever
+using Encapsulating Security Payload (ESP), and has authenticated with the passphrase <i>mekmitasdigoat</i> (or whatever
 passphrase you determine), is allowed to communicate with isakmpd.  You can modify this file to let ISAKMP know that we only
 want to allow data signed with certain digital certificates or using a certain encryption transform. You could also
 allow anybody to access IPsec.  This is only recommended for testing.
@@ -746,7 +752,7 @@ Conditions: app_domain == &quot;IPsec policy&quot; &amp;&amp;
 
 <p>
 Implementing this will give you a basic VPN (tunnel) using ESP only.
-On host A, edit /etc/isakmpd/isakmpd.conf.  The 249.2.2.2 sample IP address
+On host A, edit <tt>/etc/isakmpd/isakmpd.conf</tt>.  The 249.2.2.2 sample IP address
 should be replaced with the external IP address of host A.
 
 <blockquote><pre>
@@ -1008,7 +1014,7 @@ This is the bare <i>minimum</i>
 You may wish to use
 
 <blockquote><tt>
-# <b>isakmpd -d -DA=99</b>
+# <b>isakmpd -d -DA=90</b>
 </tt></blockquote>
 
 <p>
@@ -1084,11 +1090,11 @@ place if the keys are really to be seriously used.
 <h2>Configuration of isakmpd</h2>
 
 <p>
-Lets now look at the /etc/isakmpd/isakmpd.conf configuration file.  It
+Lets now look at the <tt>/etc/isakmpd/isakmpd.conf</tt> configuration file.  It
 was originally taken from the example file in
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd.conf&amp;sektion=5">isakmpd.conf(5)</a>
 but has been heavily modified. I will also use a much shorter file
-here than the example file in the man-page to make it easier to
+here than the example file in the man page to make it easier to
 understand. I have also added some commenting
 (some comments are left as in the isakmpd.conf(5)) and changed some
 names. None of the domain names used here exist as far as I know.
@@ -1946,14 +1952,14 @@ pass out proto esp from gatewA/32 to gatewB/32
 </pre></blockquote>
 <p>
 <li>
-To turn on all debugging in isakmpd, start it as
+To turn on all useful debugging in isakmpd, start it as
 <blockquote><tt>
-# <b>/sbin/isakmpd -d -DA=99</b>
+# <b>/sbin/isakmpd -d -DA=90</b>
 </tt></blockquote>
 <p>
 or (to skip the most detailed timer debug info)
 <blockquote><tt>
-# <b>/sbin/isakmpd -d -DA=99 -D1=70</b>
+# <b>/sbin/isakmpd -d -DA=90 -D1=70</b>
 </tt></blockquote>
 <p>
 <li>You need to allow traffic which has been processed by IPsec from netB
@@ -2077,7 +2083,7 @@ And on to the RFCs...
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq13.html,v 1.62 2003/01/01 13:01:59 nick Exp $</small>
+<small>$OpenBSD: faq13.html,v 1.63 2003/01/12 22:48:23 kjell Exp $</small>
 
 </body>
 </html>
