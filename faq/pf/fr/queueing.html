@@ -452,6 +452,8 @@ queue <i>name</i> [on <i>interface</i>] bandwidth <i>bw</i> [priority
     seconde, en valeur ou en pourcentage de la bande passante de la
     queue parent. Ce paramètre n'est applicable que lorsque l'on utilise
     l'algorithme <tt>cbq</tt>.
+	 Si non spécifié, 100% de la bande passante de la queue mère est
+	 utilisé.
 <li><tt><i>pri</i></tt> - la priorité de la queue. Pour <tt>cbq</tt> la
     gamme de priorités va de 0 à 7 et pour <tt>priq</tt> la gamme va de
     0 à 15. La priorité 0 est la priorité la plus basse. Quand elle
@@ -491,9 +493,9 @@ Suite de l'exemple ci-dessus :
 <blockquote>
 <tt>
 queue std bandwidth 50% cbq(default)<br>
-queue ssh { ssh_login, ssh_bulk }<br>
-&nbsp;&nbsp;queue ssh_login  priority 4 cbq(ecn)<br>
-&nbsp;&nbsp;queue ssh_bulk   cbq(ecn)<br>
+queue ssh bandwidth 25% { ssh_login, ssh_bulk }<br>
+&nbsp;&nbsp;queue ssh_login bandwidth 25% priority 4 cbq(ecn)<br>
+&nbsp;&nbsp;queue ssh_bulk  bandwidth 75% cbq(ecn)<br>
 queue ftp bandwidth 500Kb priority 3 cbq(borrow red)<br>
 </tt>
 </blockquote>
@@ -503,12 +505,24 @@ Ici, les paramètres des queues enfant définies précédemment sont
 définis. La queue <tt>std</tt> se voit attribuer une bande passante
 correspondant à 50% de celle de la queue "root" (1 Mbps) et est définie
 comme queue par défaut. La queue <tt>ssh</tt> définie deux queues
-enfant, <tt>ssh_login</tt> et <tt>ssh_bulk</tt>. La queue
-<tt>ssh_login</tt> a une priorité plus élevée que <tt>ssh_bulk</tt> et
-les deux ont ECN activé. La queue <tt>ftp</tt> obtient une bande
-passante de 500Kbps et obtient une priorité de 3. Elle peut aussi
-emprunter de la bande passante quand une quantité supplémentaire est
-disponible et RED est activé.
+enfant, <tt>ssh_login</tt et la queue possédant 25% de la bande passante
+de la queue racine (500kb) et contient également deux autres queues,
+<tt>ssh_login</tt> et <tt>ssh_bulk</tt>. La queue, <tt>ssh_login</tt> a
+une priorité plus élevée que <tt>ssh_bulk</tt> et les deux ont ECN
+activé. La queue <tt>ftp</tt> obtient une bande passante de 500Kbps et
+obtient une priorité de 3. Elle peut aussi emprunter de la bande
+passante quand une quantité supplémentaire est disponible et RED est
+activé.
+
+<p>
+<b>REMARQUE :</b> Chaque définition de queue enfant a sa bande passante
+spécifiée.
+Sans spécifier la bande passante, PF donnera 100% de la bande passante
+de la queue parente.
+Dans cette situation, ceci causera une erreur lors du chargement des
+règles sauf s'il y a une queue avec 100% de la bande passante, aucune
+autre queue ne peut être déclarée à ce niveau, car il n'y a plus de
+bande passante à allouer.
 
 <a name="assign"></a>
 <h3>Assignation du Trafic à une Queue</h3>
@@ -539,7 +553,7 @@ différente de celle définie dans la directive <tt>altq on</tt> :
 <blockquote>
 <tt> 
 altq on fxp0 cbq bandwidth 2Mb queue { std, ftp }<br>
-queue std cbq(default)<br>
+queue std bandwidth 500Kb cbq(default)<br>
 queue ftp bandwidth 1.5Mb<br>
 <br>
 pass in on dc0 from any to any port 21 queue ftp<br>
@@ -699,9 +713,9 @@ altq on dc0 cbq bandwidth 2Mb queue { std_in, ssh_im_in, dns_in, bob_in }
 # bob_in      - bande passante réservée à la station
 #               de travail de Bob. l'autorise à emprunter.
 
-queue std_in    cbq(default)
-queue ssh_im_in priority 4
-queue dns_in    priority 5
+queue std_in    bandwidth 1.6Mb cbq(default)
+queue ssh_im_in bandwidth 200Kb priority 4
+queue dns_in    bandwidth 120Kb priority 5
 queue bob_in    bandwidth 80Kb cbq(borrow)
 
 
@@ -776,11 +790,17 @@ L'administrateur réseau a decidé de la politique suivante :
 <ul>
 <li>Limiter le trafic entre le serveur WWW et Internet à 500Kbps dans
     chaque direction.
-<li>Aucune limite de bande passante sur le trafic entre le serveur WWW
-    et le réseau interne.
-<li>Donner une priorité plus haute au trafic HTTP entre le serveur WWW
-    et Internet que tout autre trafic entre le serveur WWW et Internet
-    (comme les envois FTP).
+<li>Limiter tout le trafic entre le serveur WWW et Internet à 500Kbps in
+	<ul>
+	<li>Réserver 250Kbps pour le trafic HTTP.
+	<li>Réserver 250Kbps pour le reste (trafic non-HTTP etc.)
+	<li>Permettre autrement de pouvoir emprunter dans les 500Kbps.
+	<li>Donner au trafic HTTP entre le serveur WWW et Internet une
+		 priorité plus élevée que les autres trafics entre le serveur WWW
+		 et Internet (comme les envois FTP).
+	</ul>
+<li>Le trafic entre le serveur WWW et le érseau interne peut utiliser
+	 davantage que les 100Mbps offerts par le réseau.
 <li>Réserver 500Kbps pour le réseau du département IT pour qu'ils
     puissent télécharger les dernières mises à jour de logiciels de
     façon rapide. Ils devront pouvoir utiliser plus de 500Kbps quand de
@@ -813,15 +833,15 @@ altq on fxp0 cbq bandwidth 1.5Mb queue { std_ext, www_ext, boss_ext }
 #                  pour le trafic sortant sur fxp0.
 # www_ext        - queue contenant les queues du serveur WWW. limitée à
 #                  500Kbps.
-#   www_ext_http - trafic http provenant du serveur WWW
-#   www_ext_misc - tout le trafic non-http provenant du serveur WWW
-# boss_ext       - trafic venant de l'ordinateur du directeur
+#   www_ext_http - trafic http du serveur WWW; plus haute priorité.
+#   www_ext_misc - tout le trafic non-http du serveur WWW.
+# boss_ext       - trafic venant de l'ordinateur du patron.
 
-queue std_ext        cbq(default)
+queue std_ext        bandwidth 500Kb cbq(default borrow)
 queue www_ext        bandwidth 500Kb { www_ext_http, www_ext_misc }
-  queue www_ext_http priority 3 cbq(red)
-  queue www_ext_misc priority 1
-queue boss_ext       priority 3
+  queue www_ext_http bandwidth 50% priority 3 cbq(red borrow)
+  queue www_ext_misc bandwidth 50% priority 1 cbq(borrow)
+queue boss_ext       bandwidth 500Kb priority 3 cbq(borrow)
 
 # active la mise en queue sur l'interface interne pour contrôler le trafic
 # venant d'Internet ou de la DMZ. utilise l'algorithme cbq pour contrôler
@@ -838,16 +858,17 @@ altq on dc0 cbq bandwidth 100% queue { net_int, www_int }
 #              passante est de 1.0Mbps.
 #   std_int  - la queue standard. également queue par défaut pour
 #              le trafic sortant en dc0.
-#   it_int   - trafic à destination du réseau du
-#              département IT.
-#   boss_int - trafic à destination du PC du directeur.
-# www_int    - trafic provenant du serveur WWW dans la DMZ.
+#   it_int   - trafic vers le réseau du département informatique;
+#					réserver 500Kbps.
+#   boss_int - trafic vers le PC du patron; assigner la plus haute
+#   				priorité.
+# www_int    - trafic du serveur WWW de la DMZ; vitesse maximale.
 
 queue net_int    bandwidth 1.0Mb { std_int, it_int, boss_int }
-  queue std_int  cbq(default)
+  queue std_int  bandwidth 250Kb cbq(default borrow)
   queue it_int   bandwidth 500Kb cbq(borrow)
-  queue boss_int priority 3
-queue www_int    cbq(red)
+  queue boss_int bandwidth 250Kb priority 3 cbq(borrow)
+queue www_int    bandwidth 99Mb cbq(red borrow)
 
 # active la mise en queue sur l'interface de la DMZ pour contrôler
 # le trafic destiné au serveur WWW. cbq sera utilisé
@@ -862,13 +883,13 @@ altq on fxp1 cbq bandwidth 100% queue { internal_dmz, net_dmz }
 # définit les paramètres pour les queues enfant.
 # internal_dmz   - trafic provenant du réseau interne.
 # net_dmz        - queue contenant le trafic provenant de Internet.
-#   net_dmz_http - trafic http.
-#   net_dmz_misc - tout trafic autre. c'est aussi la queue par défaut.
+#   net_dmz_http - trafic http; plus haute priorité.
+#   net_dmz_misc - tout autre trafic. c'est aussi la queue par défaut.
 
-queue internal_dmz      # aucun réglage spécifique requis
+queue internal_dmz   bandwidth 99Mb cbq(borrow)
 queue net_dmz        bandwidth 500Kb { net_dmz_http, net_dmz_misc }
-  queue net_dmz_http priority 3 cbq(red)
-  queue net_dmz_misc priority 1 cbq(default)
+  queue net_dmz_http bandwidth 50% priority 3 cbq(red borrow)
+  queue net_dmz_misc bandwidth 50% priority 1 cbq(default borrow)
 
 
 # ... dans la section filtrage du pf.conf ...
@@ -932,10 +953,10 @@ Partage de Charge</a>]
 <br>
 <small>
 <!--
-Originally [OpenBSD: queueing.html,v 1.25 ]<br>
-$Translation: queueing.html,v 1.11 2005/02/13 16:52:29 svincent Exp $<br>
+Originally [OpenBSD: queueing.html,v 1.26 ]<br>
+$Translation: queueing.html,v 1.12 2005/02/25 16:38:59 aanriot Exp $<br>
 -->
-$OpenBSD: queueing.html,v 1.7 2005/02/13 17:41:41 saad Exp $
+$OpenBSD: queueing.html,v 1.8 2005/02/26 10:30:40 jufi Exp $
 </small>
 
 </body>
