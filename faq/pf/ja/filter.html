@@ -35,6 +35,7 @@ please, use a max of 72 chars per line -->
 <li><a href="#udpstate">UDP の状態の保持</a>
 <li><a href="#tcpflags">TCP のフラグ</a>
 <li><a href="#quick"><tt>quick</tt> キーワード</a>
+<li><a href="#antispoof">詐称されたパケットのブロック</a>
 <li><a href="#ipopts">IP オプション</a>
 <li><a href="#example">フィルタリングルールセットの例</a>
 </ul>
@@ -479,6 +480,105 @@ pass &nbsp;in all
 この行には <tt>quick</tt> オプションが指定されているので、パケットはブロックされ、
 残りのルールセットは無視されます。
 
+<a name="antispoof"></a>
+<h2>詐称されたパケットのブロック</h2>
+アドレスの「詐称」とは、悪意のあるユーザが、自身の本当のアドレスを隠すためか、
+あるいはネットワーク上の他のノードになりすますため、送信されるパケットの中の
+発信元の IP アドレスを偽装することです。そのユーザが、いったんアドレスを詐称
+できてしまうと、攻撃の際に本当のアドレスを曝すことなくネットワーク攻撃を仕掛けたり、
+ある IP アドレスだけに限定しているネットワークサービスへのアクセス権を手に入れる
+ための試みを行えたりします。
+
+<p>
+PF は、以下のような <tt>antispoof</tt> キーワードを使用した、
+いくつかのアドレス詐称に対する防御機能を提供しています。
+
+<blockquote>
+<tt>
+antispoof [log] [quick] for <i>interface</i> [<i>af</i>]
+</tt>
+</blockquote>
+
+<dl>
+<dt><tt>log</tt>
+<dd>マッチしたパケットのログを
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>pflogd(8)</a> を通じて取得するよう指定します。
+
+<dt><tt>quick</tt>
+<dd>パケットがこのルールにマッチした場合には、それを「勝者」のルールと見なし、
+ルールセットの評価をここまでで終了します。
+
+<dt><tt><i>interface</i></tt>
+<dd>詐称防御機能を有効にするネットワークインターフェイスを指定します。これはまた、
+インターフェイスの<a href="macros.html#lists">リスト</a>でも構いません。
+
+<dt><tt><i>af</i></tt>
+<dd>詐称防御機能を有効にするアドレスファミリとして、IPv4 用の <tt>inet</tt>
+か、IPv6 用の <tt>inet6</tt> のいずれかを指定します。
+</dl>
+
+<p>
+例:
+<blockquote>
+<tt>
+antispoof for fxp0 inet
+</tt>
+</blockquote>
+
+<p>
+ルールセットがロードされると、指定されている <tt>antispoof</tt> キーワードはすべて、
+ふたつのフィルタルールに展開されます。インターフェイス fxp0 が IP アドレスとして
+10.0.0.1 を持ち、サブネットマスクとして 255.255.255.0 (つまり /24) を持つものとすると、
+上記の <tt>antispoof</tt> ルールは以下のように展開されます。
+
+<blockquote>
+<tt>
+block in on ! fxp0 inet from 10.0.0.0/24 to any<br>
+block in inet from 10.0.0.1 to any
+</tt>
+</blockquote>
+
+<p>
+これらのルールにより、以下のようなふたつのことができるようになります。
+<ul>
+<li>fxp0 を経由<i>せずに</i> 10.0.0.0/24 のネットワークから来た
+すべてのトラフィックをブロックします。これは、10.0.0.0/24 のネットワークは、
+fxp0 に接続されているので、このネットワークブロックの送信元アドレスを持つ
+パケットが、他のネットワークインターフェイスに出現することはあり得ないからです。
+<li>fxp0 の IP アドレスである 10.0.0.1 からの全ての着信トラフィックをブロックします。
+これは、ホストマシンは、外部インターフェイス経由で、自分自身には決して
+パケットを送信すべきではありませんので、このマシンに属する発信元アドレスを持つ
+すべての着信パケットは、悪意のあるものと見なすことができるからなのです。
+</ul>
+
+<p>
+<b>注</b>: <tt>antispoof</tt> ルールを展開した後のフィルタルールは、
+ループバックインターフェイスからローカルアドレスに送信しようとしたパケットも
+ブロックします。これらのアドレスは、以下の例のように、明示的にわたすべきです。
+<blockquote>
+<tt>
+pass in quick on lo0 all<br>
+<br>
+antispoof for fxp0 inet
+</tt>
+</blockquote>
+
+<p>
+<tt>antispoof</tt> の使用法は、IP アドレスが割り当てられているインターフェイスに限定
+すべきものです。IP アドレスが割り当てられていないインターフェイスに <tt>antispoof</tt>
+を使用することは、以下のようなフィルタルールに展開される結果となってしまいます。
+<blockquote>
+<tt>
+block drop in on ! fxp0 inet all<br>
+block drop in inet all
+</tt>
+</blockquote>
+
+<p>
+これらのルールには、<i>すべての</i>インターフェイスで、<i>すべての</i>
+内向きトラフィックをブロックしてしまう危険性があります。
+
 <a name="ipopts"></a>
 <h2>IP オプション</h2>
 デフォルトでは、PF は IP オプションのセットされたパケットをブロックします。これによって、
@@ -505,13 +605,19 @@ pass in quick on fxp0 all allow-opts
 <table border=0 width="650">
 <tr><td nowrap bgcolor="#EEEEEE">
 <pre>
-ext_if  = fxp0
-int_if  = dc0
-lan_net = 192.168.0.0/24
+ext_if  = "fxp0"
+int_if  = "dc0"
+lan_net = "192.168.0.0/24"
 
 # setup a default deny policy
 block in  all
 block out all
+
+# pass traffic on the loopback interface in either direction
+pass quick on lo0 all
+
+# activate spoofing protection for the internal interface.
+antispoof quick for $int_if inet
 
 # only allow ssh connections from the local network if it's from the
 # trusted computer, 192.168.0.15. use "block drop" so that a TCP RST is
@@ -551,11 +657,11 @@ pass in log on $ext_if proto tcp from any to { !$ext_if, !$int_if } \
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
 <small>
-Originally [OpenBSD: filter.html,v 1.6 ]
+Originally [OpenBSD: filter.html,v 1.7 ]
 <br>
-$Translation: filter.html,v 1.2 2003/06/05 12:20:40 toshi Exp $
+$Translation: filter.html,v 1.3 2003/06/07 04:06:22 toshi Exp $
 <br>
-$OpenBSD: filter.html,v 1.1 2003/06/05 13:33:00 jufi Exp $
+$OpenBSD: filter.html,v 1.2 2003/06/09 09:08:43 jufi Exp $
 </small>
 
 </body>
