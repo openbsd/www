@@ -36,6 +36,16 @@ X
 Xthe file /open/sup/ss contains
 X    cvs host=cvs.openbsd.org hostbase=/ base=/open/anoncvs delete
 X
+Xthe file /open/sup/cvs/refuse should contain the single line
+X    cvs/CVSROOT/history
+Xif you ever fetch the file cvs/CVSROOT/history, delete it. it will
+Xcause you problems.
+X
+Xon an IRIX or other SYSV machine, ensure that your kernel does not allow
+Xa user to chown a file to another user. this will cause sup to give away
+Xthe files to root before chmod'ing them readable. michaels@openbsd.org
+Xknows how to fix this.
+X
 Xmkdir /open/
 Xmkdir /open/anoncvs
 Xmkdir /open/anoncvs/cvs
@@ -98,7 +108,6 @@ Xsend mail to deraadt@openbsd.org
 X1) to have sup permissions granted.
 X2) to have an anoncvsN.COUNTRY.openbsd.org alias created
 X3) to have your site mentioned in the http://www.openbsd.org page.
-X
 X
 XExample layout. In this example "deraadt" is the $SUPUSER.
 X
@@ -262,14 +271,87 @@ X/*
 X * anoncvssh
 X */
 X
-X#ifndef CVSROOT
-X#define CVSROOT "anoncvs@anoncvs1.usa.openbsd.org:/cvs"
+X#include <stdio.h>
+X#include <stdlib.h>
+X#if defined(__OpenBSD__) || defined(__NetBSD__) || defined(__FreeBSD__)
+X#include <paths.h>
+X#endif
+X#include <pwd.h>
+X#include <unistd.h>
+X#include <sys/types.h>
+X
+X#ifndef __CONCAT
+X#if defined(__STDC__) || defined(__cplusplus)
+X#define __CONCAT(x,y)		x ## y
+X#else
+X#define __CONCAT(x,y)		x/**/y
+X#endif
 X#endif
 X
-X#include <stdio.h>
-X#include <unistd.h>
-X#include <pwd.h>
-X#include <sys/types.h>
+X#ifndef __CONCAT3
+X#if defined(__STDC__) || defined(__cplusplus)
+X#define __CONCAT3(x,y,z)	x ## y ## z
+X#else
+X#define __CONCAT3(x,y,z)	x/**/y/**/z
+X#endif
+X#endif
+X
+X#ifndef __P
+X#if defined(__STDC__) || defined(__cplusplus)
+X#define	__P(protos)	protos		/* full-blown ANSI C */
+X#else
+X#define	__P(protos)	()		/* traditional C preprocessor */
+X#endif
+X#endif
+X
+X/*
+X * You may need to change this path to ensure that RCS, CVS and diff
+X * can be found
+X */
+X#ifndef _PATH_DEFPATH
+X#define	_PATH_DEFPATH	"/bin:/usr/bin"
+X#endif
+X
+X/*
+X * This should not normally have to be changed
+X */
+X#ifndef _PATH_BSHELL
+X#define _PATH_BSHELL	"/bin/sh"
+X#endif
+X
+X/*
+X * Location of CVS tree, relative to the anonymous CVS user's
+X * home directory
+X */
+X#ifndef LOCALROOT
+X#define	LOCALROOT	"/cvs"
+X#endif
+X
+X/*
+X * Account and host name to be used when accessing the
+X * CVS repository remotely
+X */
+X#ifndef HOSTNAME
+X#define	HOSTNAME	"anoncvs@anoncvs1.usa.openbsd.org"
+X#endif
+X
+X/*
+X * $CVSROOT is created based on HOSTNAME and LOCALROOT above
+X */
+X#ifndef CVSROOT
+X#define	CVSROOT		__CONCAT3(HOSTNAME,":",LOCALROOT)
+X#endif
+X
+Xint main __P((int, char *[]));
+X
+Xchar * const env[] = {
+X	__CONCAT("PATH=",_PATH_DEFPATH),
+X	__CONCAT("SHELL=",_PATH_BSHELL),
+X	__CONCAT("CVSROOT=",LOCALROOT),
+X	"HOME=/",
+X	"CVSREADONLYFS=1",
+X	NULL
+X};
 X
 Xint
 Xmain(argc, argv)
@@ -293,7 +375,7 @@ X		perror("chroot");
 X		exit (1);
 X	}
 X	chdir("/");
-X	seteuid(getuid());
+X	setuid(getuid());
 X
 X	/*
 X	 * program now "safe"
@@ -313,17 +395,8 @@ X		sleep(10);
 X		exit(0);
 X	}
 X
-X	/*                     
-X	 * since the only things in annocvs's bin entire chroot space will
-X	 * be "safe commands", this is not a big deal
-X	 */
-X	putenv("SHELL=/bin/sh");
-X	putenv("CVSROOT=/cvs");
-X	putenv("HOME=/");
-X	putenv("CVSREADONLYFS=");
-X
-X	execl("/usr/bin/cvs", "cvs", "server", NULL);
-X	perror("execl: cvs");
+X	execle("/usr/bin/cvs", "cvs", "server", NULL, env);
+X	perror("execle: cvs");
 X	fprintf(stderr, "unable to exec CVS server!\n");
 X	exit(1);
 X}
