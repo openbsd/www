@@ -299,9 +299,224 @@ bus for your disk or network controllers, (or even worse, for both) remember
 that the ISA bus itself can be a performance bottleneck.  If you need speed,
 look to PCI.  Of course, there are still several ISA bus cards that work
 just fine.  Unfortunately, most of these are sound cards and serial port cards.
-<P>
 </ul>
-<Br>
+<P>
+<br>
+<p>
+<a name= "12.5">
+<h2>12.5 - Enabling PCI IDE</h2>
+</a>
+<p>
+If you have a current source tree that was last updated after July 18th, you
+wil notice that OpenBSD has PCI-IDE code, a big win on performance
+for anyone using IDE disks!  The PCI-IDE code introduces new PCI and ISA IDE
+code, and both PCI and ISA versions have DMA (or Direct Memory Access) capability.
+DMA allows the IDE controller to transfer data right from disk to your memory
+instead of running it through the CPU.  This lowers the overall utilization
+of your CPU,  keeping disk access fast and clean.
+OpenBSD has implemented the pciide code from NetBSD.  The OpenBSD code
+will attach <tt>atapiscsi* at wdc?</tt> and <tt>atapiscsi* at pciide?</tt>, which then allows you to attach <tt>scsibus* at atapiscsi?</tt>.
+This means that can use the standard SCSI device drivers (sd, cd, st, ...)
+for devices on the ATAPI bus!  (In NetBSD, the entire SCSI system was
+revamped to include ATAPI support, OpenBSD makes ATAPI support
+much more simple.)
+<P>
+Note that these instructions will change from time to time.  After this
+code is sufficiently tested under OpenBSD, most of the steps below
+will become unnecessary.  But for now, to use the PCI-IDE code (and anyone
+who wants better performance out of their IDE-based system will want to!),
+you need to change four files.
+<P>
+<UL><TT>
+Date: Mon, 19 Jul 1999 18:07:40 -0700 (PDT)<BR>
+From: Constantine Sapuntzakis &lt;<A HREF="mailto:csapuntz@stanford.edu">csapuntz@stanford.edu</a>&gt;<BR>
+To: tech@openbsd.org<BR>
+Subject: New ATA/IDE stuff in OpenBSD<BR>
+<P>
+This weekend, I started integrating the IDE code from NetBSD-current
+to OpenBSD-current. It should be considered a work-in-progress.
+<P>
+I'm sending out this e-mail for three reasons: to tell you about the
+new stuff, to ask for help in porting this across all the platforms
+with IDE, and to ask for help in testing this new feature.
+<P>
+The code from NetBSD supports DMA, UltraDMA, PCI IDE, better error
+recovery, etc. It's also faster too. The code has been extensively
+tested in NetBSD but not in OpenBSD. The usual warnings apply: 
+the new drivers might cause data loss.
+<P>
+The new code also has a different way of handling ATAPI devices (like
+IDE CD ROMs, IDE tape drives, etc.). ATAPI devices talk the SCSI
+packet protocol and the new ATAPI layer acts like a SCSI adapter. As
+such, your ATAPI CD will now appear as SCSI CD (cd*), your ATAPI tape
+drive as a SCSI tape drive (st*), your ATAPI zip drive like a SCSI
+drive (sd*), etc. (note: some older ZIP drives are not ATAPI devices)
+<P>
+Many ATAPI devices are NOT entirely SCSI-I and SCSI-II compliant.  As
+such, our SCSI device drivers may not work with your CD/tape drive/ZIP
+drive. Integrating ATAPI device support into our SCSI devices is a
+high priority so this shouldn't stay broken for long.  However, in the
+interim, you might get SCSI errors to the console if you try to use
+the devices. Under no condition should your machine hang or panic.  If
+your machine does hang/panic, please send me mail, describing the
+steps leading up to the hang and providing a dmesg dump.
+<P>
+For the best hard disk performance, you should not have an ATAPI
+device on the same chain as a hard disk.
+<P>
+Currently, the ATA stuff is only integrated into the i386 port.  I am
+willing to do the integration work on other platforms, but I need an
+account on such a machine to do compiles and your help in testing the
+resulting kernel.
+<P>
+To enable this feature on i386, you are going to have to edit some files.
+Comments directing what edits to do appear in the following files:
+<P>
+1) arch/i386/conf/files.i386 (don't forget to uncomment pciide_machdep.c)<BR>
+2) conf/files<BR>
+3) dev/isa/files.isa<BR>
+4) dev/pci/files.pci<BR>
+<P>
+In addition, look at
+<P>
+5) arch/i386/conf/NEWATA for how to configure the new stuff
+<P>
+If you boot the new stuff, I'd appreciate it if you sent me a dmesg dump.
+Once you've got a new kernel, if anything goes wrong, please send me mail.
+<P>
+Feel free to provide positive feedback too. ;)
+<P>
+Thanks,<BR>
+-Costa<BR>
+</UL></tt>
+<p>
+You need to edit <tt>/usr/src/sys/dev/isa/files.isa</tt>,
+find a section that looks like the excerpt below, and change it so that
+the # symbols are not 'commenting out' the files which give you access
+to the new code!
+<ul>
+<pre>
+#Start uncommenting for new ATA stuff
+# ISA "wd" (ESDI/IDE/etc.) controllers, ATAPI bus
+attach wdc at isa with wdc_isa: isa_dma
+file   dev/isa/wdc_isa.c                wdc_isa
+#end uncommenting for new ATA stuff
+ 
+#Start comment this out for new ATA stuff
+#define       ata {drive = -1}
+#device       wdc {drive = -1}: atapi, ata
+#attach       wdc at isa with wdc_isa
+#device       wd: disk
+#attach       wd at wdc
+#file dev/isa/wdc.c                   wdc & (wdc_isa | wdc_isapnp) needs-flag
+#file dev/isa/wd.c                    wd needs-flag
+#End comment this out for new ATA stuff
+</pre>
+</ul>
+Next, you need to edit <tt>/usr/src/sys/dev/pci/files.pci</tt>, and change out this section to look like below:
+<ul>
+<pre>
+#Start uncommenting for new ATA stuff
+# PCI IDE controllers
+device  pciide {[channel = -1]}: wdc_base, ata, atapi
+attach  pciide at pci
+file    dev/pci/pciide.c                pciide
+#End uncommenting for new ATA stuff
+</pre>
+</ul>
+Next, you need to edit <tt>/usr/src/sys/conf/files</tt>, and change it too.
+<ul>
+<pre>
+#Start uncommenting for new ATA stuff
+define  wdc_base
+define  ata {[channel = -1], [drive = -1]}
+define  atapi {[channel = -1]}
+# Common code for ESDI/IDE/etc. controllers
+device  wdc: ata, atapi, wdc_base
+file    dev/ic/wdc.c wdc_base
+#End uncommenting for new ATA stuff
+</pre>
+</ul>
+Finally, PCI IDE has only been tested on the i386 platform as of this
+writing.  If you are using another platform, you will need to do
+some trickery to /usr/src/sys/arch/<i>yourarch</i>/conf/files.<i>yourarch</i>
+(If you get this working on another arch, contact Costa and let him know!)
+<p>
+For i386 users, the trickery is in place, just uncomment it from
+<tt>/usr/src/sys/arch/i386/conf/files.i386</tt>
+<ul>
+<pre>
+#
+# Machine-independent ATAPI drivers
+# 
+
+#Comment out this include below if you're using the new ATA stuff
+#include "../../../dev/atapi/files.atapi"
+
+#Start Uncomment for new ATA stuff
+include "../../../dev/atapiscsi/files.atapiscsi"
+include "../../../dev/ata/files.ata"
+#End Uncomment for new ATA stuff
+</pre>
+</ul>
+<P>
+Once you edit all of these files, then cd /usr/src/sys/arch/i386/conf
+and
+<UL>
+<PRE>
+# <b>config NEWATA</b>
+</PRE>
+</ul>
+and 
+<ul>
+<PRE>
+# <b>cd ../compile/NEWATA</b>
+# <b>make clean;make</b>
+</pre>
+</ul>
+<P>
+This will compile the NEWATA kernel.  If you are using another platform
+with PCI IDE controllers, and you want to get this working, 
+edit conf/files.<i>yourarch</i> to include the stuff shown above which
+adds this capability to files.i386. Next, peek in the
+/usr/src/sys/arch/i386/conf/NEWATA kernel config and 
+copy out the new atapi/wd stuff to your own kernel config.
+Note the commented out wd/atapi stuff in NEWATA,
+and comment out the old wd/atapi stuff in your kernel the same way.
+<P>
+With this PCI IDE code, your chipset may not be known.  If so, you will
+get a message like:
+<UL>
+<PRE>
+pciide0: bus-master DMA support present, used without full driver support
+</PRE>
+</UL>
+If you get this message, you can try and force DMA mode by
+using 'flags 0x0001' on your pciide entry in your kernel config file.
+That would look something like this:
+<UL><PRE>
+pciide* at pci ? dev ? function ? flags 0x0001
+</PRE></ul>
+After doing this, the pciide code will try to use DMA mode regardless of
+whether or not it actually knows how to do so with your chipset.  If this 
+works, and your system makes it through fsck and startup, it is likely
+that this will work for good.  If this does not work, and the system hangs
+or panics after booting, then you can't use DMA mode (yet, until support
+is added for your chipset).  Note that if you find the documentation
+for your PCI-IDE controller's chipset, this is a good start to fully
+supporting your chipset within the PCI-IDE code.  You can look on the
+manufacturer's website or call them.  If your PCI-IDE controller is part
+of your motherboard, figure out who manufactures the chipset and pursue their
+resources!
+<P>
+Note that you will know that DMA support has been enabled if you see this
+message:
+<UL><PRE>
+pciide0:0:0: using DMA data transfers
+</PRE></UL>
+This means that pciide0, channel 0, drive 0 is using DMA data transfers.
+</ul>
+<p>
 <font color= "#0000e0">
 <a href= "index.html">[Back to Main Index]</a>
 <a href= "faq24.html">[To Section 11.0 - OpenBSD 2.4 Specific Information]</a>
@@ -313,7 +528,7 @@ just fine.  Unfortunately, most of these are sound cards and serial port cards.
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq12.html,v 1.10 1999/06/30 16:01:27 ericj Exp $</small>
+<small>$OpenBSD: faq12.html,v 1.11 1999/07/20 15:51:51 wvdputte Exp $</small>
 </p>
 </body>
 </html>
