@@ -1,0 +1,476 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-2">
+<meta http-equiv="Content-Language" content="sr">
+<meta name="resource-type" content="document">
+<meta name="description" content="OpenBSD kriptografija">
+<meta name="keywords" content="openbsd,kriptografija,šifriranje,dešifriranje,openssh,openssl,kerberos">
+<meta name="keywords" content="ipsec,isakmp,ike,blowfish,des,rsa,dsa">
+<meta name="distribution" content="global">
+<meta name="copyright" content="This document copyright 1997-2002 by OpenBSD.">
+<title>Kriptografija u OpenBSD-u</title>
+</head>
+
+<body bgcolor="#ffffff" text="#000000" link="#23238e">
+<img align="left" alt="[OpenBSD]" height="166" width="197" SRC="../images/blowfish-notext.jpg">
+<br>
+<br>
+<br>
+"Mantra svakog dobrog stručnjaka za sigurnost je: 'Sigurnost nije
+produkt, već proces'. Sigurnost je mnogo više nego ugraditi jaku
+kriptografiju u sistem; sigurnost je konstruisati celokupan sistem
+tako da sve sigurnosne mere, uključujući i kriptografiju, zajedno
+rade."<br>
+<br>
+-- Bruce Schneier, autor "Primenjene Kriptografije".
+<br clear="all">
+<h2><font color="#e00000">Kriptografija</font></h2>
+<hr>
+
+<strong>Sadržaj</strong><br>
+<a href="#why">Zašto mi nudimo kriptografiju?</a>.<br> 
+<a href="#ssh">OpenSSH</a>.<br> 
+<a href="#prng">Pseudo slučajni generatori brojeva (PRNG)</a>: ARC4, ...<br>
+<a href="#hash">Kriptografske heš funkcije</a>: MD5, SHA1, ...<br>
+<a href="#trans">Kriptografski preobražaji</a>: DES, Blowfish, ...<br>
+<a href="#hardware">Kriptografska hardver podrška</a><br>
+<a href="#people">Trebaju nam medjunarodni kriptolozi</a><br>
+<a href="#papers">Dodatna literatura</a><br>
+<p>
+<hr>
+
+<a name="why"></a>
+<h3><font color="#e00000">Zašto mi nudimo kriptografiju?</font></h3><p>
+
+U tri reči:  <strong>zato što možemo</strong>.<p>
+
+OpenBSD projekt je baziran u Kanadi.<p>
+
+<a href="../ECL.html">Kontrolna lista za izvoz iz Kanade</a>
+nema posebne restrikcije na izvoz kriptografskog softvera,
+i čak je mnogo jasnija po pitanju slobodnog izvoza za 
+javno dostupan kriptografski softver. Marc Plumb je
+napravio
+<a href="http://www.efc.ca/pages/doc/crypto-export.html">
+nekoliko istraživanja u vezi kriptografskih zakona</a>.
+<p>
+
+I zato OpenBSD projekt ima ugrađenu kriptografiju na mnogobrojnim mestima
+u operativnom sistemu. Preduslov za nas je da kriptografski softver koji
+koristimo bude <a href="../policy.html">slobodno dostupan i sa dobrim
+licencama</a>.
+Mi ne koristimo direktno kriptografiju sa rđavim patentima.
+Preduslov je takođe da takav softver potiče iz zemalja sa korisnim
+izvoznim licencama zato što mi ne želimo da kršimo zakone bilo koje
+zemlje. Kriptografske softver komponente koje mi trenutno koristimo
+su napisane u Argentini, Australiji, Kanadi, Grčkoj, Norveškoj i
+Švedskoj.
+<p>
+
+Kada pravimo OpenBSD izdanja ili "snapshots" mi gradimo naš binarni kod
+u slobodnim zemljama da bi bili sigurni da su kod i binarne forme koje
+nudimo korisnicima oslobođeni od takvih mrljavština. U prošlosti su
+naši binarni kodovi kompajlirani u Kanadi, Švedskoj i Nemačkoj.
+<p>
+
+OpenBSD se isporučuje sa Kerberos verzijom V. Osnovni kod koji koristimo
+je Hajmdal izdanje iz Švedske. I naš X11 kod je proširen, da bi mogao da se
+koristi sa Kerberosom takođe.<p>
+
+
+<img align="right" src="../images/vpnc-test-partner.gif" alt="VPNC TEST PARTNER">
+OpenBSD je bio prvi operativni sistem koji se isporučivao sa IPsec stekom.
+IPsec je deo OpenBSD-a od 2.1 izdanja iz 1997-e godine. Naš IPsec stek je
+deo kernela, i zajedno sa hardver "acceleration" baziranom na različitim
+kartama i našim slobodnim ISAKMP demonom, se koristi kao jedna od mašina
+u IPsec test okruženju
+<a href="http://www.vpnc.org">VPNC Organizacije</a>.
+<br clear="all">
+<p>
+
+Danas je kriptografija važno srdestvo za poboljšanje<a
+href="security.html">sigurnosti</a> u operativnom sistemu. Kriptografija
+cryptography utilized in OpenBSD can be classified into various
+koja se koristi u OpenBSD-u se može klasifikovati u različite vidove,
+koje ovde opisujemo.<p>
+
+<a name="ssh"></a>
+<h3><font color="#e00000">OpenSSH</font></h3><p>
+
+Od 2.6 izdanja, OpenBSD sadrži
+<a href="http://www.openssh.com/">OpenSSH</a>, jednu potpuno slobodnu verziju
+ssh-a, neopterećenu patentima. <a href="http://www.openssh.com/">OpenSSH</a>
+je bio kompatibilan sa verzijom 1 ssh-a i mnogo stvari je dodato,
+<ul>
+<li>
+sve komponente restriktivne prirode (na primer patenti, vidi
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ssl&amp;sektion=8">ssl(8)</a>)
+su direktno izbačeni iz izvornog koda; sve licencirane ili patentirane
+komponente koriste eksterne biblioteke.
+<li>
+dodata podrška za SSH protokol, verziju 1.5.
+<li>
+podrška za Kerberos autentifikaciju i "ticket passing".
+<li>
+podrška za jednokratnu autentifikaciju za lozinke sa
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=skey&amp;sektion=1">skey(1)</a>.
+</ul>
+<p>
+
+Grubo rečeno, mi smo uzeli slobodnu licencu ssh-a i "OpenBSD-ifikovali" je.
+Otprilike godinu dana kasnije, smo proširili OpenSSH sa podrškom za SSH 2
+protokol, što je retultiralo podrškom za sva tri glavna SSH protokola:
+1.3, 1.5, 2.0.
+
+<a name="prng"></a>
+<h3><font color="#e00000">Pseudo slučajni generatori brojeva</font></h3><p>
+
+Pseudo slučajni generator brojeva (Pseudo Random Number Generator - PRNG)
+opskrbljuje aplikacije sa tokom brojeva koji imaju odrešene bitne atribute za
+sigurnost sistema:<p>
+
+<ul>
+<li>Za bilo koga od spolja mora da bude nemoguće da predvidi ishod
+	slučajno generisanih brojeva, čak i ako poseduje znanje o
+	prethodnim ishodima.
+<li>Generisani brojevi ne smeju imati ponavljajuće mustre što znači
+	da PRNG treba da čini jedan vrlo dugi period izvršavanja
+</ul>
+<p>
+
+PRNG je uglavnom samo jedan algoritam gde će iste početne vrednosti
+proizvesti isti ishodni redosled. Na "multiuser" operativnom sistemu
+postoje mnogi izvori koji dozvoljavaju "sejanje" PRNG-a sa slučajnim
+informacijama. OpenBSD kernel koristi vremenske razmake interapta miša,
+latenciju interapta mrežnih podataka, vremenske periode izmedju kucanja
+dva dugmeta na tastaturi, i I/O informaciju diska, da popuni takozvani
+"entropy pool". Slučajni brojevi su onda dostupni za kernelske rutine i
+izvedeni putem uredjaja ka korsničkim programima. Trenutno, slučajni
+brojevi se koriste na sledećim mestima:<p>
+
+<ul>
+<li>Dinamička sin_port alokacija u bind(2).
+<li>PID-ovi procesa.
+<li>IP datagram ID-ovi.
+<li>RPC transakcioni ID-ovi (XID).
+<li>NFS RPC transakcioni IDs (XID).
+<li>DNS Query-ID-ovi.
+<li>Inode generisani brojevi, vidi getfh(2) i fsirand(8).
+<li>Vremenske smetnje u traceroute(8).
+<li>Jača temporarna imena za mktemp(3) i mkstemp(3)
+<li>Slučajnost dodata TCP ISS vrednosti radi zaštite protiv "spoofing" napada.
+<li>Slučajno punjeje IPsec esp_old paketa.
+<li>Generisati slučajne bitove raznih algoritama za lozinke.
+<li>Generisanje lažnih S/Key "challenges".
+<li>U <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd&amp;sektion=8">isakmpd(8)</a>
+	demonu da omogući dokaz	aktivnosti za razmenu ključeva.
+</ul>
+
+<p>
+<a name="hash"></a>
+<h3><font color="#e00000">Kriptografske heš funkcije</font></h3><p>
+
+Heš funkcija komprimira ulazne podatke u string sa konstantnom
+veličinom. Za kriptografsku heš funkciju je nemoguće da se nađu:
+
+<ul>
+<li>dva ulaza koji imaju isti izlaz ("collision resistant"),
+<li>različiti ulaz za dat ulaz sa istim izlazom ("2nd preimage resistant").
+
+</ul>
+<p>
+
+U OpenBSD-u se koriste MD5, SHA1 i RIPEMD-160 kriptografske heš funkcije, 
+na primer:<p>
+<ul> 
+<li>U <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=skey&amp;sektion=1">S/Key(1)</a>
+    radi jednokratnih lozinki
+<li>U <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ipsec&amp;sektion=4">IPsec(4)</a>
+    i
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd&amp;sektion=8">isakmpd(8)</a>
+    demonu radi autentifikacije porekla podataka i očuvanja integriteta za pakete.
+<li>Za MD5 lozinke u stilu FreeBSD-a (standardno nije uključeno), vidi
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=passwd.conf&amp;sektion=5">
+    passwd.conf(5)</a>
+<li>U libssl biblioteci za digitalno potpisivanje poruka.
+</ul>
+<p>
+
+<p>
+<a name="trans"></a>
+<h3><font color="#e00000">Kriptografski preobražaji</font></h3><p>
+
+Kriptografski preobražaji se koriste radi šifriranja i dešifriranja
+podataka. Normalno se koriste sa ključem za šifriranje radi šifrovanja
+podataka i ključem za dešifriranje radi dešifriranja podataka. Sigurnost
+kriptografskih preobražaja treba da zavisi samo od ključnog materijala.<p>
+
+OpenBSD nudi preobražaje kao DES, 3DES, Blowfish i Cast za kernelske i korisničke
+programe, koji se koriste na mnogim mestima kao na primer:<p>
+<ul>
+<li>U libc biblioteci radi stvaranja
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=blf_key&amp;sektion=3">Blowfish</a>
+    lozinki.  Pogledajte <a href="../papers/bcrypt-paper.ps">USENIX esej</a>
+    o toj temi.
+<li>U
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ipsec&amp;sektion=4">IPsec(4)</a>
+    gde omogućuje poverljivost za mrežnu sloj.
+<li>U <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd&amp;sektion=8">isakmpd(8)</a>
+    demonu da štiti proces razmene ključeva u IPsec-u.
+<li>U AFS-u da zaštiti poruke koje teku u mreži, tako omogućujući poverljivost
+    mrežnog pristupa sistemu datoteka.
+<li>U libssl-u, da omogući aplikacijama komunikaciju u de-facto standardnom
+    kriptografskom SSL protokolu.
+</ul>
+
+<p>
+<a name="hardware"></a>
+<h3><font color="#e00000">Kriptografska hardver podrška</font></h3><p>
+
+OpenBSD je, počev od 2.7 izdanja, počeo da podržava različite kriptografske
+hardver komponente kao što su akceleratori i generatori slučajnih brojeva.
+<ul>
+<li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=crypto&amp;sektion=9">
+    IPsec kripto "dequeue"</a></b><br>
+    Naš IPsec stek je tako modifikovan da se kriptografske funkcije mogu
+    izvršavati i van običnog okruženja. Najveći broj prostih softverskih IPsec
+    stekova moraju da de-šifriraju svaki paket posebno. To rezultuje u sinhronom
+    radnom režimu. Ali, da bi se hardver ispravno i brzo koristio potrebno je
+    odvojiti te dve komponente, kao što smo mi učinili. U stvari, tako čineći
+    se brzina može čak poboljšati i za softver.
+<p>
+<li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hifn&amp;sektion=4">
+    Hifn 7751</a></b><br>
+    Karte sa Hifn 7751 čipom se može koristiti kao simetrični kriptografski
+    akcelerator, na primer, 
+    <a href="http://www.soekris.com/vpn1201.htm">Soekris VPN1201 ili VPN1211</a>
+    (<a href="http://www.soekris.com/how_to_buy.htm">ovde se prodaje</a>)
+    ili
+    <a href="http://www.powercrypt.com">PowerCrypt</a>.
+    Trenutna brzina koristeći po jedan Hifn 7751 na svakom kraju tunela je
+    64Mbit/sek za 3DES/SHA1 ESP, što je otprilike 600% bolje nego brzina na
+    jednom P3/550 CPU sistemu. I dalja poboljšanja se razrađuju sa naše strane
+    radi rešenja par problema, ali od 13-og aprila, 2000-te se kod smatra
+    stabilnim. Mi smo napisali spostveni drajver za podršku ovog čipa, i ne
+    koristimo (U SAD-u napisani)
+    <a href="http://www.powercrypt.com">PowerCrypt</a> drajver, i naš drajver
+    je pravilno povezan sa IPsec stekom.
+    7751 se sada smatra sporim po industrijskim standardima i mnogi proizvođači
+    imaju brže čipove (čak i Hifn ima brži ali skuplji čip). Najveća brzina
+    sa je oko 64Mbit/sek.
+    <p>
+    Od 2.9 izdanja, dodata je podrška za Hifn 7951 čip, jednostavniju verziju
+    7751 čipa kojoj je dodat akcelerator javnih ključeva (nije podržan) i
+    generator slučajnih brojeva (podržan). Karte je donirala firma
+    <a href="http://www.soekris.com/">Soekris Engineering</a>.
+    <p>
+    Od izdanja 3.0, dodata je podrška za Hifn 7811 čip, bržu verziju čipa 7751
+    (130 Mbit/sek) sa generatorom slučajnih brojeva. Kartu je dotirala firma
+    <a href="http://www.gtgi.com/">GTGI</a>.
+    <p>
+    Od izdanja 3.2, dodata je podrška za LZS kompresioni algoritam koji se
+    koristi u <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ipcomp&amp;sektion=4">ipcomp(4)</a>.
+    <p>
+    Od izdanja 3.4, dodata je podrška za čipove 7955 i 7956. Uz sve osobine
+    podrške za prethodni 7951 čip, dodata je i podrška za AES.
+    <p>
+    Hifn je u početku bila vrlo nezgodna i teška kompanija za saradnju (pretili
+    su da će da nas tuže za naš ne-američki "reverse enineering" njihovog "crypto
+    unlock" algoritma), ali u poslednje vreme su bili mnogo prijateljskiji
+    naklonjeni, nudeći nam ploče i podršku.
+    <p>
+
+<li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=lofn&amp;sektion=4">
+    Hifn 6500</a></b><br>
+    je asimetrični kripto uređaj. On podržava RSA, DSA i DH algoritme, kao i
+    ostale bitne funkcija velikih brojeva. On isto sadrži vrlo brzi generator
+    slučajnih brojeva. Mi imamo jedan uređaj, potpunu dokumentaciju i delove
+    koda. Od izdanja 3.1, i generator slučajnih brojeva i jedinica za velike
+    brojeve funkcionišu.
+    <p>
+
+<li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=nofn&amp;sektion=4">
+    Hifn 7814/7851/7854</a></b><br>
+    Ovaj uređaj je paketni procesor i asimetrični kripto uređaj. On sadrži
+    podršku za RSA, DSA i DH algoritme, kao i ostale bitne funkcija velikih
+    brojeva i takođe poseduje generator slučajnih brojeva. Trenutno, 
+    support for RSA, DSA, and DH algorithms, as well as other major big number
+    functions and also has a random number generator.  Trenutno podržavamo samo
+    "engine" za velike brojeve i generator slučajnih brojeva.
+    <p>
+
+<li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ubsec&amp;sektion=4">
+    Broadcom BCM5801/BCM5802/BCM5805/BCM5820/BCM5821/BCM5822/5823
+    (ili beta čip Bluesteelnet 5501/5601)</a></b><br>
+    Odmah posle OpenBSD izdanja 2.7 , uspeli smo da dodamo probnu podršku za
+    rana izdanja tih uređaja koje su nam proizvođači poslali, tačnije od test
+    čipa 5501. Ovi uređaji omogućuju najveću brzinu za simetričnu kriptografiju
+    koju smo ikad videli.
+    <p>
+    Blusteelnet je kupljen od kompanije Broadcom i počeli su da se prave pravi
+    delovi. Njihov BCM5805 je sličan, osim što su oni dodali asimetrični
+    "engine" za DSA, RSA, i ostale slične algoritme. Sa približnom brzinom koja
+    je otprilike najmanje četiri puta veća nego od Hifn čipa, nadamo se da će
+    taj čip postati popularniji.
+    <p>
+    Ljudi iz Broadcom/Bluesteel-a su bili uvek super. Dali su nam kompletnu
+    dokumentaciju i delove koda za njihove čiopve i dovoljan broj karti za
+    testove.
+    <p>
+    Posle izdanja 2.8, ovaj drajver je takođe modifikovan da generiše slučajne
+    brojeve na BCM5805 čipu i sličnim verzijama i da "hrani" kernelski "entropy
+    pool" sa podacima
+    <p>
+    Posle izdanja 2.9, dodata je podrška za čip BCM5820, koji je ustvari brža
+    (64bit, brža frekvencija) verzija od BCM5805. Podrška (još nije testirana)
+    za BCM5821 je takođe dodata posle izdanja 3.1.
+    <p>
+    Od izdanja 3.1, engine za velike brojeve se podržava, i RSA/DH/DSA operacije
+    se mogu ubrzavati.
+    <p>
+    Podrška za BCM5801, BCM5802, BCM5821 i BCM5822 je dodata posle izdanja 3.2
+    (podrška za BCM5821 u 3.1 nije bila testirana i nije funkcionisala zbog
+    nekih nedokumentiranih zahteva za rukovanje sa interaptima).
+    <p>
+    Delimična podrška za BCM5823 je dodata u 3.4. Čip podržava AES, ali drajver
+    još ne postoji.
+    <p>
+
+<li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ises&amp;sektion=4">
+    Securealink PCC-ISES</a></b><br>
+    <a href="http://www.safenet-inc.com/technology/chips/safexcel_ises.asp">
+    PCC-ISES</a> je novi čipset iz Holandije.  Dobili smo hardver uzorke i
+    dokumentaciju, i radimo trenutno na razvoju drajvera.
+    Trenutno je drajver sposoban da "hrani" slučajne brojeve u kernelski
+    "entropy pool".
+    <p>
+	
+<li><b>SafeNet SafeXcel 2141</b><br>
+    Dobili smo dokumentaciju i hardver uzorke za
+    <a href="http://www.safenet-inc.com/technology/chips/safexcel_2141.asp">SafeNet</a>
+    kripto karte.  Rad ka podršci za makar simetričnu kriptografiju tih uređaja
+    je počeo.
+    <p>
+
+<li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=txp&amp;sektion=4">
+    3com 3cr990</a></b><br>
+    3com nam je dao drajver za podršku eternet komponenti ovog čipseta,
+    i na toj osnovi smo napisali spostveni eternet drajver. Taj drajver je
+    integrisan otkad smo dobili slobodnu licencu za mikrokod. Zbog loše
+    dokumentacije i nedostatka saradnje (delom zbog velike produkcije kod
+    3com-a),  IPsec funkcije čipa nisu podržane.... tako se cela stvar pretvorila
+    u jedno vrlo korisnu vežbu.
+    <p>
+
+<li><b>Intel IPsec karta</b><br>
+    Na isti način kao u svim njihovim odeljenjima za mrežne komponente, i sasvim
+    drugačijhe nego največi broj proizvođača, Intel neumoljivo odbija da nam
+    pruži dokumentaciju. Mi smo razgovarali sa otprilike petoro tehničara koji
+    rade u razvoju tih produkata. Svi oni su hteli da nam daju dokumentaciju.
+    Oni nas hvale zbog svega što smo daosada radili. Ali njihove ruke su vezane
+    od strane menedžmenta iliti vođstva koji ne vide profita u tome da nam daju
+    dokumentaciju. Zaboravite Intel. (Ako želite da kupite gigabit eternet
+    hardver, mi vam preporučujemo sve osim Intela... iz istog razloga: skoro
+    svi drajveri za Intel mrežne komponente su napisani bez dokumentacije).
+    <p>
+
+<li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pchb&amp;sektion=4">
+    Intel 82802AB/82802AC Firmware Hub RNG</a></b><br>
+    82802 FWH čip (na i810, i820, i840, i850, i i860 pločama) sadrži generator
+    slučajnih brojeva (RNG). Visoko performantni IPsec zahteva mnogo bolju
+    entropiju za slučajne brojeve. Od aprila 2000. mi podržavamo RNG. Mi ćemo
+    i dodati podršku za ostale RNG-ove na drugim kripto čipovima.
+    <p>
+
+<li><b>VIA C3 RNG</b><br>
+    Noviji VIA C3 procesor sadrži generator slučajnih brojeva kao naredbu.
+    Od izdanja<a href="../33.html">3.3</a> ovaj generator slučajnih brojeva se
+    koristi u kernelu da "hrani" "entropy pool"
+    <p>
+
+<li><b>OpenSSL</b><br>
+    Pre dosta godina, smo imali ideju da podržavamo kripto karte koje umeju
+    RSA/DH/DSA automatski putem poziva na OpenSSL biblioteke. Od izdanja 3.2,
+    ta podrška funkcioniše, i svaka karta koja ume RSA/DH/DSA, će automatski
+    koristiti hardver, uključujući OpenSSH i httpd u SSL modusu. Aplikacije
+    uopšte ne moraju da se prilagođavaju da bi to funkcionisalo.
+</ul>
+
+<p>
+<b> Ako želite da nam pomognete pri pisanju drajvera,
+<a href="#people">dođite i pomognite nam</a>.</b>
+
+<p>
+<a name="people"></a>
+<h3><font color="#e00000">Trebaju nam medjunarodni kriptolozi</font></h3><p>
+
+Naravno, naš projekt zahteva ljude koji rade na tim sistemima. Ako neki
+stručnjak za kriptografiju (osim iz Amerike) koji ima slične probleme,
+ima interesa da nam pomogne na polju "embedded" kriptografije, molimo ga da
+nas kontaktira.
+<p>
+
+<p>
+<a name="papers"></a>
+<h3><font color="#e00000">Dodatni dokumenti</font></h3><p>
+
+
+Ovde su eseji, napisani od članova OpenBSD tima, o promenama u
+OpenBSD-u koje se tiču kriptografije. Ovde su takođe i postskript
+verzije tih dokumenata.
+<p>
+
+<ul>
+<li>Šema lozinki, pogodna za budućnost.<br>
+    <a href="../events.html#usenix99">Usenix 1999</a>,
+    by <a href="mailto:provos@openbsd.org">Niels Provos</a>,
+    <a href="mailto:dm@openbsd.org">David Mazieres</a>.<br>
+    <a href="../papers/bcrypt-paper.ps">dokument</a> i
+    <a href="../papers/bcrypt-slides.ps">prezentacija</a>.
+<p>
+<li>Kriptografija u  OpenBSD-u: Opšti pregled.<br>
+    <a href="../events.html#usenix99">Usenix 1999</a>,
+    by <a href="mailto:deraadt@openbsd.org">Theo de Raadt</a>,
+    <a href="mailto:niklas@openbsd.org">Niklas Hallqvist</a>,
+    <a href="mailto:art@openbsd.org">Artur Grabowski</a>,
+    <a href="mailto:angelos@openbsd.org">Angelos D. Keromytis</a>,
+    <a href="mailto:provos@openbsd.org">Niels Provos</a>.<br>
+    <a href="../papers/crypt-paper.ps">dokument</a> i
+    <a href="../papers/crypt-slides.ps">prezentacija</a>.
+<p>
+<li>Implementiranje Internetske Razmene Ključeva "Internet Key Exchange - IKE".<br>
+    <a href="../events.html#usenix2000">Usenix 2000</a>,
+    by <a href="mailto:niklas@openbsd.org">Niklas Hallqvist</a> i
+    <a href="mailto:angelos@openbsd.org">Angelos D. Keromytis</a>.<br>
+    <a href="../papers/ikepaper.ps">dokument</a> i
+    <a href="../papers/ikeslides.ps">prezentacija</a>.
+<p>
+<li>Šifriranje Virtuelne Memorije<br>
+    <a href="../events.html#sec2000">Usenix Security 2000</a>,
+    <a href="mailto:provos@openbsd.org">Niels Provos</a>.<br>
+    <a href="../papers/swapencrypt.ps">dokument</a> i 
+    <a href="../papers/swapencrypt-slides.ps">prezentacija</a>.
+<p>
+<li>Dizajn Kriptografskog Sistema u OpenBSD-u.<br>
+    <a href="../events.html#usenix2003">Usenix 2003</a>, autori su
+    <a href="mailto:angelos@openbsd.org">Angelos D. Keromytis</a>,
+    <a href="mailto:jason@openbsd.org">Jason L. Wright</a>, i
+    <a href="mailto:deraadt@openbsd.org">Theo de Raadt</a>.<br>
+    <a href="../papers/ocf.pdf">dokument</a>.
+</ul>
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../back.gif" border="0" alt="OpenBSD"></a>
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: index.html,v 1.125 ]<br>
+$Translation: crypto.html,v 1.2 2003/11/13 22:50:01 thorna Exp $<br>
+$OpenBSD: crypto.html,v 1.1 2003/11/14 23:13:09 horacio Exp $
+</small>
+
+</body>
+</html>
