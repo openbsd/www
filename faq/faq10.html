@@ -405,8 +405,8 @@ example /etc/fstab that has one filesystem with userquotas enabled.
 
 <p>
 Now it's time to set the user's quotas. To do so you use the utility
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=edquota&sektion=8&format=html">edquota(8)</a>
-. A simple use is just <strong>edquota &lt user &gt</strong>. edquota(8)
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=edquota&sektion=8&format=html">edquota(8)</a>.
+A simple use is just <strong>edquota &lt;user&gt;</strong>. edquota(8)
 will use vi(1) to edit the quotas unless the environmental variable
 EDITOR is set to a different editor. For example:
 </p>
@@ -473,8 +473,8 @@ For example:
 This will go thru /etc/fstab to turn on the filesystems with quota
 options. Now that quotas are up and running, you can view them by
 the <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=quota&sektion=1&format=html">quota(1)</a>.
-Using a command of <strong>quota &lt; user &gt;</strong> will give that users
-info. quota with no arguments will give your quota statistics. For
+Using a command of <strong>quota &lt;user&gt;</strong> will give that users
+infoformation. When called with no arguments will give your quota statistics. For
 example:
 </p>
 
@@ -502,7 +502,332 @@ Disk quotas for user ericj (uid 1001):
 
 <p>
 By default quotas set in /etc/fstab will be started on boot. To turn them
-of use <strong>quotaoff -a</strong>
+off use <strong>quotaoff -a</strong>
+</p>
+
+<p>
+<a name="10.11">
+<h2>10.11 - How to Setup Kerberos Clients and Servers under OpenBSD</h2>
+</p>
+
+<p>
+As a user/administrator of OpenBSD systems, you are fortunate that
+KerberosIV is an pre-installed ocmponent of the default system. Here is
+a guide to setting up both the Kerberos realm server, as well as a
+client.
+</p>
+
+<p>
+An *EXTREMELY* important point to remember is that Kerberos clients
+and servers much have their system clocks synchronized. If there is
+more than a 5 minute time skew, you will receive wierd errors that
+do not immediately reveal themselves to be caused by time skew, such as:
+</p>
+
+<ul>
+<strong><pre>
+kinit: Can't send request (send_to_kdc) 
+</strong></pre>
+</ul>
+
+Another more accurate error is:
+
+<ul>
+<strong><pre>
+kauth: Time is out of bounds (krb_rd_req) 
+</strong></pre>
+</ul>
+
+<p>
+An easy way to synchronize system clocks is with xntpd, available in the ports tree at
+<strong>/usr/ports/sysutils/xntpd/</strong>.
+</p>
+
+This FAQ entry assumes you have prior knowledge of the Kerberos concepts.
+For a great, easy to understand, reference, see:
+
+<ul>
+<li><a href="http://www.freebsd.org/handbook/kerberos.html">The FreeBSD handbook</a> </li>
+<li>Use the command <strong>info kth-krb</strong></li>
+<li><a href="http://web.mit.edu/kerberos/www/dialogue.html">Designing an Authentication System: a Dialogue in Four Scenes</a></li>
+<li><a href="http://web.mit.edu/kerberos/www/papers.html#krb4">Network Security Private Communication in a Public World [Kaufman, Perlman, Speciner, 1995]</a></li>
+</ul>
+
+<h3>HOW TO SETUP THE KERBEROS IV REALM and SERVER</h3>
+
+<p>
+We will be setting up the CIARASYSTEMS.COM realm, with avalanche.ciarasystems.com as the main server.
+</p>
+
+<p>
+To start off, we will need to edit our configuration files. These files are located at <strong>/etc/kerberosIV/</strong>.
+The two files we are concerned about are <i>krb.realms</i> and <i>krb.conf</i>. Lets start off with <i>krb.conf</i>.
+</p>
+
+<ul>
+<strong><pre>
+[root@avalanche kerberosIV] cat krb.conf
+CIARASYSTEMS.COM
+CIARASYSTEMS.COM avalanche.ciarasystems.com admin server
+</strong></pre>
+</ul>
+
+<p>
+As you can see, this tells kerberos that the domain is <strong>CIARASYSTEMS.COM</strong> (or logical realm) and that
+within that domain, avalanche is the administration server. Next we will look at <i>krb.realms</i>. For more information
+on this refer to <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=krb.conf&sektion=5&format=html">krb.conf</a>.
+</p>
+
+<ul>
+<strong><pre>
+[root@avalanche kerberosIV] cat krb.realms
+avalanche.ciarasystems.com      CIARASYSTEMS.COM
+.ciarasystems.com               CIARASYSTEMS.COM
+</strong></pre>
+</ul>
+
+<p>
+krb.realms provides a translation from a hostname to the Kerberos realm name for the services provided by that host.
+Each line of the translation file is in one of the following forms (domain_name should be  of  the  form  .XXX.YYY).
+So in this example, avalanche is the hostname of a computer on the <strong>CIARASYSTEMS.COM</strong> realm. And
+.ciarasystems.com is the domain name on the realm <strong>CIARASYSTEMS.COM</strong>. Again, for further information read
+the <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=krb.realms&sektion=5&format=html">krb.realms</a>. man page.
+</p>
+
+<p>
+Next we will run <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=kbd_init&sektion=8&format=html">kdb_init(8)</a> 
+to create the initial Kerberos database.
+</p>
+
+<ul>
+<strong><pre>
+[root@avalanche kerberosIV] kdb_init
+Realm name [default  NO.DEFAULT.REALM ]: CIARASYSTEMS.COM
+You will be prompted for the database Master Password.
+It is important that you NOT FORGET this password.
+
+Enter Kerberos master password:
+Verifying password -
+Enter Kerberos master password:
+</strong></pre>
+</ul>
+
+<p>
+Next we need to use <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=kstash&sektion=8&format=html">kstash(8)</a> 
+which is used to save the Kerberos key distribution center (KDC) database master key in the master key cache file.
+</p>
+
+<ul>
+<strong><pre>
+[root@avalanche kerberosIV] kstash
+Enter Kerberos master password:
+
+Current Kerberos master key version is 1.
+
+Master key entered.  BEWARE!
+Wrote master key to /etc/kerberosIV/master_key
+
+Previous or default values are in [brackets] ,
+enter return to leave the same, or new value.
+
+Principal name: passwd
+Instance: avalanche
+
+<Not found>, Create [y] ? y
+
+Principal: passwd, Instance: avalanche, kdc_key_ver: 1
+New Password:                <----- Use 'RANDOM' as password
+Verifying password -
+New Password:
+
+Random password [y] ? y
+
+Principal's new key version = 1
+Expiration date (enter yyyy-mm-dd) [ 1999-12-31 ] ? 2001-12-31
+Max ticket lifetime (*5 minutes) [ 255 ] ?
+Attributes [ 0 ] ?
+Edit O.K.
+
+
+Principal name: rcmd
+Instance: avalanche
+
+<Not found>, Create [y] ? y
+Principal: rcmd, Instance: avalanche, kdc_key_ver: 1
+New Password:                 <----- Use 'RANDOM' as password
+Verifying password -
+New Password:
+
+Random password [y] ? y
+
+Principal's new key version = 1
+Expiration date (enter yyyy-mm-dd) [ 1999-12-31 ] ? 2001-12-31
+Max ticket lifetime (*5 minutes) [ 255 ] ?
+Attributes [ 0 ] ?
+Edit O.K.
+Principal name:               <----- Hit <ENTER> to end
+
+</strong></pre>
+</ul>
+
+<p>
+A srvtab file is the service key file. These must be extracted from the  Kerberos key  distribution center database in
+order for services to authenticate using Kerberos. For  each  hostname  specified  on
+the command line, <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ext_srvtab&sektion=8&format=html">ext_srvtab(8)</a>
+creates the service key file hostname-new-srvtab, containing all the entries in the database with an instance field of
+hostname.
+</p>
+
+<ul>
+<strong><pre>
+[root@avalanche kerberosIV] ext_srvtab avalanche
+
+Enter Kerberos master password:
+
+Current Kerberos master key version is 1.
+
+Master key entered.  BEWARE!
+Generating 'avalanche-new-srvtab'....
+</strong></pre>
+</ul>
+
+<p>
+So now all the Kerberos particulars are setup. All that is left is to enable
+boot-time loading of the Kerberos server and to enable Kerberized-daemons.
+</p>
+
+<p>
+In /etc/rc.conf, set:<br>
+<strong>kerberos_server=YES</strong>
+
+<ul>In /etc/inetd.conf uncomment:
+<pre><strong>
+telnet       stream  tcp     nowait  root    /usr/libexec/telnetd    telnetd -k
+klogin       stream  tcp     nowait  root    /usr/libexec/rlogind    rlogind -k
+kshell       stream  tcp     nowait  root    /usr/libexec/rshd       rshd -k
+kauth        stream  tcp     nowait  root    /usr/libexec/kauthd     kauthd
+</pre></strong>
+</ul>
+
+Then, either reboot, or:
+<ul>
+<pre><strong>
+[root@avalanche /] kill -HUP `cat /var/run/inetd.pid`
+[root@avalanche /] /usr/libexec/kerberos >> /var/log/kerberos.log &
+[root@avalanche /] /usr/libexec/kadmind -n >> /var/log/kadmind.log &
+</pre></strong>
+</ul>
+</p>
+
+<p>
+Note: this is a rather simple server setup. Usually, redundant servers
+are setup (as slave servers) so that if one server goes down, all the
+services that depend on Kerberos don't go down. We can also add 'su'
+privileges to a specific principal, see <a href="http://www.freebsd.org/handbook/kerberos.html#AEN4957">the FreeBSD Handbook</a>.
+</p>
+
+<h3>HOW TO KERBERIZE YOUR CLIENT WORKSTATION</h3>
+
+<p>
+We will be setting the workstation named <i>gatekeeper</i> to be in the
+<strong>CIARASYSTEMS.COM</strong> realm, with avalanche.ciarasystems.com as the main server.
+</p>
+
+<p>
+To start off, we need to setup our <i>krb.conf</i> and <i>krb.realms</i> like the above machine. This is so
+<i>gatekeeper</i> will know what server is the KDC and what domain it is on. Again here are the file contents.
+</p>
+
+<ul>
+<pre><strong>
+[root@gatekeeper kerberosIV] cat krb.conf
+CIARASYSTEMS.COM
+CIARASYSTEMS.COM avalanche.ciarasystems.com admin server
+
+[root@gatekeeper kerberosIV] cat krb.realms
+avalanche.ciarasystems.com      CIARASYSTEMS.COM
+.ciarasystems.com               CIARASYSTEMS.COM
+</pre></strong>
+</ul>
+
+<p>
+Now that is set up, we need to initalize kerberos. To obtain a ticket you use <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=kinit&sektion=1&format=html">kinit(1)</a>.
+</p>
+
+<ul>
+<pre><strong>
+bash-2.03$ kinit
+The OpenBSD Project (gatekeeper)
+Kerberos Initialization
+Kerberos name: jeremie
+Password:
+</pre></strong>
+</ul>
+
+<p>
+Now we have identified we can list our tickets with <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=klist&sektion=1&format=html">klist(1)</a>.
+</p>
+
+<ul>
+<pre><strong>
+bash-2.03$ klist
+Ticket file:    /tmp/tkt1000
+Principal:      jeremie@CIARASYSTEMS.COM
+
+  Issued           Expires          Principal
+Jun 28 01:03:25  Jun 28 11:03:25  krbtgt.CIARASYSTEMS.COM@CIARASYSTEMS.COM
+</pre></strong>
+</ul>
+
+<p>
+Looks like we are set now. All that's left to do is test it. Here we will test it with rlogin(1) and telnet(1).
+</p>
+
+<ul>
+<strong><pre>
+bash-2.03$ telnet avalanche
+Trying 192.168.0.38...
+Connected to avalanche.
+Escape character is '^]'.
+[ Trying mutual KERBEROS4 ... ]
+[ Kerberos V4 accepts you ]
+[ Kerberos V4 challenge successful ]
+Last login: Sun Jun 27 22:52:25 on ttyp1 from gatekeeper
+Warning: no Kerberos tickets issued.
+OpenBSD 2.5 (AVALANCHE) #5: Tue Apr  6 01:18:16 EDT 1999
+
+and 
+
+bash-2.03$ rlogin avalanche
+Last login: Sun Jun 27 22:53:39 on ttyp1 from gatekeeper
+Warning: no Kerberos tickets issued.
+OpenBSD 2.5 (AVALANCHE) #5: Tue Apr  6 01:18:16 EDT 1999
+</pre></strong>
+</ul>
+
+<p>
+We can tell that it is indeed using Kerberos to authenticate the rlogin
+session. To get rid of any tickets issued, you would use <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=kdestroy&sektion=1&format=html">kdestroy(1)</a>.
+For example:
+</p>
+
+<ul>
+<strong><pre>
+bash-2.03$ kdestroy
+Tickets destroyed.
+bash-2.03$ rlogin avalanche
+krcmd: No ticket file (tf_util)
+rlogin: warning, using standard rlogin: can't provide Kerberos auth data.
+avalanche: Connection refused
+</strong></pre>
+</ul>
+
+<p>
+Do not worry about 'Warning: no Kerberos tickets issued.' This is because
+we're only doing kerberos authentication, not ticket passing. If you want
+ticket passing, use Dug Song's <a href="http://www.monkey.org/~dugsong/ssh-afs-kerberos.html">krb4 SSH patches</a>.
+Stock KerberosIV  doesn't have support for tgt passing, either - only the AFS kaserver's implementation of krb4,
+since the regular KerberosIV kdc checks client IP address listed in the ticket.
 </p>
 
 <p>
@@ -517,7 +842,7 @@ of use <strong>quotaoff -a</strong>
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq10.html,v 1.18 1999/06/28 05:45:25 ericj Exp $</small>
+<small>$OpenBSD: faq10.html,v 1.19 1999/06/28 17:29:26 ericj Exp $</small>
 </p>
 </body>
 </html>
