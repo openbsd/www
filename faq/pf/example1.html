@@ -1,0 +1,247 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Example Firewall For Home or Small Office</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 2003 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../images/smalltitle.gif">
+<p>
+[<a href="ftp.html">Previous: Issues with FTP</a>]
+[<a href="index.html">Contents</a>]
+
+<p>
+<h1><font color="#e00000">PF: Example Firewall For Home or Small Office</font></h1>
+<hr>
+
+<p>
+In this example, we have a number of computers in one subnet, all of
+them should have full, unrestricted Internet access.
+
+<p>
+The system used for this task is a Pentium 100 with a 3c509B (ep0) and
+an Intel EtherExpress Pro/100 (fxp0).
+
+<p>
+We want a "default deny" rule set -- the only incoming traffic permitted
+will be to enable external maintenance via SSH (TCP port 22) and the
+Ident server (TCP port 113), which improves the behavior of some
+services, such as external mail and IRC servers.  This firewall should
+also respond to pings from the outside world, but other than port 113
+and 22, should look uninteresting to an outside port scan.
+
+<p>
+So, let's build up our rule set.
+
+<p>
+First, a few variables:
+
+<pre>
+     EXT="ep0"
+     INT="fxp0"
+     PRIVNETS="{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"
+</pre>
+
+The first two lines are interface names.  PRIVNETS is a list of
+"private" (RFC1918) networks which should not be seen on the external
+interface, and if they are, they should be squashed.
+
+<p>
+Now, our scrub rules.  We have no reason not to use the recommended
+scrubbing of all traffic in and out, so this is a simple one-liner:
+
+<pre>
+     scrub in all
+</pre>
+
+Our NAT rules are pretty simple:
+
+<pre>
+     nat on $EXT inet from $INT/24 to any -> ($EXT)
+</pre>
+
+The only redirection we want is for ftp-proxy(8) to enable FTP use
+behind the NAT:
+
+<pre>
+     rdr on $INT proto tcp from any to any port 21 -> 127.0.0.1 port 8021
+</pre>
+
+Now, the filter rules.  We start with the default-deny:
+
+<pre>
+     block in all
+     block out all
+</pre>
+
+At this point, all packets are "tagged" to be blocked.  However, this may
+get changed later.
+
+<p>
+Every Unix system has a "Loopback" interface, a virtual network interface that
+is used by applications to talk to each other inside the system.  IN GENERAL,
+one is best advised to pass all traffic through the loopback interface:
+
+<pre>
+     pass in quick on lo0 all
+     pass out quick on lo0 all
+</pre>
+
+Next, we block traffic on the external interface that just shouldn't be there,
+namely, unregistered and loopback IPs:
+
+<pre>
+     block in quick on $EXT from $PRIVNET to any
+     block out quick on $EXT from any to $PRIVNET
+</pre>
+
+Note that these are "quick" rules -- if there is a match, the packet is
+dropped and the processing stops here.
+
+<p>
+Now, we admit our SSH and Ident traffic:
+
+<pre>
+     pass in on $EXT inet proto tcp from any to any \
+          port { 22, 113 } flags S/SAFR
+</pre>
+
+In this case, we are passing data only on TCP ports 22 and 113, and only
+if the S flag is set and the A, F and R flags are NOT set.  This is a
+pretty good choice, though one should be careful with flags if you don't
+understand their full significance, there is a lot of bad advice
+floating around.
+
+<p>
+Next, we pass desired ICMP traffic.  This will let the machine respond to
+ping(1)s, traceroute(1)s, and not much else:
+
+<pre>
+     pass in quick inet proto icmp all icmp-type 8 code 0 keep state
+     pass in quick inet proto icmp all icmp-type 3 code 4 keep state
+     pass in quick inet proto icmp all icmp-type 11       keep state
+</pre>
+
+<p>
+I'm going to assume that the users on the internal interface know what
+they are doing and aren't going to be causing trouble.  This is not
+necessarily a valid assumption, a much more restrictive rule set would
+be appropriate for some environments.
+
+<pre>
+     pass in  quick on $INT all keep state
+</pre>
+
+The next rule is very optional:
+<pre>
+     pass out quick on $INT all keep state
+</pre>
+This line permits traffic which originates in the firewall to access
+machines in the internal network.  Why might you want this?  There are
+a few reasons.  If your firewall also is a DHCP server, DHCP will work
+better if it can "ping" machines to verify the availability of an IP
+address before assigning it.  It also permits someone who has ssh'ed
+into firewall from outside to access machines inside your network.
+While this may not be what you desire, keep in mind NOT putting this
+line in is not a large security benefit -- if someone gets access to your
+firewall, they can probably alter the firewall rules.
+
+<p>
+Note that if both of these lines are in place, the <tt>keep state</tt>
+option is not needed -- all packets will be able to pass through the
+external interface without the keep state.  HOWEVER, if the <tt>pass
+out</tt> line is NOT included, the <tt>pass in</tt> line must include
+<tt>keep state</tt>.  There is also some performance benefit to keeping
+state -- state tables are checked before rules are evaluated, and if a
+state match is found, the rules are not evaluated for a packet, so this
+can offer a performance benefit on a heavily loaded firewall, though
+in a system this simple, it is unlikely to generate enough load to 
+matter.
+
+<p>
+Finally, we have the rules permitting outgoing traffic on the external
+interface:
+
+<pre>
+     pass out quick on $EXT all keep state
+</pre>
+
+This is fairly self-explanatory: whatever hits the external interface
+from the inside of the firewall, let it out -- but keep state so the
+response can come back in.  Note that this rule is needed, otherwise
+traffic would never be able to exit the external port.
+
+<h2>The complete rule set</h2>
+<table border=0 width="650"><tr><td nowrap bgcolor="#EEEEEE"><pre>
+# Variables
+EXT= "ep0"
+INT= "fxp0"
+PRIVNETS= "{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"
+
+
+# Scrub rules
+scrub in all
+
+
+# NAT and Redirection rules
+nat on $EXT inet from $INT/24 to any -> ($EXT)
+
+# FTP redirections
+rdr on $INT proto tcp from any to any port 21 -> 127.0.0.1 port 8021
+
+
+# Filter Rules
+block in all
+block out all
+pass in quick on lo0 all
+pass out quick on lo0 all
+
+# block RFC1918 traffic on external interface
+block in quick on $EXT from $PRIVNETS to any
+block out quick on $EXT from any to $PRIVNETS
+
+# Pass the stuff we expect on the external interface
+pass in on $EXT inet proto tcp from any to any \
+     port { 22, 113 } flags S/SAFR
+
+# Pass desired ICMP traffic
+pass in quick inet proto icmp all icmp-type 8 code 0 keep state
+pass in quick inet proto icmp all icmp-type 3 code 4 keep state
+pass in quick inet proto icmp all icmp-type 11       keep state
+
+# Pass traffic to/from internal network
+pass in  quick on $INT all keep state
+pass out quick on $INT all keep state
+
+# Permit outgoing on $EXT
+pass out quick on $EXT all keep state
+</pre></td></tr></table>
+
+<p>
+You will note that there are no hard coded addresses in the body of this
+PF file.  The use of variable names makes it much easier to change
+things as needed, and the same or similar rule set can be used in many
+different systems.
+
+
+<p>
+[<a href="ftp.html">Previous: Issues with FTP</a>]
+[<a href="index.html">Contents</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>$OpenBSD: example1.html,v 1.1 2003/05/01 01:46:06 nick Exp $</small>
+
+</body>
+</html> 

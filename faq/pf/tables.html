@@ -1,0 +1,192 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Tables</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 2003 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../images/smalltitle.gif">
+<p>
+[<a href="macros.html">Previous: Lists and Macros</a>]
+[<a href="index.html">Contents</a>]
+[<a href="options.html">Next: Options</a>]
+
+<p>
+<h1><font color="#e00000">PF: Tables</font></h1>
+
+<hr>
+
+<p>
+A table is used to hold a group of IPv4 and/or IPv6 addresses.  Lookups
+against a table are very fast and consumes less memory and processor
+time than <a href="macros.html#lists">lists</a>. For this reason, a
+table is ideal for holding a large group of addresses as the lookup time
+on a table holding 50,000 addresses is only slightly more than for one
+holding 50 addresses. Tables can be used in the source and destination
+address fields in <a href="filter.html">filter</a>, 
+<a href="scrub.html"><tt>scrub</tt></a>,
+<a href="nat.html"><tt>nat</tt></a>, 
+and <a href="rdr.html">redirection</a> rules
+but they cannot be used as the redirection address in <tt>nat</tt> rules
+or in the routing options (<tt>route-to</tt>, <tt>reply-to</tt>,
+<tt>dup-to</tt>) of filter rules.  Tables are created either in 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+3.3">
+<tt>/etc/pf.conf</tt></a> or by using
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.3">
+<tt>pfctl(8)</tt></a>.
+
+<a name="config"></a>
+<h2>Configuration</h2>
+In <tt>pf.conf</tt>, tables are created using the <tt>table</tt>
+directive. The following attributes may be specified for each table:
+<ul>
+<li><tt>const</tt> - the contents of the table cannot be changed once the
+table is created. When this attribute is not specified,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.3">
+<tt>pfctl(8)</tt></a> may be used to add or remove addresses from the
+table at any time, even when running with a
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=securelevel&amp;sektion=7&amp;manpath=OpenBSD+3.3">
+securelevel(7)</a> of two or greater.
+<li><tt>persist</tt> - causes the kernel to keep the table in memory even
+when no rules refer to it. Without this attribute, the kernel will
+automatically remove the table when the last rule referencing it is
+flushed.
+</ul>
+
+<p>
+Example:
+<blockquote>
+<tt>
+table &lt;goodguys&gt; { 192.0.2.0/24 }<br>
+table &lt;rfc1918&gt; const { 192.168.0.0/16, 172.116.0.0/12, \<br>
+&nbsp;&nbsp;&nbsp;10.0.0.0/8 }<br>
+table &lt;spammers&gt; persist<br>
+<br>
+block in on fxp0 from { &lt;rfc1918&gt;, &lt;spammers&gt; } to any<br>
+pass&nbsp; in on fxp0 from &lt;goodguys&gt; to any<br>
+</tt>
+</blockquote>
+
+<p>
+Addresses can also be specified using the negation (or "not") modifier 
+such as:
+<blockquote>
+<tt>
+table &lt;goodguys&gt; { 192.0.2.0/24, !192.0.2.5 }
+</tt>
+</blockquote>
+
+<p>
+The <tt>goodguys</tt> table will now match all addresses in the
+192.0.2.0/24 network except for 192.0.2.5.
+
+<p>
+Note that table names are always enclosed in &lt; &gt;. 
+
+<p>
+Tables can also be populated from text files containing a list of IP
+addresses and networks:
+<blockquote>
+<tt>
+table &lt;spammers&gt; persist file "/etc/spammers"<br>
+<br>
+block in on fxp0 from &lt;spammers&gt; to any<br>
+</tt>
+</blockquote>
+
+<p>
+The file <tt>/etc/spammers</tt> would contain a list of IP addresses,
+one per line. Any line beginning with <tt>#</tt> is treated as a comment
+and ignored. 
+
+<a name="manip"></a>
+<h2>Manipulating with <tt>pfctl</tt></h2>
+Tables can be manipulated on the fly by using
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.3">
+<tt>pfctl(8)</tt></a>. For
+instance, to add entries to the &lt;spammers&gt; table created above:
+<blockquote>
+<tt># pfctl -t spammers -Tadd 218.70.0.0/16</tt>
+</blockquote>
+
+<p>
+This will also create the &lt;spammers&gt; table if it doesn't already
+exist. To list the addresses in a table:
+<blockquote>
+<tt># pfctl -t spammers -Tshow</tt>
+</blockquote>
+The <tt>-v</tt> argument can also be used with <tt>-Tshow</tt> to
+display statistics for each table entry. To remove addresses from a
+table:
+<blockquote>
+<tt>
+# pfctl -t spammers -Tdelete 218.70.0.0/16
+</tt>
+</blockquote>
+
+<p>
+For more information on manipulating tables with <tt>pfctl</tt>,
+please see
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.3">
+<tt>pfctl(8)</tt></a>.
+
+<a name="addr"></a>
+<h2>Specifying Addresses</h2>
+In addition to being specified by IP address, hosts may also be
+specified by their hostname.  When the hostname is resolved to an IP
+address, all resulting IPv4 and IPv6 addresses are placed into the
+table.  IP addresses can also be entered into a table by specifying a
+valid interface name or the <tt>self</tt> keyword in which case all
+addresses assigned to the interface(s) will be added to the table.
+
+<a name="match"></a>
+<h2>Address Matching</h2>
+An address lookup against a table will return the most narrowly matching
+entry. This allows for the creation of tables such as:
+<blockquote>
+<tt>
+table &lt;goodguys&gt; { 172.16.0.0/16, !172.16.1.0/24, 172.16.1.100 }<br>
+<br>
+block in on dc0 all<br>
+pass  in on dc0 from &lt;goodguys&gt; to any<br>
+</tt>
+</blockquote>
+
+<p>
+Any packet coming in through dc0 will have its source address matched
+against the table <tt>&lt;goodguys&gt;</tt>:
+<ul>
+<li>172.16.50.5 - narrowest match is 172.16.0.0/16; packet matches the
+table and will be passed
+<li>172.16.1.25 - narrowest match is !172.16.1.0/24; packet matches an
+entry in the table but that entry is negated (uses the "!" modifier);
+packet does not match the table and will be blocked
+<li>172.16.1.100 - exactly matches 172.16.1.100; packet matches the
+table and will be passed
+<li>10.1.4.55 - does not match the table and will be blocked
+</ul>
+
+<p>
+[<a href="macros.html">Previous: Lists and Macros</a>]
+[<a href="index.html">Contents</a>]
+[<a href="options.html">Next: Options</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>$OpenBSD: tables.html,v 1.1 2003/05/01 01:46:06 nick Exp $</small>
+
+</body>
+</html> 

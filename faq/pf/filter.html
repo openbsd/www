@@ -1,0 +1,535 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Packet Filtering</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 2002-2003 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../images/smalltitle.gif">
+<p>
+[<a href="rdr.html">Previous: Traffic Redirection</a>]
+[<a href="index.html">Contents</a>]
+[<a href="logging.html">Next: Logging</a>]
+
+<h1><font color="#e00000">PF: Packet Filtering</font></h1>
+
+<hr>
+
+<p>
+Packet filtering is the selective passing or blocking of data
+packets as they pass through a network interface. The criteria that 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+3.3">
+pf(4)</a> uses when inspecting packets is based on the Layer 3 
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ip&amp;sektion=4&amp;manpath=OpenBSD+3.3">IPv4</a> 
+and 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ip6&amp;sektion=4&amp;manpath=OpenBSD+3.3">
+IPv6</a>) and Layer 4
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tcp&amp;sektion=4&amp;manpath=OpenBSD+3.3">TCP</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=udp&amp;sektion=4&amp;manpath=OpenBSD+3.3">
+UDP</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=icmp&amp;sektion=4&amp;manpath=OpenBSD+3.3">
+ICMP</a>, and
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=icmp6&amp;sektion=4&amp;manpath=OpenBSD+3.3">
+ICMPv6</a>) headers. The most often used criteria are source and
+destination address, source and destination port, and protocol.
+
+<p>
+Filter rules specify the criteria that a packet must match and the
+resulting action, either block or pass, that is taken when a match is
+found. Filter rules are evaluated in sequential order, first to last.
+Unless the packet matches a rule containing the <tt>quick</tt> keyword,
+the packet will be evaluated against <i>all</i> filter rules before the
+final action is taken. The last rule to match is the "winner" and will
+dictate what action to take on the packet. There is an implicit
+<tt>pass all</tt> at the end of a filtering rule set meaning that if a
+packet does not match any filter rule the resulting action will be
+<tt>pass</tt>.
+
+<a name="syntax"></a>
+<h2>Rule Syntax</h2>
+The general, <i>highly simplified</i> syntax for filter rules is:
+<blockquote>
+<tt>
+<i>action</i> <i>direction</i> [log] [quick] on <i>int</i> [<i>af</i>] 
+[proto <i>protocol</i>] \<br>
+&nbsp;&nbsp;&nbsp;from <i>src_addr</i> [port <i>src_port</i>] to 
+<i>dst_addr</i> [port <i>dst_port</i>] \<br>
+&nbsp;&nbsp;&nbsp;[<i>tcp_flags</i>] [<i>state</i>]
+</tt>
+</blockquote>
+
+<dl>
+<dt><tt><i>action</i></tt>
+<dd>The action to be taken for matching packets, either <tt>pass</tt> or
+<tt>block</tt>. The <tt>pass</tt> action will pass the packet back to
+the kernel for further processing while the <tt>block</tt> action will
+react based on the setting of the
+<a href="options.html#block-policy"><tt>block-policy</tt></a> option. 
+The default reaction may be overridden by specifying either <tt>block
+drop</tt> or <tt>block return</tt>.
+
+<dt><tt><i>direction</i></tt>
+<dd>The direction the packet is moving on an interface, either
+<tt>in</tt> or <tt>out</tt>.
+
+<dt><tt>log</tt>
+<dd>Specifies that the packet should be logged via
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+3.3">
+pflogd(8)</a>. If the rule specifies the <tt>keep state</tt> or
+<tt>modulate state</tt> option then only the packet which establishes
+the state is logged. To log all packets regardless, use
+<tt>log-all</tt>.
+
+<dt><tt>quick</tt>
+<dd>If a packet matches a rule specifying <tt>quick</tt> then that rule
+is considered the last matching rule and the specified action is taken.
+
+<dt><tt><i>int</i></tt>
+<dd>The name of the network interface that the packet is moving through.
+
+<dt><tt><i>af</i></tt>
+<dd>The address family of the packet, either <tt>inet</tt> for IPv4 or
+<tt>inet6</tt> for IPv6. PF is usually able to determine this parameter
+based on the source and/or destination address(es).
+
+<dt><tt><i>protocol</i></tt>
+<dd>The Layer 4 protocol of the packet:
+<ul>
+<li><tt>tcp</tt>
+<li><tt>udp</tt>
+<li><tt>icmp</tt>
+<li><tt>icmp6</tt>
+<li>A valid protocol name from 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=protocols&amp;sektion=5&amp;manpath=OpenBSD+3.3">
+<tt>/etc/protocols</tt></a>
+<li>A protocol number between 0 and 255
+<li>A set of protocols using a <a href="macros.html#lists">list</a>.
+</ul>
+
+<dt><tt><i>src_addr</i></tt>, <tt><i>dst_addr</i></tt> 
+<dd>The source/destination address in the IP header. Addresses can be
+specified as:
+<ul>
+<li>A single IPv4 or IPv6 address.
+<li>A <a href="http://public.pacbell.net/dedicated/cidr.html">CIDR</a> 
+network block.
+<li>A fully qualified domain name that will be resolved via DNS when the
+rule set is loaded.
+<li>The name of a network interface. Any IP addresses assigned to the
+interface will be substituted into the rule.
+<li>The name of a network interface followed by a netmask. The resulting
+CIDR network block will be substituted into the rule at load time.
+<li>The name of a network interface in parentheses <tt>( )</tt>. This
+tells PF to update the rule if the IP address(es) on the named interface
+change. This is useful on an interface that gets its IP address via DHCP
+or dial-up as the rule set doesn't have to be reloaded each time the
+address changes.
+<li>The name of a network interface followed by the <tt>:network</tt> or
+<tt>:broadcast</tt> keywords. The resulting CIDR network (ie
+192.168.0.0/24) or broadcast address (ie 192.168.0.255) will be
+substituted into the rule when the rule set is loaded.
+<li>Any of the above but negated using the <tt>!</tt> ("not") modifier.
+<li>A set of addresses using a <a href="macros.html#lists">list</a>.
+<li>The keyword <tt>any</tt> meaning all addresses
+<li>The keyword <tt>all</tt> which is short for <tt>from any to
+any</tt>.
+</ul>
+
+<dt><tt><i>src_port</i></tt>, <tt><i>dst_port</i></tt>
+<dd>The source/destination port in the Layer 4 packet header. Ports can
+be specified as:
+<ul>
+<li>A number between 1 and 65535
+<li>A valid service name from
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=services&amp;sektion=5&amp;manpath=OpenBSD+3.3">
+<tt>/etc/services</tt></a>
+<li>A set of ports using a <a href="macros.html#lists">list</a>
+<li>A range:
+	<ul>
+	<li><tt>!=</tt> (not equal)
+	<li><tt>&lt;</tt> (less than)
+	<li><tt>&gt;</tt> (greater than)
+	<li><tt>&lt;=</tt> (less than or equal)
+	<li><tt>&gt;=</tt> (greater than or equal)
+	<li><tt>&gt;&lt;</tt> (range)
+	<li><tt>&lt;&gt;</tt> (inverse range)
+	</ul>
+	<dl>
+	<dd>The last two are binary operators (they take two arguments) and
+	do not include the arguments in the range.
+	</dl>
+</ul>
+
+<dt><tt><i>tcp_flags</i></tt>
+<dd>Specifies the flags that must be set in the TCP header when using
+<tt>proto tcp</tt>. Flags are specified as 
+<tt>flags <i>check</i>/<i>mask</i></tt>. For example: <tt>flags
+S/SA</tt> - this instructs PF to only look at the S and A (SYN and ACK)
+flags and to match if the SYN flag is "on".
+
+<dt><tt><i>state</i></tt>
+<dd>Specifies whether state information is kept on packets matching this
+rule.
+<ul>
+<li><tt>keep state</tt> - works with TCP, UDP, and ICMP.
+<li><tt>modulate state</tt> - works only with TCP. PF will generate
+strong Initial Sequence Numbers (ISNs) for packets matching this rule.
+</ul>
+</dl>
+
+<a name="defdeny"></a>
+<h2>Default Deny</h2>
+The recommended practice when setting up a firewall is to take a
+"default deny" approach. That is, to deny <i>everything</i> and then
+selectively allow certain traffic through the firewall. This approach is
+recommended because it errs on the side of caution and also makes
+writing a rule set easier.
+
+<p>
+To create a default deny filter policy the first two filter rules should
+be:
+<blockquote>
+<tt>
+block in  all<br>
+block out all
+</tt>
+</blockquote>
+
+<p>
+This will block all traffic on all interfaces in either direction from
+anywhere to anywhere.
+
+<a name="pass"></a>
+<h2>Passing Traffic</h2>
+Traffic must now be explicitly passed through the firewall or it will be
+dropped by the default deny policy. This is where packet criteria such
+as source/destination port, source/destination address, and protocol
+come into play. Whenever traffic is permitted to pass through the
+firewall the rule(s) should be written to be as restrictive as 
+possible. This is to ensure that the intended traffic, and only the
+intended traffic, is permitted to pass.
+
+<p>
+Some examples:
+<blockquote>
+<tt>
+# Pass traffic in on dc0 from the local network, 192.168.0.0/24,<br>
+# to the OpenBSD machine's IP address 192.168.0.1. Also, pass the<br>
+# return traffic out on dc0.<br>
+pass in &nbsp;on dc0 from 192.168.0.0/24 to 192.168.0.1<br>
+pass out on dc0 from 192.168.0.1 to 192.168.0.0/24<br>
+<br>
+<br>
+# Pass TCP traffic in on fxp0 to the web server running on the<br>
+# OpenBSD machine. The interface name, fxp0, is used as the<br>
+# destination address so that packets will only match this rule if<br>
+# they're destined for the OpenBSD machine.<br>
+pass in on fxp0 proto tcp from any to fxp0 port www
+</tt>
+</blockquote>
+
+<a name="state"></a>
+<h2>Keeping State</h2>
+One of Packet Filter's important abilities is "keeping state" or
+"stateful inspection". Stateful inspection refers to PF's ability to
+track the state, or progress, of a network connection. By storing
+information about each connection in a state table, PF is able to
+quickly determine if a packet passing through the firewall belongs to an
+already established connection. If it does, it is passed through
+the firewall without going through rule set evaluation.
+
+<p>
+Keeping state has many advantages including simpler rule sets and better
+packet filtering performance. PF is able to match packets moving in
+<i>either</i> direction to state table entries meaning that filter rules
+which pass returning traffic don't need to be written. And, since
+packets matching stateful connections don't go through rule set
+evaluation, the time PF spends processing those packets can be greatly
+lessened.
+
+<p>
+When a rule has the <tt>keep state</tt> option, the first packet
+matching the rule creates a "state" between the sender and receiver.  
+Now, not only do packets going from the sender to receiver match the
+state entry and bypass rule set evaluation, but so do the reply packets
+from receiver to sender. For example:
+<blockquote>
+<tt>
+pass out on fxp0 proto tcp from any to any keep state
+</tt>
+</blockquote>
+
+<p>
+This allows any outbound TCP traffic on the <tt>fxp0</tt> interface 
+and also permits the reply traffic to pass back through the firewall.
+While keeping state is a nice feature, its use significantly improves
+the performance of your firewall, as state lookups are dramatically
+faster than running a packet through the filter rules.
+
+<p>
+The <tt>modulate state</tt> option works just like <tt>keep state</tt>
+except that it only applies to TCP packets. With 
+<tt>modulate state</tt>, the Initial Sequence Number (ISN) of outgoing
+connections is randomized. This is useful for protecting connections
+initiated by certain operating systems that do a poor job of choosing
+ISNs.
+
+<p>
+Keep state on outgoing TCP, UDP, and ICMP packets and modulate TCP ISNs:
+<blockquote>
+<tt>
+pass out on fxp0 proto tcp from any to any modulate state<br>
+pass out on fxp0 proto { udp, icmp } from any to any keep state
+</tt>
+</blockquote>
+
+<p>
+Another advantage of keeping state is that corresponding ICMP traffic
+will be passed through the firewall. For example, if <tt>keep state</tt>
+is specified for a TCP connection and an ICMP source-quench message
+referring to this TCP connection arrives, it will be matched to the
+appropriate state entry and passed through the firewall.
+
+<p>
+It's important to note that stateful connections are limited to the
+interface they were created on. This is particularly important on
+routers and firewalls running PF, especially when a "default deny"
+policy is implemented as outlined above. If a firewall is keeping state
+on all outgoing connections on the external interface those packets must
+still be explicitly passed through the internal interface.
+
+<p>
+Note that <a href="nat.html"><tt>nat</tt></a>, 
+<a href="nat.html#binat"><tt>binat</tt></a>, and
+<a href="rdr.html"><tt>rdr</tt></a> rules implicitly create state for
+matching connections as long as the connection is passed by the
+filter rule set.
+
+<a name="udpstate"></a>
+<h2>Keeping State for UDP</h2>
+One will sometimes hear it said, that "one can not create state with
+UDP, as UDP is a stateless protocol!"  While it is true that a UDP
+communication session does not have any concept of state (an explicit
+start and stop of communications), this does not have any impact on PF's
+ability to create state for a UDP session.  In the case of protocols
+without "start" and "end" packets, PF simply keeps track of how long it
+has been since a matching packet has gone through.  If the timeout is
+reached, the state is cleared.  The timeout values can be set in the 
+<a href="options.html">options</a> section of the <tt>/etc/pf.conf</tt>
+file.
+
+<a name="tcpflags"></a>
+<h2>TCP Flags</h2>
+Matching TCP packets based on flags is most often used to filter TCP
+packets that are attempting to open a new connection. The TCP flags and
+their meanings are listed here:
+<ul>
+<li><b>F</b> : FIN  - Finish; end of session
+<li><b>S</b> : SYN  - Synchronize; indicates request to start session
+<li><b>R</b> : RST  - Reset; drop a connection
+<li><b>P</b> : PUSH - Push; packet is sent immediately
+<li><b>A</b> : ACK  - Acknowledgement
+<li><b>U</b> : URG  - Urgent
+<li><b>E</b> : ECE  - Explicit Congestion Notification Echo
+<li><b>W</b> : CWR  - Congestion Window Reduced
+</ul>
+
+<p>
+To have PF inspect the TCP flags during evaluation of a rule the
+<tt>flags</tt> keyword is used with the following syntax:
+<blockquote>
+<tt>
+flags <i>check</i>/<i>mask</i>
+</tt>
+</blockquote>
+
+<p>
+The <tt><i>mask</i></tt> part tells PF to only inspect the specified flags
+and the <tt><i>check</i></tt> part specifies which flag(s) must be
+"on" in the header for a match to occur.
+<blockquote>
+<tt>
+pass in on fxp0 proto tcp from any to any port ssh flags S/SA
+</tt>
+</blockquote>
+
+<p>
+The above rule passes TCP traffic with the SYN flag set while only
+looking at the SYN and ACK flags. A packet with the SYN and URG flags
+would match the above rule while a packet with SYN and ACK or just ACK
+would not.
+
+<p>
+Note: in previous versions of OpenBSD, the following syntax was
+supported:
+<blockquote>
+<tt>
+. . . flags S
+</tt>
+</blockquote>
+
+<p>
+This is no longer true. A mask must now <i>always</i> be specified.
+
+<p>
+Flags are often used in conjunction with <tt>keep state</tt> rules to 
+help control the creation of state entries:
+<blockquote>
+<tt>
+pass out on fxp0 proto tcp all flags S/SAFR keep state
+</tt>
+</blockquote>
+
+<p>
+This would permit the creation of state on any outgoing TCP packet
+with the SYN flag set out of the SYN, ACK, FIN, and RST flags.
+
+<p>
+One should be careful with using flags -- understand what you are
+doing and why, and be careful with the advice people give as a lot of 
+it is bad.  Some people have suggested creating state "only if the SYN flag
+is set, and no others". Such a rule would end with: 
+<pre>
+     . . . flags S/FSRPAUEW  <i>bad idea!!</i>
+</pre>
+
+<p>
+The theory is, create state only on the start of the TCP session, and
+the session should start with a SYN flag, and no others.  The problem
+is some sites are starting to use the ECN flag and any site using ECN
+that tries to connect to you would be rejected by such a rule.  A
+much better guideline is:
+<blockquote>
+<tt>
+. . . flags S/SAFR
+</tt>
+</blockquote>
+
+<p>
+This means match this packet <i>only if</i> SYN is set, and ACK, FIN and
+RST are not.
+
+<a name="quick"></a>
+<h2>The <tt>quick</tt> Keyword</h2>
+As indicated earlier, each packet is evaluated against the filter rule
+set from top to bottom.  By default, the packet is marked for passage, which
+can be changed by any rule, and could be changed back and forth several
+times before the end of the filter rules. <b>The last matching rule
+"wins".</b>  There is an exception to this: the <tt>quick</tt> option
+on a filtering rule has the effect of canceling any further rule
+processing and causes the specified action to be taken. Let's look at a
+couple examples:
+
+<p>
+Wrong:
+<blockquote>
+<tt>
+block in on fxp0 proto tcp from any to any port ssh<br>
+pass &nbsp;in all
+</tt>
+</blockquote>
+
+<p>
+In this case, the <tt>block</tt> line may be evaluated, but will never
+have any effect, as it is then followed by a line which will pass
+everything.
+
+<p>
+Better:
+<blockquote>
+<tt>
+block in quick on fxp0 proto tcp from any to any port ssh<br>
+pass &nbsp;in all
+</tt>
+</blockquote>
+
+<p>
+These rules are evaluated a little differently.  If the <tt>block</tt>
+line is matched, due to the <tt>quick</tt> option, the packet will be
+blocked, and the rest of the ruleset will be ignored.
+
+<a name="ipopts"></a>
+<h2>IP Options</h2>
+By default, PF blocks packets with IP options set. This can make the job
+more difficult for "OS fingerprinting" utilities like nmap. If you have
+an application that requires the passing of these packets, such as
+multicast or IGMP, you can use the <tt>allow-opts</tt> directive:
+<blockquote>
+<tt>
+pass in quick on fxp0 all allow-opts
+</tt>
+</blockquote>
+
+<a name="example"></a>
+<h2>Filtering Rule Set Example</h2>
+Below is an example of a filtering rule set. The machine running PF is
+acting as a firewall between a small, internal network and the Internet.
+Only the filter rules are shown; 
+<a href="queueing.html">queueing</a>, 
+<a href="nat.html">NAT</a>, 
+<a href="rdr.html">rdr</a>, 
+etc have been left out of this example.
+<br>
+<br>
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+ext_if  = fxp0
+int_if  = dc0
+lan_net = 192.168.0.0/24
+
+# setup a default deny policy
+block in  all
+block out all
+
+# only allow ssh connections from the local network if it's from the
+# trusted computer, 192.168.0.15. use "block drop" so that a TCP RST is
+# sent to close blocked connections right away. use "quick" so that this
+# rule is not overridden by the "pass" rules below.
+block drop in quick on $int_if proto tcp from ! 192.168.0.15 \
+   to $int_if port ssh flags S/SA
+
+# pass all traffic to and from the local network destined for the 
+# firewall machine
+pass in  on $int_if from $lan_net to $int_if 
+pass out on $int_if from $int_if to $lan_net
+
+# pass tcp, udp, and icmp out on the external (Internet) interface. 
+# keep state on udp and icmp and modulate state on tcp.
+pass out on $ext_if proto tcp all modulate state flags S/SA
+pass out on $ext_if proto { udp, icmp } all keep state
+
+# allow ssh connections in on the external interface as long as they're
+# NOT destined for the firewall (ie, they're destined for a machine on
+# the local network). log the initial packet so that we can later tell
+# who is trying to connect.
+pass in log on $ext_if proto tcp from any to { !$ext_if, !$int_if } \
+   port ssh flags S/SA keep state
+</pre>
+</td></tr>
+</table>
+
+<p>
+[<a href="rdr.html">Previous: Traffic Redirection</a>]
+[<a href="index.html">Contents</a>]
+[<a href="logging.html">Next: Logging</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>$OpenBSD: filter.html,v 1.1 2003/05/01 01:46:06 nick Exp $</small>
+
+</body>
+</html> 

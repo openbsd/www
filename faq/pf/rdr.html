@@ -1,0 +1,299 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Traffic Redirection</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 2002-2003 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../images/smalltitle.gif">
+<p>
+[<a href="nat.html">Previous: Network Address Translation</a>]
+[<a href="index.html">Contents</a>]
+[<a href="filter.html">Next: Packet Filtering</a>]
+
+<h1><font color="#e00000">PF: Redirection (<tt>rdr</tt>)</font></h1>
+<hr>
+
+<p>
+When you have NAT running in your office, you have the entire Internet
+available to all your machines.  What if you have a machine behind the
+NAT gateway that needs to be accessed from outside?  This is where
+redirection comes in.  Redirection allows incoming traffic to be sent to
+a machine behind the NAT gateway.
+
+<p>
+Let's look at an example:
+<blockquote>
+<tt>
+rdr on tl0 proto tcp from any to any port 80 -&gt; 192.168.1.20
+</tt>
+</blockquote>
+
+<p>
+This line redirects TCP port 80 (web server) traffic to a machine inside
+the network at 192.168.1.20.  So, even though 192.168.1.20 is behind
+your gateway and inside your network, the outside world can access it.
+
+<p>
+The <tt>from any to any</tt> part of the above <tt>rdr</tt> line can
+be quite useful -- if you know what addresses or subnets are supposed
+to have access to the web server at port 80, you can restrict them
+here:
+<blockquote>
+<tt>
+rdr on tl0 proto tcp from 27.146.49.0/24 to any port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;192.168.1.20
+</tt>
+</blockquote>
+
+<p>
+This will redirect only the specified subnet.  Note this implies you can
+redirect different incoming hosts to different machines behind the
+gateway. This can be quite useful. For example, you could have users
+at remote sites access their own desktop computers using the same
+port and IP address on the gateway as long as you know the IP address
+they will be connecting from:
+<blockquote>
+<tt>
+rdr on tl0 proto tcp from 27.146.49.14 to any port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;192.168.1.20<br>
+rdr on tl0 proto tcp from 16.114.4.89 to any port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;192.168.1.22<br>
+rdr on tl0 proto tcp from 24.2.74.178 to any port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;192.168.1.23
+</tt>
+</blockquote>
+
+<p>
+Be aware that packets matching an <tt>rdr</tt> rule still must pass
+through the filtering engine and will be blocked or passed based on the
+filter rules that have been defined. Also be aware that packets matching
+an <tt>rdr</tt> rule will have their source IP address changed to match
+the redirection address specified in the <tt>rdr</tt> rule.  Consider
+this scenario:
+<ul>
+<li>192.0.2.1 - host on the Internet
+<li>24.65.1.13 - external address of OpenBSD router
+<li>192.168.1.5 - internal IP address of web server
+</ul>
+
+<p>
+Redirection rule:
+<blockquote>
+<tt>
+rdr on tl0 proto tcp from 192.0.2.1 to any port 80 -&gt; 192.168.1.5
+</tt>
+</blockquote>
+
+<p>
+Before the <tt>rdr</tt> rule is processed:
+<ul>
+<li>Source IP: 192.0.2.1
+<li>Destination IP: 24.65.1.13
+</ul>
+
+<p>
+After the <tt>rdr</tt> rule is processed:
+<ul>
+<li>Source IP: 192.0.2.1
+<li>Destination IP: 192.168.1.5
+</ul>
+
+<p>
+The filtering engine will see the IP packet as it looks after
+<tt>rdr</tt> rules have been processed.
+
+<a name="security"></a>
+<h2>Security Implications</h2>
+Redirection does have security implications. Punching a hole in the
+firewall to allow traffic into the internal, protected network,
+potentially opens up the internal machine to compromise. If traffic is
+forwarded to an internal web server for example, and a vulnerability is
+discovered in the web server daemon or in a CGI script run on the web
+server, then that machine can be compromised from an intruder on the
+Internet. From there, the intruder has a doorway to the internal
+network, one that is permitted to pass right through the firewall.
+
+<p>
+These risks can be minimized by keeping the externally accessed system
+tightly confined on a separate network. This network is often referred to
+as a Demilitarized Zone (DMZ) or a Private Service Network (PSN). This
+way, if the web server is compromised, the effects can be limited to
+the DMZ/PSN network by careful filtering of the traffic permitted to and
+from the DMZ/PSN.
+
+<a name="reflect"></a>
+<h2>Redirection and Reflection</h2>
+Often, redirection rules are used to forward incoming connections from
+the Internet to a local server with a private address in the internal
+network or LAN, as in:
+<blockquote>
+<tt>
+server = 192.168.1.40<br>
+<br>
+rdr on $ext_if proto tcp from any to $ext_if port 80 -&gt; $server \<br>
+&nbsp;&nbsp;&nbsp;port 80
+</tt>
+</blockquote>
+
+<p>
+But when the redirection rule is tested from a client on the LAN, it
+doesn't work. The reason is that redirection rules apply only to
+packets that pass through the specified interface ($ext_if, the external
+interface, in the example). Connecting to the external address of the
+firewall from a host on the LAN, however, does not mean the packets will
+actually pass through its external interface. The TCP/IP stack on the
+firewall compares the destination address of incoming packets with its
+own addresses and aliases, and detects connections to itself as soon as
+they have passed the internal interface. Such packets do not physically
+pass through the external interface, and the stack does not simulate
+such a passage in any way. Thus, PF never sees these packets on the
+external interface, and the redirection rule, specifying the external
+interface, does not apply.
+
+<p>
+Adding a second redirection rule for the internal interface does not
+have the desired effect either. When the local client connects to the
+external address of the firewall, the initial packet of the TCP
+handshake reaches the firewall through the internal interface. The
+redirection rule does apply and the destination address gets replaced
+with that of the internal server. The packet gets forwarded back through
+the internal interface and reaches the internal server. But the source
+address has not been translated, and still contains the local client's
+address, so the server sends its replies directly to the client. The
+firewall never sees the reply and has no chance to properly reverse the
+translation. The client receives a reply from a source it never
+expected, and drops it. The TCP handshake then fails and no connection
+can be established.
+
+<p>
+Still, it's often desirable for clients on the LAN to connect to the
+same internal server as external clients and to do so transparently.
+There are several solutions for this problem: 
+
+<p>
+<b>Split horizon DNS</b>
+
+<p>
+It's possible to configure DNS servers to answer queries from local
+hosts differently than external queries so that local clients will
+receive the internal server's address during name resolution. They will
+then connect directly to the local server, and the firewall isn't
+involved at all. This reduces local traffic, since packets don't have to
+be sent through the firewall.
+
+<p>
+<b>Moving the server into a separate local network</b>
+
+<p>
+Adding an additional network interface to the firewall and moving the
+local server from the client's network into a dedicated network (DMZ)
+allows redirecting of connections from local clients in the same way as
+the redirection of external connections. Use of separate networks has
+several advantages, including improving security by isolating the server
+from the remaining local hosts. Should the server (which in our case is
+reachable from the Internet) ever become compromised, it can't access
+other local hosts directly, as all connections have to pass through the
+firewall.
+
+<p>
+<b>TCP proxying</b>
+
+<p>
+A generic TCP proxy can be setup on the firewall, either listening on
+the port to be forwarded or getting connections on the internal
+interface redirected to the port it's listening on. When a local client
+connects to the firewall, the proxy accepts the connection, establishes
+a second connection to the internal server, and forwards data between
+those two connections.
+
+<p>
+Simple proxies can be created using 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=inetd&amp;sektion=8&amp;manpath=OpenBSD+3.3">
+inetd(8)</a> and
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=nc&amp;sektion=1&amp;manpath=OpenBSD+3.3">
+nc(1)</a>. The following <tt>/etc/inetd.conf</tt> entry creates a listening
+socket bound to the loopback address (127.0.0.1) and port 5000.
+Connections are forwarded to port 80 on server 192.168.1.10.
+<blockquote>
+<tt>
+127.0.0.1:5000 stream tcp wait nobody /usr/bin/nc nc -w \<br>
+&nbsp;&nbsp;&nbsp;20 192.168.1.10 80
+</tt>
+</blockquote>
+
+<p>
+The following redirection rule forwards port 80 on the internal
+interface to the proxy:
+<blockquote>
+<tt>
+rdr on $int_if proto tcp from $int_net to $ext_if port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;127.0.0.1 port 5000
+</tt>
+</blockquote>
+
+<p>
+<b>RDR and NAT combination</b>
+
+<p>
+With an additional NAT rule on the internal interface, the lacking
+source address translation described above can be achieved.
+<blockquote>
+<tt>
+rdr on $int_if proto tcp from $int_net to $ext_if port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;$server
+<br>
+no nat on $int_if proto tcp from $int_if to $int_net<br>
+nat on $int_if proto tcp from $int_net to $server port 80 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;$int_if
+</tt>
+</blockquote>
+
+<p>
+This will cause the initial packet from the client to be translated
+again when it's forwarded back through the internal interface, replacing
+the client's source address with the firewall's internal address. The
+internal server will reply back to the firewall, which can reverse both
+NAT and RDR translations when forwarding to the local client. This
+construct is rather complex, as it creates two separate states for each
+reflected connection. Care must taken to prevent the NAT rule from
+applying to other traffic, for instance connections originating from
+external hosts (through other redirections) or the firewall itself. Note
+that the <tt>rdr</tt> rule above will cause the TCP/IP stack to see
+packets arriving on the internal interface with a destination address
+inside the internal network. To prevent the stack from issuing ICMP
+redirect messages (telling the client that its destination is reachable
+directly, breaking the reflection), disable redirects on the gateway,
+using
+<blockquote>
+<tt>
+# sysctl -w net.inet.ip.redirect=0<br>
+# sysctl -w net.inet6.ip6.redirect=0 <i>(if using IPv6)</i>
+</tt>
+</blockquote>
+
+<p>
+In general, the previously mentioned solutions should be used instead.
+
+<p>
+[<a href="nat.html">Previous: Network Address Translation</a>]
+[<a href="index.html">Contents</a>]
+[<a href="filter.html">Next: Packet Filtering</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>$OpenBSD: rdr.html,v 1.1 2003/05/01 01:46:06 nick Exp $</small>
+
+</body>
+</html> 

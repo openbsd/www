@@ -1,0 +1,193 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Anchors and Named Rule Sets</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 2003 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../images/smalltitle.gif">
+<p>
+[<a href="logging.html">Previous: Logging</a>]
+[<a href="index.html">Contents</a>]
+[<a href="shortcuts.html">Next: Shortcuts For Creating Rule Sets</a>]
+
+<p>
+<h1><font color="#e00000">PF: Anchors and Named Rule Sets</font></h1>
+
+<hr>
+
+<p>
+In addition to the main rule set, PF can also evaluate sub rule sets.
+Since sub rule sets can be manipulated on the fly by using 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.3">
+<tt>pfctl(8)</tt></a>, they provide a convenient way of dynamically
+altering an active rule set. Whereas a <a href="tables.html">table</a> 
+is used to hold a dynamic list of addresses, a sub rule set is used to
+hold a dynamic set of filter, <tt>nat</tt>, <tt>rdr</tt>, and
+<tt>binat</tt> rules.
+
+<p>
+Sub rule sets are attached to the main rule set by using anchors.  There
+are four types of <tt>anchor</tt> rules:
+<ul>
+<li><tt>anchor <i>name</i></tt> - evaluates all <a href="filter.html">
+filter</a> rules in the anchor <i><tt>name</tt></i>
+<li><tt>binat-anchor <i>name</i></tt> - evaluates all 
+<a href="nat.html#binat"><tt>binat</tt></a> rules in the
+anchor <i><tt>name</tt></i>
+<li><tt>nat-anchor <i>name</i></tt> - evaluates all <a href="nat.html">
+<tt>nat</tt></a> rules in the anchor <i><tt>name</tt></i>
+<li><tt>rdr-anchor <i>name</i></tt> - evaluates all <a href="rdr.html">
+<tt>rdr</tt></a> rules in the anchor <i><tt>name</tt></i>
+</ul>
+
+Only the main rule set can contain <tt>anchor</tt> rules.
+
+<a name="named"></a>
+<h2>Named Rule Sets</h2>
+A named rule set is a group of filter and/or translation rules that has
+been assigned a name. An <tt>anchor</tt> point may contain more than one 
+such rule set. When PF comes across an <tt>anchor</tt> rule in the main
+rule set, it will evaluate all the rule sets attached to that
+<tt>anchor</tt> point in alphabetical order according to their names.
+Processing will then continue in the main rule set unless the packet
+matches a filter rule that uses the <tt>quick</tt> option or a
+translation rule within the anchor in which case the match will be
+considered final and will abort the evaluation of rules in both the
+anchor and the main rule sets.
+
+<p>
+For example:
+<blockquote>
+<tt>
+ext_if = "fxp0"<br>
+<br>
+block on $ext_if all<br>
+pass  out on $ext_if all keep state<br>
+anchor goodguys
+</tt>
+</blockquote>
+
+<p>
+This rule set sets a default deny policy on fxp0 for both incoming and
+outgoing traffic. Traffic is then statefully passed out and an anchor
+rule is created named <tt><i>goodguys</i></tt>. To add rules to the
+<tt><i>goodguys</i></tt> anchor the following commands can be used:
+<blockquote>
+<tt>
+# echo "pass in proto tcp from 192.0.2.3 to any port 22" \<br>
+&nbsp;&nbsp;&nbsp;| pfctl -a goodguys:ssh -f -
+</tt>
+</blockquote>
+
+<p>
+This adds a <tt>pass</tt> rule to the rule set named <tt><i>ssh</i></tt>
+attached to the <tt><i>goodguys</i></tt> anchor. PF will then evaluate
+this rule (and any other filter rules that get added) when it reaches
+the <tt>anchor goodguys</tt> line in the main rule set.
+
+<p>
+Rules can also be saved and loaded from a text file:
+<blockquote>
+<tt>
+# cat &gt;&gt; /etc/anchor-goodguys-www<br>
+pass in proto tcp from 192.0.2.3 to any port 80<br>
+pass in proto tcp from 192.0.2.4 to any port { 80 443 }<br>
+<br>
+# pfctl -a goodguys:www -f /etc/anchor-goodguys-www<br>
+</tt>
+</blockquote>
+
+<p>
+This loads the rules from the <tt>/etc/anchor-goodguys-www</tt> file
+into the named rule set <tt><i>www</i></tt> in the
+<tt><i>goodguys</i></tt> anchor.
+
+<a name="options"></a>
+<h2>Anchor Options</h2>
+Optionally, <tt>anchor</tt> rules can specify interface, protocol,
+source and destination address, etc using the same syntax as filter
+rules. When such information is given, <tt>anchor</tt> rules are only
+processed if the packet matches the <tt>anchor</tt> rule's definition.
+For example:
+<blockquote>
+<tt>
+ext_if = "fxp0"<br>
+<br>
+block on $ext_if all<br>
+pass  out on $ext_if all keep state<br>
+anchor ssh in on $ext_if proto tcp from any to any port 22<br>
+</tt>
+</blockquote>
+
+<p>
+The rules in the <tt>anchor <i>ssh</i></tt> are only evaluated for TCP
+packets destined for port 22 that come in on fxp0. Rules are then added
+to the <tt>anchor</tt> like so:
+<blockquote>
+<tt>
+# echo "pass in from 192.0.2.10 to any" | pfctl -a ssh:allowed -f -
+</tt>
+</blockquote>
+
+<p>
+So, even though the filter rule doesn't specify an interface, protocol,
+or port, the host 192.0.2.10 will only be permitted to connect using 
+SSH because of the <tt>anchor</tt> rule's definition.
+
+<a name="manip"></a>
+<h2>Manipulating Named Rule Sets</h2>
+Manipulation of named rule sets is performed via <tt>pfctl</tt>. It can
+be used to add and remove rules from a rule set without reloading the
+main rule set.
+
+<p>
+To list all the rules in the rule set <tt><i>allowed</i></tt> attached
+to the <tt><i>ssh</i></tt> <tt>anchor</tt>:
+<blockquote>
+<tt>
+# pfctl -a ssh:allowed -s rules
+</tt>
+</blockquote>
+
+<p>
+To flush all filter rules from the same rule set: 
+<blockquote>
+<tt>
+# pfctl -a ssh:allowed -F rules
+</tt>
+</blockquote>
+
+<p>
+If the rule set name is omitted, the action applies to all rules in the
+anchor.
+
+<p>
+For a full list of commands please see
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.3">
+<tt>pfctl(8)</tt></a>.
+
+<p>
+[<a href="logging.html">Previous: Logging</a>]
+[<a href="index.html">Contents</a>]
+[<a href="shortcuts.html">Next: Shortcuts For Creating Rule Sets</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>$OpenBSD: anchors.html,v 1.1 2003/05/01 01:46:06 nick Exp $</small>
+
+</body>
+</html> 
