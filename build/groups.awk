@@ -12,7 +12,7 @@
 # I Ian F. Darwin
 # F Every Monday at 25:00
 # M ian@ougge.erewhon
-# U http://www.ougge.erewhon
+# U http://www.ougge.erewhon/
 # N OpenBSD
 
 # into HTML to make nice neat tables.

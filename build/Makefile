@@ -18,3 +18,6 @@ groups.countries:	groups.dat mkcountries Makefile
 		mkcountries groups.dat > $@
 support.countries:	support.dat mkcountries Makefile
 		mkcountries support.dat > $@
+
+clean:
+		rm -f *.countries

@@ -12,11 +12,10 @@
 # O Consultant
 # I Ian F. Darwin
 # M ian@ougge.erewhon
-# U http://www.darwinsys.com
+# U http://www.ougge.erewhon/
 # N Author of lots of kool stuff.
 
 # into HTML to make nice neat tables.
-
 
 /^#/ { next; }
 
