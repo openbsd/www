@@ -1,0 +1,148 @@
+
+----------------------------------------------------------------------------
+                
+                        OpenBSD Security Advisory
+        
+                            December 18, 2000
+
+             Single-byte buffer overflow vulnerability in ftpd
+
+----------------------------------------------------------------------------
+
+SYNOPSIS
+
+A relatively obscure one-byte buffer overflow bug present in ftpd(8) turns
+out to be a serious problem, yielding remote users root access under
+certain conditions.  For a system to be vulnerable, ftpd must have been
+explicitly enabled by the administrator (OpenBSD ships with it OFF by
+default) and the attacker must have write access to at least one directory.
+Therefore, anonymous read-only FTP servers are safe (we recommend applying
+the patch regardless, of course).  Non-anonymous FTP administrators should
+seriously consider using a more secure transport like SSH.
+
+A fix for this problem was committed on December 4th.  OpenBSD developers
+became aware of a publicly available exploit on December 17th.
+
+----------------------------------------------------------------------------
+
+AFFECTED SYSTEMS
+
+This vulnerability affects OpenBSD versions through 2.8.  FreeBSD is
+reportedly not vulnerable.  NetBSD is vulnerable to the same bug and a patch
+was applied to their tree on December 14th.
+
+----------------------------------------------------------------------------
+
+TECHNICAL DETAILS
+
+The offending code is as follows:
+
+	char npath[MAXPATHLEN];
+	int i;
+
+	for (i = 0; *name != '\0' && i < sizeof(npath) - 1; i++, name++) {
+		npath[i] = *name;
+		if (*name == '"')
+			npath[++i] = '"';
+	}
+	npath[i] = '\0';
+
+In <sys/param.h>, MAXPATHLEN is defined to be 1024 bytes.  The for()
+construct here correctly bounds variable `i' to be < 1023, such that when
+the loop has ended, no byte past npath[1023] may be written with '\0'.
+However, since `i' is also incremented in the nested statements here,
+it can become as large as 1024, and npath[1024] is past the end of the
+allocated buffer space.
+
+----------------------------------------------------------------------------
+
+RESOLUTION
+
+OpenBSD does not ship with ftpd enabled by default.  If you are using it,
+disable it until you are fixed by editing /etc/inetd.conf and restarting
+the inetd(8) daemon.
+
+Then, apply the fix below to your OpenBSD 2.8 source tree. The patch is also
+available at http://www.openbsd.org/errata.html (005).
+
+----------------------------------------------------------------------------
+
+REFERENCES
+
+The original bug report,
+
+	http://www.geocrawler.com/lists/3/OpenBSD/254/75/4767480/
+
+Security and errata,
+
+	http://www.openbsd.org/security.html
+	http://www.openbsd.org/errata.html
+
+Olaf Kirch discusses one-byte overruns in a post to BUGTRAQ in 1998 with
+subject "The poisoned NUL byte",
+
+	http://www.securityfocus.com/archive/1/10884
+
+----------------------------------------------------------------------------
+
+CREDITS
+
+This vulnerability was first reported to OpenBSD Kristian Vlaardingerbroek
+through the bugs@openbsd.org mailing list.  Kristian acknowledged in a later
+post that it was Ronald (a.k.a. Scrippie) who originally found the bug.
+
+The fix provided in the original bug report is incorrect.  Credit goes to
+Jun-ichiro itojun Hagino <itojun@openbsd.org> for applying a safe fix to
+the OpenBSD 2.8-current tree.  This patch has also been applied to the
+stable branch.
+
+----------------------------------------------------------------------------
+
+OPENBSD 2.8 PATCH
+
+Apply by doing:
+	cd /usr/src
+	patch -p0 < 005_ftpd.patch
+
+And then rebuild and install ftpd:
+	cd libexec/ftpd
+	make obj
+	make depend
+	make
+	make install
+
+Index: libexec/ftpd/ftpd.c
+===================================================================
+RCS file: /cvs/src/libexec/ftpd/ftpd.c,v
+retrieving revision 1.79
+diff -u -r1.79 ftpd.c
+--- libexec/ftpd/ftpd.c	2000/09/15 07:13:45	1.79
++++ libexec/ftpd/ftpd.c	2000/12/05 17:06:29
+@@ -1959,15 +1959,21 @@
+ replydirname(name, message)
+ 	const char *name, *message;
+ {
++	char *p, *ep;
+ 	char npath[MAXPATHLEN];
+-	int i;
+ 
+-	for (i = 0; *name != '\0' && i < sizeof(npath) - 1; i++, name++) {
+-		npath[i] = *name;
+-		if (*name == '"')
+-			npath[++i] = '"';
++	p = npath;
++	ep = &npath[sizeof(npath) - 1];
++	while (*name) {
++		if (*name == '"' && ep - p >= 2) {
++			*p++ = *name++;
++			*p++ = '"';
++		} else if (ep - p >= 1)
++			*p++ = *name++;
++		else
++			break;
+ 	}
+-	npath[i] = '\0';
++	*p = '\0';
+ 	reply(257, "\"%s\" %s", npath, message);
+ }
+ 
