@@ -28,6 +28,7 @@
 <li><a href= "#NFS"   >6.7 - Using NFS</a>
 <li><a href= "#DNS"   >6.8 - Domain Name Service  - DNS, BIND, and named</a>
 <li><a href= "#PPTP"  >6.9 - Setting up a PPTP connection in OpenBSD</a>
+<li><a href="#Bridge" >6.10 - Setting up a bridge with OpenBSD</a>
 </ul>
 </p>
 <hr>
@@ -2650,20 +2651,186 @@ It is recommended to open <tt>/var/log/messages</tt> in a extra terminal window,
 We also suggest that you put the startup command in <i>/etc/rc.local</i> so that you automatically connect on reboot.
 </p>
 
+
+<a name= "Bridge"></a>
+<h2>6.10 - Setting up a network bridge in OpenBSD</h2>
+
+A <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridge&sektion=4">bridge</a>
+ is a link between two or more separate networks.  Unlike a router, 
+packets transfer through the bridge "invisibly" -- logically, the two
+network segments appear to be one segment to nodes on either side of the
+bridge.  The bridge will only forward packets that have to pass from one
+segment to the other, so among other things, they provide an easy way to
+reduce traffic in a complex network and yet allow any node to access any
+other node when needed.
+
 <p>
-<font color= "#0000e0">
-<a href= "index.html">[Back to Main Index]</a>
-<a href= "faq5.html">[To Section 5.0 - Kernel configuration and Disk Setup]</a>
-<a href= "faq7.html">[To Section 7.0 - Keyboard controls]</a>
-</font>
-</p>
+Note that because of this "invisible" nature, an interface in a  bridge
+may or may not have an IP address of its own.  If it does, the interface
+has effectively two modes of operation, one as part of a bridge, the
+other as a normal, stand-alone NIC.  If neither interface has an IP
+address, the bridge will pass network data, but will not be externally
+maintainable (which can be a feature).
+
+<h3>An example of a bridge application</h3>
+One of my computer racks has a number of older systems, none of which have
+a built-in 10BASE-TX NIC.  While they all have an AUI or AAUI connector,
+my supply of transceivers is limited to coax.  One of the
+machines on this rack is an OpenBSD-based terminal server which always on
+and connected to the high-speed network.  Adding a second NIC with a 
+coax port will allow me to use this machine as a bridge to the coax network.
+
+<p>
+This system has two NICs in it now, an Intel EtherExpress/100
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fxp&sektion=4"><tt>fxp0</tt></a>)
+and a 3c590-Combo card 
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ep&sektion=4"><tt>ep0</tt></a>)
+for the coax port.  <tt>fxp0</tt> is the link to the
+rest of my network and will thus has an IP address, <tt>ep0</tt> is
+going to be for bridging only and will have no IP address.
+Machines attached to the coax segment will communicate as if they
+were on the rest of my network.  So, how do we make this happen?
+
+<p>
+The file <tt>hostname.fxp0</tt> contains the configuration info for
+the <tt>fxp0</tt> card.  This machine is set up using DHCP, so its file
+looks like this:
+
+<blockquote>
+<pre>
+$ <b>cat /etc/hostname.fxp0</b>
+dhcp NONE NONE NONE NONE
+</pre>
+</blockquote>
+
+No surprises here.
+
+<p>
+The <tt>ep0</tt> card is a bit different, as you might guess:
+<blockquote>
+<pre>
+$ <b>cat /etc/hostname.ep0</b>
+up media 10base2
+</pre>
+</blockquote>
+
+Here, we are instructing the system to activate this interface using 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&sektion=8">ifconfig(8)</a>
+and set it to 10BASE-2 (coax).  No IP address or similar information
+needs to be specified for this interface.  The options the <tt>ep</tt>
+card accepts are detailed in its
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ep&sektion=4">man
+page</a>.
+
+<p>
+Now, we need to set up the bridge.  Bridges are initialized by the
+existence of a file named something like 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridgename.if&sektion=5"><tt>bridgename.bridge0</tt></a>. 
+Here is an example for my situation here:
+
+<blockquote>
+<pre>
+$ <b>cat /etc/bridgename.bridge0</b>
+add fxp0
+add ep0
+up
+</pre>
+</blockquote>
+
+This is saying set up a bridge consisting of the two NICs, fxp0 and ep0,
+and activate it.  Does it matter which order the cards are listed?  No,
+remember a bridge is very symmetrical -- packets flow in and out in both
+directions.
+
+<p>
+That's it!  Reboot, and you now have a functioning bridge.
+
+<h3>Filtering on a bridge</h3>
+While there are certainly uses for a simple bridge like this, it is
+likely you might want to DO something with the packets as they go
+through your bridge.  As you might expect, <a href="#PF">Packet
+Filter</a> can be used to restrict what traffic goes through your
+bridge.
+
+<p>
+Keep in mind, by the nature of a bridge, the same data flows through
+both interfaces, so you only need to filter on one interface.  Your
+default "Pass all" statements would look something like this:
+
+<blockquote>
+<pre>
+pass in  on ep0  any
+pass out on ep0  any
+pass in  on fxp0 any
+pass out on fxp0 any
+</pre>
+</blockquote>
+
+Now, let's say I wish to filter traffic hitting these old machines, I want 
+only Web and SSH traffic to reach them.  In this case, we are going to let
+all traffic in and out of the ep0 interface, but filter on the fxp0
+interface, using keep state to handle the reply data:
+
+<blockquote>
+<pre>
+# Pass all traffic through ep0
+pass in quick on ep0 all
+pass out quick on ep0 all
+
+# Block fxp0 traffic
+block in  on fxp0 all
+block out on fxp0 all
+
+pass in quick on fxp0 proto tcp from any to any port {22, 80} \
+     flags S/SA keep state
+</pre>
+</blockquote>
+
+Note that this rule set will prevent anything but incoming HTTP and SSH
+traffic  from reaching either the bridge machine or any of the other
+nodes "behind" it.  Other results could be had by filtering the other
+interface.  
+
+<p>
+To monitor and control the bridge you have created, use the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=brconfig&sektion=8">brconfig(8)</a>
+command, which can also be used to create a bridge after boot.
+
+<h3>Tips on bridging</h3>
+<ul>
+<li>It is HIGHLY recommended that you filter on only one interface.
+While it is possible to filter on both, you really need to understand
+this very well to do it right.
+
+<li>By using the <i>blocknonip</i> option of 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=brconfig&sektion=8">brconfig(8)</a>
+or in 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridgename.if&sektion=5">bridgename.bridge0</a>,
+you can prevent non-IP traffic (such as IPX or NETBEUI) from slipping
+around your filters.  This may be important in some situations, but you
+should be aware that bridges work for all kinds of traffic, not just IP.
+
+<li>Bridging requires that the NICs be in a "Promiscuous mode" -- they
+listen to ALL network traffic, not just that directed at the interface.
+This will put a higher load on the processor and bus than one might
+expect.  Some NICs don't work properly in this mode, the TI ThunderLAN
+chip
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tl&sektion=4">tl(4)</a>)
+is an example of a chip that won't work as part of a bridge. 
+</ul>
+
+
+<font color= "#0000e0"> <a href= "index.html">[Back to Main Index]</a>
+<a href= "faq5.html">[To Section 5.0 - Kernel configuration and Disk
+Setup]</a> <a href= "faq7.html">[To Section 7.0 - Keyboard controls]</a>
+</font> </p>
 
 <p>
 <hr>
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt= "[back]"></a>
 <a href= "mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq6.html,v 1.143 2002/07/25 15:15:21 henning Exp $</small>
+<small>$OpenBSD: faq6.html,v 1.144 2002/07/25 22:06:57 nick Exp $</small>
 </p>
 </body>
 </html>
