@@ -1,0 +1,848 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Queueing</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 2003 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
+<p>
+[<a href="scrub.html">Previous: Scrub</a>]
+[<a href="index.html">Contents</a>]
+[<a href="nat.html">Next: Network Address Translation</a>]
+
+<p>
+<h1><font color="#e00000">PF: Queueing</font></h1>
+
+
+<hr>
+
+<h3>Table of Contents</h3>
+<ul>
+<li><a href="#queueing">Queueing</a>
+<li><a href="#sched">Schedulers</a>
+	<ul>
+	<li><a href="#cbq">Class Based Queueing</a>
+	<li><a href="#priq">Priority Queueing</a>
+	<li><a href="#red">Random Early Detection</a>
+	<li><a href="#ecn">Explicit Congestion Notification</a>
+	</ul>
+<li><a href="#altq">Configuring Queueing</a>
+<li><a href="#assign">Assigning Traffic to a Queue</a>
+<li><a href="#example1">Example #1: Small, Home Network</a>
+<li><a href="#example2">Example #2: Company Network</a>
+</ul>
+
+<hr>
+
+<a name="queueing"></a>
+<h2>Queueing</h2>
+<p>
+To queue something is to store it, in order, while it awaits
+processing. In a computer network, when data packets are sent out from a
+host, they enter a queue where they await processing by the operating
+system.  The operating system then decides which queue and which
+packet(s) from that queue should be processed. The order in which the
+operating system selects the packets to process can affect network
+performance. For example, imagine a user running two network
+applications: SSH and FTP. Ideally, the SSH packets should be
+processed before the FTP packets because of the time-sensitive nature
+of SSH; when a key is typed in the SSH client, an immediate response 
+is expected, but an FTP transfer being delayed by a few extra
+seconds hardly bears any notice.  But what happens if the router
+handling these connections processes a large chunk of packets from the
+FTP connection before processing the SSH connection? Packets from the
+SSH connection will remain in the queue (or possibly be dropped by the
+router if the queue isn't big enough to hold all of the packets)
+and the SSH session may appear to lag or slow down.  By modifying the
+queueing strategy being used, network bandwidth can be shared fairly
+between different applications, users, and computers.
+
+<p>
+Note that queueing is only useful for packets in the <i>outbound</i>
+direction. Once a packet arrives on an interface in the inbound
+direction it's already too late to queue it -- it's already consumed
+network bandwidth to get to the interface that just received it. The
+only solution is to enable queueing on the adjacent router or, if the
+host that received the packet is acting as a router, to enable queueing
+on the internal interface where packets exit the router.
+
+<a name="sched"></a>
+<h2>Schedulers</h2>
+The scheduler is what decides which queues to process and in what order.
+By default, OpenBSD uses a First In First Out (FIFO) scheduler. A FIFO
+queue works like the line-up at a supermarket or a bank -- the first
+item into the queue is the first processed. As new packets arrive they
+are added to the end of the queue. If the queue becomes full, newly
+arriving packets are dropped.  This is known as tail-drop.
+
+<p>
+OpenBSD supports two additional schedulers:
+<ul>
+<li>Class Based Queueing
+<li>Priority Queueing
+</ul>
+
+<a name="cbq"></a>
+<h3>Class Based Queueing</h3>
+Class Based Queueing (CBQ) is a queueing algorithm that divides a
+network connection's bandwidth among multiple queues or classes.  Each
+queue then has traffic assigned to it based on source or destination
+address, port number, protocol, etc.  A queue may optionally be
+configured to borrow bandwidth from its parent queue if the parent is
+being under-utilized.  Queues are also given a priority such that those
+containing interactive traffic, such as SSH, can have their packets
+processed ahead of queues containing bulk traffic, such as FTP.
+
+<p>
+CBQ queues are arranged in an hierarchical manner.  At the top of the
+hierarchy is the root queue which defines the total amount of bandwidth
+available.  Child queues are created under the root queue, each of
+which can be assigned some portion of the root queue's bandwidth.  For
+example, queues might be defined as follows:
+<dl>
+<dd>Root Queue (2Mbps)
+	<dl>
+	<dd>Queue A (1Mbps)
+	<dd>Queue B (500Kbps)
+	<dd>Queue C (500Kbps)
+	</dl>
+</dl>
+
+<p>
+In this case, the total available bandwidth is set to 2 megabits per
+second (Mbps). This bandwidth is then split among three child queues.
+
+<p>
+The hierarchy can further be expanded by defining queues within queues.
+To split bandwidth equally among different users and also classify their
+traffic so that certain protocols don't starve others for bandwidth, a
+queueing structure like this might be defined:
+<dl>
+<dd>Root Queue (2Mbps)
+	<dl>
+	<dd>UserA (1Mbps)
+		<dl>
+		<dd>ssh (50Kbps)
+		<dd>bulk (950Kbps)
+		</dl>
+	<dd>UserB (1Mbps)
+		<dl>
+		<dd>audio (250Kbps)
+		<dd>bulk (750Kbps)
+			<dl>
+			<dd>http (100Kbps)
+			<dd>other (650Kbps)
+			</dl>
+		</dl>
+	</dl>
+</dl>
+
+<p>
+Note that at each level the sum of the bandwidth assigned to each of the
+queues is not more than the bandwidth assigned to the parent queue.
+
+<p>
+A queue can be configured to borrow bandwidth from its parent if the
+parent has excess bandwidth available due to it not being used by
+the other child queues.  Consider a queueing setup like this:
+<dl>
+<dd>Root Queue (2Mbps)
+	<dl>
+	<dd>UserA (1Mbps)
+		<dl>
+		<dd>ssh (100Kbps)
+		<dd>ftp (900Kbps, borrow)
+		</dl>
+	<dd>UserB (1Mbps)
+	</dl>
+</dl>
+
+<p>
+If traffic in the <tt>ftp</tt> queue exceeds 900Kbps and traffic in the
+<tt>UserA</tt> queue is less than 1Mbps (because the ssh queue is using
+less than its assigned 100Kbps), the <tt>ftp</tt> queue will borrow the
+excess bandwidth from <tt>UserA</tt>.  In this way the <tt>ftp</tt>
+queue is able to use more than its assigned bandwidth when it faces
+overload.  When the <tt>ssh</tt> queue increases its load, the borrowed
+bandwidth will be returned.
+
+<p>
+CBQ assigns each queue a priority level. Queues with a higher priority
+are preferred during congestion over queues with a lower priority as
+long as both queues share the same parent (in other words, as long as
+both queues are on the same branch in the hierarchy).  Queues with the
+same priority are processed in a round-robin fashion.  For example:
+<dl>
+<dd>Root Queue (2Mbps)
+	<dl>
+	<dd>UserA (1Mbps, priority 1)
+		<dl>
+		<dd>ssh (100Kbps, priority 5)
+		<dd>ftp (900Kbps, priority 3)
+		</dl>
+	<dd>UserB (1Mbps, priority 1)
+	</dl>
+</dl>
+
+<p>
+CBQ will process the <tt>UserA</tt> and <tt>UserB</tt> queues in a
+round-robin fashion -- neither queue will be preferred over the other.
+During the time when the <tt>UserA</tt> queue is being processed, CBQ
+will also process its child queues.  In this case, the <tt>ssh</tt>
+queue has a higher priority and will be given preferential treatment
+over the <tt>ftp</tt> queue if the network is congested.  Note how the
+<tt>ssh</tt> and <tt>ftp</tt> queues do not have their priorities
+compared to the <tt>UserA</tt> and <tt>UserB</tt> queues because they
+are not all on the same branch in the hierarchy.
+
+<p>
+For a more detailed look at the theory behind CBQ, please visit
+<a href="http://www.icir.org/floyd/cbq.html">this website</a>.
+
+<a name="priq"></a>
+<h3>Priority Queueing</h3>
+Priority Queueing (PRIQ) assigns multiple queues to a network
+interface with each queue being given a unique priority level. A queue
+with a higher priority is <i>always</i> processed ahead of a queue with
+a lower priority. 
+
+<p>
+The queueing structure in PRIQ is flat -- you cannot define queues
+within queues. The root queue is defined, which sets the total amount of
+bandwidth that is available, and then sub queues are defined under the
+root. Consider the following example:
+<dl>
+<dd>Root Queue (2Mbps)
+	<dl>
+	<dd>Queue A (priority 1)
+	<dd>Queue B (priority 2)
+	<dd>Queue C (priority 3)
+	</dl>
+</dl>
+
+<p>
+The root queue is defined as having 2Mbps of bandwidth available to it
+and three subqueues are defined. The queue with the highest priority
+(the highest priority number) is served first. Once all the packets
+in that queue are processed, or if the queue is found to be empty, PRIQ
+moves onto the queue with the next highest priority.  Within a given
+queue, packets are processed in a First In First Out (FIFO) manner.
+
+<p>
+It is important to note that when using PRIQ you must plan your queues
+very carefully.  Because PRIQ <i>always</i> processes a higher priority
+queue before a lower priority one, it's possible for a high priority
+queue to cause packets in a lower priority queue to be delayed or
+dropped if the high priority queue is receiving a constant stream of
+packets.
+
+<a name="red"></a>
+<h3>Random Early Detection</h3>
+Random Early Detection (RED) is a congestion avoidance algorithm. Its
+job is to avoid network congestion by making sure that the queue doesn't
+become full. It does this by continually calculating the average length
+(size) of the queue and comparing it to two thresholds, a minimum
+threshold and a maximum threshold. If the average queue size is below
+the minimum threshold then no packets will be dropped. If the average is
+above the maximum threshold then <i>all</i> newly arriving packets will
+be dropped. If the average is between the threshold values then packets
+are dropped based on a probability calculated from the average queue
+size. In other words, as the average queue size approaches the maximum
+threshold, more and more packets are dropped. When dropping packets,
+RED randomly chooses which connections to drop packets from.
+Connections using larger amounts of bandwidth have a higher probability
+of having their packets dropped.
+
+<p>
+RED is useful because it avoids a situation known as global
+synchronization and it is able to accommodate bursts of traffic.  Global
+synchronization refers to a loss of total throughput due to packets
+being dropped from several connections at the same time. For example, if
+congestion occurs at a router carrying traffic for 10 FTP connections
+and packets from all (or most) of these connections are dropped (as is
+the case with FIFO queueing), overall throughput will drop sharply. This
+isn't an ideal situation because it causes all of the FTP connections to
+reduce their throughput and also means that the network is no longer
+being used to its maximum potential.  RED avoids this by randomly
+choosing which connections to drop packets from instead of choosing all
+of them. Connections using large amounts of bandwidth have a higher
+chance of their packets being dropped. In this way, high bandwidth
+connections will be throttled back, congestion will be avoided, and
+sharp losses of overall throughput will not occur. In addition, RED is
+able to handle bursts of traffic because it starts to drop packets
+<i>before</i> the queue becomes full. When a burst of traffic comes
+through there will be enough space in the queue to hold the new packets.
+
+<p>
+RED should only be used when the transport protocol is capable of
+responding to congestion indicators from the network. In most cases
+this means RED should be used to queue TCP traffic and not UDP or ICMP
+traffic.
+
+<p>
+For a more detailed look at the theory behind RED, please visit
+<a href="http://www.icir.org/floyd/red.html">this website</a>.
+
+<a name="ecn"></a>
+<h3>Explicit Congestion Notification</h3>
+Explicit Congestion Notification (ECN) works in conjunction with RED to
+notify two hosts communicating over the network of any congestion along
+the communication path. It does this by enabling RED to set a flag in
+the packet header instead of dropping the packet. Assuming the sending
+host has support for ECN, it can then read this flag and throttle back
+its network traffic accordingly.
+
+<p>
+For more information on ECN, please refer to 
+<a href="http://www.rfc-editor.org/rfc/rfc3168.txt">RFC 3168</a>.
+
+<a name="altq"></a>
+<h2>Configuring Queueing</h2>
+Since OpenBSD 3.0 the 
+<a href="http://www.csl.sony.co.jp/person/kjc/kjc/software.html#ALTQ"
+>Alternate Queueing (ALTQ)</a> queueing implementation has been a part of
+the base system. Starting with OpenBSD 3.3 ALTQ has been integrated into
+PF.  OpenBSD's ALTQ implementation supports the Class Based Queueing
+(CBQ) and Priority Queueing (PRIQ) schedulers. It also supports Random
+Early Detection (RED) and Explicit Congestion Notification (ECN).
+
+<p>
+Because ALTQ has been merged with PF, PF must be enabled for queueing to
+work. Instructions on how to enable PF can be found in the 
+<a href="config.html#activate">configuration section</a>.
+
+<p>
+Queueing is configured in <tt>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+3.4"
+>/etc/pf.conf</a></tt>. There are two types of directives that are used
+to configure queueing:
+<ul>
+<li><tt>altq on</tt> - enables queueing on an interface, defines which
+scheduler to use, and creates the root queue
+<li><tt>queue</tt> - defines the properties of a child queue
+</ul>
+
+<p>
+The syntax for the <tt>altq on</tt> directive is:
+<blockquote>
+<tt>
+altq on <i>interface scheduler</i> bandwidth <i>bw</i> qlimit 
+<i>qlim</i> \<br>
+&nbsp;&nbsp;&nbsp;tbrsize <i>size</i> queue { <i>queue_list</i> }
+</tt>
+</blockquote>
+
+<ul>
+<li><tt><i>interface</i></tt> - the network interface to activate queueing on.
+<li><tt><i>scheduler</i></tt> - the queueing scheduler to use. Possible values are 
+<tt>cbq</tt> and <tt>priq</tt>. Only one scheduler may be active on an
+interface at a time.
+<li><tt><i>bw</i></tt> - the total amount of bandwidth available to the scheduler.
+This may be specified as an absolute value using the suffixes <tt>b</tt>,
+<tt>Kb</tt>, <tt>Mb</tt>, and <tt>Gb</tt> to represent bits, kilobits,
+megabits, and gigabits per second, respectively or as a percentage of the
+<tt><i>interface</i></tt> bandwidth.
+<li><tt><i>qlim</i></tt> - the maximum number of packets to hold in the queue. 
+This parameter is optional. The default is 50.
+<li><tt><i>size</i></tt> - the size of the token bucket regulator in bytes. If not
+specified, the size is set based on the <tt><i>interface</i></tt> bandwidth.
+<li><tt><i>queue_list</i></tt> - a list of child queues to create under the root
+queue.
+</ul>
+
+<p>
+For example:
+<blockquote>
+altq on fxp0 cbq bandwidth 2Mb queue { std, ssh, ftp }
+</blockquote>
+This enables CBQ on the fxp0 interface. The total bandwidth available is
+set to 2Mbps. Three child queues are defined: <tt>std</tt>,
+<tt>ssh</tt>, and <tt>ftp</tt>.
+
+<p>
+The syntax for the <tt>queue</tt> directive is:
+<blockquote>
+<tt>
+queue <i>name</i> bandwidth <i>bw</i> priority <i>pri</i> qlimit
+<i>qlim</i> \<br>
+&nbsp;&nbsp;&nbsp;<i>scheduler</i> ( <i>sched_options</i> )
+{ <i>queue_list</i> }
+</tt>
+</blockquote>
+
+<ul>
+<li><tt><i>name</i></tt> - the name of the queue. This must match the
+name of one of the queues defined in the <tt>altq on</tt> directive's
+<tt><i>queue_list</i></tt>. For <tt>cbq</tt> it can also match the name
+of a queue in a previous <tt>queue</tt> directive's
+<tt><i>queue_list</i></tt>. Queue names must be no longer than 15 characters.
+<li><tt><i>bw</i></tt> - the total amount of bandwidth available to the scheduler.
+This may be specified as an absolute value using the suffixes <tt>b</tt>,
+<tt>Kb</tt>, <tt>Mb</tt>, and <tt>Gb</tt> to represent bits, kilobits,
+megabits, and gigabits per second, respectively or as a percentage of the
+<tt><i>interface</i></tt> bandwidth.
+<li><tt><i>pri</i></tt> - the priority of the queue. For <tt>cbq</tt> the
+priority range is 0 to 7 and for <tt>priq</tt> the range is 0 to 15.
+Priority 0 is the lowest priority. When not specified, a default of 1 is
+used.
+<li><tt><i>qlim</i></tt> - the maximum number of packets to hold in the queue. 
+When not specified, a default of 50 is used.
+<li><tt><i>scheduler</i></tt> - the scheduler being used, either <tt>cbq</tt>
+or <tt>priq</tt>. Must be the same as the root queue.
+<li><tt><i>sched_options</i></tt> - further options may be passed to the scheduler
+to control its behavior:
+	<ul>
+	<li><tt>default</tt> - defines a default queue where all packets not
+	matching any other queue will be queued. Exactly one default queue
+	is required.
+	<li><tt>red</tt> - enables Random Early Detection (RED) on this queue.
+	<li><tt>rio</tt> - enables RED with IN/OUT. In this mode, RED will
+	maintain multiple average queue lengths and multiple threshold
+	values, one for each IP Quality of Service level.
+	<li><tt>ecn</tt> - enables Explicit Congestion Notification (ECN) on
+	this queue. <tt>Ecn</tt> implies <tt>red</tt>.
+	<li><tt>borrow</tt> - the queue can borrow bandwidth from its parent. This can
+	only be specified when using the <tt>cbq</tt> scheduler.
+	</ul>
+<li><tt><i>queue_list</i></tt> - a list of child queues to create under this
+queue. A <tt><i>queue_list</i></tt> may only be defined when using the
+<tt>cbq</tt> scheduler.
+</ul>
+
+<p>
+Continuing with the example above:
+<blockquote>
+<tt>
+queue std bandwidth 50% cbq(default)<br>
+queue ssh { ssh_login, ssh_bulk }<br>
+&nbsp;&nbsp;queue ssh_login  priority 4 cbq(ecn)<br>
+&nbsp;&nbsp;queue ssh_bulk   cbq(ecn)<br>
+queue ftp bandwidth 500Kb priority 3 cbq(borrow red)<br>
+</tt>
+</blockquote>
+
+<p>
+Here the parameters of the previously defined child queues are set. The
+<tt>std</tt> queue is assigned a bandwidth of 50% of the root queue's
+bandwidth (or 1Mbps) and is set as the default queue. The <tt>ssh</tt>
+queue defines two child queues, <tt>ssh_login</tt> and
+<tt>ssh_bulk</tt>. The <tt>ssh_login</tt> queue is given a higher
+priority than <tt>ssh_bulk</tt> and both have ECN enabled.  The
+<tt>ftp</tt> queue is assigned a bandwidth of 500Kbps and given a
+priority of 3. It can also borrow bandwidth when extra is available and
+has RED enabled. 
+
+<a name="assign"></a>
+<h3>Assigning Traffic to a Queue</h3>
+<p>
+To assign traffic to a queue, the <tt>queue</tt> keyword is used in
+conjunction with PF's <a href="filter.html">filter rules</a>. For example,
+consider a set of filtering rules containing a line such as:
+<blockquote>
+<tt>pass out on fxp0 from any to any port 22</tt>
+</blockquote>
+
+<p>
+Packets matching that rule can be assigned to a specific queue by using
+the <tt>queue</tt> keyword:
+<blockquote>
+<tt>pass out on fxp0 from any to any port 22 queue ssh</tt>
+</blockquote>
+
+<p>
+When using the <tt>queue</tt> keyword with <tt>block</tt> directives, any
+resulting TCP RST or ICMP Unreachable packets are assigned to the specified
+queue.
+
+<p>
+Note that queue tagging can happen on an interface other than the one
+defined in the <tt>altq on</tt> directive:
+<blockquote>
+<tt> 
+altq on fxp0 cbq bandwidth 2Mb queue { std, ftp }<br>
+queue std cbq(default)<br>
+queue ftp bandwidth 1.5Mb<br>
+<br>
+pass in on dc0 from any to any port 21 queue ftp<br>
+</tt>
+</blockquote>
+
+<p>
+Queueing is enabled on fxp0 but the tagging takes place on dc0. If 
+packets matching the <tt>pass</tt> rule exit from interface fxp0, they
+will be queued in the <tt>ftp</tt> queue. This type of queueing can be
+very useful on routers.
+
+<p>
+Normally only one queue name is given with the <tt>queue</tt> keyword,
+but if a second name is specified that queue will be used for packets
+with a <a href="http://www.rfc-editor.org/rfc/rfc791.txt">Type of
+Service (ToS)</a> of low-delay and for TCP ACK packets with no data payload.
+A good example of this is found when using SSH. SSH login sessions will
+set the ToS to low-delay while SCP and SFTP sessions will not. PF can
+use this information to queue packets belonging to a login connection in a
+different queue than non-login connections. This can be useful to prioritize
+login connection packets over file transfer packets.
+<blockquote>
+<tt>pass out on fxp0 from any to any port 22 queue(ssh_bulk, ssh_login)</tt>
+</blockquote>
+
+<p>
+This assigns packets belonging to SSH login connections to the
+<tt>ssh_login</tt> queue and packets belonging to SCP and SFTP
+connections to the <tt>ssh_bulk</tt> queue. SSH login connections will
+then have their packets processed ahead of SCP and SFTP connections
+because the <tt>ssh_login</tt> queue has a higher priority.
+
+<p>
+Assigning TCP ACK packets to a higher priority queue is useful on
+asymmetric connections, that is, connections that have different upload
+and download bandwidths such as ADSL lines. With an ADSL line, if the
+upload channel is being maxed out and a download is started, the
+download will suffer because the TCP ACK packets it needs to
+send will run into congestion when they try to pass through the upload
+channel. Testing has shown that to achieve the best results, the
+bandwidth on the upload queue should be set to a value less than what
+the connection is capable of. For instance, if an ADSL line has a max
+upload of 640Kbps, setting the root queue's <tt>bandwidth</tt> to a value
+such as 600Kb should result in better performance. Trial and error will
+yield the best <tt>bandwidth</tt> setting.
+
+<p>
+When using the <tt>queue</tt> keyword with rules that <tt>keep
+state</tt> such as:
+<blockquote>
+<tt>
+pass in on fxp0 proto tcp from any to any port 22 flags S/SA \<br>
+&nbsp;&nbsp;&nbsp;keep state queue ssh
+</tt>
+</blockquote>
+
+<p>
+PF will record the queue in the state table entry so that packets
+traveling back out fxp0 that match the stateful connection will
+end up in the <tt>ssh</tt> queue. Note that even though the <tt>queue</tt>
+keyword is being used on a rule filtering incoming traffic, the goal is
+to specify a queue for the corresponding outgoing traffic; the above
+rule does not queue incoming packets.
+
+<a name="example1"></a>
+<h2>Example #1: Small, Home Network</h2>
+<pre>
+  
+    [ Alice ]    [ Charlie ]
+        |             |                              ADSL
+     ---+-----+-------+------ dc0 [ OpenBSD ] fxp0 -------- ( Internet )
+              |
+           [ Bob ]
+
+</pre>
+
+<p>
+In this example, OpenBSD is being used on an Internet gateway for a small
+home network with three workstations. The gateway is performing packet
+filtering and NAT duties. The Internet connection is via an ADSL line
+running at 2Mbps down and 640Kbps up.
+
+<p>
+The queueing policy for this network:
+<ul>
+<li>Reserve 80Kbps of download bandwidth for Bob so he can play his
+online games without being lagged by Alice or Charlie's downloads. Allow
+Bob to use more than 80Kbps when it's available.
+<li>Interactive SSH and instant message traffic will have a higher
+priority than regular traffic.
+<li>DNS queries and replies will have the second highest priority.
+<li>Outgoing TCP ACK packets will have a higher priority than all other
+outgoing traffic.
+</ul>
+
+<p>
+Below is the ruleset that meets this network policy. Note that only the
+<tt>pf.conf</tt> directives that apply directly to the above policy are
+present; <a href="nat.html"><tt>nat</tt></a>,
+<a href="rdr.html"><tt>rdr</tt></a>, <a href="options.html">options</a>,
+etc., are not shown.
+
+<p>
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+# enable queueing on the external interface to control traffic going to
+# the Internet. use the priq scheduler to control only priorities. set
+# the bandwidth to 610Kbps to get the best performance out of the TCP
+# ACK queue.
+
+altq on fxp0 priq bandwidth 610Kb queue { std_out, ssh_im_out, dns_out, \
+	tcp_ack_out }
+
+# define the parameters for the child queues.
+# std_out      - the standard queue. any filter rule below that does not
+#                explicitly specify a queue will have its traffic added
+#                to this queue.
+# ssh_im_out   - interactive SSH and various instant message traffic.
+# dns_out      - DNS queries.
+# tcp_ack_out  - TCP ACK packets with no data payload.
+
+queue std_out     priq(default)
+queue ssh_im_out  priority 4 priq(red)
+queue dns_out     priority 5
+queue tcp_ack_out priority 6
+
+# enable queueing on the internal interface to control traffic coming in
+# from the Internet. use the cbq scheduler to control bandwidth. max
+# bandwidth is 2Mbps.
+
+altq on dc0 cbq bandwidth 2Mb queue { std_in, ssh_im_in, dns_in, bob_in }
+
+# define the parameters for the child queues.
+# std_in      - the standard queue. any filter rule below that does not
+#               explicitly specify a queue will have its traffic added
+#               to this queue.
+# ssh_im_in   - interactive SSH and various instant message traffic.
+# dns_in      - DNS replies.
+# bob_in      - bandwidth reserved for Bob's workstation. allow him to
+#               borrow.
+
+queue std_in    cbq(default)
+queue ssh_im_in priority 4
+queue dns_in    priority 5
+queue bob_in    bandwidth 80Kb cbq(borrow)
+
+
+# ... in the filtering section of pf.conf ...
+
+alice         = "192.168.0.2"
+bob           = "192.168.0.3"
+charlie       = "192.168.0.4"
+local_net     = "192.168.0.0/24"
+ssh_ports     = "{ 22 2022 }"
+im_ports      = "{ 1863 5190 5222 }"
+
+# filter rules for fxp0 inbound
+block in on fxp0 all
+
+# filter rules for fxp0 outbound
+block out on fxp0 all
+pass  out on fxp0 inet proto tcp from (fxp0) to any flags S/SA \
+	keep state queue(std_out, tcp_ack_out)
+pass  out on fxp0 inet proto { udp icmp } from (fxp0) to any keep state
+pass  out on fxp0 inet proto { tcp udp } from (fxp0) to any port domain \
+	keep state queue dns_out
+pass  out on fxp0 inet proto tcp from (fxp0) to any port $ssh_ports \
+	flags S/SA keep state queue(std_out, ssh_im_out)
+pass  out on fxp0 inet proto tcp from (fxp0) to any port $im_ports \
+	flags S/SA keep state queue(ssh_im_out, tcp_ack_out)
+
+# filter rules for dc0 inbound
+block in on dc0 all
+pass  in on dc0 from $local_net
+
+# filter rules for dc0 outbound
+block out on dc0 all
+pass  out on dc0 from any to $local_net
+pass  out on dc0 proto { tcp udp } from any port domain to $local_net \
+	queue dns_in
+pass  out on dc0 proto tcp from any port $ssh_ports to $local_net \
+	queue(std_in, ssh_im_in)
+pass  out on dc0 proto tcp from any port $im_ports to $local_net \
+	queue ssh_im_in
+pass  out on dc0 from any to $bob queue bob_in
+</pre>
+</td></tr>
+</table>
+
+<a name="example2"></a>
+<h2>Example #2: Company Network</h2>
+<pre>
+
+  ( IT Dept )  [ Boss's PC ]
+       |          |                                   T1
+     --+----+-----+---------- dc0 [ OpenBSD ] fxp0 -------- ( Internet )
+            |                         fxp1
+         [ COMP1 ]    [ WWW ]         /
+                         |           / 
+                       --+----------' 
+
+</pre>
+
+<p>
+In this example, the OpenBSD host is acting as a firewall for a company
+network. The company runs a WWW server in the DMZ portion of their
+network where customers upload their websites via FTP. The IT department
+has their own subnet connected to the main network, and the boss has a PC
+on his desk that's used for email and surfing the web. The connection to
+the Internet is via a T1 line running at 1.5Mbps in both directions. All
+other network segments are using Fast Ethernet (100Mbps).
+
+<p>
+The network administrator has decided on the following policy:
+<ul>
+<li>Limit traffic between the WWW server and the Internet to 500Kbps in
+each direction.
+<li>No bandwidth limit on traffic between the WWW server and the
+internal network.
+<li>Give HTTP traffic between the WWW server and the Internet a higher
+priority than other traffic between the WWW server and the Internet
+(such as FTP uploads).
+<li>Reserve 500Kbps for the IT Dept network so they can download the
+latest software updates in a timely manner. They should be able to use
+more than 500Kbps when extra bandwidth is available.
+<li>Give traffic between the boss's PC and the Internet a higher
+priority than other traffic to/from the Internet.
+</ul>
+
+<p>
+Below is the ruleset that meets this network policy. Note that only the
+<tt>pf.conf</tt> directives that apply directly to the above policy are
+present; <a href="nat.html"><tt>nat</tt></a>,
+<a href="rdr.html"><tt>rdr</tt></a>, <a href="options.html">options</a>,
+etc., are not shown.
+
+<p>
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+# enable queueing on the external interface to queue packets going out
+# to the Internet. use the cbq scheduler so that the bandwidth use of
+# each queue can be controlled. the max outgoing bandwidth is 1.5Mbps.
+
+altq on fxp0 cbq bandwidth 1.5Mb queue { std_ext, www_ext, boss_ext }
+
+# define the parameters for the child queues.
+# std_ext        - the standard queue. also the default queue for
+#                  outgoing traffic on fxp0.
+# www_ext        - container queue for WWW server queues. limit to
+#                  500Kbps.
+#   www_ext_http - http traffic from the WWW server
+#   www_ext_misc - all non-http traffic from the WWW server
+# boss_ext       - traffic coming from the boss's computer
+
+queue std_ext        cbq(default)
+queue www_ext        bandwidth 500Kb { www_ext_http, www_ext_misc }
+  queue www_ext_http priority 3 cbq(red)
+  queue www_ext_misc priority 1
+queue boss_ext       priority 3
+
+# enable queueing on the internal interface to control traffic coming
+# from the Internet or the DMZ. use the cbq scheduler to control the
+# bandwidth of each queue. bandwidth on this interface is set to the
+# maximum. traffic coming from the DMZ will be able to use all of this
+# bandwidth while traffic coming from the Internet will be limited to
+# 1.0Mbps (because 0.5Mbps (500Kbps) is being allocated to fxp1).
+
+altq on dc0 cbq bandwidth 100% queue { net_int, www_int }
+
+# define the parameters for the child queues.
+# net_int    - container queue for traffic from the Internet. bandwidth
+#              is 1.0Mbps.
+#   std_int  - the standard queue. also the default queue for outgoing
+#              traffic on dc0.
+#   it_int   - traffic to the IT Dept network.
+#   boss_int - traffic to the boss's PC.
+# www_int    - traffic from the WWW server in the DMZ.
+
+queue net_int    bandwidth 1.0Mb { std_int, it_int, boss_int }
+  queue std_int  cbq(default)
+  queue it_int   bandwidth 500Kb cbq(borrow)
+  queue boss_int priority 3
+queue www_int    cbq(red)
+
+# enable queueing on the DMZ interface to control traffic destined for
+# the WWW server. cbq will be used on this interface since detailed
+# control of bandwidth is necessary. bandwidth on this interface is set
+# to the maximum. traffic from the internal network will be able to use
+# all of this bandwidth while traffic from the Internet will be limited
+# to 500Kbps.
+
+altq on fxp1 cbq bandwidth 100% queue { internal_dmz, net_dmz }
+
+# define the parameters for the child queues.
+# internal_dmz   - traffic from the internal network.
+# net_dmz        - container queue for traffic from the Internet.
+#   net_dmz_http - http traffic.
+#   net_dmz_misc - all non-http traffic. this is also the default queue.
+
+queue internal_dmz      # no special settings needed
+queue net_dmz        bandwidth 500Kb { net_dmz_http, net_dmz_misc }
+  queue net_dmz_http priority 3 cbq(red)
+  queue net_dmz_misc priority 1 cbq(default)
+
+
+# ... in the filtering section of pf.conf ...
+
+main_net  = "192.168.0.0/24"
+it_net    = "192.168.1.0/24"
+int_nets  = "{ 192.168.0.0/24, 192.168.1.0/24 }"
+dmz_net   = "10.0.0.0/24"
+
+boss      = "192.168.0.200"
+wwwserv   = "10.0.0.100"
+
+# default deny
+block on { fxp0, fxp1, dc0 } all
+
+# filter rules for fxp0 inbound
+pass in on fxp0 proto tcp from any to $wwwserv port { 21, \
+	&gt; 49151 } flags S/SA keep state queue www_ext_misc
+pass in on fxp0 proto tcp from any to $wwwserv port 80 \
+	flags S/SA keep state queue www_ext_http
+
+# filter rules for fxp0 outbound
+pass out on fxp0 from $int_nets to any keep state
+pass out on fxp0 from $boss to any keep state queue boss_ext
+
+# filter rules for dc0 inbound
+pass in on dc0 from $int_nets to any keep state
+pass in on dc0 from $it_net to any queue it_int
+pass in on dc0 from $boss to any queue boss_int
+pass in on dc0 proto tcp from $int_nets to $wwwserv port { 21, 80, \
+	&gt; 49151 } flags S/SA keep state queue www_int
+
+# filter rules for dc0 outbound
+pass out on dc0 from dc0 to $int_nets
+
+# filter rules for fxp1 inbound
+pass in on fxp1 proto { tcp, udp } from $wwwserv to any port 53 \
+	keep state
+
+# filter rules for fxp1 outbound
+pass out on fxp1 proto tcp from any to $wwwserv port { 21, \
+	&gt; 49151 } flags S/SA keep state queue net_dmz_misc
+pass out on fxp1 proto tcp from any to $wwwserv port 80 \
+	flags S/SA keep state queue net_dmz_http
+pass out on fxp1 proto tcp from $int_nets to $wwwserv port { 80, \
+	21, &gt; 49151 } flags S/SA keep state queue internal_dmz
+</pre>
+</td></tr>
+</table>
+
+<p>
+[<a href="scrub.html">Previous: Scrub</a>]
+[<a href="index.html">Contents</a>]
+[<a href="nat.html">Next: Network Address Translation</a>]
+
+<p>
+<hr>
+<a href="../../de/index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[back]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: queueing.html,v 1.13 ]<br>
+$Translation: queueing.html,v 1.1 2003/11/27 17:34:57 sl Exp $<br>
+$OpenBSD: queueing.html,v 1.1 2003/11/27 19:39:09 horacio Exp $
+</small>
+
+</body>
+</html> 

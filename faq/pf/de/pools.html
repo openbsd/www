@@ -1,0 +1,291 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Address Pools and Load Balancing</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 2003 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
+<p>
+[<a href="shortcuts.html">Previous: Shortcuts For Creating Rulesets</a>]
+[<a href="index.html">Contents</a>]
+[<a href="perf.html">Next: Performance</a>]
+
+<p>
+<h1>
+<font color="#e00000">PF: Address Pools and Load Balancing</font>
+</h1>
+
+<hr>
+
+<h3>Table of Contents</h3>
+<ul>
+<li><a href="#intro">Introduction</a>
+<li><a href="#nat">NAT Address Pool</a>
+<li><a href="#incoming">Load Balancing Incoming Connections</a>
+<li><a href="#outgoing">Load Balancing Outgoing Traffic</a>
+	<ul>
+	<li><a href="#outexample">Ruleset Example</a>
+	</ul>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Introduction</h2>
+An address pool is a supply of two or more addresses whose use is shared
+among a group of users. An address pool can be specified as the
+redirection address in <a href="rdr.html"><tt>rdr</tt></a> rules, as the
+translation address in <a href="nat.html"><tt>nat</tt></a> rules, and as
+the target address in <tt>route-to</tt>, <tt>reply-to</tt>, and
+<tt>dup-to</tt> <a href="filter.html">filter</a> options.
+
+<p>
+There are four methods for using an address pool:
+<ul>
+<li><tt>bitmask</tt> - grafts the network portion of the pool
+address over top of the address that is being modified (source address
+for <tt>nat</tt> rules, destination address for <tt>rdr</tt> rules).
+Example: if the address pool is 192.0.2.1/24 and the address being 
+modified is 10.0.0.50, then the resulting address will be 192.0.2.50. If
+the address pool is 192.0.2.1/25 and the address being modified is
+10.0.0.130, then the resulting address will be 192.0.2.2. 
+<li><tt>random</tt> - randomly selects an address from the pool.
+<li><tt>source-hash</tt> - uses a hash of the source address to
+determine which address to use from the pool. This method ensures that a
+given source address is always mapped to the same pool address.
+The key that is fed to the hashing algorithm can optionally be specified
+after the <tt>source-hash</tt> keyword in hex format or as a string. By
+default,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.4"
+>pfctl(8)</a> will generate a random key every time the ruleset is
+loaded. 
+<li><tt>round-robin</tt> - loops through the address pool in
+sequence. This is the default method.
+</ul>
+
+<p>
+Except for the <tt>round-robin</tt> method, the address pool must be
+expressed as a 
+<a href="http://public.pacbell.net/dedicated/cidr.html">CIDR</a>
+(Classless Inter-Domain Routing) network block. The <tt>round-robin</tt>
+method will accept multiple individual addresses using
+<a href="macros.html#lists">list format</a>.
+
+<p>
+In addition, the <tt>static-port</tt> keyword can be specified after
+one of the above methods to prevent <tt>nat</tt> rules from
+modifying the source port of TCP and UDP packets.
+
+<a name="nat"></a>
+<h2>NAT Address Pool</h2>
+An address pool can be used as the translation address in 
+<a href="nat.html"><tt>nat</tt></a> rules. Connections will have their
+source address translated to an address from the pool based on the
+method chosen. This can be useful in situations where PF is performing
+NAT for a very large network. Since the number of NATed connections per
+translation address is limited, adding additional translation addresses
+will allow the NAT gateway to scale to serve a larger number of users.
+
+<p>
+In this example a pool of two addresses is being used to translate
+outgoing packets. For each outgoing connection PF will rotate through
+the addresses in a round-robin manner.
+<blockquote>
+<tt>
+nat on $ext_if inet from any to any -&gt; { 192.0.2.5, 192.0.2.10 }
+</tt>
+</blockquote>
+
+<p>
+One drawback with this method is that successive connections from the
+same internal address will not always be translated to the same
+translation address.  This can cause interference, for example, when
+browsing websites that track user logins based on IP address. An
+alternate approach is to use the <tt>source-hash</tt> method so that
+each internal address is always translated to the same translation
+address. To do this, the address pool must be a
+<a href="http://public.pacbell.net/dedicated/cidr.html">CIDR</a>
+network block.
+<blockquote>
+<tt>
+nat on $ext_if inet from any to any -&gt; 192.0.2.4/31 source-hash
+</tt>
+</blockquote>
+
+<p>
+This <tt>nat</tt> rule uses the address pool 192.0.2.4/31 (192.0.2.4 -
+192.0.2.5) as the translation address for outgoing packets. Each
+internal address will always be translated to the same translation
+address because of the <tt>source-hash</tt> keyword.
+
+<a name="incoming"></a>
+<h2>Load Balance Incoming Connections</h2>
+Address pools can also be used to load balance incoming connections. For
+example, incoming web server connections can be distributed across a web
+server farm:
+<blockquote>
+<tt>
+web_servers = "{ 10.0.0.10, 10.0.0.11, 10.0.0.13 }"<br>
+<br>
+rdr on $ext_if proto tcp from any to any port 80 -&gt; $web_servers
+</tt>
+</blockquote>
+
+<p>
+Successive connections will be redirected to the web servers in a
+round-robin manner. 
+
+<p>
+As with the NAT example, if the web servers are all placed within a CIDR
+network block, the <tt>source-hash</tt> keyword can be used so that
+connections from a given IP address are always redirected to the same
+physical web server. Again, this is sometimes necessary to maintain
+session information while browsing a website.
+
+<a name="outgoing"></a>
+<h2>Load Balance Outgoing Traffic</h2>
+Address pools can be used in combination with the <tt>route-to</tt>
+filter option to load balance two or more Internet connections when a
+proper multi-path routing protocol (like 
+<a href="http://www.rfc-editor.org/rfc/rfc1771.txt">BGP4</a>) is
+unavailable. By using <tt>route-to</tt> with a <tt>round-robin</tt>
+address pool, outbound connections can be evenly distributed among
+multiple outbound paths. 
+
+<p>
+One additional piece of information that's needed to do this is the IP
+address of the adjacent router on each Internet connection. This is fed
+to the <tt>route-to</tt> option to control the destination of outgoing
+packets.
+
+<p>
+The following example balances outgoing traffic across two Internet
+connections:
+<blockquote>
+<tt>
+lan_net = "192.168.0.0/24"<br>
+int_if &nbsp;= "dc0"<br>
+ext_if1 = "fxp0"<br>
+ext_if2 = "fxp1"<br>
+ext_gw1 = "68.146.224.1"<br>
+ext_gw2 = "142.59.76.1"<br>
+<br>
+pass in on $int_if route-to \<br>
+&nbsp;&nbsp;&nbsp;{ ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) } round-robin \<br>
+&nbsp;&nbsp;&nbsp;from $lan_net to any keep state
+</tt>
+</blockquote>
+
+<p>
+The <tt>route-to</tt> option is used on traffic coming <i>in</i> on the
+<i>internal</i> interface to specify the outgoing network interfaces
+that traffic will be balanced across along with their respective
+gateways. Note that the <tt>route-to</tt> option must be present on
+<i>each</i> filter rule that traffic is to be balanced for.  Return
+packets will be routed back to the same external interface that they
+exited (this is done by the ISPs) and will be routed back to the
+internal network normally.
+
+<p>
+To ensure that packets with a source address belonging to
+<tt>$ext_if1</tt> are always routed to <tt>$ext_gw1</tt> (and similarly
+for <tt>$ext_if2</tt> and <tt>$ext_gw2</tt>), the following two lines
+should be included in the ruleset:
+<blockquote>
+<tt>
+pass out on $ext_if1 route-to ($ext_if2 $ext_gw2) from $ext_if2 \<br>
+&nbsp;&nbsp;&nbsp;to any<br>
+pass out on $ext_if2 route-to ($ext_if1 $ext_gw1) from $ext_if1 \<br>
+&nbsp;&nbsp;&nbsp;to any 
+</tt>
+</blockquote>
+
+<p>
+Finally, NAT can also be used on each outgoing interface:
+<blockquote>
+<tt>
+nat on $ext_if1 from $lan_net to any -&gt; ($ext_if1)<br>
+nat on $ext_if2 from $lan_net to any -&gt; ($ext_if2)
+</tt>
+</blockquote>
+
+<a name="outexample"></a>
+<p>
+A complete example that load balances outgoing traffic might look
+something like this:
+
+<p>
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+lan_net = "192.168.0.0/24"
+int_if  = "dc0"
+ext_if1 = "fxp0"
+ext_if2 = "fxp1"
+ext_gw1 = "68.146.224.1"
+ext_gw2 = "142.59.76.1"
+
+#  nat outgoing connections on each internet interface
+nat on $ext_if1 from $lan_net to any -&gt; ($ext_if1)
+nat on $ext_if2 from $lan_net to any -&gt; ($ext_if2)
+
+#  default deny
+block in  from any to any
+block out from any to any
+
+#  pass all outgoing packets on internal interface
+pass out on $int_if from any to $lan_net
+#  pass in quick any packets destined for the gateway itself
+pass in quick on $int_if from $lan_net to $int_if
+#  load balance outgoing tcp traffic from internal network. 
+pass in on $int_if route-to \
+    { ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) } round-robin \
+    proto tcp from $lan_net to any flags S/SA modulate state
+#  load balance outgoing udp and icmp traffic from internal network
+pass in on $int_if route-to \
+    { ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) } round-robin \
+    proto { udp, icmp } from $lan_net to any keep state
+
+#  general "pass out" rules for external interfaces
+pass out on $ext_if1 proto tcp from any to any flags S/SA modulate state
+pass out on $ext_if1 proto { udp, icmp } from any to any keep state
+pass out on $ext_if2 proto tcp from any to any flags S/SA modulate state
+pass out on $ext_if2 proto { udp, icmp } from any to any keep state
+
+#  route packets from any IPs on $ext_if1 to $ext_gw1 and the same for
+#  $ext_if2 and $ext_gw2
+pass out on $ext_if1 route-to ($ext_if2 $ext_gw2) from $ext_if2 to any 
+pass out on $ext_if2 route-to ($ext_if1 $ext_gw1) from $ext_if1 to any 
+</pre>
+</td></tr>
+</table>
+
+<p>
+[<a href="shortcuts.html">Previous: Shortcuts For Creating Rulesets</a>]
+[<a href="index.html">Contents</a>]
+[<a href="perf.html">Next: Performance</a>]
+
+<p>
+<hr>
+<a href="../../de/index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[back]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: pools.html,v 1.7 ]<br>
+$Translation: pools.html,v 1.1 2003/11/27 17:34:57 sl Exp $<br>
+$OpenBSD: pools.html,v 1.1 2003/11/27 19:39:09 horacio Exp $
+</small>
+
+</body>
+</html> 

@@ -1,0 +1,227 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Issues with FTP</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 2002-2003 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
+<p>
+[<a href="perf.html">Previous: Performance</a>]
+[<a href="index.html">Contents</a>]
+[<a href="authpf.html">Next: Authpf: User Shell for Authenticating
+Gateways</a>]
+
+<p>
+<h1><font color="#e00000">PF: Issues with FTP</font></h1>
+<hr>
+
+<h3>Table of Contents</h3>
+<ul>
+<li><a href="#modes">FTP Modes</a>
+<li><a href="#client">FTP Client Behind the Firewall</a>
+<li><a href="#server">PF "Self-Protecting" an FTP Server</a>
+<li><a href="#natserver">FTP Server Protected by an External PF Firewall
+Running NAT</a>
+<li><a href="#info">More Information on FTP</a>
+</ul>
+
+<hr>
+
+<a name="modes"></a>
+<h2>FTP Modes</h2>
+FTP is a protocol that dates back to when the Internet was a small,
+friendly collection of computers and everyone knew everyone else. At
+that time the need for filtering or tight security wasn't necessary.
+FTP wasn't designed for filtering, for passing through firewalls, or for
+working with NAT.
+
+<p>
+You can use FTP in one of two ways: passive or active.  Generally, the
+choice of active or passive is made to determine who has the problem
+with firewalling.  Realistically, you will have to support both to have
+happy users.
+
+<p>
+With active FTP, when a user connects to a remote FTP server and
+requests information or a file, the FTP server makes a new
+connection back to the client to transfer the requested data. This is
+called the <i>data connection</i>.  To start, the FTP client chooses a
+random port to receive the data connection on. The client sends the port
+number it chose to the FTP server and then listens for an incoming
+connection on that port.  The FTP server then initiates a connection to
+the client's address at the chosen port and transfers the data.  This is a
+problem for users attempting to gain access to FTP servers from behind a
+NAT gateway.  Because of how NAT works, the FTP server initiates the data
+connection by connecting to the external address of the NAT gateway on
+the chosen port.  The NAT machine will receive this, but because it has
+no mapping for the packet in its state table, it will drop the packet and
+won't deliver it to the client.
+
+<p>
+With passive mode FTP (the default mode with OpenBSD's <a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp&amp;sektion=1&amp;manpath=OpenBSD+3.4"
+>ftp(1)</a> client), the client requests that the server pick a random
+port to listen on for the data connection. The server informs the client
+of the port it has chosen, and the client connects to this port to
+transfer the data. Unfortunately, this is not always possible or
+desirable because of the possibility of a firewall in front of the FTP
+server blocking the incoming data connection. OpenBSD's ftp(1) uses
+passive mode by default; to force active mode FTP, use the -A flag to
+ftp, or set passive mode to "off" by issuing the command "<tt>passive
+off</tt>"  at the "<tt>ftp&gt;</tt>" prompt.
+
+
+<a name="client"></a>
+<h2>FTP Client Behind the Firewall</h2>
+As indicated earlier, FTP does not go through NAT and firewalls very well.
+
+
+<p>
+Packet Filter provides a solution for this situation by redirecting FTP
+traffic through an FTP proxy server. This process acts to "guide" your
+FTP traffic through the NAT gateway/firewall.  The FTP proxy used by
+OpenBSD and PF is
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+3.4"
+>ftp-proxy(8)</a>.  To activate it, put something like this in the NAT section
+of <tt>/etc/pf.conf</tt>:
+
+<blockquote>
+<tt>
+rdr on $int_if proto tcp from any to any port 21 -&gt; 127.0.0.1 \<br>
+&nbsp;&nbsp;&nbsp;port 8021
+</tt>
+</blockquote>
+
+<p>
+The explanation of this line is: "Traffic on the internal interface is
+redirected to the proxy server running on this machine which is
+listening at port 8021".
+
+<p>
+Hopefully it is apparent the proxy server has to be started and running on
+the OpenBSD box. This is done by inserting the following line in
+<tt>/etc/inetd.conf</tt>:
+
+<blockquote>
+<tt>
+127.0.0.1:8021 stream tcp nowait root /usr/libexec/ftp-proxy \<br>
+&nbsp;&nbsp;&nbsp;ftp-proxy
+</tt>
+</blockquote>
+
+<p>
+and either rebooting the system or sending a 'HUP' signal to
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=inetd&amp;sektion=8&amp;manpath=OpenBSD+3.4"
+>inetd(8)</a>.  One way to send the 'HUP' signal is with the command:
+
+<blockquote>
+<tt>
+kill -HUP `cat /var/run/inetd.pid`
+</tt>
+</blockquote>
+
+<p>
+You will note that ftp-proxy is listening on port 8021, the same port
+the above <tt>rdr</tt> statement is sending FTP traffic to.  The choice
+of port 8021 is arbitrary, though 8021 is a good choice as it is not
+defined for any other application.
+
+<p>
+Please note that ftp-proxy(8) is to help <b>FTP clients</b> behind a PF filter;
+it is not used to handle an <b>FTP server</b> behind a PF filter.
+
+
+<a name="server"></a>
+<h2>PF "Self-Protecting" an FTP Server</h2>
+In this case, PF is running on the FTP server itself rather than a
+dedicated firewall computer.  When servicing a passive FTP connection,
+FTP will use a randomly chosen, high TCP port for incoming data.  By
+default, OpenBSD's native FTP server 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftpd&amp;sektion=8&amp;manpath=OpenBSD+3.4"
+>ftpd(8)</a> uses the range 49152 to 65535.
+Obviously, these must be passed through the filter rules, along with
+port 21 (the FTP control port):
+
+<blockquote>
+<tt>
+pass in on $ext_if proto tcp from any to any port 21 keep state<br>
+pass in on $ext_if proto tcp from any to any port &gt; 49151 \<br>
+&nbsp;&nbsp;&nbsp;keep state
+</tt>
+</blockquote>
+
+<p>
+Note that if you desire, you can tighten up that range of ports
+considerably. In the case of the OpenBSD 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftpd&amp;sektion=8&amp;manpath=OpenBSD+3.4"
+>ftpd(8)</a> program, that is done using the 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=8&amp;manpath=OpenBSD+3.4"
+>sysctl(8)</a> variables <tt>net.inet.ip.porthifirst</tt> and
+<tt>net.inet.ip.porthilast</tt>.
+
+<a name="natserver"></a>
+<h2>FTP Server Protected by an External PF Firewall Running NAT</h2>
+In this case, the firewall must redirect traffic to the FTP server in
+addition to not blocking the required ports.  For the sake of discussion,
+we will assume the FTP server in question is again the standard OpenBSD
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftpd&amp;sektion=8&amp;manpath=OpenBSD+3.4"
+>ftpd(8)</a>, using the default range of ports.
+
+<p>
+Here is an example subset of rules which would accomplish this:
+<blockquote>
+<tt>
+ftp_server = "10.0.3.21"<br>
+<br>
+rdr on $ext_if proto tcp from any to any port 21 -&gt; $ftp_server \<br>
+&nbsp;&nbsp;&nbsp;port 21<br>
+rdr on $ext_if proto tcp from any to any port 49152:65535 -&gt; \<br>
+&nbsp;&nbsp;&nbsp;$ftp_server port 49152:65535<br>
+<br>
+pass in quick on $ext_if proto tcp from any to $ftp_server \<br>
+&nbsp;&nbsp;&nbsp;port 21 keep state<br>
+pass in quick on $ext_if proto tcp from any to $ftp_server \<br>
+&nbsp;&nbsp;&nbsp;port &gt; 49151 keep state
+</tt>
+</blockquote>
+
+
+<a name="info"></a>
+<h2>More Information on FTP</h2>
+More information on filtering FTP and how FTP works in general can be
+found in this whitepaper:
+<ul>
+<li><a href="http://www.pintday.org/whitepapers/ftp-review.shtml">FTP
+Reviewed</a>
+</ul>
+
+<p>
+[<a href="perf.html">Previous: Performance</a>]
+[<a href="index.html">Contents</a>]
+[<a href="authpf.html">Next: Authpf: User Shell for Authenticating
+Gateways</a>]
+
+<p>
+<hr>
+<a href="../../de/index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[back]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: ftp.html,v 1.9 ]<br>
+$Translation: ftp.html,v 1.1 2003/11/27 17:34:57 sl Exp $<br>
+$OpenBSD: ftp.html,v 1.1 2003/11/27 19:39:09 horacio Exp $
+</small>
+
+</body>
+</html> 

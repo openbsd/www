@@ -1,0 +1,366 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Authpf: User Shell for Authenticating Gateways</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 2003 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
+<p>
+[<a href="ftp.html">Previous: Issues with FTP</a>]
+[<a href="index.html">Contents</a>]
+[<a href="example1.html">Next: Example #1: Firewall for Home or
+Small Office</a>]
+
+<h1><font color="#e00000">PF: Authpf: User Shell for Authenticating
+Gateways</font></h1>
+
+<hr>
+
+<h3>Table of Contents</h3>
+<ul>
+<li><a href="#intro">Introduction</a>
+<li><a href="#config">Configuration</a>
+	<ul>
+	<li><a href="#linkmain">Linking Authpf into the Main Ruleset</a>
+	<li><a href="#loadrules">Configuring Loaded Rules</a>
+	<li><a href="#acl">Access Control Lists</a>
+	<li><a href="#shell">Assigning Authpf as a User's Shell</a>
+	</ul>
+<li><a href="#wholog">Seeing Who is Logged In</a>
+<li><a href="#moreinfo">More Information</a>
+<li><a href="#example">Example</a>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Introduction</h2>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=authpf&amp;sektion=8&amp;manpath=OpenBSD+3.4"
+>Authpf(8)</a> is a user shell for authenticating gateways. An
+authenticating gateway is just like a regular network gateway (a.k.a. a
+router) except that users must first authenticate themselves to the
+gateway before it will allow traffic to pass through it. When a user's
+shell is set to <tt>/usr/sbin/authpf</tt> (i.e., instead of setting a
+user's shell to
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ksh&amp;sektion=1&amp;manpath=OpenBSD+3.4"
+>ksh(1)</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=csh&amp;sektion=1&amp;manpath=OpenBSD+3.4"
+>csh(1)</a>, etc) and the user logs in using SSH, authpf will make the
+necessary changes to the active  
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+3.4"
+>pf(4)</a> ruleset so that the user's traffic is passed through the
+filter and/or translated using Network Address Translation or
+redirection. Once the user logs out or their session is disconnected,
+authpf will remove any rules loaded for the user and kill any stateful
+connections the user has open. Because of this, the ability of the user
+to pass traffic through the gateway only exists while the user keeps
+their SSH session open. 
+
+<p>
+Authpf alters the  
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+3.4"
+>pf(4)</a> ruleset by adding rules to a 
+<a href="anchors.html#named">named ruleset</a> attached to an
+<a href="anchors.html">anchor point</a>. Each time a user authenticates,
+authpf creates a new named ruleset and loads the preconfigured
+<a href="filter.html">filter</a>, <a href="nat.html"><tt>nat</tt></a>,
+<a href="nat.html#binat"><tt>binat</tt></a>, and 
+<a href="rdr.html"><tt>rdr</tt></a> rules into it. The rules that authpf
+loads can be configured on a per-user or global basis.
+
+<p>
+Example uses of authpf include:
+<ul>
+<li>Requiring users to authenticate before allowing Internet access.
+<li>Granting certain users -- such as administrators -- access to
+restricted parts of the network.
+<li>Allowing only known users to access the rest of the network or
+Internet from a wireless network segment.
+<li>Allowing workers from home, on the road, etc., access to resources on
+the company network.  Users outside the office can not only open access
+to the company network, but can also be redirected to particular
+resources (e.g., their own desktop) based on the username they
+authenticate with.
+<li>In a setting such as a library or other place with public Internet
+terminals, PF may be configured to allow limited Internet access to
+guest users. Authpf can then be used to provide registered users with
+complete access.
+</ul>
+
+<p>
+Authpf logs the username and IP address of each user who authenticates
+successfully as well as the start and end times of their login session
+via
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=syslogd&amp;sektion=8&amp;manpath=OpenBSD+3.4"
+>syslogd(8)</a>. By using this information, an administrator can
+determine who was logged in when and also make users accountable for
+their network traffic.
+
+<a name="config"></a>
+<h2>Configuration</h2>
+The basic steps needed to configure authpf are outlined here. For a
+complete description of authpf configuration, please refer to the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=authpf&amp;sektion=8&amp;manpath=OpenBSD+3.4"
+>authpf man page</a>.
+
+<a name="linkmain"></a>
+<h3>Linking Authpf into the Main Ruleset</h3>
+Authpf is linked into the main ruleset by using <tt>anchor</tt> rules:
+<blockquote>
+<tt>
+nat-anchor authpf<br>
+rdr-anchor authpf<br>
+binat-anchor authpf<br>
+anchor authpf<br>
+</tt>
+</blockquote>
+
+<p>
+Wherever the <tt>anchor</tt> rules are placed within the ruleset is
+where PF will branch off from the main ruleset to evaluate the authpf
+rules. It's not necessary for all four <tt>anchor</tt> rules to be
+present; for example, if authpf hasn't been setup to load any
+<tt>nat</tt> rules, the <tt>nat-anchor</tt> rule can be omitted.
+
+<a name="loadrules"></a>
+<h3>Configuring Loaded Rules</h3>
+Authpf loads its rules from one of two files:
+<ul>
+<li><tt>/etc/authpf/users/$USER/authpf.rules</tt>
+<li><tt>/etc/authpf/authpf.rules</tt>
+</ul>
+
+<p>
+The first file contains rules that are only loaded when the user
+<tt>$USER</tt> (which is replaced with the user's username) logs in. The
+per-user rule configuration is used when a specific user -- such as an
+administrator -- requires a set of rules that is different than the
+default set.  The second file contains the default rules which are
+loaded for any user that doesn't have their own <tt>authpf.rules</tt>
+file. If the user-specific file exists, it will override the default
+file. At least one of the files must exist or authpf will not run. 
+
+<p>
+Filter and translation rules have the same syntax as in any other PF
+ruleset with one exception: Authpf allows for the use of two predefined
+macros:
+<ul>
+<li><tt>$user_ip</tt> - the IP address of the logged in user
+<li><tt>$user_id</tt> - the username of the logged in user
+</ul>
+
+<p>
+It's recommended practice to use the <tt>$user_ip</tt> macro to only
+permit traffic through the gateway from the authenticated user's
+computer.
+
+<a name="acl"></a>
+<h3>Access Control Lists</h3>
+Users can be prevented from using authpf by creating a file in the
+<tt>/etc/authpf/banned/</tt> directory and naming it after the username
+that is to be denied access.  The contents of the file will be displayed
+to the user before authpf disconnects them. This provides a handy way to
+notify the user of why they're disallowed access and who to contact to
+have their access restored.
+
+<p>
+Conversely, it's also possible to allow only specific users access by
+placing usernames in the <tt>/etc/authpf/authpf.allow</tt> file.  If the
+<tt>/etc/authpf/authpf.allow</tt> file does not exist or "<tt>*</tt>" is
+entered into the file, then authpf will permit access to any user who
+successfully logs in via SSH as long as they are not explicitly banned.
+
+<p>
+If authpf is unable to determine if a username is allowed or denied, it
+will print a brief message and then disconnect the user. An entry in
+<tt>/etc/authpf/banned/</tt> always overrides an entry in
+<tt>/etc/authpf/authpf.allow</tt>.
+
+<a name="shell"></a>
+<h3>Assigning Authpf as a User's Shell</h3>
+In order for authpf to work it must be assigned as the user's login
+shell. When the user successfully authenticates to
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sshd&amp;sektion=8&amp;manpath=OpenBSD+3.4"
+>sshd(8)</a>, authpf will be executed as the user's shell. It will then
+check if the user is allowed to use authpf, load the rules from the
+appropriate file, etc.
+
+<p>
+There are a couple ways of assigning authpf as a user's shell:
+<ol>
+<li>Manually for each user using
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=chsh&amp;sektion=1&amp;manpath=OpenBSD+3.4"
+>chsh(1)</a>, 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vipw&amp;sektion=8&amp;manpath=OpenBSD+3.4"
+>vipw(8)</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=useradd&amp;sektion=8&amp;manpath=OpenBSD+3.4"
+>useradd(8)</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=usermod&amp;sektion=8&amp;manpath=OpenBSD+3.4"
+>usermod(8)</a>, etc.
+<li>By assigning users to a login class and changing the class's 
+<tt>shell</tt> option in
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=login.conf&amp;sektion=5&amp;manpath=OpenBSD+3.4"
+><tt>/etc/login.conf</tt></a>.
+</ol>
+
+<a name="wholog"></a>
+<h2>Seeing Who is Logged In</h2>
+Once a user has successfully logged in and authpf has adjusted the PF
+rules, authpf changes its process title to indicate the username and IP
+address of the logged in user:
+<pre>
+    # ps -ax | grep authpf
+    23664 p0  Is+     0:00.11 -authpf: charlie@192.168.1.3 (authpf)
+</pre>
+
+<p>
+Here the user <tt>charlie</tt> is logged in from the machine
+192.168.1.3.  By sending a SIGTERM signal to the authpf process, the
+user can be forcefully logged out. Authpf will also remove any rules
+loaded for the user and kill any stateful connections the user has open.
+<pre>
+    # kill -TERM 23664
+</pre>
+
+<a name="moreinfo"></a>
+<h2>More Information</h2>
+For a complete description of authpf operation, please refer to the 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=authpf&amp;sektion=8&amp;manpath=OpenBSD+3.4"
+>authpf man page</a>.
+
+<a name="example"></a>
+<h2>Example</h2>
+Authpf is being used on an OpenBSD gateway to authenticate users on a
+wireless network which is part of a larger campus network. Once a user
+has authenticated, assuming they're not on the banned list, they will be
+permitted to SSH out and to browse the web (including secure web sites)
+in addition to accessing either of the campus DNS servers.
+
+<p>
+The <tt>/etc/authpf/authpf.rules</tt> file contains the following rules:<br>
+<br>
+
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+wifi_if = "wi0"
+dns_servers = "{ 10.0.1.56, 10.0.2.56 }"
+
+pass in quick on $wifi_if proto udp from $user_ip to $dns_servers \
+   port domain keep state
+pass in quick on $wifi_if proto tcp from $user_ip to port { ssh, http, \
+   https } flags S/SA keep state
+</pre>
+</td></tr>
+</table>
+
+<p>
+The administrative user <tt>charlie</tt> needs to be able to access the
+campus SMTP and POP3 servers in addition to surfing the web and using
+SSH. The following rules are setup in
+<tt>/etc/authpf/users/charlie/authpf.rules</tt>:<br>
+<br>
+
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+wifi_if = "wi0"
+smtp_server = "10.0.1.50"
+pop3_server = "10.0.1.51"
+dns_servers = "{ 10.0.1.56, 10.0.2.56 }"
+
+pass in quick on $wifi_if proto udp from $user_ip to $dns_servers \
+   port domain keep state
+pass in quick on $wifi_if proto tcp from $user_ip to $smtp_server \
+   port smtp flags S/SA keep state
+pass in quick on $wifi_if proto tcp from $user_ip to $pop3_server \
+   port pop3 flags S/SA keep state
+pass in quick on $wifi_if proto tcp from $user_ip to port { ssh, http, \
+   https } flags S/SA keep state
+</pre>
+</td></tr>
+</table>
+
+<p>
+The main ruleset -- located in <tt>/etc/pf.conf</tt> -- is setup
+as follows:<br>
+<br>
+
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+# macros
+wifi_if = "wi0"
+ext_if  = "fxp0"
+
+scrub in all
+
+# filter
+block drop all
+
+pass out quick on $ext_if proto tcp from $wifi_if:network flags S/SA \
+   modulate state
+pass out quick on $ext_if proto { udp, icmp } from $wifi_if:network \
+   keep state
+
+pass in quick on $wifi_if proto tcp from $wifi_if:network to $wifi_if \
+   port ssh flags S/SA keep state
+
+anchor authpf in on $wifi_if
+</pre>
+</td></tr>
+</table>
+
+<p>
+The ruleset is very simple and does the following:
+<ul>
+<li>Block everything (default deny).
+<li>Pass outgoing TCP, UDP, and ICMP traffic on the external interface 
+from the wireless network.
+<li>Pass incoming SSH traffic from the wireless network destined for the
+gateway itself. This rule is necessary to permit users to log in.
+<li>Create the anchor point "authpf" for incoming traffic on the wireless
+interface. 
+</ul>
+
+<p>
+The idea behind the main ruleset is to block everything and allow the
+least amount of traffic through as possible. Traffic is free to flow out
+on the external interface but is blocked from entering the wireless
+interface by the default deny policy. Once a user authenticates,
+their traffic is permitted to pass in on the wireless interface
+and to then flow through the gateway into the rest of the network. The
+<tt>quick</tt> keyword is used throughout so that PF doesn't have to
+evaluate each named ruleset when a new connection passes through the
+gateway.
+
+<p>
+[<a href="ftp.html">Previous: Issues with FTP</a>]
+[<a href="index.html">Contents</a>]
+[<a href="example1.html">Next: Example #1: Firewall for Home or
+Small Office</a>]
+
+<p>
+<hr>
+<a href="../../de/index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[back]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: authpf.html,v 1.4 ]<br>
+$Translation: authpf.html,v 1.1 2003/11/27 17:34:57 sl Exp $<br>
+$OpenBSD: authpf.html,v 1.1 2003/11/27 19:39:09 horacio Exp $
+</small>
+
+</body>
+</html> 
