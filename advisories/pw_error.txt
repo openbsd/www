@@ -1,0 +1,136 @@
+
+----------------------------------------------------------------------------
+                
+                        OpenBSD Security Advisory
+        
+                             October 3, 2000
+
+	Format string vulnerability in libutil pw_error(3) function
+
+----------------------------------------------------------------------------
+
+SYNOPSIS
+
+A format string vulnerability present in the pw_error() function of
+OpenBSD 2.7's libutil library can yield localhost users root access through
+the setuid /usr/bin/chpass utility. This particular vulnerability was
+repaired three months ago on June 30th in OpenBSD-current during a complete
+source tree audit for format string problems.
+
+OpenBSD developers became aware of an exploit circulating for the chpass(1)
+program on the evening of October 2, 2000.
+
+----------------------------------------------------------------------------
+
+AFFECTED SYSTEMS
+
+This vulnerability affects OpenBSD versions through 2.7. FreeBSD 4.0 is
+vulnerable, but patches have been backported, and FreeBSD versions 4.1 and
+4.1.1 are safe. Bill Sommerfield committed a fix to NetBSD today shortly
+after we notified him of the problem.
+
+OpenBSD users running -current (2.8-beta) with a system dated July 1st
+or thereafter are safe.
+
+----------------------------------------------------------------------------
+
+DETAILS
+
+In recent months a myriad of "format string" vulnerabilities have been
+discovered in a number of software packages. In response to this threat,
+the OpenBSD team immediately began a complete source tree audit, identifying
+and fixing dozens of these format bugs. While most of the issues were
+harmless, a few such as the bug in xlock and one in the OpenBSD ftpd daemon
+raised the red flag and patches were released to correct these problems.
+Unfortunately, the severity of the format string bug that was fixed in
+pw_error() was not fully realized at the time.
+
+In addition to fixing the bugs, CAVEATS sections were added to all stdarg
+function man pages (printf, syslog, setproctitle, err/warn) to warn
+programmers that user-supplied strings should never be passed to these
+routines without using the "%s" conversion specifier.
+
+----------------------------------------------------------------------------
+
+TECHNICAL DETAILS
+
+To understand a format string attack, you need only understand how varargs
+(see "man stdarg") functions work. For example, the printf() function
+accepts a variable number of arguments depending on the supplied format.
+Here is the function prototype:
+
+	int
+	printf(const char *format, ...);
+
+The problem occurs when one of these functions is used thusly:
+
+	printf(user_supplied_string);
+
+An attacker can put their own format specifiers in user_supplied_string.
+The printf() function does not know where it's arguments stop on the stack.
+If you put 100 `%s' format specifiers in the string, but give it no
+arguments, the function will happily continue on down the stack blindly.
+
+The problem is magnified by special conversion specifiers such as `%n'
+which let you write to memory. Further attack details are beyond the scope
+of this advisory. For more information see Guardent's white paper on
+"Format String Attacks" by Tim Newsham at the following URL:
+
+	http://www.guardent.com/docs/FormatString.PDF
+
+----------------------------------------------------------------------------
+
+RESOLUTION
+
+/bin/chmod u-s /usr/bin/chpass
+
+Use this command to protect yourself until you are patched. (Note that the
+vulnerability is actually in the libutil library, which chpass is linked to,
+not the chpass program itself.)
+
+Then, apply the fix below to your OpenBSD 2.7 source tree. The patch is also
+available at http://www.openbsd.org/errata.html (025).
+
+----------------------------------------------------------------------------
+
+CREDITS
+
+This vulnerability was originally extinguished on June 30th in a mass
+format string repair commit by Todd C. Miller of the OpenBSD project. Other
+developers who contributed to the audit include Theo de Raadt, Todd Fries,
+and Aaron Campbell.
+
+OpenBSD would also like to thank Kyle Hufford and Eric Jackson for their
+assistance in creating this advisory.
+
+----------------------------------------------------------------------------
+
+OPENBSD 2.7 PATCH
+
+Apply by doing:
+	cd /usr/src
+	patch -p0 < 025_pw_error.patch
+
+And then rebuild and install libutil.
+	cd lib/libutil
+	make depend
+	make
+	make install
+
+Index: lib/libutil/passwd.c
+===================================================================
+RCS file: /cvs/src/lib/libutil/passwd.c,v
+retrieving revision 1.20
+retrieving revision 1.21
+diff -u -r1.20 -r1.21
+--- lib/libutil/passwd.c	1998/11/16 07:10:32	1.20
++++ lib/libutil/passwd.c	2000/06/30 16:00:07	1.21
+@@ -579,7 +579,7 @@
+ 	char   *master = pw_file(_PATH_MASTERPASSWD);
+ 
+ 	if (err)
+-		warn(name);
++		warn("%s", name);
+ 	if (master)
+ 		warnx("%s: unchanged", master);
+ 	pw_abort();
