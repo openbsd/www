@@ -9,7 +9,7 @@
 <meta name="description"   content="Preguntas Frecuentes de OpenBSD">
 <meta name="keywords"      content="openbsd,faq,documentación">
 <meta name="distribution"  content="global">
-<meta name="copyright"     content="Este documento es copyright 1998-2003 de OpenBSD.">
+<meta name="copyright"     content="Este documento es copyright 1998-2004 de OpenBSD.">
 <style type="text/css">
   <!--
   pre { margin-left: 20px; }
@@ -42,7 +42,8 @@ adicionales en OpenBSD</a>
 <li><a href="#SwapFile">14.4 - C&oacute;mo usar un fichero como memoria
 de intercambio (<i>swap</i></a>
 <li><a href="#SoftUpdates">14.5 - &quot;Soft Updates&quot;</a>
-&quot;Using Drive: 0 Partition 3&quot;.</a>
+<li><a href="#Boot386">14.6 - El proceso de arranque de OpenBSD/i386 en
+detalle</a>
 <li><a href="#LargeDrive">14.7 - &iquest;Qu&eacute; problemas puede
 haber en OpenBSD con dispositivos de gran capacidad?</a>
 <li><a href="#InstBoot">14.8 - Instalaci&oacute;n de bloques de arranque
@@ -817,35 +818,271 @@ tienen soporte para una cantidad de memoria del n&uacute;cleo muy
 limitada, y no pueden usar esta funcionalidad.  Las m&aacute;quinas
 sun4m no tienen esta limitaci&oacute;n y s&iacute; pueden usarla.
 
+<a name="Boot386"></a>
+<h2>14.6 - El proceso de arranque de OpenBSD/i386 en detalle</h2>
+
+<p>
+El proceso de arranque de OpenBSD/i386 no es algo trivial, y entender
+c&oacute;mo funciona puede ayudarnos a resolver alg&uacute;n problema.
+Hay cuatro piezas clave en el proceso de arranque:
+<ol>
+<li><i><b>Registro de Arranque Maestro</b> (Master Boot Record,
+MBR):</i>  El MBR es el primer sector f&iacute;sico del disco (los
+primeros 512 bytes).  Contiene la tabla de particiones primarias y un
+peque&ntilde;o programa para cargar el <i>Partition Boot Record</i>
+(PBR).  N&oacute;tese que en algunos entornos, el t&eacute;rmino MBR se
+usa para referirse &uacute;nicamente a la parte de c&oacute;digo de este
+primer bloque del disco, en lugar de referirse a todo este primer bloque
+(incluida la tabla de particiones).  Es importante que se entienda el
+sentido de <i>&quot;initialize the MBR&quot;</i> (iniciar el MBR), ya
+que dentro de la terminolog&iacute;a que se usa en OpenBSD esto incluye
+la reescritura de todo el sector del MBR, no s&oacute;lo del
+c&oacute;digo como en algunos sistemas.  Esto es algo que rara vez se
+querr&aacute; hacer.  En lugar de ello, hay que usar la orden
+<tt>&quot;update&quot;</tt> de fdisk(8).
+
+<p>
+Aunque OpenBSD incluya un MBR, no es necesario usar &eacute;ste ya que
+pr&aacute;cticamente cualquier otro MBR puede arrancar OpenBSD.  El MBR
+se manipula con el programa fdisk(8), que se usa para modificar la tabla
+de particiones adem&aacute;s de para instalar el c&oacute;digo de MBR en
+el disco.
+
+<p>
+El MBR de OpenBSD se anuncia con el mensaje
+<pre>
+    Using Drive: 0 Partition: 3
+</pre>
+mostrando as&iacute; el disco y la partici&oacute;n desde las que va a
+cargar el PBR.
+
+<li><i><b>Registro de Arranque de la Partici&oacute;n</b> (Partition
+Boot Record, PBR):</i>  El PBR, tambi&eacute;n llamado
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=biosboot&amp;sektion=8&amp;arch=i386">biosboot(8)</a>
+(por el nombre del archivo que contiene el c&oacute;digo) es el primer
+sector f&iacute;sico de la partici&oacute;n de OpenBSD del disco.  El
+PBR es la &laquo;primera fase del cargador de arranque&raquo; para
+OpenBSD.  El PBR lo carga el c&oacute;digo del MBR, y tiene la
+funci&oacute;n de cargar la segunda fase del cargador de arranque,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=boot&amp;sektion=8&amp;arch=i386">boot(8)</a>.
+Como el MBR, el PBR es una peque&ntilde;&iacute;sima secci&oacute;n de
+c&oacute;digo y datos, tan s&oacute;lo 512 bytes en total.  Eso no es
+suficiente para tener una aplicaci&oacute;n que pueda hacer uso total
+del sistema de archivos.  Por lo tanto, en lugar de dejar que el PBR
+localice <tt>/boot</tt> en el disco, la ubicaci&oacute;n accesible por
+la BIOS de <tt>/boot</tt> se codificada f&iacute;sicamente en PBR
+durante la instalaci&oacute;n.
+
+<p>
+El PBR lo instala
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=installboot&amp;sektion=8&amp;arch=i386">installboot</a>,
+que se describe con detalle en la
+<a href="faq14.html#InstBoot">secci&oacute;n 14.8</a> de este documento.
+El PBR se anuncia con el mensaje
+<pre>
+    reading boot....
+</pre>
+imprimiendo la l&iacute;nea de puntos seg&uacute;n va leyendo los
+sectores del disco.
+
+<li><b><i>Cargador de Arranque de Segunda Fase, <tt>/boot</tt>:</i></b>
+<tt>/boot</tt> es cargado por el PBR, y tiene la funci&oacute;n de
+acceder al sistema de archivos de OpenBSD a trav&eacute;s de la BIOS de
+la m&aacute;quina, y de ubicar y cargar el n&uacute;cleo del sistema
+(<i>kernel</i>).  boot(8) tambi&eacute;n pasa varias opciones e
+informaci&oacute;n al n&uacute;cleo del sistema.
+
+<p>
+boot(8) es un programa interactivo.  Despu&eacute;s de cargarse, intenta
+ubicar y leer <tt>/etc/boot.conf</tt> si existe (en una
+instalaci&oacute;n t&iacute;pica no existe), y procesa cualquier orden
+que lleva.  A menos que <tt>/etc/boot.conf</tt> le d&eacute; otras
+instrucciones, pasa un punto de inserci&oacute;n al usuario:
+
+<pre>
+     probing: pc0 com0 com1 apm mem[636k 190M a20=on]
+     disk: fd0 hd0+
+     &gt;&gt; OpenBSD/i386 BOOT 2.02
+     boot&gt;
+</pre>
+
+En la configuraci&oacute;n predeterminada, le da al usuario cinco
+segundos para que le pase alguna orden;  si no se hace nada durante este
+tiempo, incia su tarea predeterminada:  cargar el n&uacute;cleo del
+sistema, <tt>bsd</tt>, desde la partici&oacute;n ra&iacute;z del primer
+disco duro.  El cargador de arranque de segunda fase sondea (examina) el
+<i>hardware</i> del sistema a trav&eacute;s de la BIOS (ya que
+todav&iacute;a no se ha cargado el n&uacute;cleo de OpenBSD).  En el
+cuadro de arriba se pueden ver unas pocas cosas que ha buscado y
+encontrado:
+<ul>
+<li><b>pc0</b> - El teclado y la pantalla de v&iacute;deo t&iacute;picas
+de un sistema i386
+<li><b>com0, com1</b> - Dos puertos serie
+<li><b>apm</b> - Funciones <i>Advanced Power Management</i> de la BIOS
+<li><b>636k 190M</b> - La cantidad de memoria convencional (por debajo
+de 1MB) y extendida (por encima de 1MB) que ha encontrado
+<li><b>fd0 hd0+</b> - Los dispositivos de disco de la BIOS que
+encuentra;  en este caso una disquetera y un disco duro
+</ul>
+
+<p>
+El caracter '+' despu&eacute;s de &quot;hd0&quot; indica que la BIOS a
+informado a <tt>/boot</tt> de que este disco es accesasible mediante
+LBA.  Cuando se realiza una primera instalaci&oacute;n, a veces se
+observa un caracter '*' despu&eacute;s del disco duro;  esto indica un
+disco que no parece tener una clasificaci&oacute;n de disco de OpenBSD
+v&aacute;lida.
+
+<li><b><i>Kernel: <tt>/bsd</tt></i>:</b>  El <i>kernel</i> o
+n&uacute;cleo del sistema es el objetivo final de todo el proceso de
+arranque:  cargar el n&uacute;cleo en la RAM y que se ejecute
+correctamente.  Una vez que se ha cargado el n&uacute;cleo, OpenBSD
+accede directamente al <i>hardware</i>, sin que ya sea necesario que
+vaya a trav&eacute;s de la BIOS.
+</ol>
+
+<p>
+As&iacute; pues, el inicio del proceso de arranque seguir&iacute;a un
+esquema como el siguiente:
+<blockquote><pre>
+Using Drive: 0 Partition: 3                      <b><i>&lt;- MBR</i></b>
+reading boot....                                 <b><i>&lt;- PBR</i></b>
+probing: pc0 com0 com1 apm mem[636k 190M a20=on] <b><i>&lt;- /boot</i></b>
+disk: fd0 hd0+
+&gt;&gt; OpenBSD/i386 BOOT 2.02
+boot&gt;
+booting hd0a:/bsd 4464500+838332 [58+204240+181750]=0x56cfd0
+entry point at 0x100120
+
+[ using 386464 bytes of bsd ELF symbol table ]
+Copyright (c) 1982, 1986, 1989, 1991, 1993     <b><i>&lt;- Kernel</i></b>
+        The Regents of the University of California.  All rights reserved.
+Copyright (c) 1995-2003 OpenBSD.  All rights reserved.  http://www.OpenBSD.org
+
+OpenBSD 3.4 (GENERIC) #18: Wed Sep 17 03:34:47 MDT 2003
+   ...
+</pre></blockquote>
+
+
+<h3>Posibles errores</h3>
+<ul>
+<li><b>MBR en mal estado, no v&aacute;lido, o incompatible:</b>
+Generalmente, un disco duro usado contiene algo de c&oacute;digo de MBR;
+pero si el disco es nuevo o se encontraba anteriormente en una
+plataforma diferente, Y SI hemos contestado <i>&quot;Yes&quot;</i> a la
+pregunta de si quer&iacute;amos usar todo el disco (<i>&quot;Use entire
+disk&quot;</i>) durante el <a href="faq4.html#Disks">proceso de
+instalaci&oacute;n</a>, podemos acabar con un disco sin un MBR
+v&aacute;lido y que ni siquiera podr&aacute; arrancar, aun cuando
+contenga una tabla de particiones v&aacute;lida.
+
+<p>
+En este caso podemos instalar el MBR de OpenBSD en el disco duro usando
+el programa fdisk.  Para ello arrancaremos desde el medio de
+instalaci&oacute;n que tengamos, y escogeremos la opci&oacute;n
+&quot;Shell&quot; para obtener un punto de inserci&oacute;n de
+&oacute;rdenes, desde donde le pasaremos la orden:
+<pre>
+    # <b>fdisk -u wd0</b>
+</pre>
+
+<p>
+Tambi&eacute;n podemos instalar un MBR espec&iacute;fico en el disco
+usando fdisk.  Por ejemplo:
+<pre>
+    # <b>fdisk -u -f /usr/mdec/mbr wd0 </b>
+</pre> 
+
+instalar&aacute; el archivo <tt>/usr/mdec/mbr</tt> como el MBR de
+nuestro sistema.  Este archivo en concreto, en una instalaci&oacute;n
+t&iacute;pica de OpenBSD, es el MBR est&aacute;ndar que tambi&eacute;n
+se encuentra dentro de fdisk.  Pero se puede especificar cualquier otro
+MBR.
+
+<li><b>Ubicaci&oacute;n no v&aacute;lida  de <tt>/boot</tt> instalada
+en PBR:</b>
+Cuando installboot(8) instala el registro de arranque de la
+partici&oacute;n, escribe la ubicaci&oacute;n f&iacute;sica de los
+sectores del disco de <tt>/boot</tt> en el PBR.  Por lo tanto, si se
+elimina y sustituye <tt>/boot</tt> sin volver a ejecutar
+<a href="faq14.html#InstBoot">installboot(8)</a>, el sistema no
+podr&aacute; arrancar; el motivo es que el PBR carga cualquier cosa que
+se encuentre en los bloques que tiene especificados, que seguramente ya
+no ser&aacute; el cargador de arranque de segunda fase.  Dado que
+<tt>/boot</tt> se lee usando las llamadas a la BIOS, si se altera la
+geometr&iacute;a del disco (o sea, si se pasa de una m&aacute;quina que
+usa traducci&oacute;n CHS a otra que usa traducci&oacute;n LBA, o si se
+cambia la opci&oacute;n de traducci&oacute;n en la BIOS), la BIOS
+entender&aacute; que se encuentra en una ubicaci&oacute;n diferente
+(para obtener los mismos datos del disco hay que acceder a un bloque
+num&eacute;rico diferente).  De nuevo, aqu&iacute; ser&aacute; necesario
+ejecutar installboot(8) antes de poder volver a arrancar el sistema.
+Como el PBR es muy peque&ntilde;o, el rango de mensajes de error es
+bastante limitado:
+
+<ul>
+<li><b>Read Error</b> -- La BIOS devuelve un error al intentar leer un
+bloque desde el disco.  Podr&iacute;a ser un problema f&iacute;sico del
+disco, o que se ha llamado a un sector no v&aacute;lido (o sea, un
+problema de geometr&iacute;a del disco).
+<li><b>Bad magic</b> -- Se ha le&iacute;do un n&uacute;mero
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=magic&amp;sektion=5">magic(5)</a>
+no v&aacute;lido en la cabecera del cargador de arranque de segunda
+fase.  Esto, generalmente, significa que sea lo que fuere que se haya
+le&iacute;do, NO era <tt>/boot</tt>.  Este problema se suele deber a un
+problema con la geometr&iacute;a del disco, al haber sustituido
+<tt>/boot</tt> en el disco o por haber ignorado las
+<a href="faq14.html#LargeDrive">limitaciones de 8GB &oacute; de la
+BIOS</a> del sistema, y haber acabado <tt>/boot</tt> en alguna parte en
+donde no lo puede localizar el PBR.
+</ul>
+</ul>
+
+<p>
+Para m&aacute;s informaci&oacute;n sobre el proceso de arranque de i386,
+v&eacute;ase los documentos:
+<ul>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=boot_i386&amp;sektion=8&amp;arch=i386">boot_i386(8)</a>
+<li><a href="ftp://ftp.openbsd.org/pub/OpenBSD/3.4/i386/INSTALL.mbr">INSTALL.mbr</a>
+<li><a href="ftp://ftp.openbsd.org/pub/OpenBSD/3.4/i386/INSTALL.ata">INSTALL.ata</a>
+<li><a href="ftp://ftp.openbsd.org/pub/OpenBSD/3.4/i386/INSTALL.chs">INSTALL.chs</a>
+<li><a href="ftp://ftp.openbsd.org/pub/OpenBSD/3.4/i386/INSTALL.dbr">INSTALL.dbr</a>
+</ul>
+
+
 <a name="LargeDrive"></a>
 <h2>14.7 - &iquest;Qu&eacute; problemas puede haber en OpenBSD con
 dispositivos de gran capacidad?</h2>
 
 <p>
-<!-- XXXexpires - paragraph need rewriting when 3.1 becomes unsupported -->
 OpenBSD tiene soporte para sistemas de archivos de tama&ntilde;os mucho
 mayores que cualquier de los discos duros que existen en la actualidad o
 incluso de los que puedan aparecer en breve;  sin embargo, existen
 limitaciones en algunas interfaces que son de menor tama&ntilde;o que el
-m&aacute;ximo te&oacute;rico de OpenBSD.  En el caso de dispositivos
-IDE, el l&iacute;mite es de 128GB, que es el mismo l&iacute;mite que
-tiene actualmente la interfaz ATA.  N&oacute;tese que en la
-pr&oacute;xima generaci&oacute;n de dispositivos ATA, aquellos con
-capacidad mayor de 128G (1G=2^30, no 1.000.000.000, aunque los
-fabricantes de dispositivos lo llamar&aacute;n 137G) no tienen soporte
-en OpenBSD 3.1 ni en versiones anteriores.
+m&aacute;ximo te&oacute;rico de OpenBSD.
 
+<p>
+No son posibles todas las combinaciones de <i>hardware</i>.  Un nuevo
+disco duro IDE de 250GB no funcionar&aacute; en las interfaces
+m&aacute;s viejas (anteriores a los est&aacute;ndares &gt;137GB), y
+algunos adaptadores SCSI muy viejos han dado problemas con discos
+m&aacute;s modernos.  Hay que respetar las posibilidades y limitaciones
+del <i>hardware</i>.
+
+<h3>Limitaciones al tama&ntilde;o de la partici&oacute;n y
+ubicaci&oacute;n</h3>
 <p>
 Desafortunadamente, la capacidad absoluta del sistema operativo no se
 encontrar&aacute; disponible hasta DESPU&Eacute;S de que el sistema
 operativo haya sido cargado en la memoria y el proceso de arranque haya
 introducido sus propios l&iacute;mites.  El proceso de arranuqe tiene
 que utilizar (y por lo tanto est&aacute; limitado por) la ROM de
-arranque del sistema.  Los cargadores de arranque de OpenBSD para i386
-(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=biosboot&amp;sektion=8&amp;arch=i386">biosboot(8)</a> y
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=boot&amp;sektion=8&amp;arch=i386">boot(8)</a>)
-tambi&eacute;n tienen sus propias limitaciones internas de 8G, heredadas
-del l&iacute;mite de una BIOS antigua.
+arranque del sistema.  El cargador de arranque de primera face de
+OpenBSD/i386
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=biosboot&amp;sektion=8&amp;arch=i386">biosboot(8)</a>)
+tambi&eacute;n tiene su propia limitaci&oacute;n interna de 8GB,
+heredada del l&iacute;mite de las BIOS antiguas.
 
 <p>
 Por este motivo, todo el fichero <i>/bsd</i> (el n&uacute;cleo del
@@ -883,8 +1120,11 @@ del rango de los 504M para los que tiene soporte la BIOS.  El cargador
 de arranque no pudo localizar <i>/bsd</i> y el sistema se colg&oacute;.
 
 <p>
-Para que OpenBSD arranque, <i>/bsd</i> debe encontrarse dentro del rango
-de la ROM.  Para mayor seguridad, hay una regla muy simple:
+Para que OpenBSD arranque, los cargadores de arranque (biosboot(8) y
+<tt>/boot</tt> en el caso de i386) y el n&uacute;cleo (<tt>/bsd</tt>)
+deben encontrarse dentro del rango del soporte de la ROM de arranque, y
+dentro de sus propias capacidades.  Para ir sobre seguro, la regla es
+f&aacute;cil:
 
 <p>
 <b>Toda la partici&oacute;n <i>root</i> debe estar dentro del espacio
@@ -899,6 +1139,22 @@ esta regla.
 <a href="faq4.html#SpaceNeeded">dividir el disco duro en
 particiones</a>, en lugar de usar una &uacute;nica partici&oacute;n
 grande.
+
+<h3>Requisitos de tiempo y memoria de fsck(8)</h3>
+<p>
+Otra consideraci&oacute;n con sistemas de archivos grandes es la del
+tiempo y memoria requeridos para poder usar
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fsck&amp;sektion=8">
+fsck(8)</a> en el sistema de archivos despu&eacute;s de una ca&iacute;da
+del sistema o de una interrupci&oacute;n de la fuente el&eacute;ctrica.
+No se debe poner un sistema de archivos de 120GB en un sistema con 32MB
+de RAM y esperar que fsck(1) se ejecute con &eacute;xito despu&eacute;s
+de una ca&iacute;da.  El sistema deber&iacute;a tener como m&iacute;nimo
+1MB de memoria disponible por cada 1GB de espacio en disco para que fsck
+se ejecute con &eacute;xito sobre el disco.  El tiempo requerido para
+que fsck repare el disco puede ser un problema seg&uacute;n se va
+incrementando el tama&ntilde;o del sistema de archivos.
+
 
 <a name="InstBoot"></a>
 <h2>14.8 - Instalaci&oacute;n de bloques de arranque (espec&iacute;fico
@@ -1565,9 +1821,9 @@ espec&iacute;ficas]</a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
 <small>
-Originally [OpenBSD: faq14.html,v 1.95 ]<br>
-$Translation: faq14.html,v 1.53 2003/12/30 12:04:40 horacio Exp $<br>
-$OpenBSD: faq14.html,v 1.51 2004/01/01 23:30:28 horacio Exp $
+Originally [OpenBSD: faq14.html,v 1.99 ]<br>
+$Translation: faq14.html,v 1.54 2004/01/04 19:59:58 horacio Exp $<br>
+$OpenBSD: faq14.html,v 1.52 2004/01/04 22:23:56 horacio Exp $
 </small>
 </body>
 </html>
