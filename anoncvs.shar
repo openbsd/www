@@ -489,6 +489,35 @@ X#ifndef CVSROOT
 X#define	CVSROOT		__CONCAT3(HOSTNAME,":",LOCALROOT)
 X#endif
 X
+X/*
+X * We define PSERVER_SUPPORT to allow anoncvssh to spawn a "cvs pserver".
+X * You may undefine this if you aren't going to be running pserver.
+X */
+X#ifndef PSERVER_SUPPORT
+X#define PSERVER_SUPPORT
+X#endif
+X
+X/*
+X * Define USE_SYSLOG if you want anoncvssh to log pserver connections 
+X * using syslog()
+X */
+X#define USE_SYSLOG
+X
+X#ifdef USE_SYSLOG
+X#include <string.h>
+X#include <syslog.h>
+X#include <netinet/in.h>
+X#include <sys/socket.h>
+X#include <arpa/inet.h>
+X#define LOG_FACILITY LOG_DAEMON
+X#define LOG_PRIO LOG_INFO
+X#endif
+X
+X/* Define ANONCVS_USER if you want anoncvssh to complain if invoked by
+X * anyone other than root or ANONCVS_USER.
+X */
+X/* #define ANONCVS_USER "anoncvs" */
+X
 Xint main __P((int, char *[]));
 X
 Xchar * const env[] = {
@@ -519,6 +548,27 @@ X	if (pw->pw_dir == NULL) {
 X		fprintf(stderr, "no directory\n");
 X		exit(1);
 X	}
+X
+X#ifdef USE_SYSLOG
+X	openlog("anoncvssh", LOG_PID | LOG_NDELAY, LOG_FACILITY);
+X#endif /* USE_SYSLOG */
+X	
+X#ifdef ANONCVS_USER
+X	/* 
+X	 * I love lusers who have to test every setuid binary on my machine.
+X	 */
+X	if (getuid() != 0 && (strcmp (pw->pw_name, ANONCVS_USER) != 0)) {
+X		fprintf(stderr, "You're not supposed to be running me!\n"); 
+X#ifdef USE_SYSLOG
+X		syslog(LOG_NOTICE,
+X		       "User %s(%d) invoked anoncvssh - Possible twink?",
+X		       pw->pw_name, pw->pw_uid); 
+X#endif /* USE_SYSLOG */
+X		exit(1);
+X	}
+X#endif /* ANONCVS_USER */
+X
+X
 X	seteuid(0);
 X	if (chroot(pw->pw_dir) == -1) {
 X		perror("chroot");
@@ -531,21 +581,54 @@ X	/*
 X	 * program now "safe"
 X	 */
 X
+X#ifdef PSERVER_SUPPORT
 X	/* If we want pserver functionality */
-X	if (strcmp("pserver", argv[1])) {
+X	if ((argc == 2) && (strcmp("pserver", argv[1]) == 0)) {
+X#ifdef USE_SYSLOG
+X 	        int slen;
+X		struct sockaddr_in my_sa, peer_sa;
+X		char *us, *them;
+X		
+X		slen = sizeof(my_sa);
+X		if (getsockname(0, (struct sockaddr *) &my_sa, &slen)
+X		    != 0) {
+X		  perror("getsockname");
+X		  exit(1);
+X		}
+X		us = strdup(inet_ntoa(my_sa.sin_addr));
+X		if (us == NULL) {
+X		  fprintf(stderr, "malloc failed\n");
+X		  exit(1);
+X		}
+X		slen = sizeof(peer_sa);
+X		if (getpeername(0, (struct sockaddr *) &peer_sa, &slen)
+X		    != 0) {
+X		  perror("getpeername");
+X		  exit(1);
+X		}
+X		them=strdup(inet_ntoa(peer_sa.sin_addr));
+X		if (them == NULL) {
+X		  fprintf(stderr, "malloc failed\n");
+X		  exit(1);
+X		}
+X	        syslog(LOG_PRIO, 
+X		       "pserver connection from %s:%d to %s:%d\n",
+X		       them, ntohs(peer_sa.sin_port),
+X		       us, ntohs(my_sa.sin_port));
+X#endif /* USE_SYSLOG */
 X		execle("/usr/bin/cvs", "cvs", "pserver", NULL, env);
 X		perror("execle: cvs");
 X		fprintf(stderr, "unable to exec CVS pserver!\n");
 X		exit(1);
 X		/* NOTREACHED */
 X	}
+X#endif
 X
 X	if (argc != 3 || 
 X		strcmp("anoncvssh",  argv[0]) != 0 ||
 X		strcmp("-c",         argv[1]) != 0 ||
 X		(strcmp("cvs server", argv[2]) != 0 &&
 X		 strcmp(__CONCAT3("cvs -d ",LOCALROOT," server"), argv[2]) != 0)) {
-X
 X		fprintf(stderr, "\nTo use anonymous CVS install the latest ");
 X		fprintf(stderr,"version of CVS on your local machine.\n");
 X		fprintf(stderr,"Then set your CVSROOT environment variable ");
@@ -559,7 +642,6 @@ X#endif /* DEBUG */
 X		sleep(10);
 X		exit(0);
 X	}
-X
 X	execle("/usr/bin/cvs", "cvs", "server", NULL, env);
 X	perror("execle: cvs");
 X	fprintf(stderr, "unable to exec CVS server!\n");
