@@ -1,37 +1,452 @@
 <html>
 <head>
-<title>OpenBSD FAQ: 13 - Using IPsec in OpenBSD</title>
+<title>OpenBSD FAQ: 13 - IPSec</title>
 <link rev= "made" href= "mailto:www@openbsd.org">
 <meta name= "resource-type" content= "document">
 <meta name= "description"   content= "the OpenBSD FAQ page">
 <meta name= "keywords"      content= "openbsd,faq">
 <meta name= "distribution"  content= "global">
-<meta name= "copyright"     content= "This document copyright 1998,1999 by OpenBSD.">
+<meta name= "copyright"     content= "This document copyright (C) 1999 OpenBSD">
 </head>
 
 <body bgcolor= "#ffffff" text= "#000000" link= "#23238E">
-
-<img alt="[OpenBSD]" height=30 width=141 src="../images/smalltitle.gif">
 <p>
-<h2><font color=#e00000>13.0 - Using IPsec in OpenBSD</font><hr></h2>
+<font color= "#0000e0">
+<a href= "index.html">[Back to Main Index]</a>
+<a href= "faq12.html">[To Section 12.0 - For Advanced Users]</a>
+<a href= "faq14.html">[To Section 14.0 - Using disks in OpenBSD]</a>
+</font>
 </p>
 
 <p>
-<ul><h3>Table of Contents</h3>
-<li><a href="#13.1">IPsec</a>
+<h1>13.0 - IP Security Protocol</h1>
+<Font size="-1">
+This document borrows large pieces from:
+<UL>
+<LI><A HREF="http://www.freebsd.org/~julian/IPSEC_4_Dummies.html">IPSec for Dummies</a> by Julian Elischer
+<LI><A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=ipsec&sektion=4&format=html">ipsec(4)</a> by Niels Provos, and several other people from the OpenBSD team
+</UL>
+Thanks, folks!
+</font>
+<UL>
+<LI><A HREF="#13.1">What is IPSec?</a>
+<LI><A HREF="#13.2">That's nice, but why do I want to use IPSec?</a>
+<LI><A HREF="#13.3">What are the protocols behind IPSec?</a>
+<LI><A HREF="#13.4">On the wire format</a>
+<LI><A HREF="#13.5">How do I setup IPSec?</a>
+<LI><A HREF="#13.6">How do I setup isakmpd/IKE?</a>
+<LI><A HREF="#13.7">What other IKE clients are compatible with isakmpd?</a>
+<LI><A HREF="#13.8">Related Documentation</a>
+</UL>
+<p>
+<a name= "13.1">
+<h1>13.1 - What is IPSec?</h1>
+</a>
+<P>
+IPSec is a set of extensions to the IP protocol family.   It provides
+cryptographic security services.  These services allow for authentication,
+integrity, access control, and confidentiality.  IPSec provides
+similar services as SSL, but at the network layer, in a way that is completely
+transparent to your applications, and much more powerful (they don't have to
+have any knowledge of IPSec.)  Also see <A HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc2401.html">RFC 2401</a>.
+<P>
+Before you start using IPSec, we strongly recommend that you check out
+the "recommended reading" of <A HREF="faq6.html">part 6</a> of the FAQ.
+In particular, if you don't already understand it, the <A HREF="http://www.3com.com/nsc/501302s.html">Understanding
+IP Addressing</a> document is highly recommended.
+<P>
+In a logical sense, IPSec works in any of these three ways:
+<UL>
+<LI>Host-to-Host
+<LI>Host-to-Network
+<LI>Network-to-Network
+</UL>
+Of course, in every scenario that involves a network, we mean to imply
+router.  As in, Host-to-Router (and this router controls and encrypts
+traffic for a particular <i>Network</i>.)
+<P>
+As you can see, IPSec can be used to tunnel traffic for VPN connections.
+However, its utility reaches beyond VPNs.  With a central Internet Key Exchange
+registry, every machine on the internet could talk to another one
+and employ powerful encryption and authentication!
+<p>
+<a name= "13.2">
+<h1>13.2 - That's nice, but why do I want to use IPSec?</h1>
+</a>
+<P>
+The internet protocol, IP, aka IPv4, does not inherently provide any protection
+to your transferred data.  It does not even guarantee that the
+sender is who he says he is.  IPSec tries to remedy this.  These services 
+are considered distinct, but the IPSec supports them in a uniform manner. 
+<P>
+<h4>Confidentiality</h4> Make sure it is hard for anyone but the receiver
+to understand what data has been communicated.  You do not want
+anyone to see your passwords when logging into a remote machine
+over the Internet.
+<P>
+<h4>Integrity</h4> Guarantee that the data does not get changed on the
+way.  If you are on a line carrying invoicing data you probably
+want to know that the amounts and account numbers are correct and
+not altered while in-transit.
+<P>
+<h4>Authenticity</h4> Sign your data so that others can see that it is really
+you that sent it.  It is clearly nice to know that documents
+are not forged.
+<P>
+<h4>Replay protection</h4> We need ways to ensure a transaction can only
+be carried out once unless we are authorized to repeat it.  I.e. it
+should not be possible for someone to record a transaction, and
+then replaying it verbatim, in order to get an effect of multiple
+transactions being received by the peer.  Consider the attacker has
+got to know what the traffic is all about by other means than
+cracking the encryption, and that the traffic causes events
+favourable for him, like depositing money into his account.  We
+need to make sure he cannot just replay that traffic later.
+<i>WARNING: as per the standards specification, replay protection is not
+performed when using manual-keyed IPsec (e.g., when using ipsecadm(8) )</i>.
+<p>
+<a name= "13.3">
+<h1>13.3 - What are the protocols behind IPSec?</h1>
+</a>
+<P>
+IPSec provides confidentiality, integrity, authenticity, and replay
+protection through two new protocols.  These protocols are called AH,
+Authentication header, and ESP, Encapsulated security payload.
+<P>
+AH provides authentication, integrity, and replay protection (but not
+confidentiality). Its main difference with ESP is that AH also secures
+parts of the IP header of the packet (like the source/destination
+addresses).
+<P>
+ESP can provide authentication, integrity, replay protection, and
+confidentiality of the data (it secures everything in the packet that follows
+the IP header). Replay protection requires authentication and integrity
+(these two go always together). Confidentiality (encryption) can be used
+with or without authentication/integrity. Similarly, one could use
+authentication/integrity with or without confidentiality.
+<P>
+<a name= "13.4">
+<h1>13.4 - On the wire format</h1>
+
+<P>The <B>Authentication Header
+</B>(AH) comes after the basic IP&nbsp;header and contains cryptographically
+secured Hashes of the data and Identification information. The hashes can
+also cover the invariant parts of the IP&nbsp;header itself. There are
+several differnt RFCs giving a choice of actual algorythms to use in the
+AH, however they all must follow the guidlines specified in <A HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc2402.html">RFC2402</A>.</P>
+
+<P>The <B>Encapsulating
+Security Payload</B> (ESP) header, allows for rewriting of the payload
+in encrypted form. The ESP header does not consider the fields of the IP
+header before it and therefore amkes no guarantees about anything except
+the payload. The various types of ESP applicable must follow <A HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc2406.html">RFC2406</A>.
+An ESP header can also provide Authentication for the payload, (but not
+the outer header).</P>
+
+<P>An orthogonal (mostly) division of IPSec functionality is applied depending
+on whether the endpoint doing the IPSec encapsulation is the original source
+of the data or a gateway:</P>
+
+<UL>
+<LI><B>Transport</B> mode is used by a host that is generating the packets.
+In transport mode, the security headers are added before the transport
+layer (e.g . TCP, UDP) headers, before the IP header is prepended to the
+packet. In other words an AH&nbsp;added to the packet will cover the hashing
+of the TCP header and some fields of the end-to-end IP header, and an ESP
+header will cover the encryption of the TCP&nbsp;header and the data, but
+not the end-to-end IP&nbsp;header.</LI>
+
+<LI><B>Tunnel </B>mode is used when the end-to-end IP&nbsp;header is already
+attached to the packet, and one of the ends of the secure connection is
+only a gateway. In this mode, the AH&nbsp;and ESP headers are used to cover
+the entire packet including the end-to-end header, and a new IP&nbsp;header
+is repended to the packet that covers just the hop to the other end of
+the secure connection (though that may of course be several IP hops away).</LI>
+</UL>
+
+<P>IPSec secured links are defined in terms of <B>Security Associations
+</B>(SAs). Each SA is defined for a single unidirectional flow of data,
+and usually (ignoring multicast) from one single point to another, covering
+trafic distiguishable by some <B>unique selector</B>. All traffic flowing
+over a single SA is treated the same. Some traffic may be subject to several
+SAs, each of which applies some transform. Groups of SAs are called an
+SA <B>Bundle</B>. Incoming packets can be assigned to a particular SA by
+the three defining fields, (<B>Destination IPaddess, Security Paramiter
+Index, Security protocol)</B> SPI can be considered a cookie that is handed
+out by the reciever of the SA when the parameters of the connection are
+negotiated. and the protocol must be either AH&nbsp;or ESP. Since the IP
+address of the reciever is part of the tripple, this is a guaranteed unique
+value. They can be found from the outer IP header and the first security
+header (which contains the SPI and the protocol).</P>
+
+<P>An example of a tunnel mode AH packet is:</P>
+
+<P><B>[IPHDR][IPoptions][AH]</B>[IPHDR2][IPoptions][TCP][data]</P>
+
+<P>An example of a transport mode AH packet is:</P>
+
+<P><B>[IPHDR][IPoptions][AH]</B>[TCP][data]</P>
+
+<P>Because an ESP&nbsp;header cannot authenticate the outer IP header,
+it is useful to combine an AH&nbsp;and an ESP header to get the following:</P>
+
+<P><B>[IPHDR][IPoptions][AH][ESP]</B><I>[TCP][data]</I></P>
+
+<P>This is called <B>Transport Adjacency</B>. The tunnelling version would
+look like:</P>
+
+<P><B>[IPHDR][IPoptions][AH][ESP]</B><I>[IPHDR2][IPoptions][TCP][data]</I></P>
+
+<P>However it is not specifically mentionned in the RFC. As with Transport
+adjacency, this would authenticate the entire packet except a few headers
+in the IP header and also encrypt the payload, (seen in italics). When
+an AH&nbsp;and an ESP&nbsp;header are diectly applied together like this,
+the order of the headers should be as shown. It is possible in tunnel mode,
+to do arbitrary recursive encapsulation so that order is not specified.</P>
+
+<P><B><FONT SIZE=+1>Administrative Interface. (Sample implementation)</FONT></B></P>
+
+<P>How the IPSec systems and gateways are configured is to some extent
+left to the designer, however the RFC has some strong recomendations as
+to how this should be implemented, so as to minimise confusion.</P>
+
+<P>There are two administrative entities that control what happens to a
+packet. One is the <B>Security Association Batabase </B>(SAD) and the other
+is the <B>Security Policy Database</B> (SPD). Each interface supporting
+IPSec should have a logically separate SAD and SPD.</P>
+
+<P>They are similar in that given a number of selectors that describe some
+traffic, they will deliver an entry that describes the processing needed.
+however the SPD&nbsp;is two steps removed from the actual processing. The
+SPD&nbsp;is used for outgoing packets, to decide what SAD entries should
+be used, and the SAD entries in turn describe the actual process and the
+parameters for it. The SPD entries specify the already created SAD entries
+to use (if it's a bundle there can be more than 1), but if there is not
+already a suitable one, it is used to create new ones. The fields of the
+SA being created can be taken either from the SPD entry or from the packet
+that initialted the creation. </P>
+
+<P>Outgoing packets go from the SPD entry tothe specific SA, to get encoding
+parameters. Incoming packates get to the correct SA directly using the
+SPI/DEST/Proto tripple, and from there get to the SPD entry.</P>
+
+<P>The SPD can also specify what traffic should bypass IPSec and what should
+be dropped, so it must also be consulted for incoming non-IPSec traffic.
+SPD entries must be explicitly ordered as several might match a particular
+packet, and the processing must be reproducible.</P>
+
+<P>The SPD can be though of as similar to a packet filter where the actions
+decided upon are the activation of SA processes. Selectors can include
+src and dest address, port numbers if relevant, application and user IDs
+if available (only on host based transport SAs), hostnames, security sensitivity
+levels, protocols etc.</P>
+
+<P>An SAD entry would include:</P>
+
+<UL>
+<LI>Dest IP address</LI>
+
+<LI>Ipsec proto (SA&nbsp;or ESP)</LI>
+
+<LI>SPI&nbsp;(cookie)</LI>
+
+<LI>Sequnce counter</LI>
+
+<LI>Seq O/F flag</LI>
+
+<LI>anti-replay window info</LI>
+
+<LI>AH&nbsp;type and info</LI>
+
+<LI>ESP&nbsp;type and info</LI>
+
+<LI>Lifetime info</LI>
+
+<LI>tunnel/transport mode flags</LI>
+
+<LI>PATH MTU&nbsp;info</LI>
+</UL>
+
+<P>An SPD entry would contain:</P>
+
+<UL>
+<LI>pointer to active SAs</LI>
+
+<LI>Selector fields</LI>
+</UL>
+
+<P>Each <B>SA</B> can define one ESP&nbsp;header and one AH header. so
+an IPSec session must have one or the other or both, but cannot be defined
+with neither, otherwise there would be no headers to specify the <B>SPI</B>
+to look up the <B>SA</B>. The RFC doesn't say what would happen if the
+AH&nbsp;and ESP&nbsp;headers dissagree about the SPI value. One would presume
+this would imply multiple SA's in a bundle.</P>
+
+<P>These values and SAD entries should be addable by hand by some (implementation
+dependent) interface, however the IETF has also defined automatic mechanisms
+for initialisation of sessions and such things as key exchange. These are
+defined in <A HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc2407.html">RFC2407</A>,
+<A HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc2408.html">RFC2408,</A> and <A HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc2409.html">RFC2409</A></P>
+
+
+<a name= "13.5">
+<h1>13.5 - How do I setup IPSec?</h1>
+</a>
+<P>
+To use IPSec, you need to start by setting up SAs, or Security Associations.
+A Security Association is a combination of your IP addresses, an SPI, and
+your security protocol (AH and/or ESP.)  The IP addresses are that of both
+your own and your destination.  The SPI, or Security Parameter Index, is a
+number that OpenBSD uses to classify different SAs.
+<P>
+<I>These examples only use ESP to encrypt your traffic.  They do not provide
+authentication, but that's OK, because we are tunneling.</i>
+<P>
+<ul>
+<tt>
+# <b>ipsecadm new esp -spi SPI_OUT -src MY_EXTERNAL_IP -dst PEER_EXTERNAL_IP
+-forcetunnel -enc blf -auth sha1 -key ENC_KEY -authkey AUTH_KEY</b>
+</tt>
 </ul>
-</p> 
-<hr>
-
-<br>
-
+<P>
+Let's put this into practice with two routers, 192.168.5.1 and 192.168.25.9.
+<P>
+On Host 192.168.5.1:
+<ul>
+<tt>
+# <b>ipsecadm new esp -spi 1000 -src 192.168.5.1 -dst 192.168.25.9 -forcetunnel -enc blf -auth sha1 -key 7762d8707255d974168cbb1d274f8bed4cbd3364 -authkey 6a20367e21c66e5a40739db293cf2ef2a4e6659f</b>
+</tt>
+</ul>
+On Host 192.168.25.9:
+<UL>
+<tt>
+# <b>ipsecadm new esp -spi 1001 -src 192.168.25.9 -dst 192.168.5.1 -forcetunnel -enc blf -auth sha1 -key 7762d8707255d974168cbb1d274f8bed4cbd3364 -authkey 6a20367e21c66e5a40739db293cf2ef2a4e6659f</b>
+</tT>
+</ul>
+<P>
+Notice that the SPIs are different.  The SPIs are used by to keep track of your SAs and flows.
+<P>
+Now that you have your Security Associations in place,
+set up your flows.
+<P>
+On 192.168.5.1:
+<ul>
+<tt>
+# <b>ipsecadm flow -proto esp -dst 192.168.25.9 -spi 1000
+-addr 192.168.5.1 255.255.255.255 192.168.25.9 255.255.255.255 -local</b>
+</tt></ul>
+On 192.168.25.9:
+<ul>
+<tt>
+# <b>ipsecadm flow -proto esp -dst 192.168.5.1 -spi 1001
+-addr 192.168.25.9 255.255.255.255 192.168.5.1 255.255.255.255 -local</b>
+</tt></ul>
 <p>
-<a name="13.1"> 
-</p>
+This is a simple way to start using IPSec.
+<P>
+You can use IPSec to tunnel private IP address spaces over the Internet.
+Here is a good example... We want to tunnel 192.168.99.0/24, which is behind
+208.1.1.1, to 208.1.2.0/24 and 208.1.5.0/24 which are behind 208.2.2.2.
+These examples were generated using the <A HREF="http://www.openbsd.org/cgi-bin/cvsweb/src/share/ipsec/rc.vpn?rev=1.3">rc.vpn</a> script.
+<P>
+As you can see, with IPSec, you have to specify <b>exactly</b> what you want done.
+It won't guess for you.  Look at these examples...
+<h2>On 208.1.1.1:</h2>
+First, set up the security associations (SAs):<BR>
+(This sets up the SPIs, encryption methods, and keys.) 
+<UL><tt>
+# <b>ipsecadm new esp -src 208.1.1.1 -dst 208.2.2.2 -forcetunnel -spi 1001 -enc blf -auth sha1 -key 7762d8707255d974168cbb1d274f8bed4cbd3364 -authkey 67e21c66e5a40739db293cf2ef2a4e6659f</b><br>
+# <b>ipsecadm new esp -src 208.2.2.2 -dst 208.1.1.1 -forcetunnel -spi 1000 -enc blf -auth sha1 -key 7762d8707255d974168cbb1d274f8bed4cbd3364 -authkey 67e21c66e5a40739db293cf2ef2a4e6659f</b><br>
+</ul></tt>
+Next, setup a flow from 208.1.1.1 to 208.2.2.2
+<ul><tt>
+# <b>ipsecadm flow -proto esp -dst 208.2.2.2 -spi 1001 -addr 208.1.1.1 255.255.255.255 208.2.2.2 255.255.255.255 -local</b><br>
+</ul></tt>
+Next, setup a flow from 208.1.2.0/24, which is behind 208.2.2.2, to 192.168.99.0/24
+<ul><tt>
+# <b>ipsecadm flow -proto esp -dst 208.2.2.2 -spi 1001 -addr 192.168.99.0 255.255.255.0 208.1.2.0 255.255.255.0</b><BR>
+</ul></tt>
+Next, setup a flow from 208.1.5.0/24, which is behind 208.2.2.2, to 192.168.99.0/24
+<ul><tt>
+# <b>ipsecadm flow -proto esp -dst 208.2.2.2 -spi 1001 -addr 192.168.99.0 255.255.255.0 208.1.5.0 255.255.255.0</b><br>
+</ul></tt>
+Now, setup a flow from 208.1.2.0/24, which is behind 208.2.2.2 to the router 208.1.1.1.
+<ul><tT>
+# <b>ipsecadm flow -proto esp -dst 208.2.2.2 -spi 1001 -addr 208.1.1.1 255.255.255.255 208.1.2.0 255.255.255.0 -local</b><br>
+</ul></tt>
+OK, setup a flow from 208.1.5.0/24, which is behind 208.2.2.2, to the router 208.1.1.1
+<ul><tt>
+# <b>ipsecadm flow -proto esp -dst 208.2.2.2 -spi 1001 -addr 208.1.1.1 255.255.255.255 208.1.5.0 255.255.255.0 -local</b><br>
+</ul></tt>
+Finally, setup a flow from the router 208.2.2.2 to 192.168.99.0/24
+<ul><tt>
+# <b>ipsecadm flow -proto esp -dst 208.2.2.2 -spi 1001 -addr 192.168.99.0 255.255.255.0 208.2.2.2 255.255.255.255</b><br>
+</ul></tt>
+<P>
+<h2>On 208.2.2.2:</h2>
+Same as before, we setup the SAs...
+<UL><TT>
+# <b>ipsecadm new esp -src 208.2.2.2 -dst 208.1.1.1 -forcetunnel -spi 1000 -enc blf -auth sha1 -key 7762d8707255d974168cbb1d274f8bed4cbd3364 -authkey 67e21c66e5a40739db293cf2ef2a4e6659f</b><br>
+# <b>ipsecadm new esp -src 208.1.1.1 -dst 208.2.2.2 -forcetunnel -spi 1001 -enc blf -auth sha1 -key 7762d8707255d974168cbb1d274f8bed4cbd3364 -authkey 67e21c66e5a40739db293cf2ef2a4e6659f</b><br>
+</ul></tt>
+Now, this is the reverse side...
+Setup a flow from the router 208.2.2.2 to 208.1.1.1
+<ul><tt>
+# <b>ipsecadm flow -proto esp -dst 208.1.1.1 -spi 1000 -addr 208.2.2.2 255.255.255.255 208.1.1.1 255.255.255.255 -local</b><br>
+</ul></tt>
+Setup a flow from the network 192.168.99.0/24, which is behind 208.1.1.1, to 208.1.2.0/24
+<ul><tT>
+# <b>ipsecadm flow -proto esp -dst 208.1.1.1 -spi 1000 -addr 208.1.2.0 255.255.255.0 192.168.99.0 255.255.255.0</b><br>
+</ul></tt>
+Setup a flow from the network 192.168.99.0/24, which is behind 208.1.1.1, to 208.1.5.0/24
+<ul><tt>
+# <b>ipsecadm flow -proto esp -dst 208.1.1.1 -spi 1000 -addr 208.1.5.0 255.255.255.0 192.168.99.0 255.255.255.0</b><br>
+</ul></tt>
+Now, setup a flow from 192.169.99.0/24, which is behind 208.1.1.1, to the router 208.2.2.2
+<ul><tt>
+# <b>ipsecadm flow -proto esp -dst 208.1.1.1 -spi 1000 -addr 208.2.2.2 255.255.255.255 192.168.99.0 255.255.255.0 -local</b><br>
+</ul></tt>
+We're almost done...
+Two flows left to get 208.1.2.0/24 and 208.1.5.0/24 from the router 208.2.2.2
+to the router 208.1.1.1.
+<ul><tt>
+# <b>ipsecadm flow -proto esp -dst 208.1.1.1 -spi 1000 -addr 208.1.2.0 255.255.255.0 208.2.2.2 255.255.255.255</b><br>
+# <b>ipsecadm flow -proto esp -dst 208.1.1.1 -spi 1000 -addr 208.1.5.0 255.255.255.0 208.2.2.2 255.255.255.255</b><br>
+</ul></tt>
+<P>
+<a name="13.6">
+<h1>13.6 - How do I setup isakmpd/IKE?</h1>
+</a>
+<P>If you are thinking about VPNs or other traditional applications
+of IPSec, you probably are going to use ISAKMP.  Most commercial
+implementations of IPSec do not provide any manual keying ability, 
+they require you to use some form of ISAKMP.  Unfortunately, this FAQ
+isn't complete yet, certainly not section 13.6. 
+<a name= "13.7">
+<h1>13.7 - What other IKE clients are compatible with isakmpd?</h1>
+</a>
+<P>
+The following MS-Windows clients have been reported to be compatible:
+<UL>
+<LI><A HREF="http://www.timestep.com/">TimeStep</a> PERMIT/Client
+<LI><A HREF="http://www.vpcom.com/">Ashley Laurent</a> VPCom VPN software
+<LI><A HREF="http://www.pgp.com/">PGPnet</a> software
+</UL>
+<P>
+The following other clients have been reported to be compatible:
+<UL>
+<LI><A HREF="http://www.cisco.com/">Cisco</a> IOS IPSec
+<LI><A HREF="http://www.xs4all.nl/~freeswan/">FreeS/WAN</a> for Linux
+</UL>
+<P>
+<a name= "13.8">
+<h1>13.8 - Related Documentation</h1>
+</a>
+<P>
 <p>
 IPSec is partially documented in the 
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vpn&apropos=0&sektion=0&format=html">vpn(8)</a>
-man page.  There are various files in <A HREF="http://www.openbsd.org/cgi-bin/cvsweb/src/share/ipsec/">/usr/share/ipsec/</a>
+man page.  There are various configuration templates in <A HREF="http://www.openbsd.org/cgi-bin/cvsweb/src/share/ipsec/">/usr/share/ipsec/</a>
 directory which can also assist you.  The manual pages for
 <A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=ipsec&apropos=0&sektion=4&format=html">ipsec(4)</a>,
 <A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=ipsecadm&apropos=0&sektion=8&format=html">ipsecadm(8)</a>,
@@ -39,31 +454,37 @@ directory which can also assist you.  The manual pages for
 <A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=startkey&apropos=0&sektion=1&format=html">startkey(1)</a>,
 <A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd&apropos=0&sektion=8&format=html">isakmpd(8)</a> and
 <a HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd.conf&apropos=0&sektion=5&format=html">isakmpd.conf(5)</a>
-are also available!
-</p>
+can help if you are using any of these components!
 <p> 
-You should also check <a href="http://www.codetalker.com/greenbox/docs/vpn-24-minifaq.html">Codetalker</a> which has an FAQ
-for setting up an IPSec VPN with OpenBSD.  It explains some basic IPSec concepts and how to apply them to a VPN setup.
-</p>
+And on to the RFCs...
+<UL>
+<LI><A HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc2207.html">RFC 2207</a> - RSVP Extensions for IPSec Data Flows
+<LI><A HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc2401.html">RFC 2401</a> - Security Architecture for the Internet Protocol
+<LI><A HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc2402.html">RFC 2402</A> - IP Authentication Header (<b>AH</b>)
+<LI><A HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc2403.html">RFC 2403</A> - The Use of HMAC-MD5-96 within ESP and AH
+<LI><A HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc2404.html">RFC 2404</A> - The Use of HMAC-SHA-1-96 within ESP and AH
+<LI><A HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc2405.html">RFC 2405</A> - The ESP DES-CBC Cipher Algorithm With Explicit IV
+<LI><A HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc2406.html">RFC 2406</A> - IP Encapsulating Security Payload (<b>ESP</b>)
+<LI><A HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc2407.html">RFC 2407</A> - The Internet IP Security Domain of Interpretation for ISAKMP
+<LI><A HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc2408.html">RFC 2408</A> - Internet Security Association and Key Management Protocol (<b>ISAKMP</b>)
+<LI><A HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc2409.html">RFC 2409</A> - The Internet Key Exchange (<b>IKE</b>)
+<LI><A HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc2410.html">RFC 2410</A> - The NULL Encryption Algorithm and Its Use With IPsec (ha ha...)
+<LI><A HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc2411.html">RFC 2411</A> - IP Security Document Roadmap
+<LI><A HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc2412.html">RFC 2412</A> - The OAKLEY Key Determination Protocol
+<LI><A HREF="http://www.cis.ohio-state.edu/htbin/rfc/rfc2709.html">RFC 2709</a> - Security Model with Tunnel-mode IPsec for NAT Domains
+</UL>
 
-<br>
- 
-<b>Section Under Work</b>
-
-<p>
 <font color= "#0000e0">
 <a href= "index.html">[Back to Main Index]</a>
 <a href= "faq12.html">[To Section 12.0 - For Advanced Users]</a>
-<a href= "faq14.html">[To Section 14.0 - Using Disks in OpenBSD]</a>
+<a href= "faq14.html">[To Section 14.0 - Using disks in OpenBSD]</a>
 </font>
-</p>
-
 <p>
 <hr>
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq13.html,v 1.5 1999/09/24 01:46:14 ericj Exp $</small>
+<small>$OpenBSD: faq13.html,v 1.6 1999/10/18 17:25:34 chris Exp $</small>
 </p>
 </body>
 </html>
