@@ -1,0 +1,446 @@
+<html>
+<head>
+<title>11.0 - Afinar el Rendimiento</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 1998,1999 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000" link="#23238e">
+
+<img alt="[OpenBSD]" height="30" width="141" src="../../images/smalltitle.gif">
+<p>
+<h2><font color="#e00000">11.0 - Afinar el Rendimiento</font><hr></h2>
+</p>
+
+<p>
+<ul><h3>Tabla de Contenidos</h3>
+<li><a href="#11.1">11.1 - Redes</a></li>
+<li><a href="#11.2">11.2 - E/S de Disco</a></li>
+<li><a href="#11.3">11.3 - Afinar kmem</a></li>
+<li><a href="#11.4">11.4 - Elección de Hardware</a></li>
+<li><a href="#11.5">11.5 - ¿Por Qué No Usamos Montajes Asincrónicos?</a></li>
+</ul>
+</p> 
+<hr>
+
+<p>
+<a name="11.1"></a>
+<h2>11.1 - Redes</h2>
+</p>
+
+<p>
+Si tiene Vd. un servidor, una pasarela, o un cortafuegos muy ocupado, debería
+asegurarse de prevenir la falta de memoria en varias partes del núcleo del
+sistema, descritas más abajo.
+</p>
+
+<p>
+La página de manual de
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=options&apropos=0&sektion=4&format=html">options(4)</a>
+trata sobre las opciones que aquí se presentan.
+<p>
+
+<p>
+Una opción que puede necesitar cambiar para un servidor, pasarela, o
+cortafuegos muy ocupado es NMBCLUSTERS.
+Esta opción controla el tamaño del mapa de clusters mbuf del núcleo.
+Si recibe en su máquina mensajes como &quot;mb_map full&quot;, necesita
+incrementar este valor.
+Si en una interfaz de red el tráfico se para sin un motivo aparente, puede
+ser también un signo de que necesita incrementar este valor.
+Un valor razonable en el porte para i386 con la mayoría de interfaces de
+ethernet de 100Mbps (no importa cuántas tenga la máquina) es 8192.
+</p>
+
+<ul>
+<strong>
+option NMBCLUSTERS=8192
+</strong>
+</ul>
+
+<p>
+<a name="11.2"></a>
+<h2>11.2 - E/S del Disco</h2>
+</p>
+
+<p>
+La velocidad de E/S del disco es un facto significativo en la velocidad total
+de su máquina.
+Se vuelve cada vez más importante cuando su máquina es la anfitriona en un
+entorno multiusuario (usuarios de todas clases, desde los que ingresan de
+modo interactivo hasta los que la usan como un servidor de ficheros, o un
+servidor de web... ).
+El almacenamiento de datos requiere antención constante, especialmente cuando
+sus particiones se quedan sin espacio y cuando sus discos fallan.
+OpenBSD tiene varias opciones para incrementar la velocidad de las
+operaciones de su disco y para proveer tolerancia a los fallos.
+</p>
+
+<h3>CCD</h3>
+<ul>
+
+<p>
+La primera opción es usar
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ccd&apropos=0&sektion=4&format=html">ccd(4)</a>,
+el &laquo;Controlador de Disco Concatenado&raquo; (&quot;Concatenated Disk
+Driver&quot;).
+Éste le permitirá unir varias particiones en un sólo disco virtual (y por
+tanto, podrá hacer que varios discos parezcan uno sólo).
+Este concepto es similar al de LVM (&laquo;gestión lógica de volumen&raquo;),
+que se encuentra en muchos Unix comerciales.
+
+<p>
+Si está funcionando con el núcleo GENERIC, ccd ya está activado.
+De lo contrario, es posible que necesite añadirlo a la configuración de su
+núcleo.
+Para iniciar la configuración de ccd, necesita primero añadir el soporte en
+su núcleo, con una línea como la siguiente:
+</p>
+
+<p>
+<ul>
+<pre>
+<strong>pseudo-device   ccd     4       # concatenated disk devices</strong>
+</pre>
+</ul>
+</p>
+
+<p>
+El ejemplo anterior le da hasta 4 dispositivos ccd (discos virtuales).
+Ahora necesita saber qué particiones de sus discos reales quiere dedicar a
+ccd.
+Use <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=disklabel&apropos=0&sektion=0&manpath=OpenBSD+Current&format=html">disklabel(5)</a>
+para marcar estas particiones como tipo 'ccd'.
+En algunas arquitecturas, puede ser que disklabel no le permita hacerlo.
+En este caso márquelas como 'ffs'.
+
+<p>
+Si usa ccd para desmontarlo y ganar así rendimiento, note que no obtendrá un
+rendimiento óptimo a menos que use el mismo modelo de discos con las mismas
+configuraciones de disklabel.
+
+<p>
+Edite /etc/ccd.conf y modifíquelo para que quede parecido a esto (para más
+información sobre la configuración de ccd, mirar en
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ccdconfig&apropos=0&sektion=8&format=html">ccdconfig(8)</a>):
+
+<ul>
+<pre>
+# Configuration file for concatenated disk devices
+#
+# ccd   ileave  flags   component devices
+ccd0   16      none    /dev/sd2e /dev/sd3e
+</pre>
+</ul>
+
+Para que sus cambios hagan efecto, ejecute:
+
+<ul>
+<pre>
+# ccdconfig -C
+</pre>
+</ul>
+
+Mientras /etc/ccd.conf exista, ccd se configurará a sí mismo automáticamente
+durante el arranque.
+Ahora ya tiene un nuevo disco, ccd0, una combinación de /dev/sd2e y
+/dev/sd3e.
+Use disklabel sobre el nuevo disco como lo haría normalmente para crear la
+partición o particiones que quiera usar.
+No use la partición 'c' como si fuera una partición normal.
+Asegúrese de que sus particiones utilizables están, como mínimo, un cilindro
+más allá del comienzo del disco.
+</p>
+</ul>
+<br>
+
+<h3>RAID</h3>
+
+<ul>
+<p>
+Otra solución es
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=raid&apropos=0&sektion=4&format=html">raid(4)</a>,
+que le hará usar
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=raidctl&apropos=0&sektion=8&format=html">raidctl(8)</a>
+para controlar sus dispositivos de raid.
+En OpenBSD RAID está basado en el
+<a href="http://www.cs.usask.ca/staff/oster/raid.html">porte de NetBSD</a> de
+Greg Oster del software CMU 
+<a href="http://www.pdl.cs.cmu.edu/RAIDframe/">RAIDframe</a>.
+OpenBSD tiene soporte para los niveles 0, 1, 4 y 5 de RAID.
+
+<p>
+Con raid, como con ccd, el soporte debe residir en el núcleo del sistema.
+A diferencia de ccd, el soporte para RAID no está activado en el núcleo
+GENERIC, y debe ser compilado en el núcleo (¡el soporte para RAID añade unos
+500Kb al tamaño de un núcleo para i386!).
+</p>
+
+<p>
+<ul>
+<pre>
+<strong>pseudo-device   raid   4       # RAIDframe disk device</strong>
+</pre>
+</ul>
+
+<p>
+La configuración de RAID en algunos sistemas operativos es, cuanto menos,
+confusa y complicada.
+No es lo mismo con RAIDframe.
+Lea las páginas de manual de
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=raid&apropos=0&sektion=4&format=html">raid(4)</a> y
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=raidctl&apropos=0&sektion=8&format=html">raidctl(8)</a>
+para obtener los detalles completos.
+Existen muchas opciones y posibles configuraciones, una explicación en
+detalle iría más allá del objetivo de este documento.
+</ul>
+<br>
+
+<h3>Filesystem Buffer</h3>
+
+<ul>
+Para servidores de archivos con memoria de sobra, puede incrementar
+BUFCACHEPERCENT.
+O sea, qué porcentaje de su RAM debería usar como fichero de memoria 
+intermedia del sistema.
+Esta opción puede cambiar cuando el &laquo;Caché de Memoria Intermedia
+Unificado&raquo; (&quot;Unified Buffer Cache&quot;) se haya completado y
+forme parte de OpenBSD.
+Mientras tanto, para incrementar BUFCACHEPERCENT debe añadir una línea como
+ésta a la configuración de su núcleo:
+</p>
+
+<p>
+<ul>
+<strong>option	BUFCACHEPERCENT=30</strong><br>
+</ul>
+</p>
+
+<p>
+Puede hacer que sea tan bajo como el 5% (por definición), o tan alto como el
+50% (o más).
+</p>
+</ul>
+<br>
+
+<h3>&quot;Soft Updates&quot;</h3>
+
+<ul>
+Otra herramienta que puede usar para aumentar la velocidad de su sistema es
+&quot;softupdates&quot;.
+Una de las operaciones más lentas en el sistema de archivo tradicional de BSD
+es la actualización de metainfo (que ocurre, entre otras, cuando crea o
+genera ficheros y directorios).
+&quot;Softupdates&quot; intenta actualizar la metainfo en RAM, en lugar de
+escribir al disco duro cada vez que se actualiza la metainfo.
+Otro efecto de esto es que la metainfo en el disco debería estar siempre
+completa, aunque no siempre actualizada.
+Por lo tanto, un caída del sistema no debería necesitar
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fsck&apropos=0&sektion=0&manpath=OpenBSD+Current&format=html">fsck(8)</a>
+durante el reinicio, sino simplemente una versión de fondo de fsck que lleve
+a cabo los cambios a la metainfo en RAM (como &quot;softupdates&quot;).
+Esto quiere decir que reiniciar un servidor será mucho más rápido, ya que no
+tendrá que esperar a que termine fsck(8) (OpenBSD todavía no dispone de esta
+funcionalidad).
+Puede leer más sobre esto en la entrada sobre
+<a href="../faq14.html#14.5">``softupdates''</a> de las Preguntas Frecuentes.
+</ul>
+</p>
+<br>
+
+<p>
+<a name="11.3"></a>
+<h2>11.3 - Afinar kmem</h2>
+</p>
+
+Esta parte se ha movido a la <a href="../faq11-2.5.html#11.2">sección de
+información de OpenBSD 2.5</a>
+<br>
+
+<p>
+<a name="11.4"></a>
+<h2>11.4 - Elección de Hardware</h2>
+</p>
+
+<i>(Nota: esta sección se centra fuertemente en la arquitectura para i386.
+Esto significa que... otras arquitecturas no ofrecen tantas posibilidades de
+elección)</i>
+
+<p>
+El rendimiento de sus aplicaciones depende fuertemente de su Sistema
+Operativo y de las facilidades que ofrezca.
+Ésta puede ser, en parte, la razón por la que esté usando OpenBSD.
+El rendimiento de sus aplicaciones también depende fuertemente de su
+hardware.
+Para muchos, el ratio precio/rendimiento de un PC nuevo con un procesador
+Intel Pentium III o AMD Athlon, es mucho mejor que el ratio
+precio/rendimiento de una Sun UltraSparc 60.
+Claro que el precio de OpenBSD no tiene competidor.
+
+<p>
+Si está pensando en comprar un nuevo PC, tanto si lo va a comprar por piezas
+o montado al completo, debe asegurarse antes de que va a comprar partes
+fiables.
+En el mundo del PC esto no es fácil.
+<b>Componentes en mal estado, o de escasa fiabilidad por cualquier otro
+motivo, pueden hacer que OpenBSD funcione mal o caiga a menudo</b>.
+El mejor consejo que le podemos ofrecer es que tenga cuidado, que compre
+marcas y componentes que hayan sido revisadas por una autoridad en la que Vd.
+confíe.
+A veces, un ahorro en el precio de un PC puede significar una pérdida en
+calidad.
+
+<p>
+Existen ciertas cosas que le ayudarán a obtener el rendimiento máximo para su
+hardware:
+
+<ul>
+   <li>Use discos múltiples.
+   <p>En lugar de comprar un disco de 20GB, compre varios de 9GB.
+      Aunque sea más caro, distribuir la carga sobre varios ejes disminuirá
+      el tiempo necesario para acceder a los datos de los discos.
+      Además, con más ejes, obtendrá más fiabilidad y una acceso más rápido a
+      los datos con RAID.
+
+   <p>
+   <li>Si necesita grandes velocidades de E/S en el disco, use SCSI.
+   <p>Los discos IDE suelen funcionar a 5400 RPM, y los más nuevos hasta 7200
+      RPM.
+      Usando discos IDE de alto rendimiento, puede que no sea razonable
+      esperar más de 15 a 20 Mb/s de rendimiento para un sólo disco.
+      Usando discos SCSI de alto rendimiento (discos de 10000 RPM de alto
+      coste), puede obtener rendimientos más altos.
+      Sin embargo, si va a usar discos SCSI de bajo o medio rendimiento,
+      estará malgastando su dinero ya que IDE puede servirle igual o incluso
+      mejor.
+   <p>Si está montando un servidor y necesita más de 20GB de espacio en
+      disco, tenga en cuenta los discos SCSI.
+      IDE le limita a dos discos por controladora, y el acceso concurrente a
+      estos dos discos puede tener un impacto negativo sobre los resultados
+      de E/S de estos discos.
+      El límite de Wide SCSI es de 15 por controladora.
+      Aunque SCSI sea más caro, la flexibilidad y el rendimiento justifican
+      estos costes en algunos entornos.
+
+   <p>
+   <li>Use SDRAM en lugar de DRAM.
+   <p>Esta opción es válida principalmente para PCs.
+      La mayoría de las otras arquitecturas no ofrecen una elección en el
+      tipo de RAM que puede usar.
+      Varios PCs todavía lo hacen.
+      Obtendrá un rendimiento mejor con SDRAM que con DRAM (SIMMs).
+      Si su sistema tiene soporte para RDRAM o algún otro tipo nuevo de RAM,
+      entonces ya se encuentra un paso por delante...
+
+   <p>
+   <li>Use ECC o RAM de paridad.
+   <p>Paridad añade algo de funcionalidad para ver si los datos en RAM se han
+      corrompido.
+      ECC hace extiende esta funcionalidad e intenta corregir algunos errores
+      de corrupción de bits al vuelo.
+      Esta opción sólo es aplicable a PCs.
+      Algunas máquinas no PC ni siquiera arrancarán con RAM de no paridad.
+      Si no está usando RAM ECC/paridad, puede tener corrupción en sus datos
+      y otras anomalías.
+      Varios fabricantes de &laquo;RAM barata para PC&raquo; ni siquiera
+      producen la variedad ECC.
+      ¡Esto le ayudará a evitarlos!
+      Los fabricante de PC suelen vender otras líneas de productos, divididas
+      entre &laquo;servidores&raquo; y &laquo;estaciones de trabajo&raquo;.
+      Los servidores incorporan RAM ECC en su arquitectura.
+      Los fabricantes de estaciones de trabajo Unix ha usado paridad (y ahora
+      ECC) durante varios años en todas sus líneas de productos.
+
+   <p>
+   <li>Evite los dispositivos ISA.
+   <p>Aunque la mayoría suele evitarlos debido a que son difíciles de
+      configurar y obsoletos, todavía existen muchos.
+      Si está usando el bus ISA para los controladores de su disco o red (o
+      peor aún, para ambos), recuerde que el bus ISA puede ser un embudo para
+      el rendimiento.
+      Si necesita velocidad, busque PCI.
+      Todavía existen algunas tarjetas de bus ISA que funcionan bien, pero la
+      mayoría son tarjetas de sonido y tarjetas de puerto serie.
+
+   <p>
+   <li>Evite adaptadoras de red PCI baratas.
+   <p>OpenBSD tiene soporte para una gran cantidad de adaptadoras de red PCI
+      baratas.
+      Estas adaptadoras funcionan muy bien en sistemas caseros, y también en
+      empresas y entornos de investigación medios y pequeños.
+      Pero si necesita un alto rendimiento y un bajo impacto en su servidor,
+      es mejor que compre una adaptadora de red PCI de calidad.
+      Por desgracia, algunas marcas caras de adaptadoras (como las series XL
+      de 3com) no son mucho mejor que las adaptadoras baratas.
+      Una de las adaptadoras favoritas de 10/100Mbps es la Intel EtherExpress
+      PRO/100.
+</ul>
+<br>
+
+<p>
+<a name="11.5"></a>
+<h2>11.5 - ¿Por Qué No Usamos Montajes Asincrónicos?</h2>
+
+<p>
+Pregunta: &laquo;Yo simplemente ejecuto 'mount -u -o async /' lo que hace
+utilizable un paquete que uso.<br>
+¿Por qué el montaje asincrónico no se usa por definición (como lo está en
+otros Unix)?  ¿No es un modo mucho más simple y por lo tanto más seguro que
+de mejorar el rendimiento de algunas aplicaciones?&raquo;
+</p>
+
+<p>
+Respuesta: &laquo;Los montajes asincrónicos son más rápidos que los montajes
+sincrónicos, pero también son menos seguros.
+¿Qué sucedería si hubiera un fallo eléctrico?  ¿O un problema de hardware?
+La búsqueda de la velocidad no debe sacrificar la fiabilidad y estabilidad
+del sistema.
+Mire la página de manual de
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mount&apropos=0&sektion=8&format=html">mount(8)</a>.&raquo;
+</p>
+
+<pre>
+	     async   Toda E/S al sistema de archivo debería llevarse a cabo
+	             de forma asincrónica.
+		     Éste es un indicador peligroso de activar, ya que no
+		     garantiza que mantendrá una estructura del sistema de
+		     archivo consistente en el disco.
+		     No debe usar este indicador a menos que esté preparado
+		     para recrear el sistema de archivo si su sistema cae.
+		     El uso más común de este indicador es el de acelerar
+		     restore(8), en donde puede dar un factor de incremento
+		     de doble velocidad.
+</pre>
+
+<p>
+Por otra parte, si está tratando con datos temporales que puede recrear desde
+cero después de una caída, puede ganar en velocidad usando una partición
+separada, que se use sólo para esos datos, montada de forma asincrónica.
+Si no le importa arriesgar la pérdida de todos los datos en la partición
+cuando algo vaya mal...
+</p>
+
+<p>
+<font color="#0000e0">
+<a href="../faq12.html">[Sección 12.0 - Para Usuarios Avanzados]</a>
+<a href="faq10.html">[Sección 10.0 - Administración del Sistema]</a>
+</font>
+</p>
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a>
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: faq11.html,v 1.8 2000/03/03 13:17:15 rohee Exp ]<br>
+$Translation: faq11.html,v 1.1 2000/04/18 21:47:35 horacio Exp $<br>
+$OpenBSD: faq11.html,v 1.1 2000/04/19 12:29:45 wvdputte Exp $
+</small>
+</p>
+</body>
+</html>
