@@ -1,0 +1,286 @@
+<html>
+ <head>
+  <meta http-equiv="Content-Type"
+	content="text/html; charset=iso-8859-1">
+  <meta name="resource-type"
+	content="document">
+  <meta name="description"
+	CONTENT="How to make an OpenBSD port; Marc's porting checklist">
+  <meta name="keywords"
+	content="openbsd,ports">
+  <meta name="distribution"
+	content="global">
+  <meta name="copyright"
+	content="This document copyright 1998 by the OpenBSD project">
+  <title>Marc's Porting Checklist</title>
+  <link rev="made" HREF="mailto:www@openbsd.org">
+ </head>
+ <body text="#000000" bgcolor="#FFFFFF" link="#23238E">
+  <img height=30 width=141 src=images/smalltitle.gif alt="[OpenBSD]" >
+
+  <h2><font color=#e00000>Marc's Porting Checklist</font></h2>
+
+  I use this checklist as a reminder of things to do when creating
+  new ports and when validating old ports.  I don't claim this list
+  is totally accurate, much less perfect, but only hope that some
+  find it useful. Direct your questions and/or comments to me at
+  <a href=mailto:marc@snafu.org>marc@snafu.org</a>.
+  <p>
+  <ol>
+   <li>Create Makefile -- start with this skeleton
+       <a href="#makefile">makefile</a>.
+   <p>
+   <li><code>make fetch</code><br>
+       This verifies that the master site, distname, and extract suffix are
+       correct.
+   <p>
+   <li><code>make makesum</code><br>
+       This creates the files directory and the md5 checksum for the
+       fetched files.
+   <p>
+   <li><code>make extract</code><br>
+       Ensures that the file can be extracted into the work directory.
+       This also verifies that the checksum created in step 3 is good.
+   <p>
+   <li>Create initial patches<br>
+       When the extract is complete cd to the work directory and read
+       any install docs.  You may need to modify the WRKSRC variable
+       in the makefile as well as generate initial patches to configure
+       for openbsd.
+    <p>Note: Patches go in the directory `patches' and are names patch-xx
+       where xx should be aa, ab, ..., az, ba, bb ... zz.
+       <ul>
+	<li>only patch one source file per patchfile, please
+	<li>use diff -u to generate patches
+	<li>all patches MUST be relative to ${WRKSRC}
+       </ul>
+   <p>
+   <li><code>make patch</code><br>
+       this will apply patches to the extracted sources.  If you want
+       to see the output use the command:
+    <p><code>make PATCH_DEBUG=YES patch</code>
+    <p>The easiest way to re-run patches is to `make clean && make patch'.
+       This will delete the work directory and re-extract and patch.
+   <p>
+   <li>add configuration options to Makefile and/or create configuration
+       script.<br>
+       You can add a port configuration script named `configure' to a
+       directory named scripts.  This will be run before any
+       configuration specified by GNU_CONFIGURE or HAS_CONFIGURE is run.
+    <p>If GNU_CONFIGURE is used you may want to run ./configure --help
+       to see what options are available.  Anything thay you may want to
+       override can be changed by adding the --option flags to the
+       CONFIGURE_ARGS parameter in the Makefile
+   <p>
+   <li><code>make configure</code><br>
+       Peruse the output (if any) and tweak any options in the Makefile.
+       To repeat issue the command `make clean && make configure'.
+    <p>Note: make sure host dependent files go in /etc or /etc/<name>, but
+       NEVER replace existing files in /etc.  Best to have install place
+       in /usr/local/lib/<name> and then copy to /etc or /etc/<name> only
+       the files do not exist.
+    <p>The OpenBSD file locations are:
+       <pre>
+   user executables:			/usr/local/bin
+   system admin executables:		/usr/local/sbin
+   program executables:			/usr/local/libexec
+   libraries				/usr/local/lib
+   architecture dependent data		/usr/local/lib/<name>
+   installed include files:		/usr/local/include or
+					/usr/local/include/<name>
+   single-machine data:			/etc or /etc/<name>
+   local state:				/var/run
+   GNU info files:			/usr/local/info
+   man pages:				/usr/local/man/...
+   read-only architecture-independent:	/usr/local/share/<name>
+   misc documentation:			/usr/local/share/doc/<name>
+       </pre>
+   <p>
+   <li><code>make</code><br>
+       Begin a cycle of makes until the port is ready.  Patch (see above)
+       clean, and make until the port is generated.  Get rid of all warnings
+       if possible, especially security related warnings.
+   <p>
+   <li><code>mkdir pkg; touch pkg/{DESCR,COMMENT,PLIST}</code><br>
+        Create dummy versions of the package files.  Edit DESCR and COMMENT.
+     <p>COMMENT is the one-line description of the port. Do NOT include the
+        package name (or version number of the software) in the comment.
+     <p>DESCR is a longer description of the port. One to a few paragraphs
+        concisely explaining what the port does is sufficient.
+     <p>PLIST is kept empty at this point.
+   <p>
+   <li><code>sudo make install</code><br>
+       install the application.
+   <p>
+   <li>Create pkg/PLIST<br>
+       After the install is complete use the developers command:
+    <p><code>make plist</code>
+    <p>which makes a the file PLIST-auto in the pkg directory.  This file
+       is a candidate packing list.  Beware: the files are found by
+       timestamp.  This means it does NOT:
+       <ul>
+        <li>list any files installed with `tar' as their timestamp
+            will not change and thus won't be found by `find'
+	<li>update the <code>info/dir</code> file if .info files are
+	    added.  You'll have to add that by hand.  Also, be sure that
+	    the <code>info/dir</code> is not part of the PLIST.
+	<li>try to do anything special with links or symbolic links.  A
+	    cursory test of tar shows it does the right thing with links
+	    and symbolic links so I don't see why we need to special case
+	    anything in the packing list.  But still...
+       </ul>
+     <p>Peruse `PLIST-auto' and verify that everything was installed and
+        that it was installed in the proper locations.  Anything not installed
+	can be added to a port Makefile `post-install' rule.
+     <p>Copy `PLIST-auto' to `PLIST'
+   <p>
+   <li>uninstall and reinstall; repeat until perfect.<br>
+       <em>Perfect</em> is when everything installs and uninstalls
+       in its proper location.  `pkg_delete <pkg_name>' is used to
+       uninstall.  `sudo make reinstall' is used to reinstall.  See the
+       `pkg_create' man page for other commands that may be added to PLIST
+       to ensure all is cleaned up.  After an uninstall the command
+       <p><code>find /usr/local -newer work/.install_started -print</code>
+       <p>should only list standard directory names.
+   <p>
+   <li>Create package:<br>
+       After the port installs correctly issue the command
+       <code>make package</code> to create a package.  To test the
+       package first do a <code>pkg_delete</code> and then do a
+       <code>pkg_add</code>   The results after an add should EXACTLY
+       match the results after a `make install'.
+  </ol>
+  <hr>
+  <a name=makefile>
+  <h2><font color=#e00000>Skeleton ports makefile</font></h2>
+  </a>
+
+  <code>;;;</code> indicates values that must be supplied by the
+   porter.  Remove extraneous comments when done.
+<pre>
+# OpenBSD makefile for:	;;;
+# Version required:	;;;
+# Date created:		;;;
+# Whom:			you@your.domain
+#
+# $OpenBSD: checklist.html,v 1.1 1998/07/30 23:04:47 marc Exp $
+#
+
+# What port/package will be created
+#
+DISTNAME=		;;;
+#DIST_SUBDIR=		;;;
+#PKGNAME=		;;;
+CATEGORIES=     	;;;
+
+# Reasons why the port/package shouldn't be built
+#
+#COMES_WITH=		2.3
+#ONLY_FOR_ARCHS=	list architectures here
+#BROKEN=		"reason"
+#NO_CDROM=		"reason"
+#RESTRICTED=		"reason"
+
+# where to send bitches about this port
+#
+MAINTAINER=		ports@openbsd.org
+
+# where the source files and patches can be fetched
+#
+MASTER_SITES=		;;;
+#MASTER_SITE_SUBDIR=	;;;
+#DISTFILES=		;;;
+#PATCH_SITES=		;;;
+#PATCHFILES=		;;;
+
+# How to extract the sources
+#
+#EXTRACT_SUFX=		.tar.Z
+#EXTRACT_CMD=		;;;
+#EXTRACT_BEFORE_ARGS=	;;;
+#EXTRACT_AFTER_ARGS=	;;;
+
+# Dependencies
+#
+#FETCH_DEPENDS=		;;;
+#BUILD_DEPENDS=		;;;
+#RUN_DEPENDS=		;;;
+#LIB_DEPENDS=		;;;
+#OS_RELEASE!=		uname -r
+#OS_HAS_XPM=		2.3
+#.if ( ${OS_RELEASE} < ${OS_HAS_XPM} )
+#LIB_DEPENDS+=		Xpm\\.4\\.:${PORTSDIR}/graphics/xpm
+#.endif
+
+# Is the build automagic or is it interactive
+#
+#IS_INTERACTIVE=	yes
+
+# build/configuration variables
+#
+#USE_GMAKE=		yes
+#USE_IMAKE=		yes
+#USE_X11=		yes (assumed if USE_IMAKE is yes)
+
+#GNU_CONFIGURE=		yes
+#HAS_CONFIGURE=		yes (assumed if GNU_CONFIGURE is yes)
+#CONFIGURE_SCRIPT=	;;; (if other than configure)
+#.if (${MACHINE_ARCH} != "alpha")
+#CONFIGURE_ARGS+=	--enable-shared
+#.endif
+#CONFIGURE_ARGS+=	--enable-static
+#CONFIGURE_ENV=		${SETENV}
+
+
+# Things that we don't want to do for this port/package
+#
+#NO_DEPENDS=		yes
+#NO_WRKDIR=		yes
+#NO_WRKSUBDIR=		yes
+#NO_CHECKSUM=		yes
+#NO_EXTRACT=		yes
+#NO_PATCH=		yes
+#NO_CONFIGURE=		yes
+#NO_BUILD=		yes
+#NO_INSTALL=		yes
+#NO_MTREE=		yes
+#NO_PACKAGE=		yes
+
+# This section is only needed if man pages are distributed in compressed
+# form.  Define MANCOMPRESSED and the man pages by section.  The pages
+# will be uncompressed after being installed.
+#
+#MANCOMPRESSED=		yes
+#MAN1=			;;;
+#MAN3=			;;;
+#MAN4=			;;;
+#MAN5=			;;;
+#MAN8=			;;;
+
+# Overrides for default values
+#
+#MAKEFILE=		;;;
+#MAKE_FLAGS=		;;;
+#MAKE_ENV=		;;;
+#SCRIPTS_ENV=		;;;
+#LDFLAGS=		;;;
+#WRKDIR=		;;; if other than work
+#WRKSRC=		;;; if other than ${WRKDIR}/$DISTNAME
+
+#ALL_TARGET=		;;;
+#INSTALL_TARGET=	;;;
+
+# This target may be necessary if a shared library may have been created
+#
+#post-install:
+#	${LDCONFIG} -m ${PREFIX}/lib
+
+.include &lt;bsd.port.mk>
+</pre>
+  <hr>
+  <a href="porting.html"><img height=24 width=24 src=back.gif
+   border=0 alt=Porting></a> 
+  <a href=mailto:www@openbsd.org>www@openbsd.org</a>
+  <br><small>$OpenBSD: checklist.html,v 1.1 1998/07/30 23:04:47 marc Exp $</small>
+ </body>
+</html>
