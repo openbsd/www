@@ -96,14 +96,20 @@ inet mona 255.255.255.0 NONE
 </p>
 
 <p>        
-Here "mona" is a name that exists as a record in /etc/hosts:
+This hostname 'mona' needs to have record in /etc/hosts:
 </p>
 
 <p>
 <pre>
 10.1.1.1        mona    mona.openbsd.org.ar
 </pre>
-</p>
+<p>
+What actually happens when you boot is that it looks up 'mona' in /etc/hosts, and then configures the interface to 10.1.1.1.
+If you have multiple ethernet interfaces, this is probably a painful way to do things, and so you can also put the
+number right in /etc/hostname.xl0:
+<pre>
+inet 10.1.1.1 255.255.255.0 NONE
+</pre>
 
 <p>
 Now check that you have a file /etc/myname and a file /etc/mygate. If you
@@ -113,7 +119,8 @@ named "wintermute" wich is also in the /etc/hosts, use this commands:
 
 <p>
 <pre>
-# echo "mona" >> /etc/myname; echo "wintermute" >> /etc/mygate
+# echo "mona" > /etc/myname
+# echo "wintermute" > /etc/mygate
 </pre>
 </p>
 
@@ -139,7 +146,7 @@ Note: if you want to use the system as a gateway, later there's a
 </p>
 
 <p>
-Now check your routes are ok (here we use -n aso to make it simpler to
+Now check your routes are ok (here we use -n to make it simpler to
 look at):
 </p>
 
@@ -165,7 +172,7 @@ Source address/netmask          Port  Destination address/netmask     Port Proto
 </p>
 
 <p>
-(The gateway here is shown as 10.1.1.254)
+(The <tt>default</tt> gateway here is 10.1.1.254)
 </p>
 
 <p>
@@ -188,8 +195,8 @@ this:
 <p>
 Here ne2 is assigned another IP number (remember it already has 10.1.1.1).
 Note the netmask used! Don't use 255.255.255.0 in this kind of cases (both
-numbers are on the same subnet), only ONE address shoud handle the subnet.
-If you do such kind of misconfiguration the following error appears:
+numbers are on the same subnet), only ONE address should handle the subnet.
+If you do such kind of misconfiguration, the following error appears:
 </p>
 
 <p>
@@ -207,6 +214,7 @@ it this line:
 <pre>
 xl0   10.1.1.2 255.255.255.255
 </pre>
+This means, simply, interface <tt>xl0</tt> should have an alias <tt>10.1.1.2</tt> with the netmask <tt>255.255.255.255</tt>.
 </p>
 
 
@@ -216,7 +224,7 @@ xl0   10.1.1.2 255.255.255.255
 
 <p>
 Let's assume your DNS servers are 125.2.3.4 and 125.2.3.5, and your
-machine name belongs to the domain yourdomain.com. Add the following
+machine name belongs to the domain yourdomain.com.  You should have the following
 lines to your /etc/resolv.conf file:
 </p>
 
@@ -233,19 +241,25 @@ nameserver 125.2.3.5
 </p>
 
 <p>
-This is a minimal explanation, only for internal/secure networks! Read
-Firewall Setup if you plan to put a gateway to internet.  
+This is the basic information you need to set up your OpenBSD box as a gateway (also called a router.)  If you are using OpenBSD as a router on the Internet, we suggest that you also read the IP Filter setup instructions below
+to block potentially malicious traffic.  Also, due to the low availability of IPv4 addresses from network service providers
+and regional registries, you may want to look at Network Address Translation (next section of this document)
+for information on conserving your IP address space.
 </p>
 
 <p>
-If you want to put a host that connects two subnets, and you want it to
-"forward" any packet from them modify /etc/sysctl.conf line that toggles
+If you want your OpenBSD machine to act as a dedicated router, and you
+are building a custom kernel configuration for it, you can either compile
+your kernel with options IPFORWARDING or GATEWAY.  (See <A HREF="faq12.html">section 12</a> for
+further information on tuning NMBCLUSTERS if you are doing this.)  For the rest of us,
+OpenBSD now has a sysctl mechanism to turn on and off IP Forwarding at boot.
+If you want it to "forward" any packets between your interfaces, modify the /etc/sysctl.conf line that toggles
 the forwarding variable on bootup:
 </p>
 
 <p>
 <pre>
-net.inet.forwarding=1
+net.inet.ip.forwarding=1
 </pre>
 </p>
 
@@ -261,35 +275,53 @@ net.inet.ip.forwarding: 0 -> 1
 </p>
 
 <p>
-Now modify the routes on the other hosts on both sides.
+Now modify the routes on the other hosts on both sides.  There are many possible uses of OpenBSD as a router, using software
+such as <A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=routed&apropos=0&sektion=8&format=html">routed(8)</a>,
+<A HREF="http://www.gated.org">gated</a>, <a href="http://www.mrtd.net">mrtd</a>, and <A href="http://www.zebra.org">zebra</a>.
+OpenBSD has support in the ports collection for both gated and mrtd.
+OpenBSD supports several T1, HSSI, ATM, FDDI, Ethernet, and serial (PPP/SLIP) interfaces.
 </p>
 
 <p>
 <a name= "6.2"></a>
-<h2>6.2 - IPF/NAT Setup</h2>
+<h2>6.2 - IP Filter - ipf and ipnat setup</h2>
+</p>
+<p>
+The IP Filter package was created to handle with two tasks, dealing with
+packet level forwarding permissions <A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=ipf&apropos=0&sektion=8&format=html">ipf(8)</a> and mapping hosts/subnets to a range of
+external addresses <A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=ipnat&apropos=0&sektion=8&format=html">ipnat(8)</a>. The configuration files for these two services are /etc/ipf.rules and
+/etc/ipnat.rules.
 </p>
 
 <p>
-<h3>IPF and IPNAT Setup</h3>
+You need to edit /etc/rc.conf to activate them at boot time. You also need to have 
+net.inet.ip.forwarding=1 in your /etc/sysctl.conf (or your kernel needs to have IPFORWARDING
+or GATEWAY options turned on.) You also need a kernel compiled with option
+IPFILTER and IPFILTER_LOG (the GENERIC kernels do have these options).
 </p>
-
+<P>
+If you have IP Filter compiled in to your kernel, but you don't have 
+it turned on in your /etc/rc.conf file, you can still activate it easily. 
+<Pre>
+# ipf -Fa -f /etc/ipf.rules -E
+# ipnat -CF -f /etc/ipnat.rules
+</pre>
+<P>
+The <tt>-E</tt> flag on ipf 'enables' IP Filter.  <Tt>-Fa</tt> clears out any rules that you may have in there.  <tt>-f /etc/ipf.rules</tt> loads the rules from
+/etc/ipf.rules.  
 <p>
-The IPFilter package was created to handle with two tasks, dealing with
-packet level forwarding permissions and mapping hosts/subnets to a range of
-external addresses. The configuration files are /etc/ipf.rules and
-/etc/ipnat.rules, and also part of /etc/
-</p>
-
-<p>
-rc.conf to activate them at boot time. You also need to have 
-net.inet.ip.forwarding=1! You also need a kernel compiled with option
-IPFILTER and IPFILTER_LOG (the GENERIC one present in the installation have
-them).
-</p>
-
-<p>
-There are a lot of nice examples on /usr/share/ipf/ for both. We recommend
-you to choose the one closer to what you want, and modify it to fit your needs.
+If you make changes to /etc/ipf.rules after ipf is loaded, you can reload your rules pretty easily!
+<pre>
+# ipf -Fa -f /etc/ipf.rules
+</pre>
+Same for ipnat...
+<pre>
+# ipnat -CF -f /etc/ipnat.rules
+</pre>
+This document will cover some basic ipf and ipnat configurations below.
+There are a lot of nice examples in /usr/share/ipf/ for ipnat and ipf. We recommend
+you to choose the one closer to what you want, and modify it to fit your needs.  You can find other IP Filter information
+at the IP Filter <A HREF="http://false.net/ipfilter/">mailing list archive</a>, the <A HREF="http://cheops.anu.edu.au/~avalon/ip-filter.html">IP Filter web site</a>, and finally the <A HREF="http://www.swcp.com/~synk/ipf-howto.txt">the IP Filter HOWTO</a>.
 </p>
 
 <p>
@@ -299,7 +331,7 @@ you to choose the one closer to what you want, and modify it to fit your needs.
 <p>
 Modify rc.conf so it has IPFILTER=YES. The file /etc/ipf.rules has a
 simple yet powerful syntax. Here we deal with the most common ways of usage,
-for a more strict definition see man 5 ipf. Here is assumed xl0 as the
+for a more strict definition see <A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=ipf&apropos=0&sektion=5&format=html">ipf(5)</a>. Here is assumed xl0 as the
 external interface to internet, on this one uses to have more rules than
 internal interfaces.
 </p>
@@ -343,7 +375,7 @@ logged in.
 </p>
 
 <p>
-Also a typical rule is to block rpc portmap:
+Also, a typical rule is to block rpc portmap:
 </p>
 
 <p>
@@ -357,67 +389,100 @@ block in log on xl0 proto udp from any to any port = sunrpc
 </p>
 
 <p>
-Based on RFC 1631, ipnat provides an easy way to map internal networks on
-a range of external addresses. This is very useful if you don't have
+Based on <a HREF="http://www.geektools.com/rfc/rfc1631.txt">RFC 1631</a>, ipnat provides an easy way to
+map internal networks to a single routeable ("real") internet address. This is very useful if you don't have
 officially asigned addresses for every host on your internal network. When
 you set up private/internal networks you can take advantage of reserved
-address blocks like:
+address blocks (assigned in <A HREF="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a>), such as:
+<P>
+
+10.0.0.0/8 (10.0.0.0 - 10.255.255.255)<br>
+172.16.0.0/12 (172.16.0.0 - 172.31.255.255)<br>
+192.168.0.0/16 (192.168.0.0 - 192.168.255.255)<br>
+
+</pre>
+</p>
+<p>
+To use ipnat, ipf must be activated.
+As outlined above, for changes to stay effective
+through reboots, you should make changes to /etc/rc.conf (where it has IPNAT and IPFILTER.)
+You can manually activate ipf with the command below.
+<pre>
+# ipf -E
+</pre>
+
+<p>
+Example: You have an internal network using 192.168.5.0, with a netmask of 255.255.255 0, and you want to give
+it access to internet using OpenBSD (of course!), and a ppp connection using address 200.1.2.3, use this rule:
 </p>
 
 <p>
 <pre>
-10.0.0.0, 192.168.0.0, and 172.16.0.0
+map tun0 192.168.5.0/24 -> 200.1.2.3/32
 </pre>
 </p>
 
 <p>
-If you have an internal network using 192.168.0.0 and you want to give
-them access to internet using OpenBSD (of course!) and a ppp connection using
-address 200.1.2.3, use this rule:
+This rule means:
 </p>
 
 <p>
-<pre>
-map ppp0 192.168.0.0/16 -> 200.1.2.3/32
-</pre>
-</p>
-
-<p>
-Note the /16 and /32, this means:
-</p>
-
-<p>
-"Any outgoing connection whose comming from an address matching the first
-16 bits of 192.168.0.0 should be mapped on local address 200.1.2.3 (only one
+"Any IP connections going out tun0 from an address matching the first
+24 bits of 192.168.0.0 should be mapped to the address 200.1.2.3 (only one
 address since /32 means every bit)"
 </p>
+<P>
+If you don't like using CIDR notation, IP Filter also allows you to use netmasks.  A functional 
+equivalent to the example above, using netmasks looks like this:
+<P>
+<PRE>
+map tun0 192.168.5.0/255.255.255.0 -> 200.1.2.3/255.255.255.255
+</pre>
 
 <p>
 But here arises a problem. You are assigning a lot of addresses to only
-ona (or a few) address. The way to go arount it is to map TCP and UDP ports to
-a certain range with the option "portmap". But remember ICMP doesnt work this
-way, it only has an ID field (usually based on process number). So now its
-like this:
+one address. But the port numbers aren't changing, and it is very likely that
+your workstations on 192.168.5.0/24 will use the same port numbers to initiate connections
+from.  (If this doesn't make sense, don't worry, but keep reading.)  The way to go arount it is to map TCP and UDP ports to
+a certain range with the option "portmap". Since ICMP doesn't even use ports, it is not covered by the
+"portmap" rule.  (ICMP uses an ID field
+usually based on a process number)
+In our example, there are now two map rules to cover all of these protocols.  The end result looks like this:
 </p>
 
 <p>
 <pre>
-map ppp0 192.168.0.0/16 -> 200.1.2.3/32 portmap tcp/udp 1024:65000
-map ppp0 192.168.0.0/16 -> 200.1.2.3/32
+map tun0 192.168.5.0/24 -> 200.1.2.3/32 portmap tcp/udp 10000:65000
+map tun0 192.168.5.0/24 -> 200.1.2.3/32
 </pre>
 </p>
 
 <p>
-This way things work better. If you have a dynamic address assignment
-(like regular dialup modem account), you can do this:
+If you have a dynamic address assignment (as in, you do not know what address they will give you when you connect), you can put
+the interface name in place of the IP address.  Note that if you do this, you will have to run <tt>ipnat -CF -f /etc/ipnat.rules</tt> every time
+your IP address changes (or, every time you dial up.)
 </p>
 
 <p>
 <pre>
-map ppp0 192.168.0.0/16 -> ppp0/32 portmap tcp/udp 1024:65000
-map ppp0 192.168.0.0/16 -> ppp0/32<br>
+map tun0 192.168.5.0/24 -> tun0/32 portmap tcp/udp 10000:65000
+map tun0 192.168.5.0/24 -> tun0/32<br>
 </pre>
-</p>
+
+<p>
+NAT is also able to help you in renumbering.  Say you were assigned a net block 35.8.9.0/22, and your internet provider can no longer
+route thse addresses to you, or say you are switching providers.  Your new address block is 192.9.4.0/22, but to switch all 500 devices
+you have on this block would be very time consuming! ipnat provides a feature called bimap:
+<P>
+<PRE>
+bimap xl0 35.8.9.0/22 -> 192.9.4.0/22
+</pre>
+<P>
+This will literally map every computer in 35.8.9.0 to a new address in 192.9.4.0.  The drawback of this feature is that the translation is not
+consistent.  A computer that initiates a connection from 35.8.9.0 will get a random IP address from 192.9.4.0.  A future version of IP Filter
+will allow for one-to-one translation (where 35.8.9.99 will always get mapped to 192.9.4.99).
+<p>
+And of course, there are other potential uses of NAT that are probably beyond the scope of this document.  
 
 <p>
 <h3>Redirecting ports</h3>
@@ -439,36 +504,45 @@ rdr xl0 120.2.3.4 port 80 -> 10.2.2.7 port 80
 </p>
 
 <p>
-This is a little graph:
+When you write rules, it may help to visualize the packet flow.
 </p>
 
 <p>
 <pre>
-Internet <--> (xl0) OpenBSD (xl1) <--> LAN <--> 10.2.2.7
-            128.2.3.4      whatever  10.2.2.0   Web server
+Internet <--> (xl0 120.2.3.4) OpenBSD (xl1 10.2.2.1) <--> LAN <--> (10.2.2.7 XYZ Web server)
 </pre>
 </p>
 
 <p>
-Remember to activate kernel must have option IP FORWARDING. Also remember that
-EVERY packet MUST pass through the OpenBSD box, i.e. you can't redirect ports
-to hosts on the same network and address external to the OpenBSD box.
+One last reminder that you must have net.inet.ip.forwarding=1 or option IPFORWARDING to use
+IP Filter (ipf, ipnat). Also, redirect only
+works for packets that are being routed through the OpenBSD box.  If a web browser from inside the NAT
+(say, from 10.2.2.5 from the example above) tries to connect to port 80 on 120.2.3.4, nothing will happen.
 </p>
 
 <br>
 
 <p>
 <a name= "6.3"></a>
-<h2>6.3 - IPSEC</h2>
+<h2>6.3 - IPSec</h2>
 </p>
 
 <p>
-Be sure to check
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vpn&apropos=0&sektion=0&format=html">vpn</a>
-man page.
+IPSec is partially documented in the 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vpn&apropos=0&sektion=0&format=html">vpn(8)</a>
+man page.  There are various files in <A HREF="http://www.openbsd.org/cgi-bin/cvsweb/src/share/ipsec/">/usr/share/ipsec/</a>
+directory which can also assist you.  The manual pages for
+<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=ipsec&apropos=0&sektion=4&format=html">ipsec(4)</a>,
+<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=ipsecadm&apropos=0&sektion=8&format=html">ipsecadm(8)</a>,
+<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=photurisd&apropos=0&sektion=8&format=html">photurisd(8)</a>,
+<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=startkey&apropos=0&sektion=1&format=html">startkey(1)</a>,
+<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd&apropos=0&sektion=8&format=html">isakmpd(8)</a> and
+<a HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd.conf&apropos=0&sektion=5&format=html">isakmpd.conf(5)</a>
+are also available!
 </p>
 <p> 
-You can also check <a href="http://www.codetalker.com/greenbox/docs/vpn-24-minifaq.html">Codetalker</a>
+You should also check <a href="http://www.codetalker.com/greenbox/docs/vpn-24-minifaq.html">Codetalker</a> which has an FAQ
+for setting up an IPSec VPN with OpenBSD.  It explains some basic IPSec concepts and how to apply them to a VPN setup.
 </p>
 
 <br>
@@ -478,8 +552,39 @@ You can also check <a href="http://www.codetalker.com/greenbox/docs/vpn-24-minif
 <h2>6.4 - DHCP</h2>
 </p>
 
+<p>To use the DHCP client <A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=dhclient&apropos=0&sektion=8&format=html">dhclient(8)</a>
+included with OpenBSD, edit /etc/hostname.xl0
+(this is assuming your main ethernet interface is xl0.  Yours might be ep0 or fxp0 or something else!)
+All you need to put in this hostname file is 'dhcp'
+<pre>
+# echo dhcp >/etc/hostname.xl0
+</pre>
+This will cause OpenBSD to automatically start the DHCP client on boot.  OpenBSD will gather its' IP address,
+default gateway, and DNS servers from the DHCP server.  
 <p>
-This section is not yet completed. Please Check back soon.
+If you want to use OpenBSD as a DHCP server <A href="http://www.openbsd.org/cgi-bin/man.cgi?query=dhcpd&apropos=0&sektion=8&format=html">dhcpd(8)</a>,
+edit /etc/rc.conf.  Set it up so that dhcpd_flags="-q" instead of dhcpd_flags=NO.
+Put the interfaces that you want dhcpd to *listen* on in /etc/dhcpd.interfaces.
+<pre>
+# echo xl1 xl2 xl3 >/etc/dhcpd.interfaces
+</pre>
+Then, edit /etc/dhcpd.conf.
+The options are pretty self explanatory.
+<pre>
+        option  domain-name "xyz.mil";
+        option  domain-name-servers 192.168.1.3, 192.168.1.5;
+
+        subnet 192.168.1.0 netmask 255.255.255.0 {
+                option routers 192.168.1.1;
+
+                range 192.168.1.32 192.168.1.127;
+        }
+</pre>
+<p>
+This will tell your dhcp clients that the domain to append to DNS requests is xyz.mil (so, if the user types in 'telnet joe' then it will
+send them to joe.xyz.mil).  It will point them to DNS servers 192.168.1.3 and 192.168.1.5.  For hosts that are on the same network as
+an ethernet interface on the OpenBSD machine, which is in the 192.168.1.0/24 range, it will assign them an IP address between
+192.168.1.32 and 192.168.1.127.  It will set their default gateway as 192.168.1.1.
 </p>
 
 <br>
@@ -609,7 +714,7 @@ set ifaddr 209.115.93.18 209.115.93.20
 </p>
 
 <p>
-In this example, your ip is 209.115.93.18, and the peer side ip is
+In this example, your IP is 209.115.93.18, and the peer side IP is
 209.115.93.20.
 </p>
 
@@ -626,7 +731,7 @@ In this example, your ip is 209.115.93.18, and the peer side ip is
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt= "[back]"></a>
 <a href= "mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq6.html,v 1.13 1999/06/09 00:04:28 wvdputte Exp $</small>
+<small>$OpenBSD: faq6.html,v 1.14 1999/06/24 21:54:51 ericj Exp $</small>
 </p>
 </body>
 </html>
