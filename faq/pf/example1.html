@@ -88,8 +88,9 @@ The network is setup like this:
 <p>
 There are a number of computers on the internal network; the diagram
 shows three but the actual number is irrelevant.  These computers are
-regular workstations used for web surfing, email, chatting, etc. The
-internal network is using the 192.168.0.0 / 255.255.255.0 network block.
+regular workstations used for web surfing, email, chatting, etc., except
+for COMP3 which is also running a small web server.
+The internal network is using the 192.168.0.0 / 255.255.255.0 network block.
 
 <p>
 The OpenBSD router is a Pentium 100 with two network cards: a 3com
@@ -116,6 +117,10 @@ Internet:
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ping&amp;sektion=8&amp;manpath=OpenBSD+3.5"
 >ping(8)</a>.
 	</ul>
+<li>Redirect TCP port 80 connection attempts (which are attempts to
+access a web server) to computer COMP3.
+Also, permit TCP port 80 traffic destined for COMP3 through the
+firewall.
 <li>Log filter statistics on the external interface.
 <li>By default, reply with a TCP RST or ICMP Unreachable for blocked
 packets.
@@ -146,6 +151,9 @@ tcp_services = "{ 22, 113 }"<br>
 icmp_types = "echoreq"<br>
 <br>
 priv_nets = "{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"
+<br>
+<br>
+comp3 = "192.168.0.3"
 </tt>
 </blockquote>
 
@@ -153,10 +161,11 @@ priv_nets = "{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"
 The first two lines define the network interfaces that filtering will
 happen on. The third and fourth lines list the TCP port numbers of the services
 that will be opened up to the Internet (SSH and ident/auth) and the ICMP
-packet types that will be permitted to reach the firewall machine. The last
-line defines the loopback and
+packet types that will be permitted to reach the firewall machine. 
+The fifth line defines the loopback and
 <a href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a> address
-blocks.
+blocks. 
+Finally, the last line defines the IP address of COMP3.
 
 <p>
 <b>Note</b>: If the ADSL Internet connection required
@@ -203,7 +212,7 @@ will notice when the address changes.
 
 <a name="rdr"></a>
 <h3>Redirection</h3>
-The only redirection needed is for 
+The first redirection rule needed is for 
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+3.5"
 >ftp-proxy(8)</a> so that FTP clients on the local network can connect
 to FTP servers on the Internet.
@@ -218,6 +227,19 @@ Note that this rule will only catch FTP connections to port 21. If users
 regularly connect to FTP servers on other ports, then a list should be
 used to specify the destination port, for example: <tt>from any to any
 port { 21, 2121 }</tt>.
+
+<p>
+The second redirection rule catches any attempts by someone on the
+Internet to connect to TCP port 80 on the firewall. 
+Legitimate attempts to access this port will be from users trying to
+access the network's web server.
+These connection attempts need to be redirected to COMP3:
+
+<blockquote>
+<tt>
+rdr on $ext_if proto tcp from any to any port 80 -&gt; $comp3
+</tt>
+</blockquote>
 
 <a name="filter"></a>
 <h3>Filter Rules</h3>
@@ -287,6 +309,21 @@ it simple to open additional services to the Internet by simply editing
 the macro and reloading the ruleset. UDP services can also be opened up
 by creating a <tt>$udp_services</tt> macro and adding a filter rule,
 similar to the one above, that specifies <tt>proto udp</tt>.
+
+<p>
+In addition to having an <tt>rdr</tt> rule which passes the web server
+traffic to COMP3, we MUST also pass this traffic through the firewall:
+<blockquote>
+<tt>
+pass in on $ext_if proto tcp from any to $comp3 port 80 \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;flags S/SA synproxy state
+</tt>
+</blockquote>
+
+<p>
+For an added bit of safety, we'll make use of the 
+<a href="filter.html#synproxy">TCP SYN Proxy</a> to further protect the
+web server. 
 
 <p>
 ICMP traffic must now be passed:
@@ -375,6 +412,8 @@ icmp_types = "echoreq"
 
 priv_nets = "{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"
 	  
+comp3 = "192.168.0.3"
+
 # options
 set block-policy return
 set loginterface $ext_if
@@ -386,6 +425,7 @@ scrub in all
 nat on $ext_if from $int_if:network to any -&gt; ($ext_if)
 rdr on $int_if proto tcp from any to any port 21 -&gt; 127.0.0.1 \
    port 8021
+rdr on $ext_if proto tcp from any to any port 80 -&gt; $comp3
 
 # filter rules
 block all
@@ -397,6 +437,9 @@ block drop out quick on $ext_if from any to $priv_nets
 
 pass in on $ext_if inet proto tcp from any to ($ext_if) \
    port $tcp_services flags S/SA keep state
+
+pass in on $ext_if proto tcp from any to $comp3 port 80 \
+   flags S/SA synproxy state
 
 pass in inet proto icmp all icmp-type $icmp_types keep state
 
@@ -419,7 +462,7 @@ Gateways</a>]
 <a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a> 
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: example1.html,v 1.14 2004/05/07 01:55:23 nick Exp $</small>
+<small>$OpenBSD: example1.html,v 1.15 2004/05/15 02:34:02 nick Exp $</small>
 
 </body>
 </html> 
