@@ -39,6 +39,7 @@
 <li><a href= "#PCI"         >8.19 - I'm having problems with PCI devices being detected in OpenBSD 2.8.</a></li>
 <li><a href= "truetype.html">8.20 - Antialiased and TrueType fonts in OpenBSD 2.9/XFree86</a></li>
 <li><a href= "#Journaling"  >8.21 - Does OpenBSD support any journaling fileystems ?</a></li>
+<li><a href= "#RevDNS"      >8.22 - Reverse DNS or Why is it taking so long for me to log in?</a>
 </ul>
 </p> 
 <hr> 
@@ -1278,6 +1279,150 @@ No it doesn't. We use a different mechanism to achieve similar results that is c
 <a href="faq14.html#SoftUpdates">Soft Updates</a>. Please read in FAQ 14 to get more details.
 </p>
 
+<p>
+<a name= "RevDNS"></a>
+<h2>8.22 - Reverse DNS <br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<small>- or -</small><br>
+Why is it taking so long for me to log in?</h2>
+<p>
+Many new users to OpenBSD experience a two minute login delay when using
+services such as 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ssh&sektion=1">ssh,</a> 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp&sektion=1">ftp,</a> or 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=telnet&sektion=1">telnet.</a>  
+This can also be experienced when using a proxy, such as 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&sektion=8">ftp-proxy,</a>
+or when sending mail out from a workstation through 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sendmail&sektion=8">sendmail.</a>
+<p>
+This is almost always due to a reverse-DNS problem.  DNS is Domain Name
+Services, the system the Internet uses to convert a name, such as 
+"www.openbsd.org" into a numeric IP address.  Another task of DNS is
+the ability to take a numeric address and convert it back to a "name",
+this is "Reverse DNS".
+<p>
+In order to provide better logging, OpenBSD performs a reverse-DNS 
+lookup on any machine that that attaches to it in many different ways, 
+including 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ssh&sektion=1">ssh,</a>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp&sektion=1">ftp,</a> or
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=telnet&sektion=1">telnet.</a>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sendmail&sektion=8">sendmail,</a> or
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&sektion=8">ftp-proxy.</a>
+Unfortunately, in some cases, the machine that
+is making the connection does not have a proper reverse DNS entry.  
+<p>
+<h3>An example of this situation:</h3> 
+A user sets up an OpenBSD box as a firewall and gateway
+to their internal home network, mapping all their internal computers 
+to one external IP using 
+<a href="faq6.html#NAT">NAT.</a>
+They may also use it as an outbound mail
+relay.  They follow the installation guidelines, and are very happy with
+the results, except for one thing -- every time they try to attach to the
+box in any way, they end up with a two minute delay before things happen.
+<p>
+<h3>What is going on:</h3>
+From a workstation behind the NAT of the gateway with an 
+<a href="http://www.geektools.com/rfc/rfc1918.txt">unregistered IP</a> 
+address of 192.168.1.35, the user uses 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ssh&sektion=1">ssh</a>
+to access the gateway system.  The 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ssh&sektion=1">ssh</a>
+client prompts for username and password, and sends 
+them to the gateway box.  The gateway then tries to figure out who 
+is trying to log in by performing a reverse DNS lookup of 
+192.168.1.35.  The problem is 192.168.0.0 addresses are for private
+use, so a properly configured DNS server outside your network 
+knows it should have no information about those addresses.  Some will 
+quickly return an error message, in these cases, OpenBSD will assume 
+there is no more information to be gained, and and it will quickly 
+give up and just admit the user.  Other DNS servers will not return 
+ANY response. In this case you will find yourself waiting for the OpenBSD 
+name resolver to time out, which takes about two minutes before the 
+login will be permitted to continue.  In the case of i
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&sektion=8">ftp-proxy</a>, some
+ftp clients will timeout before the reverse DNS query times out, leading
+to the impression that ftp-proxy isn't working.
+<p>
+This can be quite annoying.  Fortunately, it is an easy thing to fix.
+<p>
+<h3>Fix, using <tt>/etc/hosts</tt>:</h3>
+The simplest fix is to populate your 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hosts&sektion=5"><tt>/etc/hosts</tt></a> 
+file with all the workstations
+you have in your internal network, and ensure that your 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=resolv.conf&sektion=5"><tt>/etc/resolv.conf</tt></a> 
+file contains the line <tt>lookup file bind</tt>
+which ensures that the resolver knows to start with the 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hosts&sektion=5"><tt>/etc/hosts</tt></a>
+file,
+and failing that, to use the DNS servers specified by the "nameserver" 
+lines in your 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=resolv.conf&sektion=5"><tt>/etc/resolv.conf</tt></a>
+file.<p>
+
+Your 
+<tt>/etc/hosts</tt> 
+file will look something like this:
+<ul> <table border=0 width="800"> <tr> <td nowrap bgcolor="#EEEEEE">
+<pre>
+127.0.0.1 localhost
+192.168.1.1 gw.in.example.org gw
+192.168.1.20 scrappy.in.example.org scrappy
+192.168.1.35 shadow.in.example.org shadow
+</pre>
+</td></tr></table></ul>
+Your <tt>resolv.conf</tt> file will look something like this:
+<ul> <table border=0 width="800"> <tr> <td nowrap bgcolor="#EEEEEE">
+<pre>
+search in.example.org 
+nameserver 24.2.68.33
+nameserver 24.2.68.34
+lookup file bind
+</pre>
+</td></tr></table></ul>
+A common objection to this is "But, I use DHCP for my internal network!
+How can I configure my <tt>/etc/hosts</tt>?"  Rather easily, actually.
+Just enter lines for all the addresses your DHCP server is going to 
+give out, plus any static devices:
+<ul> <table border=0 width="800"> <tr> <td nowrap bgcolor="#EEEEEE">
+<pre>
+127.0.0.1 localhost
+192.168.1.1 gw.in.example.org gw
+192.168.1.20 scrappy.in.example.org scrappy
+192.168.1.35 shadow.in.example.org shadow
+192.168.1.100 d100.in.example.org d100
+192.168.1.101 d101.in.example.org d101
+192.168.1.102 d102.in.example.org d102
+         [... snip ...] 
+192.168.1.198 d198.in.example.org d198
+192.168.1.199 d199.in.example.org d199
+</pre>
+</td></tr></table></ul>
+
+In this case, I am assuming you have the DHCP range set to 192.168.1.100 
+through 192.168.1.199, plus the three static definitions as listed at
+the top of the file.
+<p>
+If your gateway must use DHCP for configuration, you may well find you
+have a problem -- 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dhclient&sektion=8">dhclient</a>
+will overwrite your <tt>/etc/resolv.conf</tt>
+every time the lease is renewed, which will remove the "lookup file bind" 
+line.  This can be solved by putting the line "lookup file bind" in the 
+file 
+<tt>/etc/resolv.conf.tail</tt>.
+<p>
+<h3>Fix, using a local DNS server</h3>
+Details on this are somewhat beyond the scope of this document, but the 
+basic trick is to setup your favorite DNS server, and 
+make sure it knows it is authoritative for both forward and reverse
+DNS resolution for all nodes in your network, and make sure your
+computers (including your gateway) know to use it as a DNS server.  Some 
+details on the BIND v4.9.3 name server included with OpenBSD can be found
+<a href="faq6.html#DNS">here.</a>
+
 <P>
 <font color= "#0000e0">
 <a href= "index.html">[Back to Main Index]</a>
@@ -1291,7 +1436,7 @@ No it doesn't. We use a different mechanism to achieve similar results that is c
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt= "[back]"></a> 
 <a href= "mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq8.html,v 1.86 2002/03/14 17:28:17 nick Exp $</small>
+<small>$OpenBSD: faq8.html,v 1.87 2002/03/15 02:41:13 nick Exp $</small>
 </p>
 </body>
 </html>
