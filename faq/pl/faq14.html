@@ -7,7 +7,7 @@
 <meta name= "description"   content= "the OpenBSD FAQ page">
 <meta name= "keywords"      content= "openbsd,faq">
 <meta name= "distribution"  content= "global">
-<meta name= "copyright"     content= "This document copyright 1998-2003 by OpenBSD.">
+<meta name= "copyright"     content= "This document copyright 1998-2004 by OpenBSD.">
 <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-2">
 <style type="text/css">
   <!--
@@ -26,7 +26,23 @@
 platform]</a>
 </font>
 
-<h1><font color="#e00000">14 - Konfiguracja dysku</font></h1><hr>
+<h1><font color="#e00000">14 - Konfiguracja dysku</font></h1>
+
+<!--
+UNCOMMENT ONLY WHEN THE FILE IS OUT OF SYNC
+
+<hr>
+<p>
+<b><font color="#e00000">Uwaga:</font></b>Zawartość tego pliku
+jest już bardzo nieaktualna w stosunku do
+<a href="../faq14.html">bieżącej wersji anglojęzycznej</a>.
+
+<p>
+Jeśli chcesz pomóc w aktualizacji tego pliku, zajrzyj na
+<a href="../../translation.html">stronę tłumaczeń</a>.
+-->
+
+<hr>
 
 <h3>Spis treści</h3>
 <ul>
@@ -35,6 +51,7 @@ platform]</a>
 <li><a href="#NewDisk"    >14.3 - Dodawanie nowych dysków w OpenBSD</a>
 <li><a href="#SwapFile"   >14.4 - Plik wymiany</a>
 <li><a href="#SoftUpdates">14.5 - Soft Updates</a>
+<li><a href="#Boot386"    >14.6 - Jak wygląda bootowanie OpenBSD?</a>
 <li><a href="#LargeDrive" >14.7 - O czym należy wiedzieć używając dużych 
                            dysków w OpenBSD?</a>
 <li><a href="#InstBoot"   >14.8 - Instalacja bootbloku - tylko i386</a>
@@ -715,32 +732,229 @@ Soft Updates na maszynach sun4 i sun4c. Pozwalają one na wykorzystanie
 przez jądro jedynie niewielkiej ilości pamięci, przez co nie mogą
 wykorzystywać Soft Updates. Problem ten nie dotyczy komputerów sun4m.
   
-<a name="LargeDrive"></a>
-<h2>14.7 - O czym należy wiedzieć używając dużych dysków w OpenBSD?</h2>
+<a name="Boot386"></a>
+<h2>14.6 - Jak wygląda bootowanie OpenBSD?</h2>
+Proces uruchamiania OpenBSD/i386 nie jest rzeczą banalną, a zrozumienie jej
+będzie pomocne przy rozwiązywaniu różnorakich problemów. Bootowanie
+OpenBSD składa się czterech głównych części.
+<ol>
+<li><b><i>Master Boot Record (MBR):</i></b>
+Master Boot Record jest to pierwszy fizyczny sektor (512 bajtów) dysku.
+Zawarta jest w nim tablica partycji oraz niewielki program który ładuje
+PBR (ang. Partition Boot Record). Proszę zwrócić uwagę, że w niektórych
+środowiskach termin "MBR" używany jest do określenia jedynie części, w której
+zawarty jest kod ładujący, a nie całego pierwszego bloku na dysku (włącznie
+z tablicą partycji). Szczególnie istotne jest zrozumienia znaczenia
+"inicjalizacji MBR" - co w terminologii OpenBSD oznacza nadpisanie od nowa
+całego sektora MBR, a nie tylko programu ładującego, jak to spotyka się
+w niektórych systemach operacyjnych. Nie jest to zbyt często przeprowadzana
+operacja. Zamiast tego częściej używa się polecenia "update" programu fdisk(8).
 
 <p>
-<!-- XXXexpires - paragraph need rewriting when 3.1 becomes unsupported -->
+Chociaż OpenBSD dostarcza własny MBR nie jest konieczne instalowanie go na
+dysku - generalnie dowolny MBR jest w stanie załadować OpenBSD. Do
+zarządzania MBR-em służy program fdisk(8), który używany jest zarówno do
+edycji tablicy partycji, a także do instalacji kodu MBR na dysku.
+
+<p>
+MBR OpenBSD przy uruchomieniu wyświetla komunikat podobny do poniższego:
+<pre>
+    Using Drive: 0 Partition: 3
+</pre>
+Określa on numer dysku oraz partycji z której zostanie załadowany PBR.
+
+<li><b><i>Partition Boot Record (PBR):</i></b>
+Partition Boot Record w skrócie PBR, nazywany także 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=biosboot&amp;sektion=8&amp;arch=i386">biosboot(8)</a>
+(od kiedy plik o tej nazwie przechowuje program ładujący) jest to pierwszy
+fizyczny sektor na partycji OpenBSD na dysku. PBR to "program ładujący
+pierwszego poziomu". Sam PBR wczytywany jest do pamięci przez kod znajdujący
+się w MBR, a jego zadaniem jest uruchomienie programu ładującego drugiego
+poziomu -
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=boot&amp;sektion=8&amp;arch=i386">boot(8)</a>.
+Podobnie jak MBR, PBR jest bardzo małym programem: kod i dane to nie więcej
+jak 512 bajtów. Ta ilość nie wystarczy do stworzenia aplikacji obsługującej
+system plików, tak więc umiejscowienie <tt>/boot</tt> na dysku, w miejscu
+dostępnym dla BIOS-u komputera, zakodowywane jest na stałe w PBR podczas
+jego instalacji.
+
+<p>
+Instalacja PBR odbywa się przy pomocy programu
++<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=installboot&amp;sektion=8&amp;arch=i386">installboot</a>,
+który szczególowo opisany jest <a href="faq14.html#InstBoot">w dalszej częsci
+tego dokumentu</a>.
+Podczas uruchamiania PBR wyświetla komunikat podobny do poniższego:
+<pre>
+    reading boot....
+</pre>
+wypisując na ekranie kropkę wraz z każdym odczytanym sektorem.
+
+<li><b><i>Program Ładujący Drugiego Poziomu (ang. Second Stage Boot Loader)
+ <tt>/boot</tt>:</i></b> <tt>/boot</tt> jest ładowany przez PBR, a jego
+zadaniem jest uzyskanie dostępu do systemu plików OpenBSD, a następnie
+odszukanie i załadowanie jądra do pamięci. Dzięki boot(8) możliwe jest
+także przekazanie różnych opcji i informacji do kernela.
+
+<p>
+boot(8) jest programem interaktywny. Po załadowaniu przystępuje on do
+odczytania swojego pliku konfiguracyjnego <tt>/etc/boot.conf</tt> i wykonania
+zawartych w nim poleceń (domyślna instalacja OpenBSD nie tworzy jednak
+takiego pliku). Jeśli brak pliku <tt>/etc/boot.conf</tt> lub zawarte
+w nim polecenia nie załadują jądra OpenBSD, przed użytkownikiem ukaże się
+znak zachęty:
+
+<pre>
+     probing: pc0 com0 com1 apm mem[636k 190M a20=on]
+     disk: fd0 hd0+
+     >> OpenBSD/i386 BOOT 2.02
+     boot>
+</pre>
+
+W tym momencie użytkownik ma (w domyślnej instalcji) pięć sekund aby wydać
+polecenie inne polecenie, jeśli tego nie zrobi, boot(8) załaduje jądro
+nazwane <tt>bsd</tt> znajdujące się na głównej partycji pierwszego dysku
+twardego. Program ładujący drugiego poziomu rozpoznaje sprzęt zainstalowany
+w komputerze na podstawie danych odczytanych z BIOS-u (jako, że jądro
+OpenBSD nie jest jeszcze załadowane). Powyżej można zobaczyć, że boot(8)
+odnalazł:
+<ul>
+<li><b>pc0</b> - standartowa klawiatura oraz karta graficzna dla komputerów
+i386.
+<li><b>com0, com1</b> - dwa poty szeregowe.
+<li><b>apm</b> - Funkcje zarządzania energią (ang. Advanced Power Management).
+<li><b>636k 190M</b> - Rozmiar dostępnej konwencjonalnej (poniżej 1 MB)
+oraz rozszeżonej (powyżej 1 MB) pamięci.
+<li><b>fd0 hd0+</b> - Napędy dysków - w tym przypadku jedna stacja
+dyskietek oraz dysk twardy.
+</ul>
+
+Znak '+' po "hd0" oznacza, że dostęp do dysku odbywa się w trybie LBA.
+Podczas pierwszej instalacji OpenBSD, można zauważyć znak '*' po symbolu
+dysku twardego - oznacza to, że na tym dysku nie znaleziono poprawnej
+etykiety dysku.
+
+<li><b><i>Jądro: <tt>/bsd</tt></i>:</b> celem bootowania jest załadowanie
+jądra OpenBSD do pamięci i poprawne uruchomienie go. W momencie gdy
+jądro znajdzie się w pamięci komputera OpenBSD zaczyna komunikować się
+bezpośrednio ze sprzętem bez pomocy BIOS-u.
+</ol>
+
+Poniższy przykład przedstawia najczęstszy przebieg bootowania OpenBSD:
+<blockquote><pre>
+Using Drive: 0 Partition: 3                      <b><i>&lt;- MBR</i></b>
+reading boot....                                 <b><i>&lt;- PBR</i></b>
+probing: pc0 com0 com1 apm mem[636k 190M a20=on] <b><i>&lt;- /boot</i></b>
+disk: fd0 hd0+
+>> OpenBSD/i386 BOOT 2.02
+boot>
+booting hd0a:/bsd 4464500+838332 [58+204240+181750]=0x56cfd0
+entry point at 0x100120
+
+[ using 386464 bytes of bsd ELF symbol table ]
+Copyright (c) 1982, 1986, 1989, 1991, 1993       <b><i><- Kernel</i></b>
+        The Regents of the University of California.  All rights reserved.
+Copyright (c) 1995-2003 OpenBSD.  All rights reserved.  http://www.OpenBSD.org
+
+OpenBSD 3.4 (GENERIC) #18: Wed Sep 17 03:34:47 MDT 2003
+   ...
+</pre></blockquote>
+
+
+<h3>Jakie przeszkody można napotkać podczas bootowania OpenBSD/i386?</h3>
+<ul>
+<li><b>Błędny lub niekompatybilny MBR:</b>
+W najczęstszych przypadkach dysk posiada już jakiś MBR, zdarzyć się może
+jednak, że dysk jest zupełnie nowy lub został przeniesiony z innej platformy
+sprzętowej, a na pytanie "Czy użyć cały dysk" (ang. "Use entire disk") podczas
+<a href="faq4.html#Disks">instalcji systemu</a> udzieliłeś odpowiedzi
+przeczącej może okazać się, że na dysku nie istnieje MBR, a tym samym
+załadowani systemu nie jest możliwe (pomimo tego, że dysk posiada
+prawidłową tablicę partycji).
+
+<p>
+Można zainstalować OpenBSD MBR na dysku przy pomocy programu fdisk(8).
+Wystarczy uruchomić system z medium instalacyjnego, wybrać opcję
+"Shell", a po ukazaniu się znaku zachęty wpisać:
+
+<pre>
+    # <b>fdisk -u wd0</b>
+</pre>
+
+Można również określić jaki MBR ma być zapisany na dysku:
+<pre>
+    # <b>fdisk -u -f /usr/mdec/mbr wd0 </b>
+</pre>
+
+Powyższe polecenie spowoduje zapisanie pliku <tt>/usr/mdec/mbr</tt> jako
+MBR na dysku. Ten plik jest standartowym MBR OpenBSD i jest on także
+wbudowany w polecenie fdisk, ale nic nie stoi na przeszkodzie by w tym
+miejscu wskazać inny, prawidłowy kod MBR.
+
+<li><b>Błędna lokalizacja <tt>/boot</tt> w PBR:</b>
+Podczas instalacji Partition Boot Record, program installboot(8) zapisuje
+w nim fizyczne umiejscowienie na dysku pliku <tt>/boot</tt>. Tak więc
+usunięcie bądz zamiamiana pliku <tt>/boot</tt> bez ponownego uruchomienia
+<a href="faq14.html#InstBoot">installboot(8)</a> spowoduje, że zabootowanie
+systemu stanie się niemożliwe, jako że PBR spróbóje załadować z dysku dane,
+które z pewnością nie są programem ładującym drugiego poziomu. Z racji
+tego, że <tt>/boot</tt> jest ładowany przy użyciu wywołań BIOS-u, zmiana
+geometrii dysku (np. przeniesienie napędu z jednego komputera, używającego
+translacji CHS do drugiego, który wykorzystuje translację LBA, lub nawet
+zmiana sposobu tłumaczenia geometrii dysku w BIOS-ie) spowoduje, że
+wg BIOS-u plik <tt>/boot</tt> znajdzie się w zupełnie innym miejscu dysku,
+tak więc konieczne będzie wykorzystanie programu installboot(8) przed 
+ponownym uruchomieniem systemu.
+
+Jako że PBR jest bardzo mały, tak i komunikaty o błędach są bardzo lakoniczne:
+<ul>
+<li><b>Read Error</b> - BIOS zwrócił błąd podczas próby odczytu z dysku.
+Może być to spowodowane uszkodzeniem dysku bądź próbą odwołania się do
+nieistniejącego sektora (np. w wyniku niewłaściwego ustawienia geometrii dysku).
+<li><b>Bad magic</b> - nieprawidłowy magiczny numer (zobacz stronę podręcznika
+systemowego <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=magic&amp;sektion=5">magic(5)</a>)
+odczytany z nagłówka programu ładującego drugiego poziomu. Zasadniczo oznacza
+to, że cokolwiek zostało odczytane z dysku napewno nie jest to <tt>/boot</tt>.
+Najczęściej związane jest to ze zmianą geometrii dysku, zmianą pliku
+<tt>/boot</tt> lub zignorowaniem <a href="faq14.html#LargeDrive">
+ograniczenia 8GB</a> w danym systemie.
+</ul>
+</ul>
+
+Bardziej szczegółowe informacje o procesie ładowania OpenBSD/i386 można
+znaleźć w poniższych dokumentach:
+<ul>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=boot_i386&amp;sektion=8&amp;arch=i386">boot_i386(8)</a>
+<li><a href="ftp://ftp.openbsd.org/pub/OpenBSD/3.4/i386/INSTALL.mbr">INSTALL.mbr</a>
+<li><a href="ftp://ftp.openbsd.org/pub/OpenBSD/3.4/i386/INSTALL.ata">INSTALL.ata</a>
+<li><a href="ftp://ftp.openbsd.org/pub/OpenBSD/3.4/i386/INSTALL.chs">INSTALL.chs</a>
+<li><a href="ftp://ftp.openbsd.org/pub/OpenBSD/3.4/i386/INSTALL.dbr">INSTALL.dbr</a>
+</ul>
+
+<a name="LargeDrive"></a>
+<h2>14.7 - O czym należy wiedzieć używając dużych dysków w OpenBSD?</h2>
+<!-- XXX version i386 changes for 3.5 -->
+
+<p>
 OpenBSD obsługuje systemy plików o wiele większe niż wynosi pojemność 
 dysków, które można kupić już dziś lub te, które znajdą się na rynku w
 niedalekiej przyszłości. Jednak pewne ograniczenia, dotyczące niektórych
 kontrolerów, powodują, że rzeczywista granica pojemności dysków jest
-mniejsza niż teoretyczne maksimum dla OpenBSD. W przypadku napędów IDE,
-podłączanych przez popularny interfejs ATA, górnym limitem jest 128 GB.
-Proszę zwrócić uwagę, że nowa generacja dysków ATA, która przekracza
-barierę 128 GB pojemności (1 gigabajt to 2^30 czyli 1,073,741,824, a
-nie, jak twierdzą producenci dysków 1,000,000,000, więc wg nich
-limitem jest 137 GB) nie jest obsługiwana przez OpenBSD 3.1 i wcześniejsze.
+mniejsza niż teoretyczne maksimum dla OpenBSD.
 
 <p>
+Nie wszystkie możliwe kombinacje sprzętu będą poprawnie obsługiwane. Nowy,
+250 gigabajtowy, dysk IDE nie będzie pracował ze starym (obsługującym
+napędy &gt;137 GB) kontrolerem. Podobne problemy mogą dotyczyć adapterów
+SCSI.
+
+<h3>Ograniczenia pojemności i rozmieszczenia partycji</h3>
 Na nieszczęście wszystkie możliwości danego OS nie są dostępne zanim
 zostanie on załadowany do pamięci i już sam proces bootowania wprowadza
 ograniczenia. Podczas rozruch komputera wykorzystywane są procedury
 umieszczone w BIOS-ie (i to właśnie jest przyczyną niektórych ograniczeń).
-Programy ładujące OpenBSD dla platformy i386
-(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=biosboot&amp;sektion=8&amp;arch=i386">biosboot(8)</a>
-i
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=boot&amp;sektion=8&amp;arch=i386">boot(8)</a>)
-posiadają wewnetrzne ograniczenie pojemności do 8 GB, związane
+Program ładujące pierwszego poziomu dla platformy i386
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=biosboot&amp;sektion=8&amp;arch=i386">biosboot(8)</a>)
+posiadaja wewnetrzne ograniczenie pojemności do 8 GB, związane
 właśnie z ograniczeniami starszych BIOS-ów.
  
 <p>
@@ -781,21 +995,34 @@ miejscu co poprzednik. Najprawdopodobniej gdzieś powyżej granicy
 odczytać pliku jądra i system zatrzymuje się.
 
 <p>
-Proces bootowania OpenBSD wymaga, aby <tt>/bsd</tt> znajdował
+Proces bootowania OpenBSD wymaga, aby programy ładujące (biosboot(8) i
+<tt>/boot</tt> w przypadku i386) oraz jądro (<tt>/bsd</tt>) znajdowały
 się w obszarze, który jest obsługiwany przez BIOS. Można to
 rozwiązać w bardzo prosty sposób:
 
 <p>
 <b>Cała partycja '/' musi znajdować sie wewnątrz obszaru, który jest
 dostępny dla BIOS-u komputera lub wenątrz pierwszych 8 GB, w zależności,
-która wartość jest mniejsza.</b> Jak narazie nie ma sposobu na obejście
-tych ograniczeń. Zaufaj nam. <i>Musisz </i> postępować zgodnie z tymi
-zasadami.
+która wartość jest mniejsza.</b>
+<br><i>Uwaga: ograniczenie 8 GB dla OpenBSD/i386 zostało usunięte w wersji
+-current systemu. Nadal jednak należy respektować ograniczenia BIOS-u.</i>
 
 <p>
 Opisane wyżej problemy są jeszcze jednym dobrym powodem, aby
 <a href="faq4.html#SpaceNeeded">podzielić dysk na partycje</a>, zamiast
 używać jednej dużej partycji.
+
++<h3>fsck(8) time and memory requirements</h3>
++Another consideration with large file systems is the time and memory
++required to
++<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fsck&amp;sektion=8">fsck(8)</a>
++the file system after a crash or power interruption.
++One should not put a 120G file system on a system with 32M of RAM and
++expect it to successfully fsck(1) after a crash.
++A rough guideline is the system should have at least 1M of available
++memory for every 1G of disk space to successfully fsck the disk.
++The time required to fsck the drive may become a problem as the file
++system size expands.
 
 <a name="InstBoot"></a>
 <h2>14.8 - Instalacja bootbloku - tylko i386</h2>
@@ -1408,9 +1635,9 @@ dla tych kart.
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
 <small>
-Originally [OpenBSD: faq14.html,v 1.95 ]<br>
-$Translation: faq14.html,v 1.6 2004/01/03 21:16:01 pl-team Exp $<br>
-$OpenBSD: faq14.html,v 1.5 2004/01/04 22:50:01 horacio Exp $
+Originally [OpenBSD: faq14.html,v 1.100 ]<br>
+$Translation: faq14.html,v 1.8 2004/02/07 23:15:34 pl-team Exp $<br>
+$OpenBSD: faq14.html,v 1.6 2004/02/08 12:15:50 jufi Exp $
 </small>
 
 </body>
