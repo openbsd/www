@@ -140,7 +140,7 @@ Since NAT is almost always used on routers and network gateways, it
 will probably be necessary to enable IP forwarding so that packets can
 travel between network interfaces on the OpenBSD machine.
 IP forwarding is enabled using the 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=3&amp;manpath=OpenBSD+3.4"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=3&amp;manpath=OpenBSD+3.5"
 >sysctl(3)</a> mechanism:
 <blockquote>
 <tt>
@@ -151,7 +151,7 @@ IP forwarding is enabled using the
 
 <p>
 To make this change permanent, the following lines should be added to
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl.conf&amp;sektion=5&amp;manpath=OpenBSD+3.4"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl.conf&amp;sektion=5&amp;manpath=OpenBSD+3.5"
 ><tt>/etc/sysctl.conf</tt></a>:
 <blockquote>
 <tt>
@@ -209,9 +209,24 @@ interface will be substituted into the rule at load time.
 <tt>/<i>netmask</i></tt> (e.g. <tt>/24</tt>). Each IP address on the
 interface is combined with the netmask to form a CIDR network block
 which is substituted into the rule.
-<li>The name of a network interface followed by the <tt>:network</tt>
-keyword. The resulting CIDR network (e.g. 192.168.0.0/24) will be
-substituted into the rule when the ruleset is loaded.
+<li>The name of a network interface followed by any one of these
+modifiers: 
+  <ul>
+  <li><tt>:network</tt> - substitues the CIDR network block (e.g.,
+  192.168.0.0/24)
+  <li><tt>:broadcast</tt> - substitutes the network broadcast address
+  (e.g., 192.168.0.255)
+  <li><tt>:peer</tt> - substitues the peer's IP address on a
+  point-to-point link
+  </ul>
+  <dl>
+  <dd>In addition, the <tt>:0</tt> modifier can be appended to either an
+  interface name or to any of the above modifiers to indicate that PF
+  should not include aliased IP addresses in the substituion.
+  These modifiers can also be used when the interface is contained in
+  parentheses.
+  Example: <tt>fxp0:network:0</tt>
+  </dl>
 <li>A <a href="tables.html">table</a>.
 <li>Any of the above but negated using the <tt>!</tt> ("not") modifier.
 <li>A set of addresses using a <a href="macros.html#lists">list</a>.
@@ -224,7 +239,7 @@ as:
 <ul>
 <li>A number between 1 and 65535
 <li>A valid service name from
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=services&amp;sektion=5&amp;manpath=OpenBSD+3.4"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=services&amp;sektion=5&amp;manpath=OpenBSD+3.5"
 ><tt>/etc/services</tt></a>
 <li>A set of ports using a <a href="macros.html#lists">list</a>
 <li>A range:
@@ -236,11 +251,16 @@ as:
 	<li><tt>&gt;=</tt> (greater than or equal)
 	<li><tt>&gt;&lt;</tt> (range)
 	<li><tt>&lt;&gt;</tt> (inverse range)
-	</ul>
 	<dl>
 	<dd>The last two are binary operators (they take two arguments) and
 	do not include the arguments in the range.
 	</dl>
+	<li><tt>:</tt> (inclusive range)
+	<dl>
+	<dd>The inclusive range operator is also a binary operator and does
+	include the arguments in the range.
+	</dl>
+	</ul>
 </ul>
 The <tt>port</tt> option is not usually used in <tt>nat</tt> rules
 because the goal is usually to NAT all traffic regardless of the port(s)
@@ -270,9 +290,22 @@ to the interface will be substituted into the rule at load time.
 the named interface changes. This is highly useful when the external
 interface gets its IP address via DHCP or dial-up as the ruleset
 doesn't have to be reloaded each time the address changes.
-<li>The name of a network interface followed by the <tt>:network</tt>
-keyword. The resulting CIDR network (e.g. 192.168.0.0/24) will be
-substituted into the rule when the ruleset is loaded.
+<li>The name of a network interface followed by either one of these
+modifiers: 
+  <ul>
+  <li><tt>:network</tt> - substitues the CIDR network block (e.g.,
+  192.168.0.0/24)
+  <li><tt>:peer</tt> - substitues the peer's IP address on a
+  point-to-point link
+  </ul>
+  <dl>
+  <dd>In addition, the <tt>:0</tt> modifier can be appended to either an
+  interface name or to any of the above modifiers to indicate that PF
+  should not include aliased IP addresses in the substituion.
+  These modifiers can also be used when the interface is contained in
+  parentheses.
+  Example: <tt>fxp0:network:0</tt>
+  </dl>
 <li>A set of addresses using a <a href="macros.html#lists">list</a>.
 </ul>
 
@@ -306,7 +339,7 @@ this easier to maintain line (<tt>tl0</tt> is external, <tt>dc0</tt>
 internal):
 <blockquote>
 <tt>
-nat on tl0 from dc0/24 to any -&gt; tl0
+nat on tl0 from dc0:network to any -&gt; tl0
 </tt>
 </blockquote>
 
@@ -318,20 +351,19 @@ either interface without changing this rule.
 When specifying an interface name for the translation address as above,
 the IP address is determined at pf.conf <i>load</i> time, not on the
 fly.  If you are using DHCP to configure your external interface, this
-can be a problem. If your assigned IP address changes then NAT will
+can be a problem. If your assigned IP address changes, NAT will
 continue translating outgoing packets using the old IP address. This
 will cause outgoing connections to stop functioning. To get around this,
 you can tell PF to automatically update the translation address by
 putting parentheses around the interface name:
 <blockquote>
 <tt>
-nat on tl0 from dc0/24 to any -&gt; (tl0)
+nat on tl0 from dc0:network to any -&gt; (tl0)
 </tt>
 </blockquote>
 
 <p>
-There is one major limitation to doing this: Only the first IP alias on
-an interface is evaluated when the interface name is placed in parentheses.
+This method works for translation to both IPv4 and IPv6 addresses.
 
 <a name="binat"></a>
 <h2>Bidirectional Mapping (1:1 mapping)</h2>
@@ -381,18 +413,25 @@ used with <tt>binat</tt> and <a href="rdr.html"><tt>rdr</tt></a> rules.
 <a name="status"></a>
 <h2>Checking NAT Status</h2>
 To view the active NAT translations
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.4"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.5"
 >pfctl(8)</a> is used with the <tt>-s state</tt> option. This option will list
 all the current NAT sessions:
 
 <pre>
    # pfctl -s state
-   TCP 192.168.1.35:2132 -&gt; 24.5.0.5:53136 -&gt; 65.42.33.245:22 TIME_WAIT:TIME_WAIT
-   UDP 192.168.1.35:2491 -&gt; 24.5.0.5:60527 -&gt; 24.2.68.33:53   MULTIPLE:SINGLE
+   fxp0 TCP 192.168.1.35:2132 -&gt; 24.5.0.5:53136 -&gt; 65.42.33.245:22 TIME_WAIT:TIME_WAIT
+   fxp0 UDP 192.168.1.35:2491 -&gt; 24.5.0.5:60527 -&gt; 24.2.68.33:53   MULTIPLE:SINGLE
 </pre>
 
 <p>
 Explanations (first line only):
+
+<dl>
+<dt>fxp0
+<dd>Indicates the interface that the state is bound to. The word
+<tt>self</tt> will appear if the state is 
+<a href="options.html#state-policy"><tt>floating</tt></a>.
+</dl>
 
 <dl>
 <dt>TCP
@@ -434,7 +473,7 @@ machine is connecting to.
 <a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a> 
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: nat.html,v 1.13 2004/01/01 04:16:17 nick Exp $</small>
+<small>$OpenBSD: nat.html,v 1.14 2004/04/30 18:00:25 nick Exp $</small>
 
 </body>
 </html> 

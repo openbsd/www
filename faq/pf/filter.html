@@ -37,6 +37,7 @@ please, use a max of 72 chars per line -->
 <li><a href="#tcpflags">TCP Flags</a>
 <li><a href="#synproxy">TCP SYN Proxy</a>
 <li><a href="#antispoof">Blocking Spoofed Packets</a>
+<li><a href="#osfp">Passive Operating System Fingerprinting</a>
 <li><a href="#ipopts">IP Options</a>
 <li><a href="#example">Filtering Ruleset Example</a>
 </ul>
@@ -47,19 +48,19 @@ please, use a max of 72 chars per line -->
 <h2>Introduction</h2>
 Packet filtering is the selective passing or blocking of data
 packets as they pass through a network interface. The criteria that 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+3.4"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+3.5"
 >pf(4)</a> uses when inspecting packets is based on the Layer 3 
-(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ip&amp;sektion=4&amp;manpath=OpenBSD+3.4"
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ip&amp;sektion=4&amp;manpath=OpenBSD+3.5"
 >IPv4</a> and 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ip6&amp;sektion=4&amp;manpath=OpenBSD+3.4"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ip6&amp;sektion=4&amp;manpath=OpenBSD+3.5"
 >IPv6</a>) and Layer 4
-(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tcp&amp;sektion=4&amp;manpath=OpenBSD+3.4"
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tcp&amp;sektion=4&amp;manpath=OpenBSD+3.5"
 >TCP</a>,
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=udp&amp;sektion=4&amp;manpath=OpenBSD+3.4"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=udp&amp;sektion=4&amp;manpath=OpenBSD+3.5"
 >UDP</a>,
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=icmp&amp;sektion=4&amp;manpath=OpenBSD+3.4"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=icmp&amp;sektion=4&amp;manpath=OpenBSD+3.5"
 >ICMP</a>, and
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=icmp6&amp;sektion=4&amp;manpath=OpenBSD+3.4"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=icmp6&amp;sektion=4&amp;manpath=OpenBSD+3.5"
 >ICMPv6</a>) headers. The most often used criteria are source and
 destination address, source and destination port, and protocol.
 
@@ -104,7 +105,7 @@ drop</tt> or <tt>block return</tt>.
 
 <dt><tt>log</tt>
 <dd>Specifies that the packet should be logged via
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+3.4"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+3.5"
 >pflogd(8)</a>. If the rule specifies the <tt>keep state</tt>,
 <tt>modulate state</tt>, or <tt>synproxy state</tt> option, then only the
 packet which establishes the state is logged. 
@@ -116,7 +117,13 @@ is considered the last matching rule and the specified
 <tt><i>action</i></tt> is taken.
 
 <dt><tt><i>interface</i></tt>
-<dd>The name of the network interface that the packet is moving through.
+<dd>The name or group of the network interface that the packet is moving
+through.
+An interface group is specified as the name of the interface but without
+the integer appended.
+For example: <tt>ppp</tt> or <tt>fxp</tt>.
+This would cause the rule to match for any packet traversing any
+<tt>ppp</tt> or <tt>fxp</tt> interface, respectively.
 
 <dt><tt><i>af</i></tt>
 <dd>The address family of the packet, either <tt>inet</tt> for IPv4 or
@@ -131,7 +138,7 @@ based on the source and/or destination address(es).
 <li><tt>icmp</tt>
 <li><tt>icmp6</tt>
 <li>A valid protocol name from 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=protocols&amp;sektion=5&amp;manpath=OpenBSD+3.4"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=protocols&amp;sektion=5&amp;manpath=OpenBSD+3.5"
 ><tt>/etc/protocols</tt></a>
 <li>A protocol number between 0 and 255
 <li>A set of protocols using a <a href="macros.html#lists">list</a>.
@@ -158,10 +165,24 @@ tells PF to update the rule if the IP address(es) on the named interface
 change. This is useful on an interface that gets its IP address via DHCP
 or dial-up as the ruleset doesn't have to be reloaded each time the
 address changes.
-<li>The name of a network interface followed by the <tt>:network</tt> or
-<tt>:broadcast</tt> keywords. The resulting CIDR network (i.e.,
-192.168.0.0/24) or broadcast address (i.e., 192.168.0.255) will be
-substituted into the rule when the ruleset is loaded.
+<li>The name of a network interface followed by any one of these
+modifiers: 
+  <ul>
+  <li><tt>:network</tt> - substitues the CIDR network block (e.g.,
+  192.168.0.0/24)
+  <li><tt>:broadcast</tt> - substitutes the network broadcast address
+  (e.g., 192.168.0.255)
+  <li><tt>:peer</tt> - substitues the peer's IP address on a
+  point-to-point link
+  </ul>
+  <dl>
+  <dd>In addition, the <tt>:0</tt> modifier can be appended to either an
+  interface name or to any of the above modifiers to indicate that PF
+  should not include aliased IP addresses in the substituion. 
+  These modifiers can also be used when the interface is contained in
+  parentheses.
+  Example: <tt>fxp0:network:0</tt>
+  </dl>
 <li>A <a href="tables.html">table</a>.
 <li>Any of the above but negated using the <tt>!</tt> ("not") modifier.
 <li>A set of addresses using a <a href="macros.html#lists">list</a>.
@@ -176,7 +197,7 @@ be specified as:
 <ul>
 <li>A number between 1 and 65535
 <li>A valid service name from
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=services&amp;sektion=5&amp;manpath=OpenBSD+3.4"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=services&amp;sektion=5&amp;manpath=OpenBSD+3.5"
 ><tt>/etc/services</tt></a>
 <li>A set of ports using a <a href="macros.html#lists">list</a>
 <li>A range:
@@ -188,11 +209,16 @@ be specified as:
 	<li><tt>&gt;=</tt> (greater than or equal)
 	<li><tt>&gt;&lt;</tt> (range)
 	<li><tt>&lt;&gt;</tt> (inverse range)
-	</ul>
 	<dl>
 	<dd>The last two are binary operators (they take two arguments) and
 	do not include the arguments in the range.
 	</dl>
+	<li><tt>:</tt> (inclusive range)
+	<dl>
+	<dd>The inclusive range operator is also a binary operator and does
+	include the arguments in the range.
+	</dl>
+	</ul>
 </ul>
 
 <dt><tt><i>tcp_flags</i></tt>
@@ -351,13 +377,15 @@ except that it only applies to TCP packets. With
 connections is randomized. This is useful for protecting connections
 initiated by certain operating systems that do a poor job of choosing
 ISNs.
+Starting with OpenBSD 3.5, the <tt>modulate state</tt> option can be
+used in rules that specify protocols other than TCP. 
 
 <p>
 Keep state on outgoing TCP, UDP, and ICMP packets and modulate TCP ISNs:
 <blockquote>
 <tt>
-pass out on fxp0 proto tcp from any to any modulate state<br>
-pass out on fxp0 proto { udp, icmp } from any to any keep state
+pass out on fxp0 proto { tcp, udp, icmp } from any \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;to any modulate state<br>
 </tt>
 </blockquote>
 
@@ -369,12 +397,24 @@ referring to this TCP connection arrives, it will be matched to the
 appropriate state entry and passed through the firewall.
 
 <p>
-It's important to note that stateful connections are limited to the
-interface they were created on. This is particularly important on
-routers and firewalls running PF, especially when a "default deny"
-policy is implemented as outlined above. If a firewall is keeping state
-on all outgoing connections on the external interface, those packets must
-still be explicitly passed through the internal interface.
+The scope of a state entry is controlled globally by the 
+<a href="options.html#state-policy"><tt>state-policy</tt></a>
+runtime option and on a per rule basis by the <tt>if-bound</tt>,
+<tt>group-bound</tt>, and <tt>floating</tt> state option keywords.
+These per rule keywords have the same meaning as when used with the
+<tt>state-policy</tt> option. Example:
+
+<blockquote>
+<tt>
+pass out on fxp0 proto { tcp, udp, icmp } from any \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;to any modulate state (if-bound)<br>
+</tt>
+</blockquote>
+
+<p>
+This rule would dictate that in order for packets to match the state
+entry, they must be transitting the <tt>fxp0</tt> interface.
+
 
 <p>
 Note that <a href="nat.html"><tt>nat</tt></a>, 
@@ -538,7 +578,7 @@ same functionality as <tt>keep state</tt> and <tt>modulate state</tt>.
 
 <p>
 The SYN proxy will not work if PF is running on a 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridge&amp;sektion=4&amp;manpath=OpenBSD+3.4"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridge&amp;sektion=4&amp;manpath=OpenBSD+3.5"
 >bridge(4)</a>.
 
 <a name="antispoof"></a>
@@ -563,7 +603,7 @@ antispoof [log] [quick] for <i>interface</i> [<i>af</i>]
 <dl>
 <dt><tt>log</tt>
 <dd>Specifies that matching packets should be logged via
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+3.4"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+3.5"
 >pflogd(8)</a>.
 
 <dt><tt>quick</tt>
@@ -640,6 +680,65 @@ block drop in inet all
 <p>
 With these rules there is a risk of blocking <i>all</i> inbound traffic
 on <i>all</i> interfaces.
+
+<a name="osfp"></a>
+<h2>Passive Operating System Fingerprinting</h2>
+
+<p>
+Passive OS Fingerprinting (OSFP) is a method for passively detecting the
+operating system of a remote host based on certain characteristics
+within that host's TCP SYN packets. 
+This information can then be used as criteria within filter rules.
+
+<p>
+PF determines the remote operating system by comparing characteristics
+of a TCP SYN packet against the 
+<a href="options.html#fingerprints">fingerprints file</a>, which by
+default is 
+<a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.os&amp;sektion=5&amp;manpath=OpenBSD+3.5"
+><tt>/etc/pf.os</tt></a>. 
+Once PF is enabled, the current fingerprint list can be viewed with this
+command:
+
+<blockquote>
+<tt>
+# pfctl -s osfp
+</tt>
+</blockquote>
+
+<p>
+Within a filter rule, a fingerprint may be specified by OS class,
+version, or subtype/patch level. 
+Each of these items is listed in the output of the <tt>pfctl</tt>
+command shown above. To specify a fingerprint in a filter rule, the
+<tt>os</tt> keyword is used:
+
+<blockquote>
+<tt>
+pass &nbsp;in on $ext_if any os OpenBSD keep state<br>
+block in on $ext_if any os "Windows 2000"<br>
+block in on $ext_if any os "Linux 2.4 ts"<br>
+block in on $ext_if any os unknown
+</tt>
+</blockquote>
+
+<p>
+The special operating system class <tt>unknown</tt> allows for matching
+packets when the OS fingerprint is not known.
+
+<p>
+<font color="#ff0000">TAKE NOTE</font> of the following:
+<ul>
+  <li>Operating system fingerprints are occasionally wrong due to
+  spoofed and/or crafted packets that are made to look like they
+  originated from a specific operating system.
+  <li>Certain revisions or patchlevels of an operating system may change
+  the stack's behavior and cause it to either not match what's in the
+  fingerprints file or to match another entry altogether.
+  <li>OSFP only works on the TCP SYN packet; it will not work on other
+  protocols or on already established connections.
+</ul>
 
 <a name="ipopts"></a>
 <h2>IP Options</h2>
@@ -720,7 +819,7 @@ pass in log on $ext_if proto tcp from any to { !$ext_if, !$int_if } \
 <a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a> 
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: filter.html,v 1.18 2004/04/27 17:56:57 henning Exp $</small>
+<small>$OpenBSD: filter.html,v 1.19 2004/04/30 18:00:25 nick Exp $</small>
 
 </body>
 </html> 
