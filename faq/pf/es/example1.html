@@ -1,0 +1,448 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Ejemplo #1: Cortafuegos para Red en Casa u Oficina</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta http-equiv="Content-Language" content="es">
+<meta name="resource-type" content="documento">
+<meta name="description"   content="Preguntas Frecuentes de PF">
+<meta name="keywords"      content="openbsd,preguntas frecuentes,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="Este documento es copyright 2003 de OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+
+<img alt="[OpenBSD]" height="30" width="141" src="../../../images/smalltitle.gif">
+<p>
+[<a href="authpf.html">Anterior: Authpf: <i>Shell</i> de Usuario para la
+Autenticaci&oacute;n de Pasarelas</a>]
+[<a href="index.html">Contenido</a>]
+
+<p>
+<h1><font color="#e00000">PF: Ejemplo #1: Cortafuegos para Red en Casa u
+Oficina</font></h1>
+<hr>
+
+<h3>&Iacute;ndice de Contenidos</h3>
+<ul>
+<li><a href="#scenario">El Escenario</a>
+	<ul>
+	<li><a href="#network">La Red</a>
+	<li><a href="#objective">El Objetivo</a>
+	<li><a href="#prep">Preparaci&oacute;n</a>
+	</ul>
+<li><a href="#ruleset">El Grupo de Reglas</a>
+	<ul>
+	<li><a href="#macros">Macros</a>
+	<li><a href="#options">Opciones</a>
+	<li><a href="#scrub">Normalizaci&oacute;n</a>
+	<li><a href="#nat">Traducci&oacute;n de Direcciones de Red</a>
+	<li><a href="#rdr">Redireccionamiento</a>
+	<li><a href="#filter">Reglas de Filtrado</a>
+	</ul>
+<li><a href="#allrules">El Grupo de Reglas Completo</a>
+</ul>
+
+<hr>
+
+<a name="scenario"></a>
+<h2>El Escenario</h2>
+<p>
+En este ejemplo, PF es parte de un sistema OpenBSD que act&uacute;a como
+cortafuegos y pasarela de NAT para una peque&ntilde;a red en casa o en
+la oficina.  El objetivo que se persigue es el de dar acceso a Internet
+a la red y permitir un acceso limitado a la m&aacute;quina cortafuegos
+desde Internet.  En este documento se repasa un grupo de reglas completo
+con este fin.
+
+<a name="network"></a>
+<h3>La Red</h3>
+<p>
+La configuraci&oacute;n de la red es como sigue:
+
+<pre>
+    
+  [ COMP1 ]    [ COMP3 ]
+      |            |                               ADSL
+   ---+------+-----+------- fxp0 [ OpenBSD ] ep0 -------- ( Internet )
+             |
+         [ COMP2 ]
+
+</pre>
+
+<p>
+En la red interna hay varios ordenadores;  el diagrama muestra
+s&oacute;lo tres (COMP1, ... COMP3), aunque el n&uacute;mero real no es
+relevante.  Estos ordenadores son estaciones de trabajo normales que se
+usan para navegar por la <i>web</i>, correo electr&oacute;nico, charlas
+interactivas (<i>chats</i>), etc.  La red interna usa el bloque de red
+192.168.0.0 / 255.255.255.0.
+
+<p>
+El enrutador con OpenBSD es un Pentium 100 con dos tarjetas de red:  una
+3com 3c509B (ep0) y una Intel EtherExpress Pro/100 (fxp0).  El enrutador
+tiene una conexi&oacute;n de ADSL a Internet, y est&aacute; usando NAT
+para compartir esta conexi&oacute;n con la red interna.  La
+direcci&oacute;n IP en la interfaz externa la asigna de forma
+din&aacute;mica el Proveedor de Internet.
+
+<a name="objective"></a>
+<h3>El Objetivo</h3>
+<p>
+Los objetivos son:
+<ul>
+<li>Dar un acceso a Internet sin restricciones a cada uno de los
+ordenadores internos
+<li>Usar un grupo de reglas de filtrado con &laquo;denegaci&oacute;n
+predeterminada&raquo;
+<li>Permitir el paso del siguiente tr&aacute;fico entrante al
+cortafuegos desde Internet:
+	<ul>
+	<li>SSH (TCP puerto 22): se usar&aacute; para el mantenimiento
+	remoto de la m&aacute;quina cortafuegos
+	<li>Auth/Ident (TCP puerto 113): usado por algunos servicios como
+	SMTP y IRC
+	<li>ICMP Echo Requests: el tipo de paquete ICMP usado por
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ping&amp;sektion=8&amp;manpath=OpenBSD+3.3">ping(8)</a>
+	</ul>
+<li>Registrar estad&iacute;sticas de filtrado en la interfaz externa
+<li>Contestar, de modo predeterminado, con un TCP RST o ICMP Unreachable
+a los paquetes bloqueados
+<li>Conseguir un grupo de reglas tan simple y f&aacute;cil de mantener
+como sea posible
+</ul>
+
+<a name="prep"></a>
+<h3>Preparaci&oacute;n</h3>
+<p>
+En este documento se asume que se ha configurado correctamente el
+anfitri&oacute;n con OpenBSD para que funcione como un enrutador,
+incluida la verificaci&oacute;n de la configuraci&oacute;n de redes IP,
+la conexi&oacute;n a Internet, y haber configurado
+<tt>net.inet.ip.forwarding</tt> con &quot;<tt>1</tt>&quot;.
+
+<a name="ruleset"></a>
+<h2>El Grupo de Reglas</h2>
+<p>
+A continuaci&oacute;n construiremos un grupo de reglas que
+conseguir&aacute; los objetivos anteriores.
+
+<a name="macros"></a>
+<h3>Macros</h3>
+<p>
+Las siguientes macros se han definido para facilitar el mantenimiento y
+la lectura del grupo de reglas:
+<blockquote>
+<tt>
+int_if = &quot;fxp0&quot;<br>
+ext_if = &quot;ep0&quot;<br>
+<br>
+tcp_services = &quot;{ 22, 113 }&quot;<br>
+icmp_types = &quot;echoreq&quot;<br>
+<br>
+priv_nets = &quot;{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }&quot;
+</tt>
+</blockquote>
+
+<p>
+Las primeras dos l&iacute;neas definen las interfaces de red en las que
+tendr&aacute; lugar el filtrado.  La tercera y cuarta l&iacute;neas son
+una lista de los n&uacute;meros de puertos TCP de los servicios que se
+abrir&aacute;n a Internet (SSH y ident/auth) y de los tipos de paquetes
+ICMP a los se que les permitir&aacute; llegar a la m&aacute;quina
+cortafuegos.  La &uacute;ltima l&iacute;nea define la direcci&oacute;n
+de <i>loopback</i> y los bloques de direcciones
+<a href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a>.
+
+<p>
+<b>Nota</b>: Si la conexi&oacute;n de Internet ADSL requiere
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pppoe&amp;sektion=8&amp;manpath=OpenBSD+3.3">PPPoE</a>,
+entonces el filtrado y NAT tendr&aacute;n que realizarse en la interfaz
+<tt>tun0</tt>, y <i>no</i> en la <tt>ep0</tt>.
+
+<a name="options"></a>
+<h3>Opciones</h3>
+<p>
+Las siguientes dos opciones configuran la respuesta predeterminada para
+las reglas de filtrado <tt>block</tt>, y activa el registro de
+estad&iacute;sticas para la interfaz externa:
+<blockquote>
+<tt>
+set block-policy return<br>
+set loginterface $ext_if
+</tt>
+</blockquote>
+
+<a name="scrub"></a>
+<h3>Normalizaci&oacute;n (<i>scrub</i>)</h3>
+<p>
+No hay motivo para no usar la normalizaci&oacute;n recomendada en todo
+el tr&aacute;fico entrante, as&iacute; que aqu&iacute; va una simple
+l&iacute;nea:
+<blockquote>
+<tt>
+scrub in all
+</tt>
+</blockquote>
+
+<a name="nat"></a>
+<h3>Traducci&oacute;n de Direcciones de Red (<i>NAT</i>)</h3>
+<p>
+Para llevar a cabo el servicio de NAT en toda la red interna, se usa la
+siguiente regla de <tt>nat</tt>:
+<blockquote>
+<tt>
+nat on $ext_if from $int_if:network to any -&gt; ($ext_if)
+</tt>
+</blockquote>
+
+<p>
+Como la direcci&oacute;n IP en la interfaz interna se asigna de forma
+din&aacute;mica, se usan par&eacute;ntesis alrededor de la interfaz de
+traducci&oacute;n para que PF sepa cu&aacute;ndo cambia la
+direcci&oacute;n.
+
+<a name="rdr"></a>
+<h3>Redireccionamiento</h3>
+<p>
+El &uacute;nico redireccionamiento que se necesita es para
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+3.3">ftp-proxy(8)</a>,
+de modo que los clientes de FTP en la red local puedan conectarse a
+servidores de FTP en Internet.
+<blockquote>
+<tt>
+rdr on $int_if proto tcp from any to any port 21 -&gt; 127.0.0.1 port 8021
+</tt>
+</blockquote>
+
+<p>
+N&oacute;tese que esta reglas s&oacute;lo servir&aacute; para conexiones
+de FTP al puerto 21.  Si los usuarios se conectan a servidores de FTP
+por otros puertos, entonces se deber&iacute;a usar una lista que
+especificara el puerto de destino;  por ejemplo:
+<tt>from any to any port { 21, 2121 }</tt>.
+
+<a name="filter"></a>
+<h3>Reglas de Filtrado</h3>
+<p>
+Ahora vienen las reglas de filtrado.  Empezaremos con la
+denegaci&oacute;n predeterminada:
+<blockquote>
+<tt>
+block all<br>
+</tt>
+</blockquote>
+
+<p>
+En este punto nada pasar&aacute; por el cortafuegos, ni siquiera desde
+la red interna.  Las siguientes reglas ir&aacute;n abriendo el
+cortafuegos paso a paso para que se puedan alcanzar los objetivos que se
+han propuesto, y adem&aacute;s abrir&aacute;n cualquier interfaz virtual
+que sea necesaria.
+
+<p>
+Cada sistema Unix tiene una interfaz de <i>loopback</i>.  &Eacute;sta es
+una interfaz virtual de red que usan las aplicaciones para comunicarse
+entre ellas dentro del sistema.  Todo el tr&aacute;fico deber&iacute;a
+pasar por la interfaz de <i>loopback</i>.  En OpenBSD, la interfaz de
+<i>loopback</i> es
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=lo&amp;sektion=4&amp;manpath=OpenBSD+3.3">lo(4)</a>.
+<blockquote>
+<tt>
+pass quick on lo0 all
+</tt>
+</blockquote>
+
+<p>
+A continuaci&oacute;n se bloquear&aacute;n las direcciones
+<a href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a> para
+evitar que entren o salgan de la interfaz externa;  estas direcciones
+nunca deben aparecer en p&uacute;blico en Internet.  Filtr&aacute;ndolas
+nos aseguraremos de que el enrutador no &laquo;muestra&raquo; estas
+direcciones fuera de la red interna, y tambi&eacute;n y tambi&eacute;n
+evitaremos cualquier paquete entrante con una direcci&oacute;n de origen
+de una de esas redes.
+<blockquote>
+<tt>
+block drop in &nbsp;quick on $ext_if from $priv_nets to any<br>
+block drop out quick on $ext_if from any to $priv_nets
+</tt>
+</blockquote>
+
+<p>
+N&oacute;tese que se usa <tt>block drop</tt> para indicar a PF que no
+responda con un paquete TCP RST o ICMP Unreachable.  Como las
+direcciones RFC 1918 no existen en Internet, cualquier paquete que se
+env&iacute;e a esas direcciones nunca llegar&aacute;.  La opci&oacute;n
+<tt>quick</tt> se usa para indicar a PF que no eval&uacute;e el resto de
+las reglas de filtrado si concuerda alguna de las reglas anteriores;
+los paquetes hacia o desde las redes <tt>$priv_nets</tt> se
+bloquear&aacute;n inmediatamente.
+
+<p>
+Ahora abriremos los puertos usados por aquellos servicios de red que
+estar&aacute;n disponibles por Internet:
+<blockquote>
+<tt>
+pass in on $ext_if inet proto tcp from any to ($ext_if) \<br>
+&nbsp;&nbsp;&nbsp;port $tcp_services flags S/SA keep state
+</tt>
+</blockquote>
+
+<p>
+Especificar los puertos de red en la macro <tt>$tcp_services</tt> hace
+que sea m&aacute;s simple abrir servicios adicionales a Internet,
+simplemente editando la macro y recargando el grupo de reglas.  Los
+servicios de UDP tambi&eacute;n se pueden abrir mediante la
+creaci&oacute;n de una macro <tt>$udp_services</tt> y a&ntilde;diendo
+una regla de filtrado parecida a la anterior que especifique <tt>proto
+udp</tt>.
+
+<p>
+Ahora debemos dejar pasar el tr&aacute;fico ICMP:
+<blockquote>
+<tt>
+pass in inet proto icmp all icmp-type $icmp_types keep state
+</tt>
+</blockquote>
+
+<p>
+De forma parecida a la macro <tt>$tcp_services</tt>, la macro
+<tt>$icmp_types</tt> se puede editar f&aacute;cilmente para cambiar los
+tipos de paquetes ICMP a los que se permitir&aacute; alcanzar el
+cortafuegos.  N&oacute;tese que esta regla es aplicable a todas la
+interfaces de red.
+
+<p>
+Ahora debemos permitir el paso del tr&aacute;fico hacia y desde la red
+interna.  Asumiremos que los usuarios en la red interna saben lo que
+est&aacute;n haciendo y que no van a causar problemas.  Esto no es algo
+que deba ser asumido necesariamente, y en algunos entornos ser&iacute;a
+apropiado usar un grupo de reglas mucho m&aacute;s restrictivo.
+<blockquote>
+<tt>
+pass in on $int_if from $int_if:network to any keep state
+</tt>
+</blockquote>
+
+<p>
+La regla anterior permitir&aacute; que cualquier m&aacute;quina interna
+pueda enviar paquetes a trav&eacute;s del cortafuegos;  sin embargo,
+<i>no</i> permitir&aacute; que el cortafuegos inicie una conexi&oacute;n
+con una m&aacute;quina interna.  &iquest;Es esto una buena idea?
+Depende de algunos detalles de la configuraci&oacute;n de la red.  Si el
+cortafuegos tambi&eacute;n es un servidor de DHCP puede que necesite
+enviar se&ntilde;ales de <i>ping</i> a alguna direcci&oacute;n para
+verificar su disponibilidad antes de darle una asignaci&oacute;n.
+Permitir que el cortafuegos se conecte a la red interna tambi&eacute;n
+permite que alguien que se haya conectado mediante ssh al cortafuegos
+desde Internet pueda entonces acceder a la m&aacute;quinas de la red.
+Hay que tener en cuenta que <i>no</i> permitir que el cortafuegos se
+comunique directamente con la red no representa un gran beneficio de
+seguridad;  si alguien logra acceder al cortafuegos en primera
+instancia, es probable que pueda alterar las reglas de filtrado.
+A&ntilde;adiendo la siguiente regla el cortafuegos podr&aacute; iniciar
+conexiones con la red interna:
+<blockquote>
+<tt>
+pass out on $int_if from any to $int_if:network keep state
+</tt>
+</blockquote>
+
+<p>
+N&oacute;tese que si ambas l&iacute;neas est&aacute;n en uso, no se
+necesita la opci&oacute;n <tt>keep state</tt>;  todos los paquetes
+podr&aacute;n pasar a trav&eacute;s de la interfaz interna porque hay
+una regla para permitir el paso de paquetes en ambas direcciones.  Sin
+embargo, si la l&iacute;nea <tt>pass out</tt> <i>no</i> va incluida, la
+l&iacute;nea <tt>pass in</tt> <i>debe</i> incluir <tt>keep state</tt>.
+El mantenimiento de estado tambi&eacute;n ofrece alg&uacute;n beneficio
+en el rendimiento:  Las tablas de estado se comprueban antes de evaluar
+las reglas, y si se encuentra un estado que concuerda, se permite pasar
+al paquete a trav&eacute;s del cortafuegos sin que pase a trav&eacute;s
+de la evaluaci&oacute;n del grupo de reglas.  Esto puede ofrecer un
+beneficio en el rendimiento en un cortafuegos con mucha carga, aunque un
+sistema tan simple como el de este ejemplo no es probable que genere la
+carga suficiente como para que esto sea importante.
+
+<p>
+Finalmente, dejaremos salir el tr&aacute;fico en la interfaz externa:
+<blockquote>
+<tt>
+pass out on $ext_if proto tcp all modulate state flags S/SA<br>
+pass out on $ext_if proto { udp, icmp } all keep state
+</tt>
+</blockquote>
+
+<p>
+Se permite que el tr&aacute;fico TCP, UDP, y ICMP salga del cortafuegos
+hacia Internet.  La informaci&oacute;n sobre el estado se guarda para
+que los paquetes de vuelta pasen a trav&eacue;s del cortafuegos.
+
+<a name="allrules"></a>
+<h2>El Grupo de Reglas Completo</h2>
+<table border="0" width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+# macros
+int_if = "fxp0"
+ext_if = "ep0"
+
+tcp_services = "{ 22, 113 }"
+icmp_types = "echoreq"
+
+priv_nets = "{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"
+	  
+# opciones
+set block-policy return
+set loginterface $ext_if
+
+# scrub
+scrub in all
+
+# nat/rdr
+nat on $ext_if from $int_if:network to any -&gt; ($ext_if)
+rdr on $int_if proto tcp from any to any port 21 -&gt; 127.0.0.1 \
+   port 8021
+
+# reglas de filtrado
+block all
+
+pass quick on lo0 all
+
+block drop in  quick on $ext_if from $priv_nets to any
+block drop out quick on $ext_if from any to $priv_nets
+
+pass in on $ext_if inet proto tcp from any to ($ext_if) \
+   port $tcp_services flags S/SA keep state
+
+pass in inet proto icmp all icmp-type $icmp_types keep state
+
+pass in  on $int_if from $int_if:network to any keep state
+pass out on $int_if from any to $int_if:network keep state
+
+pass out on $ext_if proto tcp all modulate state flags S/SA
+pass out on $ext_if proto { udp, icmp } all keep state
+</pre>
+</td></tr>
+</table>
+
+<p>
+[<a href="authpf.html">Anterior: Authpf: <i>Shell</i> de Usuario para la
+Autenticaci&oacute;n de Pasarelas</a>]
+[<a href="index.html">Contenido</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[&Iacute;ndice]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: example1.html,v 1.7 2003/06/29 20:28:24 nick Exp ]<br>
+$OpenBSD: example1.html,v 1.1 2003/07/04 22:43:46 jufi Exp $<br>
+$Translation: example1.html,v 1.3 2003/07/01 14:55:02 horacio Exp $
+</small>
+</body>
+</html> 

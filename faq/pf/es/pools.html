@@ -1,0 +1,325 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: <i>Pools</i> de Direcci&oacute;n y Balanceo de Carga</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta http-equiv="Content-Language" content="es">
+<meta name="resource-type" content="documento">
+<meta name="description"   content="página de OpenBSD">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="Este documento es copyright 2003 de OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<img alt="[OpenBSD]" height="30" width="141" src="../../../images/smalltitle.gif">
+<p>
+[<a href="shortcuts.html">Anterior: Atajos para la Creaci&oacute;n de
+Grupos de Reglas</a>]
+[<a href="index.html">Contenido</a>]
+[<a href="perf.html">Siguiente: Rendimiento</a>]
+
+<p>
+<h1>
+<font color="#e00000">PF: <i>Pools</i> de Direcci&oacute;n y Balanceo de
+Carga</font>
+</h1>
+
+<hr>
+
+<h3>&Iacute;ndice de Contenidos</h3>
+<ul>
+<li><a href="#intro">Introducci&oacute;n</a>
+<li><a href="#nat"><i>Pool</i> de Direcci&oacute;n de NAT</a>
+<li><a href="#incoming">Balanceo de Carga en Conexiones Entrantes</a>
+<li><a href="#outgoing">Balanceo de Carga en Tr&aacute;fico Saliente</a>
+	<ul>
+	<li><a href="#outexample">Ejemplo de Grupo de Reglas</a>
+	</ul>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Introducci&oacute;n</h2>
+<p>
+Un <i>pool</i> de direcci&oacute;n son dos o m&aacute;s direcciones cuyo
+uso se comparte entre un grupo de usuarios.  Un <i>pool</i> de
+direcci&oacute;n se puede especificar como la direcci&oacute;n de
+redireccionamiento en las reglas de <a href="rdr.html"><tt>rdr</tt></a>,
+como la direcci&oacute;n de traducci&oacute;n en las reglas de
+<a href="nat.html"><tt>nat</tt></a>, y como la direcci&oacute;n de
+objetivo en las opciones <tt>route-to</tt>, <tt>reply-to</tt>, y
+<tt>dup-to</tt> de las reglas de <a href="filter.html">filtrado de
+paquetes</a>.
+
+<p>
+Existen cuatro m&eacute;todos para usar un <i>pool</i> de
+direcci&oacute;n:
+<ul>
+<li><tt>bitmask</tt> - incrusta la parte de la red que corresponde al
+<i>pool</i> de direcci&oacute;n encima de la direcci&oacute;n que se
+est&eacute; modificando (la direcci&oacute;n de origen para las reglas
+de <tt>nat</tt>, y la direcci&oacute;n de destino para las reglas de
+<tt>rdr</tt>).  Ejemplo: si el <i>pool</i> de direcci&oacute;n es
+192.0.2.1/24, y la direcci&oacute;n que se est&aacute; modificando es
+10.0.0.50, la direcci&oacute;n resultante ser&aacute; 192.0.2.50;  si el
+<i>pool</i> de direcci&oacute;n es 192.0.2.1/25, y la direcci&oacute;n
+que se est&aacute; modificando es 10.0.0.130, la direcci&oacute;n
+resultante ser&aacute; 192.0.2.2.
+<li><tt>random</tt> - selecciona una de las direcciones del <i>pool</i>
+de forma aleatoria.
+<li><tt>source-hash</tt> - usa un resumen (<i>hash</i>) de la
+direcci&oacute;n de origen para determinar qu&eacute; direcci&oacute;n
+del <i>pool</i> debe usar.  Este m&eacute;todo asegura que una
+direcci&oacute;n de origen que se indique siempre se asigne al mismo
+<i>pool</i> de direcciones.  La clave con la que se alimenta al
+algoritmo del resumen se puede especificar de modo opcional
+despu&eacute;s de la clave <tt>source-hash</tt> en formato hexagonal o
+como una cadena.  
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>pfctl(8)</a> generar&aacute; de modo predeterminado una clave aleatoria
+cada vez que se cargue un grupo de reglas.
+<li><tt>round-robin</tt> - realiza una rotaci&oacute;n en secuencia por
+el <i>pool</i> de direcci&oacute;n.  Es el m&eacute;todo predeterminado.
+</ul>
+
+<p>
+A excepci&oacute;n del m&eacute;todo de <tt>round-robin</tt>, el
+<i>pool</i> de direcci&oacute;n se debe expresar como un bloque
+<a href="http://public.pacbell.net/dedicated/cidr.html">CIDR</a>
+(Enrutamiento de Inter-Dominios Sin Clase).  El m&eacute;todo
+<tt>round-robin</tt> acepta m&aacute;s de una direcci&oacute;n
+individual usando un <a href="macros.html#lists">formato de listas</a>.
+
+<p>
+Adem&aacute;s, se puede especificar la clave <tt>static-port</tt> a
+continuaci&oacute;n de uno de lo m&eacute;todos anteriores para evitar
+que las reglas de <tt>nat</tt> modifiquen el puerto de origen de los
+paquetes TCP y UDP.
+
+<a name="nat"></a>
+<h2><i>Pool</i> de Direcci&oacute;n de NAT</h2>
+<p>
+Se puede usar un <i>pool</i> de direcci&oacute;n como la
+direcci&oacute;n de traducci&oacute;n en reglas de
+<a href="nat.html"><tt>nat</tt></a>.  La direcci&oacute;n de origen de
+las conexiones se traducir&aacute;n a la de una de las direcciones del
+<i>pool</i> bas&aacute;ndose en el m&eacute;todo escogido.  Esto puede
+ser muy &uacute;til en situaciones en las que PF est&eacute; realizando
+NAT para una red muy grande.  Dado que el n&uacute;mero de conexiones
+con NAT por direcci&oacute;n de traducci&oacute;n es limitado,
+a&ntilde;adiendo direcciones de traducci&oacute;n adicionales se permite
+que la pasarela de NAT se ampl&iacute;e para poder servir a un
+n&uacute;mero mayor de usuarios.
+
+<p>
+En el siguiente ejemplo, se est&aacute; usando un <i>pool</i> de dos
+direcciones para traducir paquetes salientes.  Por cada conexi&oacute;n
+saliente, PF rotar&aacute; las direcciones al modo de round-robin.
+<blockquote>
+<tt>
+nat on $ext_if inet from any to any -&gt; { 192.0.2.5, 192.0.2.10 }
+</tt>
+</blockquote>
+
+<p>
+Una pega de este m&eacute;todo es que las conexiones desde la misma
+direcci&oacute;n interna sucesivas no se traducir&aacute;n siempre a la
+misma direcci&oacute;n de traducci&oacute;n.  Esto puede causar
+interferencias, por ejemplo, cuando se est&eacute; navegando por sitios
+<i>web</i> que realicen seguimientos de los ingresos de usuarios
+bas&aacute;ndose en la direcci&oacute;n IP.  Un acercamiento alternativo
+es usar el m&eacute;todo <tt>source-hash</tt> para que siempre se
+traduzca cada direcci&oacute;n interna a la misma direcci&oacute;n de
+traducci&oacute;n.  Para esto, el <i>pool</i> de direcci&oacute;n debe
+ser un bloque de red
+<a href="http://public.pacbell.net/dedicated/cidr.html">CIDR</a>
+<blockquote>
+<tt>
+nat on $ext_if inet from any to any -&gt; 192.0.2.4/31 source-hash
+</tt>
+</blockquote>
+
+<p>
+Esta regla de <tt>nat</tt> usa el <i>pool</i> de direcci&oacute;n
+192.0.2.4/31 (192.0.2.4 - 192.0.2.5) como la direcci&oacute;n de
+traducci&oacute;n de los paquetes salientes.  Cada direcci&oacute;n
+interna se traducir&aacute; siempre a la misma direcci&oacute;n de
+traducci&oacute;n debido al uso de la clave <tt>source-hash</tt>.
+
+<a name="incoming"></a>
+<h2>Balanceo de Carga en Conexiones Entrantes</h2>
+<p>
+Los <i>pools</i> de direcci&oacute;n tambi&eacute;n se pueden usar para
+el balanceo de carga de las conexiones entrantes.  Por ejemplo, se
+pueden distribuir a trav&eacute;s de varios servidores de <i>web</i> las
+conexiones entrantes al servidor de <i>web</i>:
+<blockquote>
+<tt>
+web_servers = &quot;{ 10.0.0.10, 10.0.0.11, 10.0.0.13 }&quot;<br>
+<br>
+rdr on $ext_if proto tcp from any to any port 80 -&gt; $web_servers
+</tt>
+</blockquote>
+
+<p>
+Las conexiones sucesivas se redireccionar&aacute;n a los servidores de
+<i>web</i> al modo de round-robin.
+
+<p>
+Como con el ejemplo de NAT, si los servidores de <i>web</i> se
+encuentran dentro de un bloque de red CIDR, se puede usar la clave
+<tt>source-hash</tt> para que las conexiones desde una direcci&oacute;n
+IP dada se redireccionen siempre al mismo servidor f&iacute;sico de
+<i>web</i>.  Esto es necesario en algunos casos para mantener la
+informaci&oacute;n de la sesi&oacute;n mientras se navega por un sitio
+<i>web</i>.
+
+<a name="outgoing"></a>
+<h2>Balanceo de Carga en Tr&aacute;fico Saliente</h2>
+<p>
+Los <i>pools</i> de direcci&oacute;n se pueden usar en
+combinaci&oacute;n con la opci&oacute;n de filtrado <tt>route-to</tt>
+para balancear la carga de dos o m&aacute;s conexiones de Internet
+cuando no se encuentre disponible un protocolo de enrutamiento de
+m&uacute;ltiples caminos apropiado (como
+<a href="http://www.rfc-editor.org/rfc/rfc1771.txt">BGP4</a>).  Usando
+<tt>route-to</tt> con un <i>pool</i> de direcci&oacute;n
+<tt>round-robin</tt>, se pueden distribuir las conexiones salientes de
+forma igual entre m&uacute;ltiples caminos salientes.
+
+<p>
+Un pieza adicional de informaci&oacute;n necesaria para hacer esto es la
+direcci&oacute;n IP del enrutador adyacente en cada conexi&oacute;n de
+Internet.  Esta informaci&oacute;n se pasa a la opci&oacute;n
+<tt>route-to</tt> para controlar el destino de los paquetes salientes.
+
+<p>
+El siguiente ejemplo balancea el tr&aacute;fico saliente a trav&eacute;s
+de dos conexiones de Internet:
+<blockquote>
+<tt>
+lan_net = &quot;192.168.0.0/24&quot;<br>
+int_if &nbsp;= &quot;dc0&quot;<br>
+ext_if1 = &quot;fxp0&quot;<br>
+ext_if2 = &quot;fxp1&quot;<br>
+ext_gw1 = &quot;68.146.224.1&quot;<br>
+ext_gw2 = &quot;142.59.76.1&quot;<br>
+<br>
+pass in on $int_if route-to \<br>
+&nbsp;&nbsp;&nbsp;{ ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) } round-robin \<br>
+&nbsp;&nbsp;&nbsp;from $lan_net to any keep state
+</tt>
+</blockquote>
+
+<p>
+La opci&oacute;n <tt>route-to</tt> se usa sobre el tr&aacute;fico que
+<i>entra</i> en la interfaz <i>interna</i> para especificar las
+interfaces de red salientes a trav&eacute;s de las cuales se
+balancear&aacute; el tr&aacute;fico junto con sus respectivas pasarelas.
+N&oacute;tese que la opci&oacute;n <tt>route-to</tt> debe estar presente
+en <i>cada una</i> de las reglas de filtrado para las que se
+balancear&aacute; el tr&aacute;fico.  Los paquetes de vuelta se
+devolver&aacute;n a la misma interfaz externa por la que salieron (esto
+lo hacen los ISP) y enrutados de vuelta a la red interna como normales.
+
+<p>
+Para asegurarse de que los paquetes con una direcci&oacute;n de origen
+que pertenezca a <tt>$ext_if1</tt> sean siempre enrutados a
+<tt>$ext_gw1</tt> (y lo mismo para <tt>$ext_if2</tt> y
+<tt>$ext_gw2</tt>), hay que incluir las siguientes dos l&iacute;neas en
+el grupo de reglas:
+<blockquote>
+<tt>
+pass out on $ext_if1 route-to ($ext_if2 $ext_gw2) from $ext_if2 \<br>
+&nbsp;&nbsp;&nbsp;to any<br>
+pass out on $ext_if2 route-to ($ext_if1 $ext_gw1) from $ext_if1 \<br>
+&nbsp;&nbsp;&nbsp;to any 
+</tt>
+</blockquote>
+
+<p>
+Finalmente, tambi&eacute;n se puede usar NAT en cada una de las
+interfaces salientes:
+<blockquote>
+<tt>
+nat on $ext_if1 from $lan_net to any -&gt; ($ext_if1)<br>
+nat on $ext_if2 from $lan_net to any -&gt; ($ext_if2)
+</tt>
+</blockquote>
+
+<a name="outexample"></a>
+<p>
+Un ejemplo completo que balancea la carga del tr&aacute;fico saliente
+podr&iacute;a ser algo como:
+
+<p>
+<table border="0" width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+lan_net = &quot;192.168.0.0/24&quot;
+int_if  = &quot;dc0&quot;
+ext_if1 = &quot;fxp0&quot;
+ext_if2 = &quot;fxp1&quot;
+ext_gw1 = &quot;68.146.224.1&quot;
+ext_gw2 = &quot;142.59.76.1&quot;
+
+#  conexiones salientes de nat en cada interfaz de internet
+nat on $ext_if1 from $lan_net to any -&gt; ($ext_if1)
+nat on $ext_if2 from $lan_net to any -&gt; ($ext_if2)
+
+#  denegaci&oacute;n predeterminada
+block in  from any to any
+block out from any to any
+
+#  permitir el paso a todos los paquetes salientes en la interfaz interna
+pass out on $int_if from any to $lan_net
+#  permitir el paso <i>quick</i> a cualquier paquete destinado para la pasarela
+pass in quick on $int_if from $lan_net to $int_if
+#  balancear la carga del tr&aacute;fico tcp saliente desde la red interna
+pass in on $int_if route-to \
+    { ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) } round-robin \
+    proto tcp from $lan_net to any flags S/SA modulate state
+#  balancear la carga del tr&aacute;fico udp y icmp saliente desde la red interna
+pass in on $int_if route-to \
+    { ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) } round-robin \
+    proto { udp, icmp } from $lan_net to any keep state
+
+#  reglas &quot;pass out&quot; gen&eacute;ricas para las interfaces externas
+pass out on $ext_if1 proto tcp from any to any flags S/SA modulate state
+pass out on $ext_if1 proto { udp, icmp } from any to any keep state
+pass out on $ext_if2 proto tcp from any to any flags S/SA modulate state
+pass out on $ext_if2 proto { udp, icmp } from any to any keep state
+
+#  enrutar paquetes desde cualquier IP en $ext_if1 hacia $ext_gw1
+#  y lo mismo para $ext_if2 y $ext_gw2
+pass out on $ext_if1 route-to ($ext_if2 $ext_gw2) from $ext_if2 to any 
+pass out on $ext_if2 route-to ($ext_if1 $ext_gw1) from $ext_if1 to any 
+</pre>
+</td></tr>
+</table>
+
+<p>
+[<a href="shortcuts.html">Anterior: Atajos para la Creaci&oacute;n de
+Grupos de Reglas</a>]
+[<a href="index.html">Contenido</a>]
+[<a href="perf.html">Siguiente: Rendimiento</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[&Iacute;ndice]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: pools.html,v 1.5 2003/06/13 02:54:08 nick Exp ]<br>
+$OpenBSD: pools.html,v 1.1 2003/07/04 22:43:46 jufi Exp $<br>
+$Translation: pools.html,v 1.1 2003/06/29 17:52:06 horacio Exp $
+</small>
+
+</body>
+</html> 
