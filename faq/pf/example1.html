@@ -1,7 +1,7 @@
 <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
 <html>
 <head>
-<title>PF: Example Firewall For Home or Small Office</title>
+<title>PF: Example #1: Firewall for Home or Small Office</title>
 <link rev="made" href="mailto:www@openbsd.org">
 <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
 <meta name="resource-type" content="document">
@@ -19,218 +19,356 @@
 [<a href="index.html">Contents</a>]
 
 <p>
-<h1><font color="#e00000">PF: Example Firewall For Home or Small Office</font></h1>
+<h1><font color="#e00000">PF: Example #1: Firewall for Home or Small Office</font></h1>
 <hr>
 
-<p>
-In this example, we have a number of computers in one subnet, all of
-them should have full, unrestricted Internet access.
+<a name="scenario"></a>
+<h2>The Scenario</h2>
+In this example, PF is running on an OpenBSD machine acting as a
+firewall and NAT gateway for a small network in a home or office. The
+overall objective is to provide Internet access to the network and to
+allow limited access to the firewall machine from the Internet. This
+document will go through a complete ruleset that does just that.
 
-<p>
-The system used for this task is a Pentium 100 with a 3c509B (ep0) and
-an Intel EtherExpress Pro/100 (fxp0).
-
-<p>
-We want a "default deny" ruleset -- the only incoming traffic permitted
-will be to enable external maintenance via SSH (TCP port 22) and the
-Ident server (TCP port 113), which improves the behavior of some
-services, such as external mail and IRC servers.  This firewall should
-also respond to pings from the outside world, but other than port 113
-and 22, should look uninteresting to an outside port scan.
-
-<p>
-So, let's build up our ruleset.
-
-<p>
-First, a few variables:
+<a name="network"></a>
+<h3>The Network</h3>
+The network is setup like this:
 
 <pre>
-     EXT="ep0"
-     INT="fxp0"
-     PRIVNETS="{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"
-</pre>
+    
+  [ COMP1 ]    [ COMP3 ]
+      |            |                               ADSL
+   ---+------+-----+------- fxp0 [ OpenBSD ] ep0 -------- ( Internet )
+             |
+         [ COMP2 ]
 
-The first two lines are interface names.  PRIVNETS is a list of
-"private" (RFC1918) networks which should not be seen on the external
-interface, and if they are, they should be squashed.
-
-<p>
-Now, our scrub rules.  We have no reason not to use the recommended
-scrubbing of all traffic in and out, so this is a simple one-liner:
-
-<pre>
-     scrub in all
-</pre>
-
-Our NAT rules are pretty simple:
-
-<pre>
-     nat on $EXT inet from $INT/24 to any -> ($EXT)
-</pre>
-
-The only redirection we want is for ftp-proxy(8) to enable FTP use
-behind the NAT:
-
-<pre>
-     rdr on $INT proto tcp from any to any port 21 -> 127.0.0.1 port 8021
-</pre>
-
-Now, the filter rules.  We start with the default-deny:
-
-<pre>
-     block in all
-     block out all
-</pre>
-
-At this point, all packets are "tagged" to be blocked.  However, this may
-get changed later.
-
-<p>
-Every Unix system has a "Loopback" interface, a virtual network interface that
-is used by applications to talk to each other inside the system.  IN GENERAL,
-one is best advised to pass all traffic through the loopback interface:
-
-<pre>
-     pass in quick on lo0 all
-     pass out quick on lo0 all
-</pre>
-
-Next, we block traffic on the external interface that just shouldn't be there,
-namely, unregistered and loopback IPs:
-
-<pre>
-     block in quick on $EXT from $PRIVNET to any
-     block out quick on $EXT from any to $PRIVNET
-</pre>
-
-Note that these are "quick" rules -- if there is a match, the packet is
-dropped and the processing stops here.
-
-<p>
-Now, we admit our SSH and Ident traffic:
-
-<pre>
-     pass in on $EXT inet proto tcp from any to any \
-          port { 22, 113 } flags S/SAFR
-</pre>
-
-In this case, we are passing data only on TCP ports 22 and 113, and only
-if the S flag is set and the A, F and R flags are NOT set.  This is a
-pretty good choice, though one should be careful with flags if you don't
-understand their full significance, there is a lot of bad advice
-floating around.
-
-<p>
-Next, we pass desired ICMP traffic.  This will let the machine respond to
-ping(1)s, traceroute(1)s, and not much else:
-
-<pre>
-     pass in quick inet proto icmp all icmp-type 8 code 0 keep state
-     pass in quick inet proto icmp all icmp-type 3 code 4 keep state
-     pass in quick inet proto icmp all icmp-type 11       keep state
 </pre>
 
 <p>
-I'm going to assume that the users on the internal interface know what
+There are a number of computers on the internal network; the diagram
+shows three but the actual number is irrelevant.  These computers are
+regular workstations used for web surfing, email, chatting, etc. The
+internal network is using the 192.168.0.0 / 255.255.255.0 network block.
+
+<p>
+The OpenBSD router is a Pentium 100 with two network cards: a 3com
+3c509B (ep0) and an Intel EtherExpress Pro/100 (fxp0).  The router has
+an ADSL connection to the Internet and is using NAT to share this
+connection with the internal network. The IP address on the external
+interface is dynamically assigned by the Internet Service Provider.
+
+<a name="objective"></a>
+<h3>The Objective</h3>
+The objectives are:
+<ul>
+<li>Provide unrestricted Internet access to each internal computer
+<li>Use a "default deny" filter ruleset
+<li>Allow the following incoming traffic to the firewall from the
+Internet:
+	<ul>
+	<li>SSH (TCP port 22): this will be used for external maintenance of
+	the firewall machine
+	<li>Auth/Ident (TCP port 113): used by some services such as SMTP
+	and IRC
+	<li>ICMP type 8: the ICMP packet type used by
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ping&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>ping(8)</a>
+	<li>ICMP type 11: the ICMP packet type used by
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=traceroute&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>traceroute(8)</a>
+	</ul>
+<li>Log filter statistics on the external interface
+<li>By default, reply with a TCP RST or ICMP Unreachable for blocked
+packets
+<li>Make the ruleset as simple and easy to maintain as possible
+</ul>
+
+<a name="prep"></a>
+<h3>Preparation</h3>
+This document assumes that the OpenBSD host has been properly configured
+to act as a router, including verifying IP networking setup, Internet
+connectivity, and setting <tt>net.inet.ip.forwarding</tt> to "<tt>1</tt>".
+
+<a name="ruleset"></a>
+<h2>The Ruleset</h2>
+The following will step through a ruleset that will accomplish the above
+goals.
+
+<a name="macros"></a>
+<h3>Macros</h3>
+The following macros are defined to make maintenance and reading of
+the ruleset easier:
+<blockquote>
+<tt>
+int_if = "fxp0"<br>
+ext_if = "ep0"<br>
+<br>
+tcp_services = "{ 22, 113 }"<br>
+icmp_types = "{ 8, 11 }"<br>
+<br>
+priv_nets = "{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"
+</tt>
+</blockquote>
+
+<p>
+The first two lines define the network interfaces that filtering will
+happen on. The third and fourth lines list the TCP port numbers of the services
+that will be opened up to the Internet (SSH and ident/auth) and the ICMP
+packet types that will be permitted to reach the firewall machine. The last
+line defines the loopback and
+<a href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a> address
+blocks.
+
+<p>
+<b>Note</b>: If the ADSL Internet connection required
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pppoe&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>PPPoE</a>, then filtering and NAT would have to take place on the
+<tt>tun0</tt> interface and <i>not</i> on <tt>ep0</tt>.
+
+<a name="options"></a>
+<h3>Options</h3>
+The following two options will set the default response for
+<tt>block</tt> filter rules and turn statistics logging "on" for the
+external interface:
+<blockquote>
+<tt>
+set block-policy return<br>
+set loginterface $ext_if
+</tt>
+</blockquote>
+
+<a name="scrub"></a>
+<h3>Scrub</h3>
+There is no reason not to use the recommended scrubbing of all incoming
+traffic, so this is a simple one-liner:
+<blockquote>
+<tt>
+scrub in all
+</tt>
+</blockquote>
+
+<a name="nat"></a>
+<h3>Network Address Translation</h3>
+To perform NAT for the entire internal network the following
+<tt>nat</tt> rule is used:
+<blockquote>
+<tt>
+nat on $ext_if from $int_if:network to any -&gt; ($ext_if)
+</tt>
+</blockquote>
+
+<p>
+Since the IP address on the external interface is assigned dynamically,
+parenthesis are placed around the translation interface so that PF
+will notice when the address changes.
+
+<a name="rdr"></a>
+<h3>Redirection</h3>
+The only redirection needed is for 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>ftp-proxy(8)</a>, so that FTP clients on the local network can connect
+to FTP servers on the Internet.
+<blockquote>
+<tt>
+rdr on $int_if proto tcp from any to any port 21 -&gt; 127.0.0.1 port 8021
+</tt>
+</blockquote>
+
+<p>
+Note that this rule will only catch FTP connections to port 21. If users
+regularly connect to FTP servers on other ports, then a list should be
+used to specify the destination port, for example: <tt>from any to any
+port { 21, 2121 }</tt>.
+
+<a name="filter"></a>
+<h3>Filter Rules</h3>
+Now the filter rules. Start with the default deny:
+<blockquote>
+<tt>
+block all<br>
+</tt>
+</blockquote>
+
+<p>
+At this point nothing will go through the firewall, not even from the
+internal network. The following rules will open up the firewall as per
+the objectives above as well as open up any necessary virtual
+interfaces.
+
+<p>
+Every Unix system has a "loopback" interface. It's a virtual network interface that
+is used by applications to talk to each other inside the system. In general,
+all traffic should be passed on the loopback interface. On OpenBSD, the
+loopback interface is 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=lo&amp;sektion=4&amp;manpath=OpenBSD+3.3"
+>lo(4)</a>.
+<blockquote>
+<tt>
+pass quick on lo0 all
+</tt>
+</blockquote>
+
+<p>
+Next, the
+<a href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a>
+addresses will be blocked from entering or exiting the external
+interface -- these addresses should never appear on the public Internet.
+Filtering them will ensure that the router does not "leak" these
+addresses out from the internal network and also prevent any incoming
+packets with a source address in one of those networks.
+<blockquote>
+<tt>
+block drop in &nbsp;quick on $ext_if from $priv_nets to any<br>
+block drop out quick on $ext_if from any to $priv_nets
+</tt>
+</blockquote>
+
+<p>
+Note that <tt>block drop</tt> is used to tell PF not to respond with a
+TCP RST or ICMP Unreachable packet. Since the RFC 1918 addresses don't
+exist on the Internet, any packets sent to those addresses will never
+make it there anyways. The <tt>quick</tt> option is used to tell PF not
+to bother evaluating the rest of the filter rules if one of the above
+rules matches; packets to or from the <tt>$priv_nets</tt> networks will
+be immediately dropped.
+
+<p>
+Now open the ports used by those network services that will be available
+to the Internet:
+<blockquote>
+<tt>
+pass in on $ext_if inet proto tcp from any to ($ext_if) \<br>
+&nbsp;&nbsp;&nbsp;port $tcp_services flags S/SAFR keep state
+</tt>
+</blockquote>
+
+<p>
+Specifying the network ports in the macro <tt>$tcp_services</tt> makes
+it simple to open additional services to the Internet by simply editing
+the macro and reloading the ruleset. UDP services can also be opened up
+by creating a <tt>$udp_services</tt> macro and adding a filter rule,
+similar to the one above, that specifies <tt>proto udp</tt>.
+
+<p>
+ICMP traffic must now be passed:
+<blockquote>
+<tt>
+pass in inet proto icmp all icmp-type $icmp_types keep state
+</tt>
+</blockquote>
+
+<p>
+Similar to the <tt>$tcp_services</tt> macro, the <tt>$icmp_types</tt>
+macro can easily be edited to change the types of ICMP packets that will
+be allowed to reach the firewall. Note that this rule applies to all
+network interfaces.
+
+<p>
+Now traffic must be passed to and from the internal network.
+We'll assume that the users on the internal network know what
 they are doing and aren't going to be causing trouble.  This is not
-necessarily a valid assumption, a much more restrictive ruleset would
+necessarily a valid assumption; a much more restrictive ruleset would
 be appropriate for some environments.
+<blockquote>
+<tt>
+pass in on $int_if from $int_if:network to any keep state
+</tt>
+</blockquote>
 
-<pre>
-     pass in  quick on $INT all keep state
-</pre>
-
-The next rule is very optional:
-<pre>
-     pass out quick on $INT all keep state
-</pre>
-This line permits traffic which originates in the firewall to access
-machines in the internal network.  Why might you want this?  There are
-a few reasons.  If your firewall also is a DHCP server, DHCP will work
-better if it can "ping" machines to verify the availability of an IP
-address before assigning it.  It also permits someone who has ssh'ed
-into firewall from outside to access machines inside your network.
-While this may not be what you desire, keep in mind NOT putting this
-line in is not a large security benefit -- if someone gets access to your
-firewall, they can probably alter the firewall rules.
+<p>
+The above rule will permit any internal machine to send packets through
+the firewall; however, it will <i>not</i> permit the firewall to
+initiate a connection to an internal machine. Is this a good idea? That
+depends on some of the finer details of the network setup. If the
+firewall is also a DHCP server it may need to "ping" an address to
+verify its availability before assigning it. Permitting the firewall to
+connect to the internal network also allows someone who has ssh'ed into
+the firewall from the Internet to then access machines on the network.
+Keep in mind that <i>not</i> allowing the firewall to communicate
+directly to the network is not a large security benefit; if someone gets
+access to the firewall they can probably alter the filter rules anyways.
+By adding the following rule, the firewall will be able to initiate
+connections to the internal network:
+<blockquote>
+<tt>
+pass out on $int_if from any to $int_if:network keep state
+</tt>
+</blockquote>
 
 <p>
 Note that if both of these lines are in place, the <tt>keep state</tt>
-option is not needed -- all packets will be able to pass through the
-external interface without the keep state.  HOWEVER, if the <tt>pass
-out</tt> line is NOT included, the <tt>pass in</tt> line must include
-<tt>keep state</tt>.  There is also some performance benefit to keeping
-state -- state tables are checked before rules are evaluated, and if a
-state match is found, the rules are not evaluated for a packet, so this
-can offer a performance benefit on a heavily loaded firewall, though
-in a system this simple, it is unlikely to generate enough load to 
-matter.
+option is not needed; all packets will be able to pass through the
+internal interface because there is a rule to pass packets in both
+directions.  However, if the <tt>pass out</tt> line is <i>not</i>
+included, the <tt>pass in</tt> line <i>must</i> include <tt>keep
+state</tt>.  There is also some performance benefit to keeping state:
+State tables are checked before rules are evaluated, and if a state
+match is found, the packet is passed through the firewall without going
+through ruleset evaluation. This can offer a performance benefit on a
+heavily loaded firewall, though in a system this simple it is unlikely
+to generate enough load to matter.
 
 <p>
-Finally, we have the rules permitting outgoing traffic on the external
-interface:
+Finally, pass traffic out on the external interface:
+<blockquote>
+<tt>
+pass out on $ext_if proto tcp all modulate state flags S/SAFR<br>
+pass out on $ext_if proto { udp, icmp } all keep state
+</tt>
+</blockquote>
 
+<p>
+TCP, UDP, and ICMP traffic is permitted to exit the firewall towards the
+Internet. State information is kept so that the returning packets will
+be passed in through the firewall.
+
+<a name="ruleset"></a>
+<h2>The Complete Ruleset</h2>
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
 <pre>
-     pass out quick on $EXT all keep state
-</pre>
+# macros
+int_if = "fxp0"
+ext_if = "ep0"
 
-This is fairly self-explanatory: whatever hits the external interface
-from the inside of the firewall, let it out -- but keep state so the
-response can come back in.  Note that this rule is needed, otherwise
-traffic would never be able to exit the external port.
+tcp_services = "{ 22, 113 }"
+icmp_types = "{ 8, 11 }"
 
-<h2>The complete ruleset</h2>
-<table border=0 width="650"><tr><td nowrap bgcolor="#EEEEEE"><pre>
-# Variables
-EXT= "ep0"
-INT= "fxp0"
-PRIVNETS= "{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"
+priv_nets = "{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"
+	  
+# options
+set block-policy return
+set loginterface $ext_if
 
-
-# Scrub rules
+# scrub
 scrub in all
 
+# nat/rdr
+nat on $ext_if from $int_if:network to any -&gt; ($ext_if)
+rdr on $int_if proto tcp from any to any port 21 -&gt; 127.0.0.1 \
+   port 8021
 
-# NAT and Redirection rules
-nat on $EXT inet from $INT/24 to any -> ($EXT)
+# filter rules
+block all
 
-# FTP redirections
-rdr on $INT proto tcp from any to any port 21 -> 127.0.0.1 port 8021
+pass quick on lo0 all
 
+block drop in  quick on $ext_if from $priv_nets to any
+block drop out quick on $ext_if from any to $priv_nets
 
-# Filter Rules
-block in all
-block out all
-pass in quick on lo0 all
-pass out quick on lo0 all
+pass in on $ext_if inet proto tcp from any to ($ext_if) \
+   port $tcp_services flags S/SAFR keep state
 
-# block RFC1918 traffic on external interface
-block in quick on $EXT from $PRIVNETS to any
-block out quick on $EXT from any to $PRIVNETS
+pass in inet proto icmp all icmp-type $icmp_types keep state
 
-# Pass the stuff we expect on the external interface
-pass in on $EXT inet proto tcp from any to any \
-     port { 22, 113 } flags S/SAFR
+pass in  on $int_if from $int_if:network to any keep state
+pass out on $int_if from any to $int_if:network keep state
 
-# Pass desired ICMP traffic
-pass in quick inet proto icmp all icmp-type 8 code 0 keep state
-pass in quick inet proto icmp all icmp-type 3 code 4 keep state
-pass in quick inet proto icmp all icmp-type 11       keep state
-
-# Pass traffic to/from internal network
-pass in  quick on $INT all keep state
-pass out quick on $INT all keep state
-
-# Permit outgoing on $EXT
-pass out quick on $EXT all keep state
-</pre></td></tr></table>
-
-<p>
-You will note that there are no hard coded addresses in the body of this
-PF file.  The use of variable names makes it much easier to change
-things as needed, and the same or similar ruleset can be used in many
-different systems.
-
+pass out on $ext_if proto tcp all modulate state flags S/SAFR
+pass out on $ext_if proto { udp, icmp } all keep state
+</pre>
+</td></tr>
+</table>
 
 <p>
 [<a href="ftp.html">Previous: Issues with FTP</a>]
@@ -241,7 +379,7 @@ different systems.
 <a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a> 
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: example1.html,v 1.2 2003/05/01 14:20:37 nick Exp $</small>
+<small>$OpenBSD: example1.html,v 1.3 2003/05/08 01:19:58 nick Exp $</small>
 
 </body>
 </html> 
