@@ -17,9 +17,9 @@ please, use a max of 72 chars per line -->
 
 <img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
 <p>
-[<a href="rdr.html">前に戻る: トラフィックリダイレクション</a>]
+[<a href="tables.html">前に戻る: テーブル</a>]
 [<a href="index.html">目次</a>]
-[<a href="logging.html">次に進む: ログの取得</a>]
+[<a href="nat.html">次に進む: ネットワークアドレス変換 (NAT)</a>]
 
 <h1><font color="#e00000">PF: パケットフィルタリング</font></h1>
 
@@ -31,10 +31,11 @@ please, use a max of 72 chars per line -->
 <li><a href="#syntax">ルールのシンタクス</a>
 <li><a href="#defdeny">デフォルトで拒否</a>
 <li><a href="#pass">通過トラフィック</a>
+<li><a href="#quick"><tt>quick</tt> キーワード</a>
 <li><a href="#state">状態の保持</a>
 <li><a href="#udpstate">UDP の状態の保持</a>
 <li><a href="#tcpflags">TCP のフラグ</a>
-<li><a href="#quick"><tt>quick</tt> キーワード</a>
+<li><a href="#synproxy">TCP SYN プロキシ</a>
 <li><a href="#antispoof">詐称されたパケットのブロック</a>
 <li><a href="#ipopts">IP オプション</a>
 <li><a href="#example">フィルタリングルールセットの例</a>
@@ -79,7 +80,7 @@ please, use a max of 72 chars per line -->
 一般的に、フィルタルールを<i>高度に単純化</i>したシンタクスは以下のとおりです。
 <blockquote>
 <tt>
-<i>action</i> <i>direction</i> [log] [quick] on <i>int</i> [<i>af</i>] 
+<i>action</i> <i>direction</i> [log] [quick] on <i>interface</i> [<i>af</i>] 
 [proto <i>protocol</i>] \<br>
 &nbsp;&nbsp;&nbsp;from <i>src_addr</i> [port <i>src_port</i>] to 
 <i>dst_addr</i> [port <i>dst_port</i>] \<br>
@@ -104,16 +105,17 @@ please, use a max of 72 chars per line -->
 <dt><tt>log</tt>
 <dd><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+3.4"
 >pflogd(8)</a> 経由でパケットのログを取得すべきであることを指定します。
-ここで、ルールに <tt>keep state</tt> か <tt>modulate state</tt> オプションが
-指定されている場合には、確立された状態のパケットのログのみ記録されます。
+ここで、ルールに <tt>keep state</tt>、<tt>modulate state</tt> か <tt>synproxy state</tt>
+オプションが指定されている場合には、確立された状態のパケットのログのみ記録されます。
 ですので、そのような状態とは無関係にすべてのパケットのログを取得したい場合は
 <tt>log-all</tt> を指定してください。
 
 <dt><tt>quick</tt>
 <dd>パケットが <tt>quick</tt> の指定されたルールにマッチした場合には、そのルールは
-最終的にマッチすべきルールと見なされるので、ここに指定された動作が実行されます。
+最終的にマッチすべきルールと見なされるので、ここに指定された<tt><i>動作</i></tt>が
+実行されます。
 
-<dt><tt><i>int</i></tt>
+<dt><tt><i>interface</i></tt>
 <dd>パケットが移動するネットワークインターフェイス名を記述します。
 
 <dt><tt><i>af</i></tt>
@@ -207,6 +209,10 @@ S と A (SYN と ACK) フラグだけに注目し、SYN フラグが "on
 <li><tt>keep state</tt> - TCP、UDP および ICMP に対して有効です。
 <li><tt>modulate state</tt> - TCP に対してのみ有効です。パケットが
 ルールにマッチするために PF は強力な初期シーケンス番号 (ISN) を生成します。
+<li><tt>synproxy state</tt> - 詐称された TCP SYN flood からサーバを防護するため、
+着信する TCP 接続のプロキシを行います。
+このオプションは、<tt>keep state</tt> および <tt>modulate state</tt>
+の機能を含んでいます。
 </ul>
 </dl>
 
@@ -260,6 +266,45 @@ pass out on dc0 from 192.168.0.1 to 192.168.0.0/24<br>
 pass in on fxp0 proto tcp from any to fxp0 port www
 </tt>
 </blockquote>
+
+<a name="quick"></a>
+<h2><tt>quick</tt> キーワード</h2>
+上記に示したとおり、それぞれのパケットは、フィルタルールセットの先頭から末尾へと
+評価が行われます。デフォルトでは、パケットは通過するよう設定されていますが、
+これはフィルタルールの最後までなら、各種ルールによって変更することもできますし、
+何度でも変更することができます。そして、<b>最後にマッチしたルールが採用されます</b>。
+しかし、これには例外があり、フィルタリングルール上に <tt>quick</tt> 
+オプションが指定されている場合、それ以降のルールの処理を無効化する効果を持ち、
+指定されたとおりの動作が取られることになります。
+以下のひと組の例を見てみましょう。
+
+<p>
+良くない例:
+<blockquote>
+<tt>
+block in on fxp0 proto tcp from any to any port ssh<br>
+pass &nbsp;in all
+</tt>
+</blockquote>
+
+<p>
+この例では、この <tt>block</tt> 行は評価されるかも知れませんが、
+その次に、何でも通過させてしまう行があるため、
+何の効果も持ちません。
+
+<p>
+良い例:
+<blockquote>
+<tt>
+block in quick on fxp0 proto tcp from any to any port ssh<br>
+pass &nbsp;in all
+</tt>
+</blockquote>
+
+<p>
+これらのルールの場合、少し異なる評価が行われます。<tt>block</tt>
+行にマッチすると、<tt>quick</tt> オプションが指定されているため、
+パケットはブロックされ、残りのルールセットは無視されます。
 
 <a name="state"></a>
 <h2>状態の保持</h2>
@@ -348,7 +393,7 @@ pass out on fxp0 proto { udp, icmp } from any to any keep state
 プロトコルの場合、PF はマッチしたパケットが通過してから、どれくらいの時間の
 経過があったかということの追跡結果を単純に保持しています。もし、それが
 タイムアウトすれば状態は消去されます。このタイムアウト値は、
-<tt>/etc/pf.conf</tt> ファイルの <a href="options.html">オプション</a>
+<tt>pf.conf</tt> ファイルの <a href="options.html">オプション</a>
 の部分で設定することができます。
 
 <a name="tcpflags"></a>
@@ -456,44 +501,45 @@ pass in on fxp0 proto tcp from any to any port ssh flags S/SA \<br>
 </tt>
 </blockquote>
 
-<a name="quick"></a>
-<h2><tt>quick</tt> キーワード</h2>
-最初の方に示しましたが、それぞれのパケットはフィルタルールセットの最初から最後まで
-評価が行われます。デフォルトでは、パケットは通過するよう設定されますが、
-これはフィルタルールの最後までなら、各種ルールによって変更することもできますし、
-何度でも前後に変更することができます。
-そして、<b>最後にマッチしたルールが「勝者」となります。</b>
-この例外が <tt>quick</tt> オプションで、これが指定されたフィルタリングルールより
-後のすべてのルールの処理と、そこに指定された取るべき動作をキャンセルする効果を持ちます。
-いくつかの例を見てみましょう。
+<a name="synproxy"></a>
+<h2>TCP SYN プロキシ</h2>
+<p>
+通常、クライアントがサーバに対して TCP 接続を行おうとする場合、
+PF はこれら 2 点間の
+<a href="http://www.inetdaemon.com/tutorials/internet/tcp/connections.html"
+>ハンドシェイク</a>パケットが到着するよう、通過させます。
+しかし、PF には、このハンドシェイクのプロキシを行う能力があります。
+このハンドシェイクのプロキシが行われると、PF 自身がクライアントと完全な
+ハンドシェイクを行い、PF がサーバに対してハンドシェイクを行おうとします。
+その上で、これら 2 点間のパケットを通過させます。
+このプロセスの利点は、クライアントがハンドシェイクを完了させるまで、
+サーバに対して一切のパケットを送信しないことです。
+詐称されたクライアントの接続はハンドシェイクを完了することができないので、
+これによって、サーバに影響を及ぼす、詐称された TCP SYN flood の脅威を
+取り除くことができます。
 
 <p>
-間違った例です。
+TCP SYN プロキシは、以下の例のように、フィルタルール中で <tt>synproxy state</tt>
+キーワードを使用することによって有効化することができます。
+
 <blockquote>
 <tt>
-block in on fxp0 proto tcp from any to any port ssh<br>
-pass &nbsp;in all
+pass in on $ext_if proto tcp from any to $web_server port www \<br>
+&nbsp;&nbsp;&nbsp;flags S/SA synproxy state
 </tt>
 </blockquote>
 
 <p>
-この場合、<tt>block</tt> 行は評価されますが、決して何の効果も
-持たないでしょう。なぜなら、これより後にすべてを通過させる行が
-存在しているからです。
+これで、web サーバへの接続は、PF により TCP のプロキシが行われるようになります。
 
 <p>
-より良い例です。
-<blockquote>
-<tt>
-block in quick on fxp0 proto tcp from any to any port ssh<br>
-pass &nbsp;in all
-</tt>
-</blockquote>
+<tt>synproxy state</tt> は、その動作原理から <tt>keep state</tt> および
+<tt>modulate state</tt> の機能も含んでいます。
 
 <p>
-これらのルールは少し異なる評価が行われます。<tt>block</tt> 行にマッチすると、
-この行には <tt>quick</tt> オプションが指定されているので、パケットはブロックされ、
-残りのルールセットは無視されます。
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridge&amp;sektion=4&amp;manpath=OpenBSD+3.4"
+>bridge(4)</a>
+上で PF が動作している場合には SYN プロキシは動作しません。
 
 <a name="antispoof"></a>
 <h2>詐称されたパケットのブロック</h2>
@@ -543,9 +589,9 @@ antispoof for fxp0 inet
 
 <p>
 ルールセットがロードされると、指定されている <tt>antispoof</tt> キーワードはすべて、
-ふたつのフィルタルールに展開されます。インターフェイス fxp0 が IP アドレスとして
-10.0.0.1 を持ち、サブネットマスクとして 255.255.255.0 (つまり /24) を持つものとすると、
-上記の <tt>antispoof</tt> ルールは以下のように展開されます。
+ふたつのフィルタルールに展開されます。インターフェイス <tt>fxp0</tt> が IP
+アドレスとして 10.0.0.1 を持ち、サブネットマスクとして 255.255.255.0 (つまり /24)
+を持つものとすると、上記の <tt>antispoof</tt> ルールは以下のように展開されます。
 
 <blockquote>
 <tt>
@@ -557,11 +603,12 @@ block in inet from 10.0.0.1 to any
 <p>
 これらのルールにより、以下のようなふたつのことができるようになります。
 <ul>
-<li>fxp0 を経由<i>せずに</i> 10.0.0.0/24 のネットワークから来た
+<li><tt>fxp0</tt> を経由<i>せずに</i> 10.0.0.0/24 のネットワークから来た
 すべてのトラフィックをブロックします。これは、10.0.0.0/24 のネットワークは、
-fxp0 に接続されているので、このネットワークブロックの送信元アドレスを持つ
+<tt>fxp0</tt> に接続されているので、このネットワークブロックの送信元アドレスを持つ
 パケットが、他のネットワークインターフェイスに出現することはあり得ないからです。
-<li>fxp0 の IP アドレスである 10.0.0.1 からの全ての着信トラフィックをブロックします。
+<li><tt>fxp0</tt> の IP アドレスである 10.0.0.1 からのすべての着信トラフィックを
+ブロックします。
 これは、ホストマシンは、外部インターフェイス経由で、自分自身には決して
 パケットを送信すべきではありませんので、このマシンに属する発信元アドレスを持つ
 すべての着信パケットは、悪意のあるものと見なすことができるからなのです。
@@ -654,19 +701,19 @@ pass out on $ext_if proto tcp all modulate state flags S/SA
 pass out on $ext_if proto { udp, icmp } all keep state
 
 # allow ssh connections in on the external interface as long as they're
-# NOT destined for the firewall (ie, they're destined for a machine on
+# NOT destined for the firewall (i.e., they're destined for a machine on
 # the local network). log the initial packet so that we can later tell
-# who is trying to connect.
+# who is trying to connect. use the tcp syn proxy to proxy the connection.
 pass in log on $ext_if proto tcp from any to { !$ext_if, !$int_if } \
-   port ssh flags S/SA keep state
+   port ssh flags S/SA synproxy state
 </pre>
 </td></tr>
 </table>
 
 <p>
-[<a href="rdr.html">前に戻る: トラフィックリダイレクション</a>]
+[<a href="tables.html">前に戻る: テーブル</a>]
 [<a href="index.html">目次</a>]
-[<a href="logging.html">次に進む: ログの取得</a>]
+[<a href="nat.html">次に進む: ネットワークアドレス変換 (NAT)</a>]
 
 <p>
 <hr>
@@ -674,11 +721,11 @@ pass in log on $ext_if proto tcp from any to { !$ext_if, !$int_if } \
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
 <small>
-Originally [OpenBSD: filter.html,v 1.14 ]
+Originally [OpenBSD: filter.html,v 1.15 ]
 <br>
-$Translation: filter.html,v 1.12 2003/11/10 14:53:17 toshi Exp $
+$Translation: filter.html,v 1.13 2003/12/03 04:48:37 toshi Exp $
 <br>
-$OpenBSD: filter.html,v 1.11 2003/11/10 21:40:53 horacio Exp $
+$OpenBSD: filter.html,v 1.12 2003/12/03 21:55:18 horacio Exp $
 </small>
 
 </body>
