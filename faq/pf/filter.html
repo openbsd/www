@@ -35,6 +35,7 @@ please, use a max of 72 chars per line -->
 <li><a href="#udpstate">Keeping State for UDP</a>
 <li><a href="#tcpflags">TCP Flags</a>
 <li><a href="#quick">The <tt>quick</tt> Keyword</a>
+<li><a href="#antispoof">Blocking Spoofed Packets</a>
 <li><a href="#ipopts">IP Options</a>
 <li><a href="#example">Filtering Ruleset Example</a>
 </ul>
@@ -479,6 +480,105 @@ These rules are evaluated a little differently.  If the <tt>block</tt>
 line is matched, due to the <tt>quick</tt> option, the packet will be
 blocked, and the rest of the ruleset will be ignored.
 
+<a name="antispoof"></a>
+<h2>Blocking Spoofed Packets</h2>
+Address "spoofing" is when an malicious user fakes the source IP address
+in packets they transmit in order to either hide their real address or
+to impersonate another node on the network. Once the user has spoofed
+their address they can launch a network attack without revealing the
+true source of the attack or attempt to gain access to network services
+that are restricted to certain IP addresses.
+
+<p>
+PF offers some protection against address spoofing through the
+<tt>antispoof</tt> keyword:
+
+<blockquote>
+<tt>
+antispoof [log] [quick] for <i>interface</i> [<i>af</i>]
+</tt>
+</blockquote>
+
+<dl>
+<dt><tt>log</tt>
+<dd>Specifies that matching packets should be logged via
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+3.3"
+>pflogd(8)</a>.
+
+<dt><tt>quick</tt>
+<dd>If a packet matches this rule then it will be considered the
+"winning" rule and ruleset evaluation will stop.
+
+<dt><tt><i>interface</i></tt>
+<dd>The network interface to activate spoofing protection on. This can
+also be a <a href="macros.html#lists">list</a> of interfaces.
+
+<dt><tt><i>af</i></tt>
+<dd>The address family to activate spoofing protection for, either
+<tt>inet</tt> for IPv4 or <tt>inet6</tt> for IPv6.
+</dl>
+
+<p>
+Example:
+<blockquote>
+<tt>
+antispoof for fxp0 inet
+</tt>
+</blockquote>
+
+<p>
+When a ruleset is loaded, any occurrences of the <tt>antispoof</tt>
+keyword are expanded into two filter rules. Assuming that interface fxp0
+has IP address 10.0.0.1 and a subnet mask of 255.255.255.0 (i.e., a
+/24), the above <tt>antispoof</tt> rule would expand to:
+
+<blockquote>
+<tt>
+block in on ! fxp0 inet from 10.0.0.0/24 to any<br>
+block in inet from 10.0.0.1 to any
+</tt>
+</blockquote>
+
+<p>
+These rules accomplish two things:
+<ul>
+<li>Blocks all traffic coming from the 10.0.0.0/24 network that does
+<i>not</i> pass in through fxp0. Since the 10.0.0.0/24 network is on the
+fxp0 interface, packets with a source address in that network block
+should never be seen coming in on any other interface.
+<li>Blocks all incoming traffic from 10.0.0.1, the IP address on fxp0.
+The host machine should never send packets to itself through an external
+interface, so any incoming packets with a source address belonging to
+the machine can be considered malicious.
+</ul>
+
+<p>
+<b>NOTE</b>: The filter rules that the <tt>antispoof</tt> rule
+expands to will also block packets sent over the loopback interface to
+local addresses. These addresses should be passed explicitly. Example:
+<blockquote>
+<tt>
+pass in quick on lo0 all<br>
+<br>
+antispoof for fxp0 inet
+</tt>
+</blockquote>
+
+<p>
+Usage of <tt>antispoof</tt> should be restricted to interfaces that have
+been assigned an IP address. Using <tt>antispoof</tt> on an interface
+without an IP address will result in filter rules such as:
+<blockquote>
+<tt>
+block drop in on ! fxp0 inet all<br>
+block drop in inet all
+</tt>
+</blockquote>
+
+<p>
+With these rules there is a risk of blocking <i>all</i> inbound traffic
+on <i>all</i> interfaces.
+
 <a name="ipopts"></a>
 <h2>IP Options</h2>
 By default, PF blocks packets with IP options set. This can make the job
@@ -505,13 +605,19 @@ etc have been left out of this example.
 <table border=0 width="650">
 <tr><td nowrap bgcolor="#EEEEEE">
 <pre>
-ext_if  = fxp0
-int_if  = dc0
-lan_net = 192.168.0.0/24
+ext_if  = "fxp0"
+int_if  = "dc0"
+lan_net = "192.168.0.0/24"
 
 # setup a default deny policy
 block in  all
 block out all
+
+# pass traffic on the loopback interface in either direction
+pass quick on lo0 all
+
+# activate spoofing protection for the internal interface.
+antispoof quick for $int_if inet
 
 # only allow ssh connections from the local network if it's from the
 # trusted computer, 192.168.0.15. use "block drop" so that a TCP RST is
@@ -550,7 +656,7 @@ pass in log on $ext_if proto tcp from any to { !$ext_if, !$int_if } \
 <a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a> 
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: filter.html,v 1.6 2003/05/25 01:35:07 nick Exp $</small>
+<small>$OpenBSD: filter.html,v 1.7 2003/06/07 01:18:11 nick Exp $</small>
 
 </body>
 </html> 
