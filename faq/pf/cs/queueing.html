@@ -1,0 +1,835 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Fronty (queueing)</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-2">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 2003 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
+<p>
+[<a href="scrub.html">Předchozí: Scrub</a>]
+[<a href="index.html">Obsah</a>]
+[<a href="nat.html">Dále: Překlad síťových adres</a>]
+
+<p>
+<h1><font color="#e00000">PF: Fronty (queueing)</font></h1>
+
+
+<hr>
+
+<h3>Obsah</h3>
+<ul>
+<li><a href="#queueing">Fronty</a>
+<li><a href="#sched">Schedulery</a>
+	<ul>
+	<li><a href="#cbq">Class Based Queueing</a>
+	<li><a href="#priq">Priority Queueing</a>
+	<li><a href="#red">Random Early Detection</a>
+	<li><a href="#ecn">Explicit Congestion Notification</a>
+	</ul>
+<li><a href="#altq">Konfigurace front</a>
+<li><a href="#assign">Přiřazení provozu frontě</a>
+<li><a href="#example1">Příklad č.1: Malá domácí síť</a>
+<li><a href="#example2">Příklad č.2: Firemní síť</a>
+</ul>
+
+<hr>
+
+<a name="queueing"></a>
+<h2>Fronty</h2>
+<p>
+Zařadit něco do fronty znamená uložit to, v pořadí, zatímco to čeká na
+zpracování. V počítačových sítích jsou při odesílání z počítače datové
+pakety zařazeny do fronty, kde čekají na zpracování operačním systémem.
+Operační systém se potom rozhodne, která fronta a které pakety z ní, mají
+být zpracovány. Pořadí, ve kterém operační sytém vybírá pakety ke
+zpracování, může ovlivnit výkon sítě. Představme si, například,
+uživatele, který používá dvě aplikace: SSH a FTP. V ideálním případě by
+pakety SSH měly být zpracovány před FTP pakety, protože SSH je z povahy věci
+citlivějsí na zpoždění. Při zmáčknutí klávesy v SSH klientu očekáváme
+okamžitou odezvu, zatímco několikasekundového zpoždění FTP přenosu si
+sotva všimneme. Co se ale stane, když router obsluhující tato spojení
+zpracovává vellký balík paketů z FTP spojení před zpracováním SSH
+spojení? Pakety ze SSH spojení budou zůstávat ve frontě (nebo možná
+budou zahozeny routerem, pokud fronta není dostatečně velká, aby se do
+ní vešly všechny pakety) a SSH spojení se bude zpožďovat nebo
+vypadávat. Změnou používané strategie zpracování fronty můžeme sdílet
+pásmo spravedlivě mezi různými aplikacemi, uživateli a počítači.
+
+<p>
+Uvědomme si, že queueing má smysl pouze u paketů v  <i>odchozím</i>
+směru. Jakmile paket dorazí na rozhraní v příchozím směru, je už příliš
+pozdě řadit ho do fronty -- přenosové pásmo (bandwith) už spotřeboval
+na to, aby se dostal na rozhraní, které ho právě přijalo. Jediné řešení
+je zapnout queueing na předcházejícím routeru nebo, pokud počítač, který
+paket přijal funguje jako router, zapnout queueing na vnitřním rozhraní,
+kde pakety opouštějí router.
+
+<a name="sched"></a>
+<h2>Schedulery</h2>
+Scheduler je to, co rozhoduje, které fronty zpracovávat a v jakém
+pořadí. OpenBSD používá First In First Out (FIFO) scheduler. FIFO fronta
+funguje jako fronta v supermarketu nebo bance -- první položka ve frontě
+je zpracována jako první. Když dorazí nový paket, je zařazen na konec
+fronty. Pokud se fronta zaplní, jsou nově příchozí pakety zahazovány.
+Tomu se říká tail-drop.
+
+<p>
+OpenBSD podporuje dva další schedulery:
+<ul>
+<li>Class Based Queueing
+<li>Priority Queueing
+</ul>
+
+<a name="cbq"></a>
+<h3>Class Based Queueing</h3>
+Class Based Queueing (Fronty založené na třídách, CBQ) je "frontovací"
+algoritmus, který rozděluje pásmo pro síťová spojení mezi několik front
+nebo tříd. Ke každé frontě jsou potom přiřazena spojení na základě
+zdrojové nebo cílové adresy, čísla portu, protokolu atd. Fronta může být
+volitelně nakonfigurována tak, aby si půjčovala pásmo od své rodičovské
+fronty, pokud je ta nevytížená. Frontám jsou také přiřazeny priority,
+takže pakety interaktivních spojení, jako je SSH, mohou být zpracovány
+dříve než fronty obsahující běžný provoz, jako třeba FTP.
+
+<p>
+CBQ fronty jsou uspořádány hierarchicky. Na vrcholu hierarchie je root
+fronta, která definuje celkovou dostupnou šířku pásma. Pod ní jsou
+vytvářeny dceřiné fronty, z nichž každé může být přiřazena část pásma
+root fronty. Fronty mohou být uspořádány například takto:
+<dl>
+<dd>Root Queue (2Mbps)
+	<dl>
+	<dd>Queue A (1Mbps)
+	<dd>Queue B (500Kbps)
+	<dd>Queue C (500Kbps)
+	</dl>
+</dl>
+
+<p>
+V tomto případě je celková dostupná šířka pásma nastavena na 2 megabity
+za sekunbu (Mbps). Toto pásmo je rozděleno mezi tři dceřiné fronty.
+
+<p>
+Hierarchie může být dále rozšířena definováním front uvnitř front. Pro
+rozdělení pásma mezi různé uživatele rovným dílem a klasifikovaní jejich
+provozu tak, aby nějaký protokol netrpěl na úkor ostatních nedostatkem
+pásma, může být definována následující struktura front:
+<dl>
+<dd>Root Queue (2Mbps)
+	<dl>
+	<dd>UserA (1Mbps)
+		<dl>
+		<dd>ssh (50Kbps)
+		<dd>bulk (950Kbps)
+		</dl>
+	<dd>UserB (1Mbps)
+		<dl>
+		<dd>audio (250Kbps)
+		<dd>bulk (750Kbps)
+			<dl>
+			<dd>http (100Kbps)
+			<dd>other (650Kbps)
+			</dl>
+		</dl>
+	</dl>
+</dl>
+
+<p>
+Všimněte si, že na žádné úrovni součet šířky pásma přiřazeného frontaám
+nepřesahuje šířku pásma přiděleného rodičovské frontě.
+
+<p>
+Fronta může být nastavena tak, aby si půjčovala pásmo od svého rodiče,
+pokud ten má přebytečnou dostupnou kapacitu, protože není naplno využívána
+ostatními dceřinými frontami. Uvažujme následující schema front:
+<dl>
+<dd>Root Queue (2Mbps)
+	<dl>
+	<dd>UserA (1Mbps)
+		<dl>
+		<dd>ssh (100Kbps)
+		<dd>ftp (900Kbps, borrow)
+		</dl>
+	<dd>UserB (1Mbps)
+	</dl>
+</dl>
+
+<p>
+Pokud provoz ve frontě <tt>ftp</tt> překročí 900Kbps a provoz ve frontě
+<tt>UserA</tt> je méně než 1Mbps (protože ssh fronta využívé méně než
+přiřazených 100Kbps), fronta <tt>ftp</tt> si vypůjčí přebytečné pásmo od
+<tt>UserA</tt>. Tímto způsobem může <tt>ftp</tt> využít více než
+přiřazené pásmo, pokud je přetíženo. Když se ve frontě <tt>ssh</tt>
+zvýší zátěž, vypůjčené pásmo bude vráceno. 
+
+<p>
+CBQ přiřazuje každé frontě prioritu. Fronty s vyšší prioritou jsou při
+zahlcení preferovány oproti frontám s nižší prioritou, pokud obě mají
+společného rodiče (jinak řečeno, pokud jsou obě fronty ve stejné větvi
+hierarchie). Fronty se stejnou prioritou jsou zpracovávány round-robin
+mechanismem. Například:
+<dl>
+<dd>Root Queue (2Mbps)
+	<dl>
+	<dd>UserA (1Mbps, priority 1)
+		<dl>
+		<dd>ssh (100Kbps, priority 5)
+		<dd>ftp (900Kbps, priority 3)
+		</dl>
+	<dd>UserB (1Mbps, priority 1)
+	</dl>
+</dl>
+
+<p>
+CBQ bude zpracovávat fronty <tt>UserA</tt> a <tt>UserB</tt> round-robin
+mechanismem -- žádná fronta nebude upřednostňovaná. Během zpracovávání
+fronty <tt>UserA</tt>, CBQ také zpracuje její dceřiné fronty. V tomto
+případě má fronta <tt>ssh</tt> vyšší prioritu a dostane se jí
+přednostnějšího zacházení než frontě <tt>ftp</tt>, pokud dojde k
+zahlcení. Všimněte si, že priority front <tt>ssh</tt> a <tt>ftp</tt> se
+neporovnávají s frontami <t>UserA</tt> a <tt>UserB</tt>, protože nejsou
+všechny ve stejné větvi hierarchie.
+
+<p>
+Detailnější pohled na teorii v pozadí CBQ najdete na
+<a href="http://www.icir.org/floyd/cbq.html">této stránce</a>.
+
+<a name="priq"></a>
+<h3>Priority Queueing</h3>
+Priority Queueing (PRIQ) přiřazuje více front jednomu rozhraní s tím, že
+každá fronta má přiřazenu jedinečnou úroveň priority. Fronta s vyšší
+prioritou je <i>vždy</i> zpracována dřív než fronta s nižší prioritou.
+
+<p>
+Struktura front PRIQ je plochá -- nemůžete vytvořit fronty uvnitř front.
+Je stanovena root fronta, která specifikuje celkovou dostupnou šířku
+pásma a pod ní jsou stanoveny podfronty. Uvažujme následující příklad:
+<dl>
+<dd>Root Queue (2Mbps)
+	<dl>
+	<dd>Queue A (priority 1)
+	<dd>Queue B (priority 2)
+	<dd>Queue C (priority 3)
+	</dl>
+</dl>
+
+<p>
+Root fronta je určena tak, že má k dipozici pásmo o šířce 2Mbps a jsou
+stanoveny tři podfronty. Fronta s nejvyšší prioritou (nejvyšší číslo
+priority) je obsluhována jako první. Když jsou všechny pakety z této
+fronty zpracovány nebo je fronta prázdná, PRIQ pokračuje frontou s další
+nejvyšší prioritou. V rámci jedné fronty jsou pakety zpracovány způsobem
+First In First Out (FIFO).
+
+<p>
+Je důležité uvědomit si, že při použitá PRIQ musíte naplánovat své
+fronty velmi pečlivě. Protože PRIQ <i>vždy</i> zpracovává fronty s vyšší
+prioritou před těmi s nižší prioritou, je možné, aby fronta s vyšší
+prioritou způsobovala zpoždění nebo zahazování paketů fronty o nižší
+prioritě, pokud ta s vyšší priotitou přijímá stálý proud paketu.
+
+<a name="red"></a>
+<h3>Random Early Detection</h3>
+Random Early Detection (RED) je algoritmus zabraňující zahlcení. Jeho
+účelem je zabránit zahlcení sítě tím, že hlídá, aby se fronta
+nezaplnila. Toho je dosahováno průběžným počítáním průměrné délky
+(velikosti) fronty a porovnáváním se dvěma prahovýmí hodnotami,
+minimální a maximální. Pokud je průměrná délka fronty pod minimálním
+prahem, žádný paket nebude zahozen. Pokud průměrná délka fronty
+překračuje maximální práh, potom <i>všechny</i> nově příchozí pakety
+budou zahozeny. Pokud je průměr mezi prahovými hodnotami, pakety budou
+zahazovány na základě pravděpodobnosti počítané z průměrné velikosti fronty.
+Jinak řečeno, čím více se velikost fronty blíží maximálnímu prahu, tím
+více paketů bude zahazováno. Při zahazovaní paketů RED náhodně vybírá,
+ze kterého spojení paket zahodit. Spojení využívající velkou část pásma
+mají větší pravděpodobnost, že jejich pakety budou zahozeny.
+
+<p>
+RED je užitečný, protože zabraňuje situaci známé jako globální synchronizace a
+je schopný zvládnout nápor provozu. Globální synchronizací je nazývána ztráta
+celkové propustnosti kvůli tomu, že pakety jsou zahazovány z několika spojení
+současně. Pokud například dojde k zahlcení routeru zpracovávajícího data deseti
+FTP spojení a pakety ze všech (nebo většiny) budou zahozeny (což se děje u FIFO
+front), dojde k prudkému poklesu celkové prostnosti. To není moc ideální,
+protože u všech FTP spojení poklesne propustnost a zároveň nebude využit
+maximální potenciál sítě.  RED tomu zabraňuje náhodným výběrem ze kterého
+spojení zahodit pakety, místo zahození všech. Spojení využívající více pásma
+mají větší pravděpodobnost zahození paketu. Tím jsou spojení náročnější na
+pásmo přiškrcena a zahlcení je zabráněno. Navíc je RED schopen zvládout
+nárazový provoz, protože začne zahazovat pakety <i>dříve</i>, než se fronta
+zaplní. Když tedy nárazový provoz prochází, ve frontě bude dost místa pro nové
+pakety.
+
+<p>
+RED by měl být používán pouze pokud je transportní protokol schopen
+reagovat na příznaky zahlcení sítě. Ve většině případů to znamená, že
+RED by měl být používán u TCP spojení a ne u UDP a ICMP.
+
+<p>
+Podrobnější informace o teorii kolem RED najdete na
+<a href="http://www.icir.org/floyd/red.html">této stránce</a>.
+
+<a name="ecn"></a>
+<h3>Explicit Congestion Notification</h3>
+Explicit Congestion Notification (ECN) slouží ve spojení s RED k
+upozornění počítačů komunikujících po síti na zahlcení 
+komunikační cesty. Dosahuje toho tím, že umožňuje, aby RED nastavil
+příznak v hlavičce paketu místo zahazování paketu. Za předpokladu, že
+odesílající počítač podporuje ECN, může si přečíst tento příznak a podle
+toho omezit síťový provoz.
+
+<p>
+Více informací o ECN najdete v
+<a href="http://www.rfc-editor.org/rfc/rfc3168.txt">RFC 3168</a>.
+
+<a name="altq"></a>
+<h2>Konfigurace front</h2>
+Od verze OpenBSD 3.0 byla součástí systému implementace front 
+<a href="http://www.csl.sony.co.jp/person/kjc/kjc/software.html#ALTQ"
+>Alternate Queueing (ALTQ)</a>. Počínaje OpenBSD 3.3 je ALTQ integrováno
+do PF. Implementace ALTQ v OpenBSD podporuje Class Based Queueing (CBQ)
+a Priority Queueing (PRIQ) schedulery. Podporuje také Random
+Early Detection (RED) a Explicit Congestion Notification (ECN).
+
+<p>
+Protože ALTQ je spojeno s PF, PF musí zapnuto, aby fungoval queueing.
+Pokyny jak zapnout PF najdete v
+<a href="config.html#activate">sekci konfigurace</a>.
+
+<p>
+Queueing je konfigurován <tt>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+3.3"
+>/etc/pf.conf</a></tt>. Existují dva druhy direktiv, které mohou být
+použity pro konfiguraci front:
+<ul>
+<li><tt>altq on</tt> - zapíná queueing na rozhraní, určuje, který
+scheduler použít, a vytváří root frontu
+<li><tt>queue</tt> - definuje vlastnosti dceřinných front
+</ul>
+
+<p>
+Syntaxe direktivy <tt>altq on</tt> je následující:
+<blockquote>
+<tt>
+altq on <i>interface scheduler</i> bandwidth <i>bw</i> qlimit 
+<i>qlim</i> \<br>
+&nbsp;&nbsp;&nbsp;tbrsize <i>size</i> queue { <i>queue_list</i> }
+</tt>
+</blockquote>
+
+<ul>
+<li><tt><i>interface</i></tt> - rozhraní, na kterém aktivujeme queueing.
+<li><tt><i>scheduler</i></tt> - jaký použít scheduler. Možné hodnoty
+jsou <tt>cbq</tt> and <tt>priq</tt>. V danou chvíli může být aktivován
+pouze jeden scheduler.
+<li><tt><i>bw</i></tt> - celková šířka pásma dostupná scheduleru.
+Zde může být specifikována absolutní hodnota s příponou  <tt>b</tt>,
+<tt>Kb</tt>, <tt>Mb</tt> a <tt>Gb</tt>  značící bity, kilobity,
+megabity a gigabity za sekundu nebo procenta celkové šířky pásma
+rozhraní <tt><i>interface</i></tt>.
+<li><tt><i>qlim</i></tt> - maximální počet paketů ve frontě. Tento
+parametr je nepovinný. Default je 50.
+<li><tt><i>size</i></tt> - velikost token bucket regulator v bytech.
+Pokud není specifikována je velikost určen z šířky pásma rozhraní
+<tt><i>interface</i></tt>
+<li><tt><i>queue_list</i></tt> - seznam frot pro vytvoření pod root
+frontou.
+</ul>
+
+<p>
+Npříklad:
+<blockquote>
+altq on fxp0 cbq bandwidth 2Mb queue { std, ssh, ftp }
+</blockquote>
+Toto zapne CBQ na rozhraní fxp0. Celková dostupná šířka pásma je
+nastavena na 2Mbps. Jsou definovány tři dceřinné fronty:
+<tt>std</tt>, <tt>ssh</tt>, and <tt>ftp</tt>.
+
+<p>
+Syntaxe direktivy <tt>queue</tt> je následující:
+<blockquote>
+<tt>
+queue <i>name</i> bandwidth <i>bw</i> priority <i>pri</i> qlimit
+<i>qlim</i> \<br>
+&nbsp;&nbsp;&nbsp;<i>scheduler</i> ( <i>sched_options</i> )
+{ <i>queue_list</i> }
+</tt>
+</blockquote>
+
+<ul>
+<li><tt><i>name</i></tt> - jméno fronty. Musí se shodovat s jedním z
+jmen definovaných v seznamu <tt><i>queue_list</i></tt> direktivy
+<tt>altq on</tt>. Pro <tt>cbq</tt> to může také být jméno fronty
+z <tt><i>queue_list</i></tt> předchozí direktivy <tt>queue</tt>.
+Jméno fronty nesmí přesáhnout 15 znaků.
+<li><tt><i>bw</i></tt> - celková šířka pásma dostupná scheduleru.
+Zde může být specifikována absolutní hodnota s příponou  <tt>b</tt>,
+<tt>Kb</tt>, <tt>Mb</tt> a <tt>Gb</tt>  značící bity, kilobity,
+megabity a gigabity za sekundu nebo procenta celkové šířky pásma
+rozhraní <tt><i>interface</i></tt>.
+<li><tt><i>pri</i></tt> - priorita fronty. Pro <tt>cbq</tt> je 
+rozsah priorit 0 až 7 a pro <tt>priq</tt> je to 0 až 15.
+Priorita 0 značí nejnižší prioritu. Pokud není specifikována, defaultní
+je 1.
+<li><tt><i>qlim</i></tt> - maximální počet paketů ve frontě. Tento
+parametr je nepovinný. Default je 50.
+<li><tt><i>scheduler</i></tt> - specifikuje použitý scheduler, buď <tt>cbq</tt>
+nebo <tt>priq</tt>. Musí být stejný jako pro root frontu.
+<li><tt><i>sched_options</i></tt> - scheduleru můžeme předat další volby
+určující jeho chování:
+	<ul>
+	<li><tt>default</tt> - definuje defaultní frontu, kam budou
+	uloženy všechy pakety, které nespadají do žádné jiné fronty. Je
+	vyžadována právě jedna defaultní fronta.
+	<li><tt>red</tt> - zapíná Random Early Detection (RED) na této
+	frontě.
+	<li><tt>rio</tt> - zapíná RED s IN/OUT. V tomto módu bude RED
+	udržovat několik průměrných délek fronty a několik prahových
+	hodnot, jednu pro každou úroveň IP Quality of Service.
+	<li><tt>ecn</tt> - zapíná Explicit Congestion Notification
+	(ECN) pro tuto frontu. <tt>Ecn</tt> imlikuje <tt>red</tt>.
+	<li><tt>borrow</tt> - fronta si může vypůjčit pásmo od
+	rodičovské. Lze specifikovat pouze při použití scheduleru
+	<tt>cbq</tt>.
+	</ul>
+<li><tt><i>queue_list</i></tt> - seznam dceřiných front k vytvoření pod
+touto frontou. Seznam <tt><i>queue_list</i></tt> může být definován pouze
+při použítí scheduleru <tt>cbq</tt>. 
+</ul>
+
+<p>
+Pokračujeme v předešlém příkladu:
+<blockquote>
+<tt>
+queue std bandwidth 50% cbq(default)<br>
+queue ssh { ssh_login, ssh_bulk }<br>
+&nbsp;&nbsp;queue ssh_login  priority 4 cbq(ecn)<br>
+&nbsp;&nbsp;queue ssh_bulk   cbq(ecn)<br>
+queue ftp bandwidth 500Kb priority 3 cbq(borrow red)<br>
+</tt>
+</blockquote>
+
+<p>
+Tady nastavujeme parametry dříve definovaných dceřiných front. Frontě
+<tt>ssh</tt> přiřadíme 50% pásma root fronty (čili 1Mbps) a určíme ji
+jako defaultní frontu. Fronta <tt>ssh</tt> má dvě dceřinné fronty,
+<tt>ssh_login</tt> a <tt>ssh_bulk</tt>. Fronta <tt>ssh_login</tt> má
+vyšší prioritu než <tt>ssh_bulk</tt> a obě mají zapnuto ECN. Frontě
+<tt>ftp</tt> je přiřazeno pásmo o šířce 500Kbps a priorita 3. Může si
+také půjčovat pásmo, pokud je nějaké navíc k dispozici, a má zapnuto
+RED.
+
+<a name="assign"></a>
+<h3>Přiřazování provozu frontě</h3>
+<p>
+Pro přiřazení provozu frontě používáme klíčové slovo <tt>queue</tt> ve
+spojení s <a href="filter.html">filtrovacími pravidly</a> PF. Uvažujme
+například sedu pravidel obsahující následucící řádek:
+<blockquote>
+<tt>pass out on fxp0 from any to any port 22</tt>
+</blockquote>
+
+<p>
+Pakety odpovídající tomuto pravidlu mohou být přiřazeny určité frontě
+použitím klíčového slova <tt>queue</tt>:
+<blockquote>
+<tt>pass out on fxp0 from any to any port 22 queue ssh</tt>
+</blockquote>
+
+<p>
+Při použití kličového slova <tt>queue</tt> s direktivou  <tt>block</tt>,
+všechny výsledné TCP RST nebo ICMP Unreachable pakety budou přiřazeny
+určené frontě.
+
+<p>
+Všimněte si, že k označení fronty může dojít na jiném rozhraní než 
+tom definovaném v direktivě <tt>altq on</tt>:
+<blockquote>
+<tt> 
+altq on fxp0 cbq bandwidth 2Mb queue { std, ftp }<br>
+queue std cbq(default)<br>
+queue ftp bandwidth 1.5Mb<br>
+<br>
+pass in on dc0 from any to any port 21 queue ftp<br>
+</tt>
+</blockquote>
+
+<p>
+Queueing je zapnuto na fxp0 ale označení se děje na dc0. Pokud pakety
+odpovídající pravidlu <tt>pass</tt> odcházejí rozhraním fxp0, budou
+zařazeny do fronty <tt>ftp</tt>. Tato metoda může být velmi užitečná na
+routerech.
+
+<p>
+Běžně můžeme určit pouze jedno jméno fronty u klíčového slova
+<tt>queue</tt>, ale pokud je specifikováno druhé, bude tato fronta
+použita pro pakety s low-delay
+<a href="http://www.rfc-editor.org/rfc/rfc791.txt">Type of
+Service (ToS)</a> a pro TCP ACK pakety nenesoucí data. Dobrý příklad
+najdeme u SSH. SSH login relace mají nastaven ToS na low-delay
+zatímco SCP a SFTP relace nikoliv. PF může této informace využít k
+zařazení paketů náležejících do login spojení do jiné fronty než
+neinteraktivní spojení. To může být užitečné k upřednostnění paketů
+login spojení před pakety přenosu souborů.
+<blockquote>
+<tt>pass out on fxp0 from any to any port 22 queue(ssh_bulk, ssh_login)</tt>
+</blockquote>
+
+<p>
+Tímto přiřadíme pakety náležející do SSH login spojení do fronty
+<tt>ssh_login</tt> a pakety náležející do SCP a SFTP spojení do fronty
+<tt>ssh_bulk</tt>. Pakety SSH login spojení tak budou zpracovány před
+SCP a SFTP spojeními, protože fronta <tt>ssh_login</tt> má vyšší
+prioritu.
+
+<p>
+Zařazení TCP ACK paketů fo fronty s vyšší prioritou je užitečné u
+asymetrických spojení, čili u spojení, která mají odlišnou šířku pásma
+pri upload a download, jako třeba ADSL linky. Pokud je u ADSL linky
+kanál pro upload zcela využit a začneme stahovat, download bude trpět,
+protože TCP ACK, které potřebuje posílat, uvíznout v zácpě při průchodu
+upload kanálem. Testy ukázaly, že k dosažení nejlepších výsledků by
+pásmo pro upload frontu mělo být nastaveno na nižší hodnotu než je
+rychlost linky. Pokud ADSL linka má například upload maximálně 640Kbps,
+nastavení šířky pásma root fronty na 600Kb by se mělo projevit lepším
+výkonem. Metodou pokus a omyl zjistíme nejlepší nastavení
+<tt>bandwidth</tt>.
+
+<p>
+Při použití klíčového slova <tt>queue</tt> s pravidlem <tt>keep
+state</tt>, jako třeba:
+<blockquote>
+<tt>
+pass in on fxp0 proto tcp from any to any port 22 flags S/SA \<br>
+&nbsp;&nbsp;&nbsp;keep state queue ssh
+</tt>
+</blockquote>
+
+<p>
+PF zapíše frontu do tabulky stavů, takže pakety vracející se fxp0, které
+odpovídají ustavenému spojení, skončí ve frontě <tt>ssh</tt>. Všimněte
+si, že ačkoliv klíčové slovo <tt>queue</tt> je použito v pravidle
+filtrujícím odchozí spojení, účelem je specifikovat frontu pro
+odpovídající odchozí provoz; výše uvedené pravidlo nefrontuje příchozí
+pakety.
+
+<a name="example1"></a>
+<h2>Příklad č. 1: Malá domácí síť</h2>
+<pre>
+  
+    [ Alice ]    [ Charlie ]
+        |             |                              ADSL
+     ---+-----+-------+------ dc0 [ OpenBSD ] fxp0 -------- ( Internet )
+              |
+           [ Bob ]
+
+</pre>
+
+<p>
+V tomto případě je OpenBSD použito na Internetové bráně malé sítě se
+třemi stanicemi. Brána provádí filtrování paketů a NAT záležitosti.
+Připojení k Internetu je přes ADSL linku s 2Mbps dovnitř a 640Kbps ven.
+
+<p>
+Politika front pro tuto síť:
+<ul>
+<li>Vyčlenit 80Kbps download pásma pro Boba, aby mohl hrát svoje online
+hry aniž by byl zpomalován downloady Alice a Charlieho. Povolit Bobovi
+více než 80Kbps, pokud je k dispozici.
+<li>Provoz interaktivního SSH a instant messages mají větší prioritu než
+běžný provoz.
+<li>DNS dotazy a odpovědi mají druhou nejvyšší prioritu.
+<li>Odchozí TCP ACK pakety mají vyšší prioritu než všechen ostaní
+odchozí provoz.
+</ul>
+
+<p>
+Následuje sada pravidel, ktaré splňuje tuto síťovou politiku. Povšimněte
+si, že jsou uvedeny pouze ty direktivy <tt>pf.conf</tt>, které se
+vztahují k výše uvedené politice;  <a href="nat.html"><tt>nat</tt></a>,
+<a href="rdr.html"><tt>rdr</tt></a>, <a href="options.html">options</a>,
+atd. není ukázáno.
+
+<p>
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+# enable queueing on the external interface to control traffic going to
+# the Internet. use the priq scheduler to control only priorities. set
+# the bandwidth to 610Kbps to get the best performance out of the TCP
+# ACK queue.
+
+altq on fxp0 priq bandwidth 610Kb queue { std_out, ssh_im_out, dns_out, \
+	tcp_ack_out }
+
+# define the parameters for the child queues.
+# std_out      - the standard queue. any filter rule below that does not
+#                explicitly specify a queue will have its traffic added
+#                to this queue.
+# ssh_im_out   - interactive SSH and various instant message traffic.
+# dns_out      - DNS queries.
+# tcp_ack_out  - TCP ACK packets with no data payload.
+
+queue std_out     priq(default)
+queue ssh_im_out  priority 4 priq(red)
+queue dns_out     priority 5
+queue tcp_ack_out priority 6
+
+# enable queueing on the internal interface to control traffic coming in
+# from the Internet. use the cbq scheduler to control bandwidth. max
+# bandwidth is 2Mbps.
+
+altq on dc0 cbq bandwidth 2Mb queue { std_in, ssh_im_in, dns_in, bob_in }
+
+# define the parameters for the child queues.
+# std_in      - the standard queue. any filter rule below that does not
+#               explicitly specify a queue will have its traffic added
+#               to this queue.
+# ssh_im_in   - interactive SSH and various instant message traffic.
+# dns_in      - DNS replies.
+# bob_in      - bandwidth reserved for Bob's workstation. allow him to
+#               borrow.
+
+queue std_in    cbq(default)
+queue ssh_im_in priority 4
+queue dns_in    priority 5
+queue bob_in    bandwidth 80Kb cbq(borrow)
+
+
+# ... in the filtering section of pf.conf ...
+
+alice         = "192.168.0.2"
+bob           = "192.168.0.3"
+charlie       = "192.168.0.4"
+local_net     = "192.168.0.0/24"
+ssh_ports     = "{ 22 2022 }"
+im_ports      = "{ 1863 5190 5222 }"
+
+# filter rules for fxp0 inbound
+block in on fxp0 all
+
+# filter rules for fxp0 outbound
+block out on fxp0 all
+pass  out on fxp0 inet proto tcp from (fxp0) to any flags S/SA \
+	keep state queue(std_out, tcp_ack_out)
+pass  out on fxp0 inet proto { udp icmp } from (fxp0) to any keep state
+pass  out on fxp0 inet proto { tcp udp } from (fxp0) to any port domain \
+	keep state queue dns_out
+pass  out on fxp0 inet proto tcp from (fxp0) to any port $ssh_ports \
+	flags S/SA keep state queue(std_out, ssh_im_out)
+pass  out on fxp0 inet proto tcp from (fxp0) to any port $im_ports \
+	flags S/SA keep state queue(ssh_im_out, tcp_ack_out)
+
+# filter rules for dc0 inbound
+block in on dc0 all
+pass  in on dc0 from $local_net
+
+# filter rules for dc0 outbound
+block out on dc0 all
+pass  out on dc0 from any to $local_net
+pass  out on dc0 proto { tcp udp } from any port domain to $local_net \
+	queue dns_in
+pass  out on dc0 proto tcp from any port $ssh_ports to $local_net \
+	queue(std_in, ssh_im_in)
+pass  out on dc0 proto tcp from any port $im_ports to $local_net \
+	queue ssh_im_in
+pass  out on dc0 from any to $bob queue bob_in
+</pre>
+</td></tr>
+</table>
+
+<a name="example2"></a>
+<h2>Příklad č. 2: Firemní síť</h2>
+<pre>
+
+  ( IT Dept )  [ Boss's PC ]
+       |          |                                   T1
+     --+----+-----+---------- dc0 [ OpenBSD ] fxp0 -------- ( Internet )
+            |                         fxp1
+         [ COMP1 ]    [ WWW ]         /
+                         |           / 
+                       --+----------' 
+
+</pre>
+
+<p>
+V tomto příkladu funguje počítač s OpenBSD jako firewall pro firemní
+síť. Společnost provozuje WWW server v DMZ sekci své sítě, kam zákazníci
+uploadují své webové stránky přes FTP. IT oddělení má svůj vlastní
+subnet připojený do hlavní sítě a šéf má na stole PC, které používá na
+emaily a brouzdání po webu. Připojení k internetu je T1 linkou s 1,5Mbps
+v obou směrech. Všechny ostatní síťové segmenty využívají Fast Ethernet
+(100 Mbps).
+
+<p>
+Síťový administrátor stanovil následující politiku:
+<ul>
+<li>Omezit provoz mezi WWW serverem a Internetem na 500Kbps v obou
+směrech.
+<li>Žádné omezení pásma mezi WWW serverem a vnitřní sítí.
+<li>Dát HTTP spojení mezi WWW serverem a Internetem větší prioritu než
+ostatnímu provozu mezi WWW serverem a Internetem (jako jsou FTP
+uploady).
+<li>Vyhradit 500Kbps pro IT oddělení, aby mohli stahovat nejnovější
+software v rozumném čase. Měli by mít možnost využívat více než 500Kbps,
+pokud je k dispozici navíc.
+<li>Dát provozu mezi šéfovým PC a Internetem výšší prioritu než
+ostatnímu provozu do/z Internetu.
+</ul>
+
+<p>
+Následuje sada pravidel, ktaré splňuje tuto síťovou politiku. Povšimněte
+si, že jsou uvedeny pouze ty direktivy <tt>pf.conf</tt>, které se
+vztahují k výše uvedené politice;  <a href="nat.html"><tt>nat</tt></a>,
+<a href="rdr.html"><tt>rdr</tt></a>, <a href="options.html">options</a>,
+atd. není ukázáno.
+
+<p>
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+# enable queueing on the external interface to queue packets going out
+# to the Internet. use the cbq scheduler so that the bandwidth use of
+# each queue can be controlled. the max outgoing bandwidth is 1.5Mbps.
+
+altq on fxp0 cbq bandwidth 1.5Mb queue { std_ext, www_ext, boss_ext }
+
+# define the parameters for the child queues.
+# std_ext        - the standard queue. also the default queue for
+#                  outgoing traffic on fxp0.
+# www_ext        - container queue for WWW server queues. limit to
+#                  500Kbps.
+#   www_ext_http - http traffic from the WWW server
+#   www_ext_misc - all non-http traffic from the WWW server
+# boss_ext       - traffic coming from the boss's computer
+
+queue std_ext        cbq(default)
+queue www_ext        bandwidth 500Kb { www_ext_http, www_ext_misc }
+  queue www_ext_http priority 3 cbq(red)
+  queue www_ext_misc priority 1
+queue boss_ext       priority 3
+
+# enable queueing on the internal interface to control traffic coming
+# from the Internet or the DMZ. use the cbq scheduler to control the
+# bandwidth of each queue. bandwidth on this interface is set to the
+# maximum. traffic coming from the DMZ will be able to use all of this
+# bandwidth while traffic coming from the Internet will be limited to
+# 1.0Mbps (because 0.5Mbps (500Kbps) is being allocated to fxp1).
+
+altq on dc0 cbq bandwidth 100% queue { net_int, www_int }
+
+# define the parameters for the child queues.
+# net_int    - container queue for traffic from the Internet. bandwidth
+#              is 1.0Mbps.
+#   std_int  - the standard queue. also the default queue for outgoing
+#              traffic on dc0.
+#   it_int   - traffic to the IT Dept network.
+#   boss_int - traffic to the boss's PC.
+# www_int    - traffic from the WWW server in the DMZ.
+
+queue net_int    bandwidth 1.0Mb { std_int, it_int, boss_int }
+  queue std_int  cbq(default)
+  queue it_int   bandwidth 500Kb cbq(borrow)
+  queue boss_int priority 3
+queue www_int    cbq(red)
+
+# enable queueing on the DMZ interface to control traffic destined for
+# the WWW server. cbq will be used on this interface since detailed
+# control of bandwidth is necessary. bandwidth on this interface is set
+# to the maximum. traffic from the internal network will be able to use
+# all of this bandwidth while traffic from the Internet will be limited
+# to 500Kbps.
+
+altq on fxp1 cbq bandwidth 100% queue { internal_dmz, net_dmz }
+
+# define the parameters for the child queues.
+# internal_dmz   - traffic from the internal network.
+# net_dmz        - container queue for traffic from the Internet.
+#   net_dmz_http - http traffic.
+#   net_dmz_misc - all non-http traffic. this is also the default queue.
+
+queue internal_dmz      # no special settings needed
+queue net_dmz        bandwidth 500Kb { net_dmz_http, net_dmz_misc }
+  queue net_dmz_http priority 3 cbq(red)
+  queue net_dmz_misc priority 1 cbq(default)
+
+
+# ... in the filtering section of pf.conf ...
+
+main_net  = "192.168.0.0/24"
+it_net    = "192.168.1.0/24"
+int_nets  = "{ 192.168.0.0/24, 192.168.1.0/24 }"
+dmz_net   = "10.0.0.0/24"
+
+boss      = "192.168.0.200"
+wwwserv   = "10.0.0.100"
+
+# default deny
+block on { fxp0, fxp1, dc0 } all
+
+# filter rules for fxp0 inbound
+pass in on fxp0 proto tcp from any to $wwwserv port { 21, \
+	&gt; 49151 } flags S/SA keep state queue www_ext_misc
+pass in on fxp0 proto tcp from any to $wwwserv port 80 \
+	flags S/SA keep state queue www_ext_http
+
+# filter rules for fxp0 outbound
+pass out on fxp0 from $int_nets to any keep state
+pass out on fxp0 from $boss to any keep state queue boss_ext
+
+# filter rules for dc0 inbound
+pass in on dc0 from $int_nets to any keep state
+pass in on dc0 from $it_net to any queue it_int
+pass in on dc0 from $boss to any queue boss_int
+pass in on dc0 proto tcp from $int_nets to $wwwserv port { 21, 80, \
+	&gt; 49151 } flags S/SA keep state queue www_int
+
+# filter rules for dc0 outbound
+pass out on dc0 from dc0 to $int_nets
+
+# filter rules for fxp1 inbound
+pass in on fxp1 proto { tcp, udp } from $wwwserv to any port 53 \
+	keep state
+
+# filter rules for fxp1 outbound
+pass out on fxp1 proto tcp from any to $wwwserv port { 21, \
+	&gt; 49151 } flags S/SA keep state queue net_dmz_misc
+pass out on fxp1 proto tcp from any to $wwwserv port 80 \
+	flags S/SA keep state queue net_dmz_http
+pass out on fxp1 proto tcp from $int_nets to $wwwserv port { 80, \
+	21, &gt; 49151 } flags S/SA keep state queue internal_dmz
+</pre>
+</td></tr>
+</table>
+
+<p>
+[<a href="scrub.html">Přechozí: Scrub</a>]
+[<a href="index.html">Obsah</a>]
+[<a href="nat.html">Dále: Překlad síťových adres</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[back]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<small>
+<br>
+Originally [OpenBSD: queueing.html,v 1.12 ]
+<br>
+$Translation: queueing.html,v 1.1 2003/11/09 21:03:38 certik Exp $
+<br>
+$OpenBSD: queueing.html,v 1.1 2003/11/10 00:00:46 horacio Exp $
+</small>
+
+</body>
+</html> 
