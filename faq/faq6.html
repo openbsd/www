@@ -324,60 +324,282 @@ HREF="http://www.obfuscation.org/ipf/">IP Filter HOWTO</a>. </p>
 <p>
 <h3>IPF</h3>
 </p>
-
 <p>
-Modify rc.conf so it has IPFILTER=YES. The file /etc/ipf.rules has a
-simple yet powerful syntax. Here we deal with the most common ways of usage,
-for a more strict definition see <A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=ipf&apropos=0&sektion=5&format=html">ipf(5)</a>. Here is assumed xl0 as the
-external interface to internet, on this one uses to have more rules than
-internal interfaces.
+In order to enable ipf at boot, you will need to modify /etc/rc.conf so it reads IPFILTER=YES.
+IP Filter (ipf) is controlled by /etc/ipf.rules, which is read at boot. For a more detailed explanation, see <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ipf&apropos=0&sektion=5&format=html">ipf(5)</a>. In the examples that follow, 
+fxp0 will represent the external interface to the internet. It will be different for you, based on the
+ethernet adaptor present in your computer. These rules will assume full-time internet connectivity, such as you would see on a webserver.
 </p>
-
 <p>
-Configurations usually start letting everything come and go, and then
-apply the necessary rules to block offending packets. So this is first:
+IP Filter rules are processed sequentially from top to bottom, it helps to visualize each packet having to traverse every rule before it reaches it's destination.
 </p>
-
 <p>
+For example, the default ruleset provided allows all packets to travel in, and all packets to travel out:
+<pre>
+pass out from any to any 
+pass in from any to any
+</pre>
+Now lets say we don't want to allow any incoming connections to port 3306 (mysql) because the database should only be connected to from localhost. Our ruleset would look like this:
 <pre>
 pass out from any to any
-pass in from any to any 
+pass in from any to any
+block in on fxp0 from any to any port = 3306
 </pre>
-</p>
-
-<p>
-Now let's block any incoming connection to port 82 tcp (eg. there's an
-internal network report agent using http running on several hosts):
-</p>
-
-<p>
+This says &quot;block in all incoming packets, from anywhere to anywhere whose destination is 3306.&quot;
+Essentially a packet destined for port 3306 on interface fxp0 will pass the first &quot;pass in&quot; rule and then be dropped by the &quot;block in port = 3306&quot; rule. If you reversed the order of our incoming rules (remember, order is important):
 <pre>
-block in on xl0 proto tcp from any to any port = 82
+pass out from any to any
+block in on fxp0 from any to any port = 3306
+pass in from any to any
 </pre>
-</p>
-
-<p>
-This rule means:
-</p>
-
-<p>
-"Block all incoming packets on xl0 interface whose protocol is TCP no
-matter destination/origin using port 82"
+Packets destined for port 3306 would pass because the last rule in the set allows all packets to pass. It is important to keep this in mind when writing packet filter rules:
+ <b> The last matching rule wins</b>.
 </p>
 <p>
-If you want to log all rejected packets add "log" after "block in", or
-"log quick" if you don't want it to send a message to every console root is
-logged in.
-</p>
-
-<p>
-Also, a typical rule is to block rpc portmap:
-</p>
-
-<p>
+Of course, there are exceptions to every rule. the <em>quick</em> option drops the packet at the first rule that matches. Let's look at our above flawed example, if we add <em>quick</em> to the &quot;block in&quot; rule:
 <pre>
-block in log on xl0 proto udp from any to any port = sunrpc
+pass out from any to any
+block in quick on fxp0 from any to any port = 3306
+pass in from any to any
 </pre>
+A packet destined for our host on port 3306 will hit the &quot;block in quick&quot; rule and be dropped immediately. All packets destined for other ports wont find a rule match until they reach our &quot;pass in&quot; rule that allows all packets to pass.
+</p>
+<b>Default Deny</b>
+<p> The safest packet filtering policy is a default deny policy. All traffic not explicitly allowed is denied. This policy is far safer than explicitly denying each protected service, allows for smaller rulesets, and can protect from an accidentally misconfigured service that has been left exposed.
+<p>
+Let's now look at another real world example ruleset and explain things line by line. Here's an example for a webserver with a default deny policy that only allows ssh connections (for administration) and connections to http (port 80) and https (port 443).
+<pre>
+#############################
+# begin ruleset
+#############################
+pass in quick on fxp0 from any to any port = 22
+pass in quick on fxp0 from any to any port = 80
+pass in quick on fxp0 from any to any port = 443
+block in quick on fxp0 from any to any
+pass out on fxp0 from any to any
+##############################
+# end ruleset
+##############################
+</pre>
+This will allow incoming connections from anywhere to ports 22(ssh), 80(http), and 443(https). It will drop all other connection attempts, and allow all outgoing connections. This is a pretty tight ruleset.
+</p>
+<p>
+But what if you only wanted to allow internal hosts on your 1.1.1.0 address block to connect to ssh, but allow outside connections to http and https?
+<pre>
+#############################
+# begin ruleset
+#############################
+pass in quick on fxp0 from 1.1.1.0/24 to any port = 22
+pass in quick on fxp0 from any to any port = 80
+pass in quick on fxp0 from any to any port = 443
+block in quick on fxp0 from any to any
+pass out on fxp0 from any to any
+##############################
+# end ruleset
+##############################
+</pre>
+Pretty good, but what if we only want to allow one machine (1.1.1.1) to administer the web server remotely?
+In that case, we can change this:
+<pre>
+pass in quick on fxp0 from 1.1.1.0/24 to any port = 22
+</pre>
+to this:
+<pre>
+pass in quick on fxp0 from 1.1.1.1/32 to any port = 22
+</pre>
+IP Filter supports both CIDR and dotted decimal forms of netmask address. You could also write the above as:
+<pre>
+pass in quick on fxp0 from 1.1.1.1/255.255.255.255 to any port = 22
+</pre>
+but why would you?
+</p>
+<b>Sample Rules</b>
+<p>
+Here are some good rules for everyone to use (assuming that fxp0 is the external internet-connected interface). First we will set up simple address spoofing protection.
+<pre>
+block in quick on fxp0 from 127.0.0.0/8 to any
+block in quick on fxp0 from 192.168.0.0/16 to any
+block in quick on fxp0 from 172.168.0.0/12 to any
+block in quick on fxp0 from 10.0.0.0/8 to any
+block out quick on fxp0 from any to 127.0.0.1/8
+block out quick on fxp0 from any to 192.168.0.0/16
+block out quick on fxp0 from any to 172.168.0.0/12
+block out quick on fxp0 from any to 10.0.0.0/8
+</pre>
+It's also a good idea to separate your loopback interface from your other rules. 
+<pre>
+pass out quick on lo0
+pass in quick on lo0
+</pre>
+Our ruleset is starting to look pretty good, when we put it together, here's what it looks like:
+<pre>
+###########################
+# begin ruleset
+###########################
+# loopback rules
+
+pass out quick on lo0
+pass in quick on lo0
+
+# don't allow anyone to spoof non-routeable addresses
+
+block in quick on fxp0 from 127.0.0.0/8 to any
+block in quick on fxp0 from 192.168.0.0/16 to any
+block in quick on fxp0 from 172.168.0.0/12 to any
+block in quick on fxp0 from 10.0.0.0/8 to any
+block out quick on fxp0 from any to 127.0.0.1/8
+block out quick on fxp0 from any to 192.168.0.0/16
+block out quick on fxp0 from any to 172.168.0.0/12
+block out quick on fxp0 from any to 10.0.0.0/8
+
+# only allow our administration machine to connect via ssh
+
+pass in quick on fxp0 from 1.1.1.1/32 to any port = 22
+
+# allow others to use http and https
+
+pass in quick on fxp0 from any to any port = 80
+pass in quick on fxp0 from any to any port = 443
+
+# finally lock the rest down with a default deny
+
+block in quick on fxp0 from any to any
+
+# and let out-going traffic out
+
+pass out on fxp0 from any to any
+
+#############################
+# end ruleset
+#############################
+</pre>
+</p>
+<b>Packet logging</b>
+<p>
+Now that's pretty good, but it could be better. What if we want to log any connection attempts to port 22(ssh) that get blocked by our firewall? Easy, IP Filter can handle this with the <em>log</em> keyword:
+<pre>
+pass in quick on fxp0 from 1.1.1.1/32 to any port = 22
+block in log quick on fxp0 from any to any port = 22
+</pre>
+This rule will allow our remote administration machine to connect to port 22, but deny and log all other attempts to connect to port 22.
+</p>
+<b> Protocol based packet filtering</b>
+<p>
+IP Filter can also filter based on the protocol it is filtering, in fact, IP Filter can filter any protocol listed in <a href=file://localhost/etc/protocols>/etc/protocols</a>. For the sake of clarity, we will only concern ourselves with tcp, udp, and icmp.</p>
+<p>
+In order for ipf to filter based on protocol, the keyword <em>proto</em> must be used. To examine our earlier ssh example rule, since ssh runs over tcp, we should only allow tcp packets to connect. by using the <em>proto</em> keyword to allow only tcp, we get a rule that looks like this:
+<pre>
+pass in quick on fxp0 proto tcp from 1.1.1.1/32 to any port = 22
+</pre>
+But what if we need to allow connections to a service running over both tcp and udp like bind? Well, in the case of tcp/udp, IP Filter allows you to group both protocols together. Note: this only applies to tcp/udp. Using the bind example, a rule allowing tcp and udp connections in a default deny environment would look like:
+<pre>
+pass in quick on fxp0 proto tcp/udp from any to any port = 53
+</pre>
+</p>
+<b> Packet Filtering Voodoo</b>
+<p> 
+In addition to filtering based on protocol, IP Filter is also capable of managing fragmented IP packets (a common method of defeating packet filters). There are two possible keywords that can be used when dealing with fragmented ip packets, <em>frag</em> for commonly fragmented IP packets, or <em>short</em> for IP packets with headers too small for comparison. Since fragmented packets can occur normally, depending on link conditions, it is best to only filter packets with headers too small for valid comparison. This can be accomplished with the following rule:
+<pre>
+block in quick proto tcp all with short
+</pre>
+What about IP Options? IP Filter can handle those packets too. Packets can either be dropped if they have IP options set, or they can be dropped based on the specific IP options that are set. For example, the following rule will drop and log all packets with ip options set.
+<pre>
+block in log quick on fxp0 all with ipopts
+</pre>
+This may however break some things such as <em>traceroute</em>. You can also specify which options not to allow. For instance a good rule is to block all packets with source routing options. This is accomplished with this rule:
+<pre>
+block in quick on fxp0 all with opt lsrr
+block in quick on fxp0 all with opt ssrr
+</pre>
+<b>TCP Flags, established connections and keeping state</b>
+<p>
+Now the IP Filter voodoo begins in earnest. IP Filter's greatest strengths are it's ability to filter packets based on TCP flags and to maintain established connections and connection state. It is recommend that all users who wish to filter packets based on TCP flags understand what role each flag plays. For instance, if you wanted to deny all packets with the FIN, URG, and PSH flags set (like for instance an nmap OS fingerprinting attempt) you could use a rule like this:
+<pre>
+block in quick proto tcp on fxp0 from any to any flags FUP
+</pre>
+(Thanks to <a href=mailto:halogen@nol.net>Kyle Hargraves</a> for that tip)
+</p>
+<p>
+IP Filter's next cool trick is it's ability to maintain state. Maintaining state has been described as &quot;not speaking until spoken to&quot;, in other words, once a connection is established, packets no longer have to traverse rulesets. This is a very powerful feature allowing much simpler and more secure rule writing.</p>
+<p>
+For example, let's see how we can apply state to our previous example ruleset (confused yet?). To review, we are allowing management access from our Class C to port 22(ssh) and allowing all incoming web traffic on ports 80(http) and 443(https). We are blocking all other traffic. But what if I want to ssh out of the webserver? What if I need to use lynx to look up something in the FAQ? Well, I can't because I have blocked all incoming connections other than on the specified ports. While this is the safest route, it can be quite inconvenient. By adding the <em>keep state</em> keywords to our &quot;pass out&quot; rule, we can automagically allow incoming connections in response to connections we initiate, such as when web browsing.
+<pre>
+#############################
+# begin ruleset
+#############################
+pass in quick on fxp0 from 1.1.1.0/24 to any port = 22
+pass in quick on fxp0 from any to any port = 80
+pass in quick on fxp0 from any to any port = 443
+block in quick on fxp0 from any to any
+pass out on fxp0 from any to any keep state
+##############################
+# end ruleset
+##############################
+</pre>
+</p>
+<p>
+This little change will dramatically increase the flexibility and security of our ruleset because it allows us to do some funky voodoo. For instance, in the above ruleset, we are allowing all tcp traffic into ports 80 &amp; 443. We can tighten this up even more. In order for a tcp connection to be established, we only need to allow the initial handshake to occur, once that occurs, we can block traffic to that port and allow our &quot;keep state&quot; rule to manage the connection. To allow the initial handshake to complete, we need only allow packets with the SIN and SIN/ACK flags set. By passing only packets with SIN and SIN/ACK set, we can prevent many forms of portscanning such as FIN scanning. The rules now look like this:
+<pre>
+#############################
+# begin ruleset
+#############################
+pass in quick on fxp0 from 1.1.1.0/24 to any port = 22
+pass in quick on fxp0 from any to any port = 80 flags S/SA
+pass in quick on fxp0 from any to any port = 443 flags S/SA
+block in quick on fxp0 from any to any
+pass out on fxp0 from any to any keep state
+##############################
+# end ruleset
+##############################
+</pre>
+</p>
+<p>
+Let's wrap this up by putting all of the rules we have so far into a ruleset. This ruleset will have a default deny policy, allow management connections from an internal network only (via ssh) and allow incoming traffic on ports 80(http) and 443(https). It will also protect against spoofed non-routeable ip addresses, and drop all packets that are too fragmented to inspect. A pretty comprehensive setup for a public webserver. Here's what /etc/ipf.rules should look like:
+<pre>
+###########################
+# begin ruleset
+###########################
+# loopback rules
+pass out quick on lo0
+pass in quick on lo0
+
+# drop itsy bitsy frags
+block in quick proto tcp all with short
+
+# drop source routed packets
+block in quick on fxp0 all with opt lsrr
+block in quick on fxp0 all with opt ssrr
+
+# don't allow anyone to spoof non-routeable addresses
+block in quick on fxp0 from 127.0.0.0/8 to any
+block in quick on fxp0 from 192.168.0.0/16 to any
+block in quick on fxp0 from 172.168.0.0/12 to any
+block in quick on fxp0 from 10.0.0.0/8 to any
+block out quick on fxp0 from any to 127.0.0.1/8
+block out quick on fxp0 from any to 192.168.0.0/16
+block out quick on fxp0 from any to 172.168.0.0/12
+block out quick on fxp0 from any to 10.0.0.0/8
+
+# only allow our machines to connect via ssh
+pass in quick on fxp0 from 1.1.1.0/24 to any port = 22
+
+# allow others to use http and https
+pass in quick on fxp0 from any to any port = 80 flags S/SA
+pass in quick on fxp0 from any to any port = 443 flags S/SA
+
+# finally lock the rest down with a default deny
+block in quick on fxp0 from any to any
+
+# and let out-going traffic out and maintain state on established connections
+pass out on fxp0 from any to any keep state
+
+#############################
+# end ruleset
+#############################
+</pre>
+</p>
+<p>
+For further information on ipf, the <a href=http://www.obfuscation.org/ipf/ipf-howto.txt>IPF how-to</a> is an excellent source, as are the resources available at the <a href=http://coombs.anu.edu.au/~avalon/ip-filter.html>IP Filter</a> homepage.
 </p>
 
 <p>
@@ -1497,7 +1719,7 @@ to run on the NFS client, add noexec to this list.
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt= "[back]"></a>
 <a href= "mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq6.html,v 1.48 1999/12/21 18:21:16 ericj Exp $</small>
+<small>$OpenBSD: faq6.html,v 1.49 2000/01/09 07:58:20 ericj Exp $</small>
 </p>
 </body>
 </html>
