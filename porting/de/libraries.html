@@ -1,0 +1,206 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<html>
+<head>
+<meta name="generator" content="HTML Tidy, see www.w3.org">
+<meta http-equiv="Content-Type" content=
+"text/html; charset=iso-8859-1">
+<meta http-equiv="Content-Language" content="de">
+<meta name="resource-type" content="document">
+<meta name="description" content=
+"Quick guide to writing ports">
+<meta name="keywords" content="openbsd,ports">
+<meta name="distribution" content="global">
+<meta name="copyright" content=
+"This document copyright 2001 by OpenBSD.">
+<title>Mit ,shared libraries' im OpenBSD-Ports-Tree umgehen</title>
+</head>
+<body text="Black" bgcolor="White" link="#23238E">
+<img height="30" width="141" src="../../images/smalltitle.gif" alt=
+"[OpenBSD]"> 
+
+<h1>Wie man mit ,shared libraries' im Ports-Tree umgeht</h1>
+
+<h2>Die ,shared libraries'-Nummerierungsregel verstehen</h2>
+,Shared libraries' sind aus einer Reihe an Gründen knifflig.
+Du musst das Bibliotheks-Namensschema verstehen:
+<code>libfoo.so.major.minor</code>.
+<p>
+Wenn du ein Programm verlinkst, bettet der Linker <code>ld</code> diese
+Information in die erzeugte Binary. Du kannst sie mit <code>ldd</code>
+sehen.
+Später, wenn du das Programm ausführst, verwendet der dynamische Linker
+<code>ld.so</code> diese Information, um die richtige dynamische
+Bibliothek zu finden:
+<ul>
+	<li>Eine Bibliothek mit exakt der gleichen Hauptnummer (major
+number) wird erfordert.
+	<li>Eine Bibliothek mit einer gleichen oder höheren
+Unternummer (minor number) wird erfordert.
+</ul>
+Dies heißt also, dass <strong>alle</strong> Bibliotheken mit der
+gleichen Hauptnummer und einer gleichen oder höheren Unternummer
+<strong>der binären API entsprechen müssen, die das Programm
+erwartet</strong>. Wenn sie es nicht tun, ist dein Port kaputt (broken).
+Insbesondere wird er kaputt gehen, wenn Benutzer versuchen, ihr
+System zu aktualisieren.
+<p>
+Die Regeln für ,shared libraries' sind recht einfach.
+<ul>
+	<li>Wenn du Funktionen zu der Bibliothek hinzufügst, musst du
+die Unternummer der Bibliothek umstellen: ein Programm, das solche
+Funktionen benötigt, hat keine andere Möglichkeit als durch das
+explizite Anfragen für zumindest diese Version herauszufinden, ob die
+Funktion vorliegt.
+	<li>Wenn die existierende API sich ändert, das heißt, wenn
+irgendeine Funktionssignatur geändert wurde oder wenn gültige
+Aufruf-Sequenzen nicht länger durchführbar sind, wenn sich ein Typ
+sich auf eine inkompatible Art und Weise geändert hat,
+<strong>muss</strong> die Hauptnummer <strong>umgestellt werden</strong>.
+	<li>Dies beinhaltet das Entfernen von alten Funktionen.
+Jegliche Funktionsentfernung sollte das Umstellen der Hauptnummer zur
+Folge haben.
+</ul>
+<p>
+Ab und zu kann es vorkommen, dass eine Bibliothek in mehere Dateien
+geschrieben wird und dass interne Funktionen sichtbar sind, damit
+sie zwischen jenen Dateien kommunizieren können. Solche Funktionsnamen
+beginnen überlicherweise mit einem Unterstrich und sind kein
+ordentlicher Teil der API.
+<p>
+Bedenke, dass das Bibliotheks-Namensschema allgegenwärtig auf
+OpenBSD-Plattformen ist, gleich, ob sie ELF oder a.out verwenden.
+
+<h2>Ports-,builds' optimieren, um richtige Namen zu erzielen</h2>
+So manche Ports benötigen Optimierungen, um ,shared libraries'
+überhaupt korrekt erzeugt werden zu können. Denke daran, dass das
+Erzeugen von ,shared libraries' mit
+<code>gcc -shared -fpic|-fPIC -o libfoo.so.4.5 obj1 obj2</code>
+erfolgen sollte.
+<p>
+Zu versuchen, die Bibliothek nach der Erzeugung umzubenennen, um so
+die Versionsnummer anzupassen, funktioniert nicht: ELF-Bibliotheken
+verwende einige extra ,magic', um den bibliotheksinternen Namen zu
+setzen, so dass du sie mit der korrekten Version gleich beim ersten
+Mal richtig linken musst.
+<p>
+Auf der anderen Seite musst du bedenken, dass du Makefile-Variablen
+von der Kommandozeile aus überschreiben kannst, indem du
+<code>MAKE_FLAGS</code> in der Makefile des Ports verwendest.
+Dies ist recht nützlich, zum Beispiel, in den libtool-basierten
+Ports, welche eine solche Versionsvariable für jede einzelne
+Bibliothek, die sie erzeugen, benutzen.
+
+<h2>Versuche alle, vom Benutzer sichtbaren, Bibliotheken in
+/usr/local/lib abzulegen</h2>
+Als Regel gilt, dass das Beauftragen des Benutzers, Verzeichnisse zu
+ihrem ldconfig-Pfad anzuhängen, eine schlechte Idee ist: alle
+,shared libraries', die direkt zu Programmen verlinkt sind, sollten
+in /usr/local/lib auftauchen. Trotzdem ist es möglich, einen
+symbolischen Link zur tatsächlichen Bibliothek zu verwenden. Du
+solltest die Bibliotheks-,lookup'-Regeln verstehen:
+<ul>
+	<li>Während der Erzeugungsphase verwendet <code>ld</code> die
+<code>-L</code>-Optionen, um einen Pfad einzurichten, in dem nach
+Bibliotheken gesucht wird. Es hört auf zu suchen, sobald es eine
+Bibliothek findet, die die Voraussetzungen erfüllt.
+	<li>Zur Laufzeit verwendet <code>ld.so</code> die
+Informationen, die durch <code>ldconfig</code> ge,cached' wurden, um
+die benötigte Bibliothek zu finden.
+</ul>
+
+So, lass uns annehmen, du hast zwei Ports, die zwei Hauptversionen
+einer gegebenen Bibliothek anbieten, sagen wir <code>qt.1.45</code>
+und <code>qt.2.21</code>. Da beide Ports gleichzeitig installiert
+werden können, stelle sicher, dass ein gegebenens Programm gegen
+qt.1-Bibliothek gelinkt wird, welche als
+<code>/usr/local/lib/qt/libqt.so.1.45</code> vorliegt, und Programme
+unter Verwendung von <code>ld -o program program.o -L/usr/local/lib/qt
+-lqt</code> gelinkt werden. Ähnlich soll ein Program, dass mit qt.2
+linkt, die <code>/usr/local/lib/qt2/libqt.so.2.31</code>-Datei
+nutzen und mit <code>ld -o program program.o -L/usr/local/lib/qt2
+-lqt</code> gelinkt werden.
+<p>
+Um diese Bibliohteken zur Laufzeit aufzulösen, wurden eine Verknüpfung
+mit dem Namen <code>/usr/local/lib/libqt.so.1.45</code> und eine
+Verknüpfung namens <code>/usr/local/lib/libqt.so.2.31</code>
+bereitgestellt. Dies ist genug, um <code>ld.so</code> glücklich zu
+machen.
+<p>
+Es ist ein Fehler, ein Programm unter Verwendung von qt1 mit
+<code>ld -o program program.o -L/usr/local/lib -lqt</code> zu linken.
+Dieser Code nimmt an, dass <code>qt.2.21</code> nicht installiert sei,
+was eine Fehlannahme ist.
+<p>
+Solche Tricks sind nur notwendig, wenn der seltene Fall von sehr
+weitverbreiteten Bibliotheken vorliegt, bei denen Übergangszeiten
+zwischen Hauptversionen bereitgestellt werden müssen. Generell gilt,
+dass es genug ist, sicherzustellen, dass eine Bibliothek in
+<code>/usr/local/lib</code> auftaucht.
+<h2>Bibliotheksabhängigkeiten richtig schreiben</h2>
+Der neue Abhängigkeitscode (depedency code) benötigt nicht komplette
+Bibliotheksabhängigkeiten. Du musst <code>make lib-depends-check</code>
+verwenden, um sicherzustellen, dass ein Port alle Bibliotheken
+angibt, auf die er aufbaut. Du trennst Bibliotheksangaben mit Kommata,
+wie hier:
+<code>LIB_DEPENDS=gtk.1.2,gdk.1.2::x11/gtk+</code>.
+<p>
+Es ist kein Fehler, statische Bibliotheken in einer LIB_DEPENDS-Zeile
+ebenfalls anzugeben. LIB_DEPENDS werden während der Erzeugungsphase
+des Packages vollständig verarbeitet: das resultierende Package wird
+eine Bibliotheksabhängigkeitsinformation als Zeilen für
+<code>ld.so</code> eingebettet haben, die die tatsächliche
+Haupt.Unter-Nummer beinhalten, die beim Erzeugen verwendet wurden und
+keine Einträge für statische Bibliotheken.
+<p>
+Du musst ebenfalls RUN_DEPENDS bereitstellen, wenn ein Ports
+irgendetwas ordentlich benötigt, das über Bibliotheken hinausgeht. Das
+erlaubt dem Port auf Architekturen ordnungsgemäß erzeugt werden zu
+können, die keine ,shared libraries' bereitstellen.
+<p>
+In der Tat ist das Bereitstellen einer LIB_DEPENDS-Zeile für statische
+Bibliotheken eine gute Idee:
+das vereinfacht einen Portupgrade, wenn eine gegebene Abhängigkeit
+von einer statischen Bibliothek zu einer ,shared library' wechselt.
+<p>
+LIB_DEPENDS-Zeilen müssen die gleichen Pfade angeben, die für
+<code>ld</code> genutzt werden. Zum Beispiel basiert das standardmäßige
+qt2 auf einem Fragment, das sagt:
+<code>LIB_DEPENDS+=lib/qt2/qt.2::x11/qt2</code>, so dass die
+Bibliotheksabhängigkeitszeile korrekt aufgelöst wird. Dies erlaubt
+dem Abhängigkeitsüberprüfungscode das richtige zu tun, wenn er mehreren
+Versionen der gleichen Bibliothek begegnet.
+<h2>Ports korrekt aktualisieren</h2>
+So, wenn du einen Port aktualisierst oder hinzufügst, der ,shared
+libraries' benötigt, müssen einige Details richtig durchgeführt
+werden.
+<ul>
+	<li>Stelle sicher, dass die Haupt.Unter-Nummern der ,shared
+libraries' korrekt sind.
+	<li>Überprüfe alle Ports, die auf deinem Port aufbauen. Stelle
+sicher, dass sie korrekt erzeugt werden, wenn sich deiner ändert.
+Benachrichtige die entsprechenden Maintainer über dein Update, so dass
+sie sicherstellen können, dass ihre Ports weiterhin korrekt laufen.
+	<li>Du musst eventuell LIB_DEPENDS von abhängigen Ports
+anpassen. Wenn du neue ,shared libraries' einführst, achte auf
+BUILD_DEPENDS, die in LIB_DEPENDS umgewandelt werden müssen.
+	<li>Wann auch immer du einen neuen Port einführst, solltest
+du sicherstellen, dass du keine Bibliothek erstellst, die mit einer
+existierenden in Konflikt gerät:
+Bibliotheken von zwei Ports mit dem gleichen Namen sind tödlich, da
+ihr Versions-Nummerierungsschemas keine Möglichkeit haben, zuzutreffen.
+Du solltest solche Situationen immer mit dem Softwareauthoren lösen
+(zum Beispiel, eine Bibliothek, die den Namen libnet trägt, ist definitiv
+schlecht benannt).
+</ul>
+  <hr>
+  <a href="../../index.html"><img height=24 width=24 src=../../back.gif border=0 alt=OpenBSD></a> 
+  <a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br><small>
+<!--
+Originally [OpenBSD: libraries.html,v 1.5 ]
+$Translation: libraries.html,v 1.2 2005/02/03 11:46:28 paldium Exp $
+-->
+$OpenBSD: libraries.html,v 1.1 2005/02/04 20:39:32 jufi Exp $
+</small>
+ </body>
+</html>
