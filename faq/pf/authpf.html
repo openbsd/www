@@ -50,13 +50,15 @@ Gateways</font></h1>
 <li><a href="#intro">Introduction</a>
 <li><a href="#config">Configuration</a>
 	<ul>
+	<li><a href="#enable">Enabling Authpf</a>
 	<li><a href="#linkmain">Linking Authpf into the Main Ruleset</a>
 	<li><a href="#loadrules">Configuring Loaded Rules</a>
 	<li><a href="#acl">Access Control Lists</a>
+	<li><a href="#message">Displaying a Login Message</a>
 	<li><a href="#shell">Assigning Authpf as a User's Shell</a>
 	</ul>
+<li><a href="#loginclass">Creating an authpf Login Class</a>
 <li><a href="#wholog">Seeing Who is Logged In</a>
-<li><a href="#moreinfo">More Information</a>
 <li><a href="#example">Example</a>
 </ul>
 
@@ -139,6 +141,26 @@ complete description of authpf configuration, please refer to the
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=authpf&amp;sektion=8&amp;manpath=OpenBSD+3.6"
 >authpf man page</a>.
 
+<a name="enable"></a>
+<h3>Enabling Authpf</h3>
+
+<p>
+Authpf will not run if the config file <tt>/etc/authpf/authpf.conf</tt>
+is not present.
+Even if the file is empty (zero size), it must still be present or
+authpf will exit immediately after a user authenticates successfully.
+
+<p>
+The following configuration directives can be placed in
+<tt>authpf.conf</tt>:
+
+<ul>
+<li><tt>anchor=<i>name</i></tt> - Use the specified
+<a href="anchors.html">anchor</a> name instead of "authpf".
+<li><tt>table=<i>name</i></tt> - Use the specified 
+<a href="tables.html">table</a> name instead of "authpf_users".
+</ul>
+
 <a name="linkmain"></a>
 <h3>Linking Authpf into the Main Ruleset</h3>
 Authpf is linked into the main ruleset by using <tt>anchor</tt> rules:
@@ -190,6 +212,24 @@ It's recommended practice to use the <tt>$user_ip</tt> macro to only
 permit traffic through the gateway from the authenticated user's
 computer.
 
+<p>
+In addition to the <tt>$user_ip</tt> macro, authpf will make use of the
+<tt>authpf_users</tt> table (if it exists) for storing the IP addresses
+of all authenticated users.
+Be sure to define the table before using it:
+
+<blockquote>
+<tt>
+table &lt;authpf_users&gt; persist<br>
+pass in on $ext_if proto tcp from &lt;authpf_users&gt; \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;to port  smtp flags S/SA keep state
+</tt>
+</blockquote>
+
+<p>
+This table should only be used in rules that are meant to apply to all
+authenticated users.
+
 <a name="acl"></a>
 <h3>Access Control Lists</h3>
 Users can be prevented from using authpf by creating a file in the
@@ -211,6 +251,25 @@ If authpf is unable to determine if a username is allowed or denied, it
 will print a brief message and then disconnect the user. An entry in
 <tt>/etc/authpf/banned/</tt> always overrides an entry in
 <tt>/etc/authpf/authpf.allow</tt>.
+
+<a name="message"></a>
+<h3>Displaying a Login Message</h3>
+
+<p>
+Whenever a user successfully authenticates to authpf, a greeting is
+printed that indicates that the user is authenticated.
+
+<blockquote>
+<tt>
+Hello charlie. You are authenticated from host "64.59.56.140"
+</tt>
+</blockquote>
+
+<p>
+This message can be supplemented by putting a custom message in
+<tt>/etc/authpf/authpf.message</tt>. 
+The contents of this file will be displayed after the default welcome
+message.
 
 <a name="shell"></a>
 <h3>Assigning Authpf as a User's Shell</h3>
@@ -239,6 +298,52 @@ There are a couple ways of assigning authpf as a user's shell:
 ><tt>/etc/login.conf</tt></a>.
 </ol>
 
+<a name="loginclass"></a>
+<h2>Creating an authpf Login Class</h2>
+When using authpf on a system that has regular user accounts and authpf
+user accounts, it can be beneficial to create a separate login class for
+the authpf users.
+This allows for certain changes to those accounts to be made on a global
+basis and also allows different policies to be placed on regular
+accounts and authpf accounts.
+Some examples of what policies can be set:
+
+<ul>
+<li><b>shell</b> - Specify a user's login shell.
+This can be used to force a user's shell to <tt>authpf</tt> regardless
+of the entry in the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=passwd&amp;sektion=5"
+>passwd(5)</a> database. 
+<li><b>welcome</b> - Specify which
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=motd&amp;sektion=5"
+>motd(5)</a> file to display when a user logs in. 
+This is useful for displaying messages that are relevant only to authpf
+users.
+</ul>
+
+<p>
+Login classes are created in the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=login.conf&amp;sektion=5"
+>login.conf(5)</a> file. 
+An example login class for authpf users:
+
+<blockquote>
+<tt>
+authpf:\<br>
+&nbsp;&nbsp;&nbsp;&nbsp;:welcome=/etc/motd.authpf:\<br>
+&nbsp;&nbsp;&nbsp;&nbsp;:shell=/usr/sbin/authpf:\<br>
+&nbsp;&nbsp;&nbsp;&nbsp;:tc=default:
+</tt>
+</blockquote>
+
+<p>
+Users are assigned to a login class by editing the <tt>class</tt> field
+of the user's passwd(5) database entry.
+One way to do this is with the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=chsh&amp;sektion=1"
+>chsh(1)</a> command.
+
+
 <a name="wholog"></a>
 <h2>Seeing Who is Logged In</h2>
 Once a user has successfully logged in and authpf has adjusted the PF
@@ -257,12 +362,6 @@ loaded for the user and kill any stateful connections the user has open.
 <pre>
     # kill -TERM 23664
 </pre>
-
-<a name="moreinfo"></a>
-<h2>More Information</h2>
-For a complete description of authpf operation, please refer to the 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=authpf&amp;sektion=8&amp;manpath=OpenBSD+3.6"
->authpf man page</a>.
 
 <a name="example"></a>
 <h2>Example</h2>
@@ -381,7 +480,7 @@ Small Office</a>]
 <a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a> 
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: authpf.html,v 1.11 2005/02/07 05:51:38 joel Exp $</small>
+<small>$OpenBSD: authpf.html,v 1.12 2005/02/11 05:30:50 joel Exp $</small>
 
 </body>
 </html> 
