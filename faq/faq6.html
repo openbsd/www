@@ -569,11 +569,11 @@ If you want to use OpenBSD as a DHCP server <A href="http://www.openbsd.org/cgi-
 edit /etc/rc.conf.  Set it up so that dhcpd_flags="-q" instead of dhcpd_flags=NO.
 Put the interfaces that you want dhcpd to *listen* on in /etc/dhcpd.interfaces.
 <pre>
-# echo xl1 xl2 xl3 >/etc/dhcpd.interfaces
+# <strong>echo xl1 xl2 xl3 >/etc/dhcpd.interfaces</strong>
 </pre>
 Then, edit /etc/dhcpd.conf.
 The options are pretty self explanatory.
-<pre>
+<pre><strong>
         option  domain-name "xyz.mil";
         option  domain-name-servers 192.168.1.3, 192.168.1.5;
 
@@ -582,7 +582,7 @@ The options are pretty self explanatory.
 
                 range 192.168.1.32 192.168.1.127;
         }
-</pre>
+</pre></strong>
 <p>
 This will tell your dhcp clients that the domain to append to DNS requests is xyz.mil (so, if the user types in 'telnet joe' then it will
 send them to joe.xyz.mil).  It will point them to DNS servers 192.168.1.3 and 192.168.1.5.  For hosts that are on the same network as
@@ -597,211 +597,142 @@ an ethernet interface on the OpenBSD machine, which is in the 192.168.1.0/24 ran
 <h2>6.5 - PPP </h2>
 </p>
 
+Point-to-Protocol is generally what is used to create a connection to your ISP via your modem. OpenBSD has 2 ways of doing this. 
+
+<ul>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pppd&sektion=8&format=html">pppd(8)</a> - Which is
+the kernel ppp daemon.
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ppp&sektion=8&format=html">ppp(8)</a> - Which is
+the userland ppp daemon. 
+</ul>
+
 <p>
-PPP is generally an easy thing to set up.  What follows is a basic introduction based
-on the information provided in <kbd>/etc/ppp</kbd> and the
-<a href= "http://www.openbsd.org/cgi-bin/man.cgi?query=ppp&apropos=0&sektion=8&format=html">
-ppp(8)</a> manual pages. These are highly suggested reading before attempting
-to setup PPP or even reading this FAQ entry.  If you have read these the 
-following should look familiar because it is that information with a little bit of
-elaboration.
+The first one we will cover will be the userland PPP daemon. To start off you will need some simple
+information about your isp. Here is a list of helpful information that you will need.
+</p>
+
+<ul>
+<li>Your ISP's dialup number
+<li>Your nameserver 
+<li>Your username and password.
+<li>Your gateway
+</ul>
+
+<p>
+Some of these you can do without, but would be helpful in setting up your ppp. The userland PPP daemon uses
+the file <a href="http://www.openbsd.org/cgi-bin/cvsweb/src/etc/ppp/ppp.conf.sample">/etc/ppp/ppp.conf</a> as
+its configuration file. There are many helpful files in <b>/etc/ppp</b> that can have different setups for
+many different situations. You should take a browse though that directory.
 </p>
 
 <p>
-First you will need to find out a little bit about how your ISP sets up its
-PPP connections. Does it use scripted login, PAP, CHAP, do you have a dynamic
-or static IP etc. This along with some basic info about your modem will allow
-us to easily create a PPP dial in script for your ISP.
+Also, make sure, that if your not using a GENERIC kernel, that you have this line in your configuration file:
 </p>
 
-<p>
-First we will create a PPP conf using what is already in 
-<kbd>/etc/ppp/ppp.conf.sample</kbd> as a guide. The first section we come
-to is the section labeled default. This is the best place to specify logging
-options, your modem device and dial options. It will always be executed when
-ppp is run. The following is the default section that comes standard with
-<kbd>/etc/ppp/ppp.conf.sample</kbd> and an explanation of what each
-parameter does:
-</p>
+<ul><pre><strong>
+pseudo-device   tun             2
+</pre></ul></strong>
+
+
+<h3>Initial Setup - for PPP(8)</h3>
 
 <p>
-<strong>
-&lt;Default Section&gt; <br>
+Initial Setup for the userland PPP daemon consists of editing your <b>/etc/ppp/ppp.conf</b> file. This file
+doesn't exist by default, but there is a file <b>/etc/ppp/ppp.conf.sample</b> in which you can simply edit to
+create your own <b>ppp.conf</b> file. Here I will start with the simplist setup and probobly most used setup.
+Here is a quick <b>ppp.conf</b> file that will simply connect to your ISP and set your default routes and
+nameserver. With this file all the information you need is your ISP's phone number and your username and
+password.
+</p>
+
+<ul>
+<pre><strong>
 default:
-</strong>
-</p>
-
-<p>
-This parameter tells PPP to log output which pertains to the arguments you give the parameter.
-</p>
-
-<ul>
-<pre><strong>
 set log Phase Chat LCP IPCP CCP tun command     
-</pre></strong>
-</ul>						
-
-This will set the default modem device on the system which here is com 2
-
-<ul>
-<pre><strong>
-set device /dev/cua01				
-</pre></strong>
-</ul>
-
-This parameter sets the speed of the serial device.
-					
-<ul>
-<pre><strong>
-set speed 115200				
-</pre></strong>
-</ul>
-
-This will set the commands to follow when certain actions take place while dialing.  Abort the call if the number is busy, abort the
-call if there is no carrier.  Wait 5 seconds for carrier. Issue AT and wait for response. If AT is ok then dial the number and
-timeout if not connected in 40 seconds. Once dialed in wait for the CONNECT message to tell us we are connected.
-
-<ul>
-<pre><strong>
+set device /dev/cua01                           
+set speed 115200     
 set dial "ABORT BUSY ABORT NO\\sCARRIER TIMEOUT 5 \"\" AT OK-AT-OK ATE1Q0 OK\\dATDT\\T TIMEOUT 40 CONNECT"
 </strong></pre>
-</ul>						 
+</ul>
 
 <p>
-Now that the default modem options are set we will need to create a section
-in the ppp.conf for our ISP.  Below are a few examples of what could be in
-there and what type of isp they are tailored for.
+The section under the <b>default:</b> tag will get executed each time. Here we setup all our critical
+information. Here with &quot;set log&quot; we set our logging levels. This can be changed, refer to 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ppp&sektion=8&format=html">ppp(8)</a> for more info on
+setting up logging levels. Our device gets set with &quot;set device&quot;. This is the device that the modem
+is on. In this example the modem is on com port 2. Therefore com port 1 would be /dev/cua00. With &quot;set
+speed&quot; we set the speed of our dialup connection and with &quot;set dial&quot; we set our dialup
+parameters. With this we can change our timeout time, etc. This line should stay pretty much as it is though.
 </p>
 
 <p>
-<strong>
-&lt;MyISP Section&gt;  <br>
+Now we can move on and setup our information specific to our ISP. We do this by adding another tag under our
+<b>default:</b> section. This tag can be called anything you want, easiest to just use the name of your ISP.
+Here I will use <b>myisp:</b> as our tag refering to our ISP. Here is a simple setup incorporating all we need
+to get ourselves connected.
+<p>
+
+<ul>
+<pre><strong>
 myisp:
-</strong>
-</p>
-
-This of course sets the number to dial for your isp.
-
-<ul>
-<pre><strong>
-set phone 1234567			 
-</strong></pre>
-</ul>
-
-This sets the login options.  It will abort login if there is no carrier with a timeout of 5 seconds.  It will then wait for the
-login: prompt and send your login name, and then it will wait for the password prompt and send your password.
-
-<ul>
-<pre><strong>
+set phone 1234567   
 set login "ABORT NO\\sCARRIER TIMEOUT 5 ogin:--ogin: ppp word: ppp"
-</strong></pre>
-</ul>
-
-This sets the timeout for the entire login process.
-
-<ul>
-<pre><strong>
-set timeout 120				
-</strong></pre>
-</ul>
-
-This will set the ip address you expect for your side and for the remote side of the connection. The /0 bit tells the connection
-that no bits of this ip address need to match and the whole thing can be replaced. This also sets your default netmask and gateway.
-
-<ul>
-<pre><strong>
+set timeout 120   
 set ifaddr 10.0.0.1/0 10.0.0.2/0 255.255.255.0 0.0.0.0
+add default HISADDR 
+enable dns
 </strong></pre>
 </ul>
-
-This will make the default gateway the remote end of the ppp connection.
-
-<ul>
-<pre><strong>
-add default HISADDR		
-</strong></pre>
-</ul>
-
-This tells ppp to ask the peer for the nameserver addresses that should be used. This isn't always supported, but if it is
-/etc/resolv.conf will automatically be updated.
-
-<ul>
-<pre><strong>
-enable dns		
-</strong></pre>
-</ul>
-
 
 <p>
-<strong>
-&lt;Pap/Chap Section&gt; <br>
-</strong>
-What if your ISP uses PAP or CHAP? Here is a configuration that will work
-with both PAP or CHAP, PPP will decide which it needs to use.
+Here we have setup essential info for that specific ISP. The first option &quot;set phone&quot; sets your
+ISP's dialup number. The &quot;set login&quot; sets our login options. Here we have the timeout set to 5, this
+means that we will abort our login attempt after 5 seconds if no carrier. Otherwise it will wait for
+&quot;login:&quot; to be sent and send in your username and password. In this example our Username = ppp and
+Password = ppp. These values will need to be changed. The line &quot;set timeout&quot; sets the timeout for
+the entire login process to 120 seconds. The &quot;set ifaddr&quot; line is a little tricky. Here is a more
+extensive explaination.
 </p>
 
-<strong>
-myispPAPCHAP:  <br>
-</strong>
-
-This line sets the phone number.
-
-<ul>
-<pre><strong>
-set PHONE 1234567			 
-</strong></pre>
-</ul>
-
-PPP will be waiting for the peer to suggest the use of either PAP or CHAP.
-
-<ul>
-<pre><strong>
-set LOGIN				 
-</strong></pre>
-</ul>
-
-This is where you specify your username.				
-
-<ul>
-<pre><strong>
-set authname MyName			 
-</strong></pre>
-</ul>
-
-This is where you specify your password.
-
-<ul>
-<pre><strong>
-set authkey MyKey			
-</strong></pre>
-</ul>
-
-This sets the login timeout to 120 seconds.
-
-<ul>
-<pre><strong>
-set timeout 120				
-</strong></pre>
-</ul>
+<ul><strong><pre>
+set ifaddr 10.0.0.1/0 10.0.0.2/0 255.255.255.0 0.0.0.0
+</ul></strong></pre>
 
 <p>
-And then procede with the standard commands from above.
-</p>
-
-<strong>&lt;Static Ip Section&gt;</strong>
-<p>
-All you need to do is change the ifaddr parameter like so:
-<p>
-
-<p>
-<pre>
-set ifaddr 209.115.93.18 209.115.93.20
-</pre>
+In the above line, we have it set in the format of &quot;<b>set ifaddr [myaddr[/nn] [hisaddr[/nn] [netmask
+[triggeraddr]]]]</b>&quot;. So the first IP specified is what we want as our IP. If you have a static IP address, you set it here. In our example we use /0
+which says that no bits of this ip address need to match and the whole thing can be replaced. The second IP
+specified is what we expect as their IP. If you know this you can specify it. Again in our line we don't know
+what will be assigned, so we let them tell us. The third option is our netmask, here set to 255.255.255.0.If
+triggeraddr is specified, it is used in place of myaddr in the initial IPCP negotiation.  However, only an
+address in the myaddr range will be accepted.  This is useful when negotiating with some PPP implementations
+that will not assign an IP number unless their peer requests ``0.0.0.0''.
 </p>
 
 <p>
-In this example, your IP is 209.115.93.18, and the peer side IP is
-209.115.93.20.
+The next option used &quot;add default HISADDR&quot; sets our default route to their IP. This is 'sticky',
+meaning that if their IP should change, our route will automatically be updated. With &quot;enable dns&quot;
+we are telling our ISP to authenticate our nameserver addresses. Do NOT do this if you are running an local
+DNS, as ppp will simply circumvent its use by entering some nameserver lines in /etc/resolv.conf.
+</p>
+
+<h3>Using PPP(8)</h3>
+
+<p>
+Now that we have our <b>ppp.conf</b> file setup we can start trying to make a connection to our ISP. I will
+detail some commonly used arguments with ppp.
+</p>
+
+<ul>
+<li><b>ppp -auto myisp</b> - This will run ppp, configure your interfaces and connect to your isp and then go
+into the background.
+<li><b>ppp -ddial myisp</b> - This is similar to -auto, but if your connection is dropped it will try and
+reconnect.
+</ul>
+
+<p>
+By using <b>/usr/sbin/ppp</b> with no options will put you into interactive mode. From here you can interact
+directly with the modem, it is great for debugging problems in your <b>ppp.conf</b> file.
 </p>
 
 <p>
@@ -817,7 +748,7 @@ In this example, your IP is 209.115.93.18, and the peer side IP is
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt= "[back]"></a>
 <a href= "mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq6.html,v 1.22 1999/07/26 17:38:46 ericj Exp $</small>
+<small>$OpenBSD: faq6.html,v 1.23 1999/09/07 18:05:24 ericj Exp $</small>
 </p>
 </body>
 </html>
