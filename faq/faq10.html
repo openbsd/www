@@ -1375,8 +1375,10 @@ cause mischief with.
 <h3>What does this mean to the user?</h3>
 
 <p>
-Put bluntly, chroot(2)ing Apache is something new, and many older
-applications and system configurations will not work as before.
+Put bluntly, chroot(2)ing Apache is something new, and and not done by
+default in most other operating systems.
+Many applications and system configurations will not work in a chroot(2)
+without some customization.
 
 <ul>
 <li><b>Historic file system layouts:</b> Servers upgraded from older
@@ -1411,7 +1413,6 @@ and using an external log rotator at the other end of the pipe(2).
 
 <li><b>Existing Apache modules:</b> Virtually all will load, however
 some may not work properly in chroot(2), and many have issues on "<tt>
-
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=apachectl&amp;sektion=8">apachectl</a>
 restart</tt>", generating an error, which causes httpd(8) to exit.
 
@@ -1430,6 +1431,107 @@ In some cases, the application or configuration can be altered to run
 within the chroot. In other cases, you will simply have to disable this
 feature using the <tt>-u</tt> option for httpd(8) in
 <i><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rc.conf&amp;sektion=8">/etc/rc.conf</a></i>.
+
+<h3>Example of chroot(2)ing an app: wwwcount</h3>
+As an example of a process that can be used to chroot an application, we
+will look at wwwcount, a simple web page counter available through
+<a href="faq8.html#Ports">ports</a>.
+While a very effective program, it knows nothing about chroot(2)ed 
+Apache, and will not work chroot(2)ed in its default configuration.
+
+<p>
+First, we install a <a href="faq8.html#Packages">package</a> for 
+<a href="http://www.muquit.com/muquit/software/Count/Count.html">wwwcount</a>.
+We configure it and test it, and we find it doesn't seem to work, 
+we get an Apache message saying "Internal Server Error".
+
+First step is to stop and restart Apache with the <tt>-u</tt> switch
+to verify that the problem is the chroot(2)ing, and not the system
+configuration.
+<pre>
+    # <b>apachectl stop</b>
+    /usr/sbin/apachectl stop: httpd stopped
+    # <b>httpd -u</b>
+</pre>
+After doing this, we see the counter works properly, at least after we
+change the ownership on a directory so that Apache (and the CGIs it
+runs) can write to the files it keeps.
+So, we definitely have a chroot problem, so we stop and restart 
+Apache again, using the default chrooting:
+<pre>
+    # <b>apachectl stop</b>
+    /usr/sbin/apachectl stop: httpd stopped
+    # <b>httpd</b>
+</pre>
+
+<p>
+A good starting point would be to assume wwwcount uses some libraries
+and other files it can't get to in the chroot.
+We can use the 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ldd&amp;sektion=1">ldd(1)</a>
+command to find out the dynamic object dependencies that the CGI needs:
+<pre>
+# cd /var/www/cgi-bin/
+# ldd Count.cgi
+Count.cgi:
+        Start    End      Type Ref Name
+        00000000 00000000 exe   1  Count.cgi
+        03791000 237ca000 rlib  1  /usr/lib/libc.so.30.3
+        03db4000 03db4000 rtld  1  /usr/libexec/ld.so
+</pre>
+Ok, here is a problem, two files that are not available in the
+chroot(2) environment.
+So, we copy them over:
+<pre>
+    # mkdir -p /var/www/usr/lib /var/www/usr/libexec
+    # cp /usr/lib/libc.so.30.3 /var/www/usr/lib
+    # cp /usr/libexec/ld.so /var/www/usr/libexec
+</pre>
+and try the counter again.
+
+<p>
+Well, now the program is running at least, and giving us error messages
+directly: "Unable to open config file for reading".
+Progress, but not done yet.
+The configuration file is normally in <tt>/var/www/wwwcount/conf</tt>, 
+but within the chroot environment, that would seem to be
+<tt>/wwwcount/conf</tt>.
+Our options are to either recompile the program to make it work where 
+the files are now, or move the data files.
+As we installed from a package, we'll just move the data file.
+In order to use the same config either chroot(2)ed or not, we'll use a
+symbolic link:
+
+<pre>
+    # mkdir -p /var/www/var/www          
+    # cd /var/www/var/www
+    # ln -s ../../wwwcount wwwcount
+</pre>
+Note that the symbolic link is crafted to work within the chroot.
+Again, we test... and we find we have yet another issue.  
+Now wwwcount is complaining that it can't find the "strip image" files
+it uses to display messages.
+After a bit of searching, we find those are stored in 
+<tt>/usr/local/lib/wwwcount</tt>, so we have to copy those into the
+chroot, as well.
+<pre>
+    # tar cf - /usr/local/lib/wwwcount | (cd /var/www; tar xpf - )
+</pre>
+we test again...  and it works!
+
+<p>
+In this example, the program was fairly simple, and yet we saw several 
+different kinds of problems.
+Some apps are pretty simple, and chroot(2)ing them makes sense.
+Others are very complex, and are either not worth the effort of forcing
+them into a chroot(2), or by the time you copy enough of the system into
+the chroot, you have lost all benefit of the chroot(2) environment.
+Even with an application as simple as this, it must write to disk (to
+keep track of its counters), so some benefit of the chroot(2) is lost.
+In general, the minimum files needed to run an application should be 
+copied into the chroot.
+<i>Not every application can or should be chroot(2)ed.</i>
+
 
 <a name="rootshell"></a>
 <h2>10.17 - I don't like the standard root shell!</h2>
@@ -1528,6 +1630,6 @@ your user's <tt>.profile</tt>.
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq10.html,v 1.101 2004/04/30 18:06:20 nick Exp $</small>
+<small>$OpenBSD: faq10.html,v 1.102 2004/05/19 03:21:49 nick Exp $</small>
 </body>
 </html>
