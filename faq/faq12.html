@@ -304,28 +304,18 @@ just fine.  Unfortunately, most of these are sound cards and serial port cards.
 <br>
 <p>
 <a name= "12.5">
-<h2>12.5 - Enabling PCI IDE</h2>
+<h2>12.5 - Enabling PCI IDE's DMA features</h2>
 </a>
 <p>
-If you have a current source tree that was last updated after July 18th, you
-will notice that OpenBSD has PCI-IDE code, a big win on performance
-for anyone using IDE disks!  The PCI-IDE code introduces new PCI and ISA IDE
+If you have a current source tree that was last updated after July 25th, you
+will notice that OpenBSD has PCI-IDE code enabled by default, a big win on
+performance
+for anyone using an IDE controller!  The PCI-IDE code introduces new PCI and ISA IDE
 code, and both PCI and ISA versions have DMA (or Direct Memory Access) capability.
 DMA allows the IDE controller to transfer data right from disk to your memory
 instead of running it through the CPU.  This lowers the overall utilization
 of your CPU,  keeping disk access fast and clean.
-OpenBSD has implemented the pciide code from NetBSD.  The OpenBSD code
-will attach <tt>atapiscsi* at wdc?</tt> and <tt>atapiscsi* at pciide?</tt>, which then allows you to attach <tt>scsibus* at atapiscsi?</tt>.
-This means that can use the standard SCSI device drivers (sd, cd, st, ...)
-for devices on the ATAPI bus!  (In NetBSD, the entire SCSI system was
-revamped to include ATAPI support, OpenBSD makes ATAPI support
-much more simple.)
-<P>
-Note that these instructions will change from time to time.  After this
-code is sufficiently tested under OpenBSD, most of the steps below
-will become unnecessary.  But for now, to use the PCI-IDE code (and anyone
-who wants better performance out of their IDE-based system will want to!),
-you need to change four files.
+(Note that OpenBSD has implemented the pciide code from NetBSD.)
 <P>
 <UL><TT>
 Date: Mon, 19 Jul 1999 18:07:40 -0700 (PDT)<BR>
@@ -390,101 +380,7 @@ Thanks,<BR>
 -Costa<BR>
 </UL></tt>
 <p>
-You need to edit <tt>/usr/src/sys/dev/isa/files.isa</tt>,
-find a section that looks like the excerpt below, and change it so that
-the # symbols are not 'commenting out' the files which give you access
-to the new code!
-<ul>
-<pre>
-#Start uncommenting for new ATA stuff
-# ISA "wd" (ESDI/IDE/etc.) controllers, ATAPI bus
-attach wdc at isa with wdc_isa: isa_dma
-file   dev/isa/wdc_isa.c                wdc_isa
-#end uncommenting for new ATA stuff
- 
-#Start comment this out for new ATA stuff
-#define       ata {drive = -1}
-#device       wdc {drive = -1}: atapi, ata
-#attach       wdc at isa with wdc_isa
-#device       wd: disk
-#attach       wd at wdc
-#file dev/isa/wdc.c                   wdc & (wdc_isa | wdc_isapnp) needs-flag
-#file dev/isa/wd.c                    wd needs-flag
-#End comment this out for new ATA stuff
-</pre>
-</ul>
-Next, you need to edit <tt>/usr/src/sys/dev/pci/files.pci</tt>, and change out this section to look like below:
-<ul>
-<pre>
-#Start uncommenting for new ATA stuff
-# PCI IDE controllers
-device  pciide {[channel = -1]}: wdc_base, ata, atapi
-attach  pciide at pci
-file    dev/pci/pciide.c                pciide
-#End uncommenting for new ATA stuff
-</pre>
-</ul>
-Next, you need to edit <tt>/usr/src/sys/conf/files</tt>, and change it too.
-<ul>
-<pre>
-#Start uncommenting for new ATA stuff
-define  wdc_base
-define  ata {[channel = -1], [drive = -1]}
-define  atapi {[channel = -1]}
-# Common code for ESDI/IDE/etc. controllers
-device  wdc: ata, atapi, wdc_base
-file    dev/ic/wdc.c wdc_base
-#End uncommenting for new ATA stuff
-</pre>
-</ul>
-Finally, PCI IDE has only been tested on the i386 platform as of this
-writing.  If you are using another platform, you will need to do
-some trickery to /usr/src/sys/arch/<i>yourarch</i>/conf/files.<i>yourarch</i>
-(If you get this working on another arch, contact Costa and let him know!)
-<p>
-For i386 users, the trickery is in place, just uncomment it from
-<tt>/usr/src/sys/arch/i386/conf/files.i386</tt>
-<ul>
-<pre>
-#
-# Machine-independent ATAPI drivers
-# 
-
-#Comment out this include below if you're using the new ATA stuff
-#include "../../../dev/atapi/files.atapi"
-
-#Start Uncomment for new ATA stuff
-include "../../../dev/atapiscsi/files.atapiscsi"
-include "../../../dev/ata/files.ata"
-#End Uncomment for new ATA stuff
-</pre>
-</ul>
-<P>
-Once you edit all of these files, then cd /usr/src/sys/arch/i386/conf
-and
-<UL>
-<PRE>
-# <b>config NEWATA</b>
-</PRE>
-</ul>
-and 
-<ul>
-<PRE>
-# <b>cd ../compile/NEWATA</b>
-# <b>make clean;make</b>
-</pre>
-</ul>
-<P>
-This will compile the NEWATA kernel.  If you are using another platform
-with PCI IDE controllers, and you want to get this working, 
-edit conf/files.<i>yourarch</i> to include the stuff shown above which
-adds this capability to files.i386. Next, peek in the
-/usr/src/sys/arch/i386/conf/NEWATA kernel config and 
-copy out the new atapi/wd stuff to your own kernel config.
-Note the commented out wd/atapi stuff in NEWATA,
-and comment out the old wd/atapi stuff in your kernel the same way.
-<P>
-With this PCI IDE code, your chipset may not be known.  If so, you will
+With the PCI IDE code, your chipset may not be known.  If so, you will
 get a message like:
 <UL>
 <PRE>
@@ -516,6 +412,61 @@ pciide0:0:0: using DMA data transfers
 </PRE></UL>
 This means that pciide0, channel 0, drive 0 is using DMA data transfers.
 </ul>
+</p>
+<p>
+Some notes:
+</p>
+<p>
+The cd driver is mostly working. You will probably get a SCSI error
+message to the console when you initially use an audio cd. This is
+because OpenBSD tries to read the disklabel of off the audio cd.
+</p>
+<p>
+DMA is not supported on wdc* unless a DMA channel (drq) is
+specified. I'm not sure what the "standard" drqs are for hard disk
+controllers. To enable
+<pre>
+wdc0	at isa? port 0x1f0 irq 14 flags 0x00
+</pre>
+Non-ultra DMA does not necessarily lead to higher bandwidth vs PIO. 
+However, it decreases the CPU load significantly.
+</p>
+
+<a name= "12.6">
+<h2>12.6 - Why aren't we using async mounts?</h2>
+</a>
+<p>
+Question: "I simply do "mount -u -o async /" which makes one package I use 
+(which insists on touching a few hundred things from time to time) useable.
+
+Why is async mounting frowned upon and not on by default (as it is in some
+other unixen) ? Surely it is much simpler and therefore a safer way of
+improving performance in some applications ?"
+</p>
+<p>
+Answer: "Async mounts is indeed faster then sync mounts, but they are also 
+less safe. What happens in case of a power failure? Or a hardware problem?
+The quest for speed should not sacrifice the reliabilty and the stability of 
+the system. Check the manpage for 
+<a href= "http://www.openbsd.org/cgi-bin/man.cgi?query=mount&apropos=0&sektion=8&format=html">mount(8)</a>."
+</p>
+<pre>
+	     async   All I/O to the file system should be done asynchronously.
+		     This is a dangerous flag to set since it does not guaran-
+		     tee to keep a consistent file system structure on the
+		     disk.  You should not use this flag unless you are pre-
+		     pared to recreate the file system should your system
+		     crash.  The most common use of this flag is to speed up
+		     restore(8) where it can give a factor of two speed in-
+		     crease.
+</pre>
+<p>
+On the other hand, when you are dealing with temp data that you can recreate 
+from scratch after a crash, you could gain speed by using a seperate 
+partition, used for that data only, mounted async. If you don't mind risking to
+loose all the data in the partition when something goes wrong...
+</p>
+
 <p>
 <font color= "#0000e0">
 <a href= "index.html">[Back to Main Index]</a>
@@ -528,7 +479,7 @@ This means that pciide0, channel 0, drive 0 is using DMA data transfers.
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq12.html,v 1.12 1999/07/20 19:47:56 ericj Exp $</small>
+<small>$OpenBSD: faq12.html,v 1.13 1999/07/26 20:02:40 wvdputte Exp $</small>
 </p>
 </body>
 </html>
