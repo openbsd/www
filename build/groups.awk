@@ -28,7 +28,7 @@ $1 == "0" {
 
 $1 == "C" { country = substr($0, 3);
 	if (country != oldCountry) {
-		print "<TR><TD BGCOLOR=\"#FFFF00\" COLSPAN=6 ALIGN=CENTER><B>" country "</B>"
+		print "<TR><TD BGCOLOR=\"#99ffff\" COLSPAN=6 ALIGN=CENTER><B>" country "</B>"
 	 }
 	oldCountry = country
 	next
@@ -52,7 +52,7 @@ $1 == "N" { note = substr($0, 3); next }
 
 function dump() {
 	print "<TR>"
-	print "<TD>" 
+	print "<TD BGCOLOR=\"White\">" 
 		if (indv != "")
 			print indv "<BR>" 
 		print org "<BR>" addr
