@@ -32,8 +32,9 @@ memoria de intercambio (<em>swap</em></a></li>
 despu&eacute;s de la instalaci&oacute;n de OpenBSD/i386, se
 para en<br>
 &quot;Using Drive: 0 Partition 3&quot;.</a></li>
-<li><a href="#14.7">14.7 - &iquest;C&oacute;mo obtento un
-dmesg de un disquete de arranque?</a></li>
+<li><a href="#14.7">14.7 - &iquest;Qu&eacute; problemas puede
+haber en OpenBSD con dispositivos de gran capacidad?
+(espec&iacute;fico de i386)</a></li>
 <li><a href="#14.8">14.8 - Instalaci&oacute;n de bloques de
 arranque (espec&iacute;fico de i386)</a></li>
 <li><a href="#14.9">14.9 - Prepararse para el desastre: hacer
@@ -1205,37 +1206,106 @@ informaci&oacute;n.
 
 <p>
 <a name="14.7"></a>
-<h2>14.7 - &iquest;C&oacute;mo obtento un dmesg de un disquete de
-arranque?</h2>
+<h2>14.7 - &iquest;Qu&eacute; problemas puede haber en OpenBSD
+con dispositivos de gran capacidad?  (espec&iacute;fico de
+i386)</h2>
 
 <p>
-Las im&aacute;genes de RAMDISK (disquetes de arranque) no incluyen la
-utilidad <code>dmesg</code>.  Sin embargo, tienen el sistema de archivos
-<em>/kern</em> montado.  Para copiar la informaci&oacute;n de dmesg a un
-fichero, haga lo siguiente:
-
-<ul>
-<pre>
-# <strong>cat /kern/msgbuf &gt;mydmesg</strong>
-</pre>
-</ul>
+OpenBSD tiene soporte para sistemas de archivos de
+tama&ntilde;os mucho mayores que cualquier de los discos duros
+que existen en la actualidad o incluso de los que puedan
+aparecer en breve;  sin embargo, existen limitaciones en
+algunas interfaces que son de menor tama&ntilde;o que el
+m&aacute;ximo te&oacute;rico de OpenBSD.  En el caso de
+dispositivos IDE, el l&iacute;mite es de 128GB, que es el
+mismo l&iacute;mite que tiene actualmente la interfaz ATA.
+N&oacute;tese que en la pr&oacute;xima generaci&oacute;n de
+dispositivos ATA, aquellos con capacidad mayor de 128G (1G=2^,
+no 1.000.000.000, aunque los fabricantes de dispositivos lo
+llamar&aacute;n 137G) no tendr&aacute;n soporte en OpenBSD
+hasta que se haya implementado los nuevos est&aacute;ndares de
+la interfaz (Las <a href="/donations.html">donaciones</a> de
+<a href="/want.html">equipos y componentes</a> ayudan a
+implementar estos nuevos est&aacute;ndares).
 </p>
 
 <p>
-Los discos de arranque tambi&eacute;n incluyen
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=more&sektion=1">more(1)</a>
-como paginador:
+Desafortunadamente, la capacidad absoluta del sistema
+operativo no se encontrar&aacute; disponible hasta
+DESPU&Eacute;S de que el sistema operativo haya sido cargado
+en la memoria y el proceso de arranque haya introducido sus
+propios l&iacute;mites.  El proceso de arranuqe tiene que
+utilizar (y por lo tanto est&aacute; limitado por) la BIOS del
+sistema.
+Los cargadores de arranque de OpenBSD
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=biosboot&sektion=8%2fi386&apropos=0&manpath=OpenBSD+Current&arch=i386">biosboot(8)</a> y
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=boot&sektion=8%2fi386&apropos=0&manpath=OpenBSD+Current&arch=i386">boot(8)</a>)
+tambi&eacute;n tienen sus propias limitaciones internas de 8G,
+heredadas del l&iacute;mite de una BIOS antigua.
+</p> 
 
-<pre>
-<ul>
-# <strong>more /kern/msgbuf</strong>
-</pre>
-</ul>
+<p>
+Por este motivo, todo el fichero <em>/bsd</em> (el
+n&uacute;cleo del sistema) se debe ubicar dentro del
+&aacute;rea direccionable de la BIOS en el disco, o dentro de
+los primeros 8G del disco, cualquiera que sea m&aacute;s
+peque&ntilde;a.  Esto significa que en algunos equipos viejos
+la partici&oacute;n <em>root</em> se debe encontrar dentro del
+l&iacute;mite de los primeros 540M, pero en la mayor&iacute;a
+de equipos nuevos se puede encontrar en cualquier parte dentro
+de los primeros 8G.
 </p>
 
 <p>
-Lea tambi&eacute;n la <a href="faq4.html#4.5">secci&oacute;n 4.5</a> de
-estas preguntas frecuentes.
+N&oacute;tese que es posible instalar un dispositivo de 40GB
+en un 486 antiguo y cargar OpenBSD como una sola
+partici&oacute;n gigante, y por ello creer que la regla
+anterior ha sido violada con &eacute;xito.  Sin embargo, puede
+volver para vengarse en un modo horrible:
+</p>
+
+<ul>
+<li>Instala el sistema en la partici&oacute;n <em>/</em> de
+40G.  Funciona, ya que el sistema operativo base y sus
+ficheros, incluido <em>/bsd</em>, se encuentran dentro de los
+primeros 504M.
+<li>Utiliza el sistema hasta que acaba con m&aacute;s de 504M
+en ficheros.
+<li>Lo actualiza, compila su propio n&uacute;cleo, cualquier
+otra cosa, y copia su nuevo <em>/bsd</em> sobre el antiguo.
+<li>Reinicia el sistema.
+<li>Le aparece un mensaje tipo &quot;bad magic&quot;.
+</ul>
+
+<p>
+&iquest;Por qu&eacute;?  Porque cuando copi&oacute;
+&laquo;sobre&raquo; el nuevo fichero <em>/bsd</em>, no
+sobreescribi&oacute; el antiguo, sino que se reubic&oacute; en
+un nuevo espacio del disco, probablemente fuera del rango de
+los 504M para los que tiene soporte la BIOS.  El cargador de
+arranque basado en la BIOS no pudo localizar <em>/bsd</em> y
+el sistema se colg&oacute;.
+</p>
+
+<p>
+Para que OpenBSD arranque, <em>/bsd</em> debe encontrarse
+dentro del rango de la BIOS.  Para mayor seguridad, hay una
+regla muy simple:
+</p>
+
+<p>
+<strong>Toda la partici&oacute;n <em>root</em> debe estar
+dentro del espacio direccionable por la BIOS de la
+m&aacute;quina o dentro de los primeros 8G, cualquiera que sea
+el m&aacute;s peque&ntilde;o de los dos.</strong>
+</p>
+
+<p>
+OpenBSD puede acceder a todo el dispositivo IDE completo (hasta
+128G), no s&oacute;lo hasta el espacio reconocido por la BIOS,
+pero <em>root</em> debe encontrarse dentro del l&iacute;mite
+impuesto por la BIOS.
+</p>
 
 <p>
 <a name="14.8"></a>
@@ -1912,9 +1982,9 @@ m&aacute;quina, por favor env&iacute;e un
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
 <small>
-Originally [OpenBSD: faq14.html,v 1.50 2001/10/20 16:51:39 horacio Exp ]<br>
-$Translation: faq14.html,v 1.14 2001/10/21 21:13:25 horacio Exp $<br>
-$OpenBSD: faq14.html,v 1.14 2001/10/24 18:54:47 jufi Exp $
+Originally [OpenBSD: faq14.html,v 1.51 2001/11/01 02:32:39 nick Exp ]<br>
+$Translation: faq14.html,v 1.15 2001/11/05 19:46:55 horacio Exp $<br>
+$OpenBSD: faq14.html,v 1.15 2001/11/05 21:17:05 jufi Exp $
 </small>
 </p>
 </body>
