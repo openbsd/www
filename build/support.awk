@@ -28,6 +28,8 @@ $1 == "0" {
 	}
 
 $1 == "C" { country = substr($0, 3);
+	if (country == "USA")
+		country = "United States"
 	if (country != oldCountry) {
 		print "<TR><TD BGCOLOR=\"#99ffff\" COLSPAN=2 ALIGN=CENTER><B>" country "</B>"
 	 }
