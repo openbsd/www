@@ -12,7 +12,7 @@
 <h4>Kjell Wooding 
 &lt;<A HREF="mailto:kjell@openbsd.com">kjell@openbsd.org</A>&gt;
 </h4>
-Last Update - $OpenBSD: upgrade-minifaq.html,v 1.71 2001/09/20 13:28:18 horacio Exp $
+Last Update - $OpenBSD: upgrade-minifaq.html,v 1.72 2001/10/10 07:09:58 kjell Exp $
 
 <P>
 
@@ -22,7 +22,9 @@ If you've ever tried compiling the <I>-current</I> sources from an older
 OpenBSD release, you're aware that the process isn't always
 straightforward. This Mini-FAQ is
 an attempt to address the most common issues encountered when upgrading
-between OpenBSD releases, or from the releases to <I>-current</I>
+between OpenBSD releases, or from the releases to <I>-current</I>.
+Though hardly <i>Mini</i> anymore, this document retains the Mini-FAQ
+moniker for historical and/or consistency reasons.
 </FONT>
 </BLOCKQUOTE>
 
@@ -86,6 +88,10 @@ and <tt>/dev</tt>?
 </A>
 <BR>
 
+<A HREF="#1.13">
+1.13: Is there an easy way to make all the file hierarchy changes?
+</A>
+<BR>
 
 <H3>2.0: Upgrading from 2.3</H3>
 <A HREF="#2.1">
@@ -217,22 +223,22 @@ recognized by the kernel.
 <h3>8.0 - Upgrading from 2.9</h3>
 
 <a href="#8.1">
-8.1: New packet filter
+8.1: New Users - <i>proxy</i> and <i>smmsp</i>
 </a>
 <br>
 
 <a href="#8.2">
-8.2: Changes to <i>make</i>
+8.2: New packet filter: <i>pf</i>
 </a>
 <br>
 
 <a href="#8.3">
-8.3: Build fails because of KerberosV errors
+8.3: Changes to <i>make</i>
 </a>
 <br>
 
 <a href="#8.4">
-8.4: New proxy user
+8.4: Build fails because of KerberosV errors
 </a>
 <br>
 
@@ -649,7 +655,7 @@ or
 <LI> Add the line "SUDO=/usr/bin/sudo" to your <tt>/etc/mk.conf</tt> file.
 </UL>
 
-<h4><A NAME="#1.12">
+<h4><A NAME="1.12">
 1.12: Why am I not seeing any new devices?
 </A></h4>
 
@@ -663,6 +669,29 @@ performing an upgrade:
   # cp /usr/src/etc/etc.`machine`/MAKEDEV ./
   # ./MAKEDEV all
 </pre>
+
+<h4><A NAME="1.13">
+1.13: Is there an easy way to make all the file hierarchy changes?
+</A></h4>
+
+From time to time, files or directories are added to, or removed from
+the file hierarchy. Also, ownership information for portions of the
+filesystem may changes.  An easy way to ensure that your file hierarchy
+is up-to-date is to use the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mtree&sektion=8"
+>mtree(8)</a> utility. 
+
+<p>
+First, fetch the latest source, then do the following:
+
+<pre>
+  # cd /usr/src/etc/mtree
+  # install -c -o root -g wheel -m 600 special /etc/mtree
+  # install -c -o root -g wheel -m 444 4.4BSD.dist /etc/mtree
+  # mtree -qdef /etc/mtree/4.4BSD.dist -p / -u
+</pre>
+
+Your file hierarchy should now be up to date.
 
 <H3>2.0: Upgrading from 2.3</H3>
 <h4><A NAME="2.1">
@@ -1717,11 +1746,59 @@ Now, recompile a new kernel as before.
 </h3>
 
 <h4><a name="8.1">
-8.1: New packet filter.
+8.1: New Users - <i>proxy</i> and <i>smmsp</i>.
 </a></h4>
 
-With the integration of the new packet filter you need to
-create its special device.  To make sure everything is updated:
+
+First, with the addition of the 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&sektion=4"
+>pf(4)</a> firewalling package, and its
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&sektion=8"
+>ftp-proxy(8)</a> suite, a new user and
+group named <i>proxy</i> were added to the system.  To support this
+addition, add the following user entry using 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vipw&sektion=8">vipw(8)</a>:
+
+<pre>
+proxy:*:71:71::0:0:Proxy Services:/nonexistent:/sbin/nologin
+</pre>
+
+Also add the <i>proxy</i> group to /etc/group:
+<pre>
+proxy:*:71:
+</pre>
+
+Second, as part of the Sendmail 8.12 upgrade, sendmail no longer runs
+setuid root.  Both a new user and a new group, named <i>smmsp</i>,
+have been added to the system.  Add a line like the following to your
+<tt>/etc/group</tt>:
+
+<pre>
+smmsp:*:25:
+</pre>
+
+Then, run <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vipw&sektion=8">vipw(8)</a> and add the following line for the <i>smmsp</i> user:
+
+<pre>
+smmsp:*:25:25::0:0:Sendmail Message Submission Program:/nonexistent:/sbin/nologin
+</pre>
+
+Make sure this line appears before any <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=yp&sektion=8">yp(8)</a> settings line.<p>
+
+
+
+
+<h4><a name="8.2">
+8.2: New packet filter: <i>pf</i>
+</a></h4>
+
+The IPF firewalling package that has been part of previous
+OpenBSD releases has been replaced with an all-new firewalling suite
+called <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&sektion=4"
+>pf(4)</a>. As a result, a number of changes need to be made.
+
+<p>First, <i>pf</i> depends on a new device file. To ensure that this
+special device is created, do the following:
 
 <pre>
   $ cd /dev
@@ -1729,8 +1806,8 @@ create its special device.  To make sure everything is updated:
   $ sudo ./MAKEDEV all
 </pre>
 
-With the IPF to PF transition, the binaries have
-changed like this:
+Second, a number of filesystem change have occurred. For your
+reference, the following binaries have been replaced:
 <pre>
 OLD:
 /sbin/ipf /sbin/ipfstat /sbin/ipnat /usr/sbin/ipfs
@@ -1738,29 +1815,36 @@ OLD:
 /usr/sbin/ipsend /usr/sbin/iptest
 NEW:
 /sbin/pfctl
+/usr/libexec/ftp-proxy
 </pre>
 
-Devices:
+Similarly, for the devices:
 <pre>
 OLD: /dev/ipl /dev/ipnat /dev/ipstate /dev/ipauth
 NEW: /dev/pf
 </pre>
 
-And the filter configuration files:
+And finally, the filter configuration files:
 <pre>
 OLD: /etc/ipf.rules /etc/ipnat.rules
 NEW: /etc/pf.conf /etc/nat.conf
 </pre>
 
-Make sure you update them manually.
+A mechanism for safely enabling <i>pf</i> has been added to the
+<tt>/etc/rc</tt> and <tt>/etc/rc.conf</tt> files. You will need to
+update these files to include the new hooking mechanism. If you wish
+to enable <i>pf</i>, set PF=YES in <tt>/etc/rc.conf</tt>.
 
-<h4><a name="8.2">
-8.2: Changes to <i>make</i>
+<h4><a name="8.3">
+8.3: Changes to <i>make</i>
 </a></h4>
 
-There have been changes to <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=make&sektion=1">make(1)</a> and its data files which need
-to be updated before performing the build step. This usually
-results in errors from <i>bsd.own.mk</i> during build. First update
+There have been changes to 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=make&sektion=1"
+>make(1)</a> and its data files which may cause difficulties in the
+build process. This usually manifests as
+errors from <i>bsd.own.mk</i> during the build. To avoid these issues,
+first update
 the data files:
 
 <pre>
@@ -1776,22 +1860,23 @@ Then build and install the new make.
   $ sudo make install
 </pre>
 
-<h4><a name="8.3">
-8.3: Build fails because of KerberosV errors
+Now proceed with your upgrade.
+
+<h4><a name="8.4">
+8.4: Build fails because of KerberosV errors
 </a></h4>
 
 Before you try building the whole system, you need to first
 build KerberosV.
 
+<p>
 First, there is a new KerberosV configuration directory in
-<em>/etc</em>.  Use <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mtree&sektion=8">mtree(8)</a> to create it:
-<pre>
-  $ cd /usr/src/etc/mtree
-  $ sudo install -c -o root -g wheel -m 600 special /etc/mtree
-  $ sudo install -c -o root -g wheel -m 444 4.4BSD.dist /etc/mtree
-  $ sudo mtree -qdef /etc/mtree/4.4BSD.dist -p / -u
-</pre>
+<em>/etc</em>.  If you have not already done so, use the 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mtree&sektion=8"
+>mtree(8)</a> procedure described in 
+<a href="#1.13">section 1.13</a> to create it:
 
+<p>
 Now, build KerberosV
 
 <pre>
@@ -1808,58 +1893,28 @@ You may also need to update your <tt>/etc/login.conf</tt>, to
 reflect that the file <tt>/usr/libexec/auth/login_krb-or-pwd</tt> 
 has been renamed to <tt>login_krb<b>4</b>-or-pwd</tt>.
 
-<h4><a name="8.4">
-8.4: New proxy user
-</a></h4>
-
-With the addition of the <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&sektion=8">ftpproxy(8)</a> suite, a new user and
-group named <i>proxy</i> were added to the system.  To support this
-addition, add the following user entry using <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vipw&sektion=8">vipw(8)</a>:
-<pre>
-proxy:*:71:71::0:0:Proxy Services:/nonexistent:/sbin/nologin
-</pre>
-
-Also add the <i>proxy</i> group to /etc/group:
-<pre>
-proxy:*:71:
-</pre>
-
 <h4><a name="8.5">
 8.5: New sendmail version
 </a></h4>
 
 <p>
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sendmail&sektion=8">sendmail(8)</a> has been upgraded to version 8.12. As this version of
-<i>sendmail</i> no longer runs setuid root, this has resulted
-in some significant changes.
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sendmail&sektion=8"
+>sendmail(8)</a> has been upgraded to version 8.12. As this version of
+<i>sendmail</i> no longer runs setuid root, significant changes have
+resulted.
 </p>
-
 <ol>
-<li>Both a new user and a new group, named <i>smmsp</i>, have
-been added to the system.  Add a line like the following to your
-<tt>/etc/group</tt>:
+<li> Both a new user and a new group (<i>smmsp</i>) have been added.
+If you have not yet done so, follow the procedure in 
+<a href="#8.1">section 8.1</a> to create them.
 
-<pre>
-smmsp:*:25:
-</pre>
-
-Then, run <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vipw&sektion=8">vipw(8)</a> and add the following line for the <i>smmsp</i> user:
-
-<pre>
-smmsp:*:25:25::0:0:Sendmail Message Submission Program:/nonexistent:/sbin/nologin
-</pre>
-
-Make sure this line appears before any <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=yp&sektion=8">yp(8)</a> settings line.<p>
-</li>
-
-<li> Create the <tt>/var/spool/clientmqueue</tt> directory and change
-<tt>/var/spool/mqueue</tt> permissions with <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mtree&sektion=8">mtree(8)</a>:
-<pre>
-  # cd /usr/src/etc/mtree
-  # install -c -o root -g wheel -m 600 special /etc/mtree
-  # install -c -o root -g wheel -m 444 4.4BSD.dist /etc/mtree
-  # mtree -qdef /etc/mtree/4.4BSD.dist -p / -u
-</pre>
+<li> Several changes to the file hierarchy have occurred, including a new
+<tt>/var/spool/clientmqueue</tt> directory and new permissions for
+<tt>/var/spool/mqueue</tt>.
+These changes can both be made using the 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mtree&sektion=8"
+>mtree(8)</a> procedure described in 
+<a href="#1.13">section 1.13</a>.
 </li>
 
 <li>Add the following to root's <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=crontab&sektion=1">crontab(1)</a>. This is necessary since
@@ -1900,7 +1955,7 @@ sendmail_flags="-L sm-mta -C/etc/mail/localhost.cf -bd -q30m"
 </li>
 
 <li>
-Once your configuration file is ready, <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=kill&sektion=1">kill(1)</a> THE existing sendmail:
+Once your configuration file is ready, <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=kill&sektion=1">kill(1)</a> the existing sendmail:
 
 <pre>
   kill `sed 1q /var/run/sendmail.pid`
@@ -1931,7 +1986,7 @@ The new <i>sendmail</i> should now be running.
 <FONT SIZE=-1>
 --
 <BR>
-$OpenBSD: upgrade-minifaq.html,v 1.71 2001/09/20 13:28:18 horacio Exp $
+$OpenBSD: upgrade-minifaq.html,v 1.72 2001/10/10 07:09:58 kjell Exp $
 
 <BR>
 Copyright &copy; 1998-2001, Kjell Wooding. 
