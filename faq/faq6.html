@@ -585,23 +585,29 @@ for more options that your DHCP clients may want.
 <h2>6.5 - PPP </h2>
 
 <p>
-Point-to-Point Protocol is generally what is used to create a connection to
-your ISP via your modem. OpenBSD has 2 ways of doing this.
+The Point to Point Protocol (PPP) is generally what is used to create a
+connection to your ISP via a dial-up modem. OpenBSD has 2 ways of doing this:
 
 <ul>
 <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pppd&amp;sektion=8">pppd(8)</a>
- - Which is the kernel ppp daemon.
+ - the kernel PPP daemon
 <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ppp&amp;sektion=8">ppp(8)</a>
- - Which is the userland ppp daemon. 
+ - the userland PPP daemon 
 </ul>
 
 <p>
-The first one we will cover will be the userland PPP daemon. To start
+Both ppp and pppd perform similar functions, in different ways.
+pppd works with the kernel
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ppp&amp;sektion=4">ppp(4)</a>
+driver, whereas ppp works in userland with
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tun&amp;sektion=4">tun(4)</a>.
+This document will cover only the userland PPP daemon, since it is
+easier to debug and to interact with. To start
 off you will need some simple information about your ISP. Here is a list
 of helpful information that you will need.
 
 <ul>
-<li>Your ISP's dialup number
+<li>Your ISP's dial-up number
 <li>Your nameserver 
 <li>Your username and password
 <li>Your gateway
@@ -609,19 +615,11 @@ of helpful information that you will need.
 
 <p>
 Some of these you can do without, but would be helpful in setting up
-your ppp. The userland PPP daemon uses the file 
+ppp. The userland PPP daemon uses the file 
 <a href="http://www.openbsd.org/cgi-bin/cvsweb/src/etc/ppp/ppp.conf.sample">/etc/ppp/ppp.conf</a>
 as its configuration file. There are many helpful files in
 <i>/etc/ppp</i> that can have different setups for many different
 situations. You should take a browse through that directory.
-
-<p>
-Also make sure that if you're not using a GENERIC kernel, you
-have this line in your configuration file:
-
-<blockquote><pre><strong>
-pseudo-device   tun
-</strong></pre></blockquote>
 
 <p>
 <h3>Initial Setup - for PPP(8)</h3>
@@ -629,7 +627,7 @@ pseudo-device   tun
 <p>
 Initial Setup for the userland PPP daemon consists of editing your
 <i>/etc/ppp/ppp.conf</i> file. This file doesn't exist by default, but
-there is a file <i>/etc/ppp/ppp.conf.sample</i> in which you can simply
+there is a file <i>/etc/ppp/ppp.conf.sample</i> which you can simply
 edit to create your own <i>ppp.conf</i> file. Here I will start with the
 simplest and probably most used setup.  Here is a quick
 <i>ppp.conf</i> file that simply sets some defaults:
@@ -653,7 +651,7 @@ for more info on setting up logging levels. Our device gets set with
 &quot;set device&quot;. This is the device that the modem is on. In this
 example the modem is on com port 2. Therefore com port 1 would be
 <i>/dev/cua00</i>. With &quot;set speed&quot; we set the speed of our
-dialup connection and with &quot;set dial&quot; we set our dialup
+dial-up connection and with &quot;set dial&quot; we set our dial-up
 parameters. With this we can change our timeout time, etc. This line
 should stay pretty much as it is though.
 
@@ -679,7 +677,7 @@ enable dns
 
 <p>
 Here we have set up essential info for that specific ISP. The first
-option &quot;set phone&quot; sets your ISP's dialup number. The
+option &quot;set phone&quot; sets your ISP's dial-up number. The
 &quot;set login&quot; sets our login options. Here we have the timeout
 set to 5; this means that we will abort our login attempt after 5
 seconds if no carrier is found. Otherwise it will wait for &quot;login:&quot;
@@ -721,6 +719,32 @@ simply circumvent its use by entering some nameserver lines in
 <i>/etc/resolv.conf</i>.
 
 <p>
+Instead of traditional login methods, many ISPs now use either CHAP or
+PAP authentication. If this is the case, our configuration will look
+slightly different:
+
+<blockquote>
+<pre>
+myisp:
+set phone 1234567   
+set authname ppp
+set authkey ppp
+set login
+set timeout 120   
+set ifaddr 10.0.0.1/0 10.0.0.2/0 255.255.255.0 0.0.0.0
+add default HISADDR 
+enable dns
+</pre>
+</blockquote>
+
+<p>
+In the above example, we specify our username (ppp) and password (ppp)
+using authname and authkey, respectively. There is no need to specify
+whether CHAP or PAP authentication is used - it will be negotiated
+automatically. "set login" merely specifies to attempt to log in, with
+the username and password previously specified.
+
+<p>
 <h3>Using PPP(8)</h3>
 
 <p>
@@ -736,9 +760,11 @@ connection is dropped it will try and reconnect.
 </ul>
 
 <p>
-Using <i>/usr/sbin/ppp</i> with no options will put you into
-interactive mode. From here you can interact directly with the modem; it
-is great for debugging problems in your <i>ppp.conf</i> file.
+If the above fails, try running <i>/usr/sbin/ppp</i> with no options - it
+will run ppp in interactive mode. The options can be specified one by
+one to check for error or other problems. Using the setup specified above,
+ppp will log to /var/log/ppp.log. That log, as well as the man page,
+all contain helpful information.
 
 <p>
 <h3>ppp(8) extras</h3>
@@ -753,12 +779,6 @@ Sample configurations can be viewed here:
 <li><a href="http://www.openbsd.org/cgi-bin/cvsweb/src/etc/ppp/ppp.linkup.sample">ppp.linkup</a>
 <li><a href="http://www.openbsd.org/cgi-bin/cvsweb/src/etc/ppp/ppp.linkdown.sample">ppp.linkdown</a>
 </ul>
-
-<p>
-Extended information can be found at
-<a href="http://www.freebsd.org/doc/en_US.ISO8859-1/books/handbook/userppp.html">FreeBSD 
-Handbook entry on User PPP</a>. 
-
 
 <p>
 <a name="Tuning"></a>
@@ -1857,7 +1877,7 @@ your firewall.
 <a href="index.html"><img height="24" width="24" src="../images/back.gif" border="0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq6.html,v 1.207 2004/12/03 03:35:16 nick Exp $</small>
+<small>$OpenBSD: faq6.html,v 1.208 2004/12/10 10:33:42 jmc Exp $</small>
 
 </body>
 </html>
