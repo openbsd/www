@@ -1,0 +1,1349 @@
+<html>
+<head>
+<meta http-equiv="Content-type" content="text/html; charset=iso-8859-2">
+<title>14.0 - Nastavení disku</title>
+<link rev= "made" href= "mailto:www@openbsd.org">
+<meta name= "resource-type" content= "document">
+<meta name= "description"   content= "the OpenBSD FAQ page">
+<meta name= "keywords"      content= "openbsd,faq">
+<meta name= "distribution"  content= "global">
+<meta name= "copyright"     content= "This document copyright 1998,1999 by OpenBSD.">
+</head>
+
+<body bgcolor= "#ffffff" text= "#000000" link= "#23238E">
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../images/smalltitle.gif">
+<p>
+<h2><font color=#e00000>14.0 - Nastavení disku</font><hr></h2>
+</p>
+
+<p>
+<ul><h3>Obsah</h3>
+<li><a href="#14.1">14.1 - Používání disklabel v OpenBSD</a></li>
+<li><a href="#14.2">14.2 - Používání fdisku v OpenBSD</a></li>
+<li><a href="#14.3">14.3 - Přidávání disků v OpenBSD</a></li>
+<li><a href="#14.4">14.4 - Jak nastavit swapování do souboru</a></li>
+<li><a href="#14.5">14.5 - Soft-updaty</a></li>
+<li><a href="#14.6">14.6 - Když nabootuji po instalaci OpenBSD/i386, zastaví se na 
+"Using partition 3 id 0".</a></li>
+<li><a href="#14.7">14.7 - Jak dostanu dmesg z bootovací diskety?</a></li>
+<li><a href="#14.8">14.8 - Instalace Bootblocks - specifické pro i386</a></li>
+<li><a href="#14.9">14.9 - Příprava na katastrofu: Zálohování a obnova z pásky.</a></li>
+<li><a href="#14.10">14.10 - Mountování disk images v OpenBSD</a></li>
+</ul>
+</p> 
+<hr>
+
+<a name="14.1"></a>
+<h2>Používání disklabel v OpenBSD</h2>
+<p>
+<h3>Table of Contents</h3>
+<ul>
+<li><a href="#14.1.1">Co to je disklabel(8)?</a>
+<li><a href="#14.1.2">Použití disklabel během instalace OpenBSD</a>
+<li><a href="#14.1.3">Běžné použití disklabel(8).</a>
+</ul>
+</p>
+   
+<p>
+<a name="14.1.1"></a>
+<h3>Co to je disklabel(8)?</h3>
+   
+<p>
+Disklabely jsou vytvářeny k tomu, aby existovalo rozhraní mezi diskem a
+diskovými drivery obsaženými v kernelu. Labely drží určitou informaci o vašem
+disku , např. geometrii disku a informaci o filesytémech. To je využito
+bootstrap programem k inicializaci disku a k tomu aby se vědělo kd eje který
+filesystém v rámci disku. Labely jsou navíc využívány ve spojení se
+filesystémy k vytvoření efektivnějšího prosředí. Detailnější informace o
+diklabelu jsou obsaženy v manuálové stránce 
+<a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=disklabel&sektion=5&format=html">disklabel(5)</a>.
+</p> 
+
+<p>
+Disklabel umožňuje navíc překonat omezení diskových oddílů dané architekturou.
+Například na i386 můžete mít pouze 4 primární diskové oddíly (partitons).
+(Diskové oddíly které jsou vidět na ostatních systémech jako např. na Windows
+NT) S disklabel(8) můžete využít jednen z těchto primárních oddílů k
+uložení *všech* oddílů OpenBSD. (např. 'swap', '/', '/usr' and '/var'). A
+stále vám zůstávají 3 oddíly pro jiné operační systémy!
+</p>
+
+<a name="14.1.2"></a>
+<h3>Použití disklabel(8) během instalace OpenBSD</h3>
+
+<p>
+Jedna z hlavních částí instalace OpenBSD je vytvoření labelů. To následuje
+(pro architekturu i386) hned po použití <a href="#14.2">fdisk(1)</a>u.
+Během instalace využijete disklabel na vytvoření separátních labelů které
+budou obsahovat separátní mountpointy. Během instalace můžete nastavit
+vaše mountpointy z disklabel(8)u, ale to není úplně nezbytné, protože později
+budete vyžádání abyste potvrdili vaše volby. Přesto do dělá instalační
+proceduru hladší.
+</p>
+
+<p>
+První label, který vytvoříte bude 'a'. Tento label by měl být namountován jako
+/. Doporučené oddíly a jejich velikosti si můžete prohlédnout v  <a
+href="faq4.html#4.3">faq4.3</a>. Pro servery je doporučené abyste vytvořili
+tyto diskové oddíly separátně. Pro běžné uživatele bude stačit vytvoření
+mounpointu /. Než vytvoříte váš root diskový oddíl, uvědomte si, že budete
+ještě potřebovat nějaké místo pro label swap. Tím jsme vysvětlili základy
+diskalbelu a můžeme přistoupit k příkladům během instalace. V prvním příkladu
+předpokládáme, že OpenBSD bude jediný operační systém na tomto počítači a že
+budete rovádět plnou instalaci. 
+</p>
+
+<ul><pre>
+Pokud je disk sdílen s jinými operačními systémy, měly by tyto mít BIOS oddíl,
+který rozděluje prostor, který pokrývájí. Pro bezpečnost se přesvědčte, že
+Oddíl s OpenBSD je v rozmezí offsetů a velikosti daných v 'A6' tabulce BIOSu.
+(Defaultně se bude disklabel snažit toto vnutit). Pokud si nejste jisti, jak
+rozdělit korektně několik oddílů, (např. rozdělení /,  /usr, /tmp, /var,
+/usr/local a jiných) jednoduše prozatím rozdělte místo mezi oddíly root a swap.  
+
+# using MBR partition 3: type A6 off 63 (0x3f) size 4991553 (0x4c2a41) 
+
+Treating sectors 63-16386300 as the OpenBSD portion of the disk.
+You can use the 'b' command to change this.
+
+Initial label editor (enter '?' for help at any prompt)
+&gt; <strong>d a</strong>
+&gt; <strong>a a</strong>
+offset: [63] <strong>&lt;Enter&gt;</strong>
+size: [16386237] <strong>64M</strong>
+Rounding to nearest cylinder: 131040
+FS type: [4.2BSD] <strong>&lt;Enter&gt;</strong>
+mount point: [none] <strong>/</strong>
+fragment size: [1024] <strong>&lt;Enter&gt;</strong>
+block size: [8192] <strong>&lt;Enter&gt;</strong>
+cpg: [16] <strong>&lt;Enter&gt;</strong>
+&gt; <strong>a b</strong>
+offset: [131103] <strong>&lt;Enter&gt;</strong>
+size: [16255197] <strong>64M</strong>
+Rounding to nearest cylinder: 131040
+FS type: [swap] <strong>&lt;Enter&gt;</strong>
+</pre></ul>
+
+<p>
+V této chvíli jsme vytvořili 64M root diskový oddíl na /, a 64Megový oddíl pro
+swap. Všimněte si, že offset začíná na sektoru 63. To je přesně to co chcete.
+Disklabel ukazuje velikost v sektorech, nicméně nemusíte vkládat velikosti
+pouze v sektorech. Jako v příkladu výše můžete vkládat velikosti např. jako
+<i>64 Megabytes = 64M</i> a <i>2 Gigabytes = 2G</i>. Disklabel toto zaokrouhlí
+na nebližší cylindr. V příkladu výše můžete také zaznamenat, že disklabel
+předpokládá, že label 'b' bude oddíl pro swap. To je správný předpoklad a
+jádro GENERIC je nastaveno aby se dívalo po swapu v labelu 'b' a vy bystě měli
+použít 'b' jako label pro swap standartně.
+</p>
+
+<p>
+Další příklad vás provede vytvořením dalších dvou labelů. To znamená, že to
+není kompletní instalace, protože velikost těchto labelů by nestačila na
+plnou instalaci OpenBSD. 
+</p>
+
+<ul><pre>
+&gt; <strong>a d</strong>
+offset: [262143] <strong>&lt;Enter&gt;</strong>
+size: [16124157] <strong>64M</strong>
+Rounding to nearest cylinder: 131040
+FS type: [4.2BSD] <strong>&lt;Enter&gt;</strong>
+mount point: [none] <strong>/tmp</strong>
+fragment size: [1024] <strong>&lt;Enter&gt;</strong>
+block size: [8192] <strong>&lt;Enter&gt;</strong>
+cpg: [16] <strong>&lt;Enter&gt;</strong>
+&gt; <strong>a e</strong>
+offset: [393183] <strong>&lt;Enter&gt;</strong>
+size: [15993117] <strong>64M</strong>
+Rounding to nearest cylinder: 131040
+FS type: [4.2BSD] <strong>&lt;Enter&gt;</strong>
+mount point: [none] <strong>/var</strong>
+fragment size: [1024] <strong>&lt;Enter&gt;</strong>
+block size: [8192] <strong>&lt;Enter&gt;</strong>
+cpg: [16] <strong>&lt;Enter&gt;</strong>
+</pre></ul>
+
+<p>
+V příkladě uvedeném výše byste si měli všimnout dvou věcí. Jedna z nich je
+fakt, že offset se počítá automaticky, tak aby byl další v pořadí. Pokud
+budete provádět instalaci tohoto typu, vůbec se nebudete muset s offsety
+zabývat. Další rozdíl, kterého si můžete všimnout je, že label 'c' byl
+přeskočen. To bylo provedeno z toho důvodu, že label 'c' representuje celý
+disk, takže s labelem 'c' byste neměli operovat.
+</p>
+
+<p>
+Pokud jste vytvořili všechny labely, které jste chtěli, je čas zapsat tyto
+informace na disk a pokračovat v instalačním procesu. Abyste zapsali všechno
+na disk a ukončili disklabel (a pokračovali s instalací) udělejte:
+</p>
+
+<ul><pre>
+&gt; <strong>w</strong>
+&gt; <strong>q</strong>
+</ul></pre>
+
+<p>
+<strong>*POZOR!*</strong> - Pro uživatele s velkými disky: Pokud váš bios
+nemumí rozpoznat správnout velikost vašeho disku, OpenBSD to nebude umět taky.
+V opačném případě si OpenBSD poradí s diskem normálně. Pokud jste v situaci,
+kdy váš bios nepodporuje váš disk, zkuste produkty typu Maxtor EZ-Drive.
+</p>
+
+
+<a name="14.1.3"></a>
+<h3>Běžné použití disklabel(8)u</h3>
+
+<p>
+Pokud je váš systém nainstalován, němeli byste používat disklabel moc často.
+Budete ho ale potřeba v případě, že budete chtít přidat, odebrat nebo
+restruktorovat vaše disky. Jedna z prvních věcí které budete potřebovat udělat
+je vypsat si stávající disklabel, jednoduše napište:
+</p>
+
+<ul><pre>
+# <strong>disklabel wd0</strong> &gt;----- Podle toho jaký device si budete
+# chtít prohlédnout
+
+# using MBR partition 3: type A6 off 64 (0x40) size 16777152 (0xffffc0)
+# /dev/rwd0c:
+type: ESDI
+disk:
+label: TOSHIBA MK2720FC
+flags:
+bytes/sector: 512
+sectors/track: 63
+tracks/cylinder: 16
+sectors/cylinder: 1008
+cylinders: 2633
+total sectors: 2654064
+rpm: 3600
+interleave: 1
+trackskew: 0
+cylinderskew: 0
+headswitch: 0           # millisekundy
+track-to-track seek: 0  # millisekundy
+drivedata: 0 
+
+16 partitions:
+#        size   offset    fstype   [fsize bsize   cpg]
+  a:  2071440    65583    4.2BSD     1024  8192    16   # (Cyl.   65*- 2120)
+  b:    65520       63      swap                        # (Cyl.    0*- 65)
+  c:  2654064        0    unused        0     0         # (Cyl.    0 - 2632)
+  j:   512001  2137023    4.2BSD     1024  8192    16   # (Cyl. 2120*- 2627*)
+</pre></ul>
+
+<p>
+Výše uvedený příkaz vám jednoduše dovolí vypsat stávající disklabel a ujistit
+se, že nic nepokazíte. (Což všichni někdy potřebujeme.) Abyste byli schopni
+udělat změny, musíte disklabel vyvolat s opšnou -E.
+</p>
+
+<ul><pre>
+# <strong>disklabel -E wd0</strong>
+</pre></ul>
+
+<p>
+To vám hodí prompt, ten samý jaký jste používali při instalaci OpenBSD.
+NEjdůležitější příkaz na tomto promptu je asi '?'. To vám vylistuje všechny
+možnosti. Dokonce se můžete podívat na kompletní manuálovou stránku
+disklabel(8) pomocí příkazu 'M'. Z toho promptu budete dělat věci jako
+přidávat, mazat nebo měnit diskové oddíly. Pro více informací si přečtěte
+manuálovou stránku 
+<a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=disklabel&sektion=8&format=html">disklabel(8)</a>.
+</p>
+
+<p>
+<a name="14.2"></a>
+<h2>14.2 - Používání utility fdisk</h2>
+</p>
+<p>
+Nejprve se ujistěte, že jste si přečetli hlavní manuálovou stránku fdisku
+<a href= "http://www.openbsd.org/cgi-bin/man.cgi?query=fdisk&apropos=0&sektion=8&arch=i386&format=html">fdisk(8)</a>
+</p>
+<p>
+Fdisk je program, který má pomáhat s údržbou vašich diskových oddílů. Tento
+program je použit při instalaci k nastavení vašeho diskového oddílu s OpenBSD.
+(tento dikový oddíl může obsahovat <u>několik</u> labelů, každý s
+filesystémem/swapem/atd.).
+Může rozdělit prostor na vašich discích a nastavit jeden aktivní. Tento
+program je obvykle používán v Single Boot Módu ( boot -s ). Fdisk dále
+nastavuje MBR na vašich různých discích.
+</p>
+
+<p>
+Pro potřeby instalce budete potřebovat pouze <b>JEDEN</b> diskový oddíl s
+OpenBSD a pak použijete disklabel abyste na něm nastavili prostor pro swap a
+filesystem.
+</p>
+
+<p>
+Abyste si prohlédli tabulku vašich diskových oddílů: <br> 
+<ul>
+<pre># <strong>fdisk fd0</strong><br>
+</pre>
+</ul>
+
+Což vám dá výstup podobný tomuto:
+</p>
+
+<ul>
+<pre>
+         Disk: fd0       geometry: 80/2/18 [2880 sectors]
+         Offset: 0       Signatures: 0xAA55,0x0
+                  Starting        Ending
+          #: id  cyl  hd sec -  cyl  hd sec [     start -       size]
+----------------------------------------------------------------------
+         *0: A6    0   0   1 -   79   1  18 [         0 -       2880] OpenBSD
+          1: 00    0   0   0 -    0   0   0 [         0 -          0] unused
+          2: A7    0   0   2 -   79   1  18 [         1 -       2879] NEXTSTEP
+          3: 00    0   0   0 -    0   0   0 [         0 -          0] unused
+</pre>
+</ul>
+
+<p>
+V tomto příkladě ukazujeme výstup fdisku bez floppy drajvu. Můžeme nastavit
+diskový oddíl OpenBSD (A6) a jeho velikost. * nám ríká, že diskový oddíl s
+OpenBSD je bootovatelný.
+</p>
+
+<p>
+V předchozí ukázce jsem jenom vypisovali informaci. Co když budeme chtít
+editovat tabulku našich diskových oddílů? Abysme tak mohli učinit, budeme
+potřebovat použít <b>-e</b> flag. To nás dostane do promptu pro interakci s
+fdiskem.
+</p>
+
+<ul>
+<PRE>
+# <strong>fdisk -e wd0</strong>
+Enter 'help' for information
+fdisk: 1&gt; <strong>help</strong>
+        help            Command help list
+        manual          Show entire OpenBSD man page for fdisk
+        reinit          Re-initialize loaded MBR (to defaults)
+        disk            Edit current drive stats
+        edit            Edit given table entry
+        flag            Flag given table entry as bootable
+        update          Update machine code in loaded MBR
+        select          Select extended partition table entry MBR
+        print           Print loaded MBR partition table
+        write           Write loaded MBR to disk
+        exit            Exit edit of current MBR, without saving changes
+        quit            Quit edit of current MBR, saving current changes
+        abort           Abort program without saving current changes
+fdisk: 1&gt; 
+</PRE>
+</ul>
+
+<p> 
+Je naprosto bezpečné podívat se a prozkoumat co vás zajímá, jenom se ujistěte,
+že odpovíte <Strong>N</strong> na dotaz o ukládání změn a *NEPOUŽÍVEJTE*
+příkaz <strong>write</strong>.
+</p>
+
+<p>Zde je přehled příkazů které můžete použít s <b>-e</b> flagem.<br>
+<ul>
+<li><strong>help</strong>    Vypíše seznam příkazů, kterým disk rozumí v
+interaktivním módu.</li>
+<li><strong>reinit</strong>  Zinicializuje aktuálně vybranou, v paměti
+uloženou kopii boot bloku.</li>
+<li><strong>disk</strong>    Zobrazí aktuální geometrii disku kterou detekoval
+fdisk. Budete moci zvolit ji editovat pokud budete chtít.</li>
+<li><strong>edit</strong>    Edituje danou položku v kopii boot bloku, která je uložena
+v paměti. Můžete buď editovat v BIOS geometry módu nebo v offestech sektorů a
+velikostech.</li>
+<li><strong>flag</strong>    Nastaví danou tabulku diskoých oddílů
+bootovatelnou. Pouze jeden záznam může být nastaven jako bootovatelný. Pokud
+chcete bootovat z extended diskového oddílu, budete potřebovat označit záznam
+v tabulce pro extended diskový oddíl jako bootovatelný.</li>
+<li><strong>update</strong>  Updatne strojový kód v paměti v kopii aktuálně
+vybraného boot bloku.</li>
+<li><strong>select</strong>  Nastaví a nahraje do paměti boot blok, na který
+ukazuje extended diskový oddíl v tabulce v rámci aktuálního boot bloku.</li>
+<li><strong>print</strong>   Vytiskne na terminál akuálně nastavený boot bloku, který je
+uložen v paměti a jeho MBR tabulku.</li>
+<li><strong>write</strong>   Zapíše kopii aktuálního boot bloku uloženou v
+paměti  na disk. Budete dotázáni, abyste tuto operaci potvrdili.</li>
+<li><strong>exit</strong>    Vyleze ze stávající urovně fdisku, buď se vrátí
+k předchozí kopii boot bloku uložené v paměti nebo ukončí program, pokud
+nezbývá žádná fdalší úroveň.</li>
+<li><strong>quit</strong>    Ukončí aktuální úroveň fdisku, buď se vrátí
+předchozí kopii boot bloku uložené v paměti nebo ukončí program, pokud nezbývá
+žádná fdalší úroveň. Na rozdíl od fdisku zapíše aktuální změny  v bloku na
+disk. </li>
+<li><strong>abort</strong>   Ukončí program bez uložení změn.</li>
+</ul>
+</p>
+<br>
+
+<p>
+<a name="14.3"></a>
+<h2>14.3 - Přidávání dalších disků v OpenBSD</h2>
+</p>
+
+<p>
+Jakmile jste instalovali váš disk <strong>SPRÁVNĚ</strong> budete potřebovat
+použít 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fdisk&apropos=0&sektion=8&arch=i386&format=html">fdisk(8)</a>
+(<i>pouze pro i386</i
+>) a 
+<a href= "http://www.openbsd.org/cgi-bin/man.cgi?query=disklabel&apropos=0&sektion=8&format=html">
+disklabel(8)</a> k nastavení vašeho disku v OpenBSD. 
+<P>
+Lidi s i386  by měli začít s fdiskem. Další architektury toto mohou ignorovat. 
+<ul><pre>
+# <Strong>fdisk -i sd2</strong>
+</pre></ul>
+Toto nainicializuje "skutečnou" tabulku diskových oddílů pro exkluzivní
+použití OpenBSD. Pak pro ni budete potřebovat vytvořit disklabel. To se může
+zdát zmatené. 
+<ul><pre>
+# <strong>disklabel -e sd2</strong>
+
+<i>(obrazovka bude prázdná, spustí se váš $EDITOR)</i>
+type: SCSI
+<i>...bla...</i>
+sectors/track: 63
+total sectors: 6185088
+<i>...bla...</i>
+16 partitions:
+#        size   offset    fstype   [fsize bsize   cpg]
+  c:  6185088        0    unused        0     0         # (Cyl.    0 - 6135)
+  d:  1405080       63    4.2BSD     1024  8192    16   # (Cyl.    0*- 1393*)
+  e:  4779945  1405143    4.2BSD     1024  8192    16   # (Cyl. 1393*- 6135)
+</pre></ul>
+Nejdříve, ignorujte diskový oddíl 'c', ten je obsažen vždy a existuje proto
+aby programy jako disklabel vůbec mohly fungovat!
+Pro normální použití by měla být fsize vždy 1024,  bsize 8192 a cpg 16. Fstype
+je 4.2BSD. Total sectors je celková velikost disku. Toto je disk o velikosti 3
+gigabyty. Tři gigabyty je v termínech výrobce 3000 megabytů. Takže vydělte
+6185088/3000 (použijte bc(1)). Dostanete 2061. Takže abyste vytvořili velikost
+diskosti diskových oddílů pro a, d, e, f, g, ... jednoduše vynásobte X*2061
+abyste dostali X megabytů místa na daném diskovém oddílu. Ofset pro váš první
+diskoý oddíl bude ten samý jako "sectors/track" vypsaný ve výstupu disklabelu
+výše. Pro nás je to 63. Ofset pro každý další diskový oddíl by měl být
+kombinace velikosti každého diskového oddílu a ofsetu každého diskového
+oddílu. (Kromě diskového oddílu C, ten v této rovnici nehraje žádnou roli.)
+<P>
+Jiná možnost je ta, že budete chtít jeden diskové oddíl na disku, řekněme že
+budete používat celý disk pro web nebo jako adresář home nebo tak něco, pak
+vezměte celkovou velikost disku a odečtěte od ní počet sektorů na stopu.
+6185088-63 = 6185025.  Váš diskový oddíl je
+<UL><PRE>
+    d:  6185025       63    4.2BSD     1024  8192    16 
+</PRE></UL>
+<P>
+<b>
+Pokud se vám toto vše zdá zbytečně složité, můžete použít disklabel -E abyste
+dostali ten samý mód diskového oddílu, který jste dostali na instalačním
+disku!</b> Můžete zadat "96M" abyste řekli "96 megabytů". (Nebo pokud máte tak
+velký disk, tak 96G pro 96 giga!) Naneštěstí mód -E používá diskovou geonetrii
+z BIOSu a ne tu reálnou a často se tyto dvě liší. Abyste toto omezení obešli,
+napište 'g d' pro 'geometry disk'. (Jiné možnosti jsou  'g b' pro 'geometry
+bios' a 'g u' pro geometry user, nebo jednoduše pro to, co label říkal předtím
+než disklabel uložil změny.)
+<P>
+To je docela dost, ale ještě nejsme u konce. Nakonec budete potřebovat
+vytvořit filesystem na disku tím, že použijete
+<a href=
+"http://www.openbsd.org/cgi-bin/man.cgi?query=newfs
+&apropos=0&sektion=8&format=html">newfs(8)</a>.
+</p>
+
+<p>
+<ul><pre>
+bsd# <strong>newfs wd1a </strong></pre></ul>
+</p>
+
+<p>
+Podle toho jak byl váš disk pojmenován v rámci schematu OpenBSD. (Podívejte se
+na výstup z dmesg(1) abyste viděli jak byl váš disk pojmenován.)
+</p>
+
+<p>
+Ted zjistěte kam budete tento právě vytvořený diskový oddíl montovat. Řekněme,
+že ho budete chtít montovat pod /u. Nejprve vytvořte adresář /u. Pak jej
+namontujte.
+</p>
+
+<UL><PRE>
+mount /dev/wd1a /u
+</PRE></UL>
+
+<P>
+Nakonec ho přidejte do /etc/fstab
+</p>
+<UL><PRE>/dev/wd1a /u ffs rw 1 1</PRE></UL>
+
+<p>
+Co když budete přemístit již existující adresář jako např. /usr/local? Měli
+byste namontovat nový disk do /mnt a pak použít cpio -pdum abyste nakopírovali
+/usr/local do adresáře v /mnt. Zeditujte soubor /etc/fstab aby ukazoval, že
+diskový oddíl s /usr/local je teď /dev/wd1a (váš nově naformátovaný diskový
+oddíl.)
+Příklad:
+</p>
+
+<ul>
+<strong>/dev/wd1a /usr/local ffs rw 1 1</strong>
+</ul>
+
+<p>
+Rebootujte do single módu..<strong>boot -s</strong> Přemístěte existující
+/usr/local do /usr/local-backup (nebo ho smažte, jestli se na to cítíte) a
+vytvořte prázdný adresář /usr/local. Pak rebootujte systém a voila!! soubory
+jsou tam!
+</p>
+
+<br>
+
+<p>
+<a name="14.4"></a>
+<h2>14.4 - Jak swapovat do souboru</h2>
+</p>
+
+<p>
+(Poznámka: jestliže chcete swapovat do souboru proto, že dostáváte hlášky jako
+&quot;virtual memory exhausted&quot; měli byste nejdříve zkusit zvýšit limity
+na proces pomocí 
+<a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=unlimit&sektion=1&format=html">unlimit(1)</a>
+v csh,
+nebo
+<a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=ulimit&sektion=1&format=html">ulimit(1)</a>
+v sh.)
+</p>
+
+<p>
+Po vydání OpenBSD 2.5  přišlo
+<a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=swapctl&sektion=8&format=html">swapctl(8)</a>,
+což přineslo způsob jak nakládat se swap zařízeními ještě jednoušeji. Pokud
+používáte systém OpenBSD 2.5, vyměňte swapctl za swapon a použijte pstat -s k
+vylistování zařízení pro swap. Swapování do souboru nevyžaduje kernel se
+zvláštní konfigurací, ačkoliv to klidně můžete udělat, tento faq vám ukáže jak
+to udělat oběma způsoby.
+</p>
+
+<h3>Swapování do souboru.</h3>
+
+<p>
+Swapování do souboru je nejjedodušší a nejrychlejší cesta jak dostat další
+prostor pro swap. To neplatí pro uživatele, kteří používají Softupdates. (Není
+nastaveno jako default).
+Abyste mohli začít, podívejte se kolik swapu v současné chvíli používáte, tím
+že se podíváte pomocí utility
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=swapctl&sektion=8&format=html">swapctl(8)</a>
+To můžete udělat tak, že spustíte:
+</p>
+
+<ul><pre>
+ericj@oshibana&gt; <strong>swapctl -l</strong>
+Device      512-blocks     Used    Avail Capacity  Priority
+swap_device      65520        8    65512     0%    0
+</pre></ul>
+
+<p>
+To ukazuje zařízení a jejich statistiky které jsou aktuálně používány pro
+swapování. V příkladu uvedeném výše existuje pouze jedno zařízení pojmenováné
+&quot;swap_device&quot;.&quot;swap_device&quot;. To je předdefinovaná oblast
+na disku která je použita pro swapování. (Ukazuje se jako dikový oddíl b když
+si prohlížíte disklabely). Jak můžete v příkladu dále vidět, toto zařízení e v
+současné době moc nepoužívá. Ale pro účely tohoto dokumentu budeme dělat, že
+potřebujeme dalších 32M.
+</p>
+<p>
+První krok jak nastavit soubor jako swapovací zařízení je vytvoření souboru.
+To je nejlepší udělat pomocí utility
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dd&sektion=1&format=html">dd(1)</a>
+Tady je příklad vytvoření souboru <i>/var/swap</i> který má velikost 32M.
+</p>
+
+<ul><pre>
+ericj@oshibana&gt; <strong>sudo dd if=/dev/zero of=/var/swap bs=1k count=32768</strong>
+32768+0 records in
+32768+0 records out
+33554432 bytes transferred in 20 secs (1677721 bytes/sec)
+</pre></ul>
+
+<p>
+Jakmile je toto hotovo, můžeme zapnout swapování do tohoto zařízení. Použijte
+následující příkaz k tomu abyste zapnuli swapování na toto zařízení.
+</p>
+
+<ul><pre>
+ericj@oshibana&gt; <strong>sudo chmod 600 /var/swap</strong>
+ericj@oshibana&gt; <strong>sudo swapctl -a /var/swap</strong>
+</ul></pre>
+
+<p>
+Teď budeme potřebovat zjistit, jestli bylo korektně přidáno do seznamu
+zařízení pro swap.
+</p>
+
+<ul><pre>
+ericj@oshibana&gt; <strong>swapctl -l</strong>
+Device      512-blocks     Used    Avail Capacity  Priority
+swap_device      65520        8    65512     0%    0
+/var/swap        65536        0    65536     0%    0
+Total           131056        8   131048     0%
+</pre></ul>
+
+<p>
+Teď když jste nastavili a zapnuli swapování do souboru, budete potřebovat
+přidat řádku do vašeho souboru <i>/etc/fstab</i> aby se konfigurace provedla
+při každém bootu. Pokud tuto řádku nepřidáte, nebude zařízení zkonfigurováno.
+</p>
+
+<ul><pre>
+ericj@oshibana&gt; <strong>cat /etc/fstab</strong>
+/dev/wd0a / ffs rw 1 1
+/var/swap /var/swap swap sw 0 0
+</ul></pre>
+
+<h3>Swapování pomocí zařízení vnode</h3>
+
+<p>
+Toto je více dlouhodobé řešení jak přidat více prostoru pro swap. Abyste
+swapovali do souboru trvale, nejdříve vytvořte kernel s vnd0c jako swap. Pokud
+máte wd0a jako root filesystem, wd0b je předchozí swap, použijte tento řádek
+ve vašem souboru s konfigurací jádra (souvisí s kompilaci jádra): 
+</p>
+
+<ul><pre>
+config          bsd     root on wd0a swap on wd0b and vnd0c dumps on wd0b
+</pre></ul>
+
+<p>
+Jakmile je toto hotovo, budete potřebovat vytvořit soubor, který bude používán
+ke swapování. Měli byste to udělat pomocí toto samého příkazu uvedeného v
+příkladech výše.
+</p>
+
+<ul><pre>
+ericj@oshibana&gt; <strong>sudo dd if=/dev/zero of=/var/swap bs=1k count=32768</strong>
+32768+0 records in
+32768+0 records out
+33554432 bytes transferred in 20 secs (1677721 bytes/sec)
+</pre></ul>
+
+<p>
+Teď je váš soubor na místě, budete potřebovat přidat tento soubor do
+<i>/etc/fstab</i>. Zde je příklad jak nabootovat s tímto zařízení jako
+swapovacím.
+</p>
+
+<ul><pre>
+ericj@oshibana&gt; <strong>cat /etc/fstab</strong>
+/dev/wd0a / ffs rw 1 1
+/dev/vnd0c none swap sw 0 0 
+</pre></ul>
+
+<p>
+V tomto bodě budete muset rebootovat váš počítač aby se projevily změny v
+jádře. Jakmile je to hotovo, je čas nakonfigurovat toto zařízení jako
+swapovací. Abyste to udělali, použijte
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vnconfig&sektion=8&format=html">vnconfig(8)</a>.
+</p>
+
+<ul><pre>
+ericj@oshibana&gt; <strong>sudo vnconfig -c -v vnd0 /var/swap</strong>
+vnd0: 33554432 bytes on /var/swap
+</pre></ul>
+
+<p>
+Posledním krok je zapnutí  swapování do tohoto zařízení. Uděláme to stejně
+jako v příkladech uvedených výše, použijeme k tomu  swapctl(8). Pak zjistíme
+jestli bylo korektně přidáno do našeho listu swapovacích zařízení.
+</p>
+
+<ul><pre>
+ericj@oshibana&gt; <strong>sudo swapctl -a /dev/vnd0c</strong>
+ericj@oshibana&gt; <strong>swapctl -l</strong>
+Device      512-blocks     Used    Avail Capacity  Priority
+swap_device      65520        8    65512     0%    0
+/dev/vnd0c       65536        0    65536     0%    0
+Total           131056        8   131048     0%
+</pre></ul>
+
+
+
+<p><a name="14.5"></a>
+<h2>14.5 - Soft-updaty</h2>
+</p>
+
+<p>
+Posledních pár let pracoval Kirk McKusick na něčem nazývaném "soft updaty".
+Celé je to založeno na idei navrhované Greg Gangerem a Yale Pattem kterří
+navrhli částečné uspořádání operací v buffer cache které by dovolily
+odstranění požadavků na synchronní zapisování adresářovách položek z kódu FFS.
+Tím se rapidně zvýší rychlost zápisu na disk.
+</p>
+
+<p>
+Abyste zapnuli Softupdates, musíte mít ve vašem kernelu opšnu<br>
+<b>POZOR:</b> Tato volba je defaultně zapnuta od vydání OpenBSD 2.7 a bude
+defaultní v 2.8. Pořád musíte ale zapnout tuto volbu na úrovni diskových
+oddílů. 
+</p>
+
+<p>
+<strong>option FFS_SOFTUPDATES</strong>
+</p>
+
+<p>
+pak nabootujte do single módu:
+</p>
+
+<ul>
+<strong>
+<pre>
+        boot> boot -s
+        [snip]
+        bsd# tunefs -s enable &lt;raw device&gt;
+        bsd# reboot -n
+</pre>
+</strong>
+</ul>
+
+<p>
+<a name="14.6"></a>
+<h2>14.6 -  Když nabootuji po instalaci OpenBSD/i386, zastaví se na
+"Using partition 3 id 0".</h2>
+</p>
+<p>
+To znamená, že váš MBR (Master Boot Record) nebyl nainstalován správně nebo že
+nastavení geometri disku v BIOSu neodpovídá nastavení uloženém v MBR.
+Abyste to vyřešili, zkuste nejdříve reinstalovat boot bloky OpenBSD. To
+uděláte pomocí 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fdisk&sektion=8&arch=i386&format=html">fdisk(8)</a> a
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=installboot&sektion=8&arch=i386&format=html">installboot(8)</a>.
+<P>
+Nejdříve abyste toto zprovoznili, budete potřebovat použít váš disk jako
+bootstrap. Po vložení instalačního disku a předtím než se nahraje kernel a
+ramdisk, dostanete 
+<tt>boot&gt;</tt> prompt z floppy disku.  Použijte jej abyste nabootovali
+OpenBSD z vašeho disku. 
+<UL><PRE>
+booting...
+OpenBSD boot 1.2.3
+probing hd0 fd0...
+boot&gt; <b>boot hd0a:/bsd</b>
+</UL></PRE>
+Teď když jste nabootvali, předpokládejme, že jste vyhradili celoý disk pro
+OpenBSD, reinicializujte Master Boot Record pomocí fdisk(8)u. (Pokud používáte
+nějaké další diskové oddíly na vašem disku pro jiné operační systémy, nemůžete
+použít <tt>installboot</tt>, musíte se podívat na jinou volbu jako např.
+OS-BS, jak je popsáno dále.)
+<UL><PRE>
+# <b>fdisk -i wd0</b>
+</PRE></UL>
+Teď budete potřebovat znovu zapsat boot bloky.
+<UL><PRE>
+# <strong>cp /usr/mdec/boot /boot</strong>
+# <strong>/usr/mdec/installboot -v /boot /usr/mdec/biosboot wd0</strong>
+</PRE></UL>
+Nakonec rebootujte a otestujte to.
+<p>
+Pokud to nepracuje, pořád máte ještě několik možností. První možnost je použít
+bootloader jako např. BS-OS. Ten je zahrnut na instalačním CD v adresáři
+tools. Pokud jste nezakoupili instalační CD-ROM, můžete si stáhnout os-bs z
+některého OpenBSD ftp serverů. Soubor, který potřebuje je
+<tt>pub/OpenBSD/2.8/tools/osbs135.exe</tt>
+</p>
+
+<p>
+Dále si přečtěte stránky na 
+<a href= "http://www.prz.tu-berlin.de/~wolf/os-bs.html">
+          http://www.prz.tu-berlin.de/~wolf/os-bs.html</a>
+</p>
+
+<p>
+Existují také další komerční bootloadery nebo lilo, které můžete také pro
+použít pro 
+multi-booting.
+</p>
+
+<p>
+Zde je jednoduchý návod jak nainstalovat lilo na váš systém.
+</p>
+
+<p>
+<ul>
+<li>Nabootojte DOSovou disketu a spusťte fdisk /MBR. Ujistěte se, že to děláte
+na disku, z kterého budete bootovat.
+</li>
+<li>Nabootojte z linuxového disku a nainstalujte LILO &amp; svažte to s vašík
+OpenBSD
+boot blokem.</li>
+</ul>
+</p>
+
+<p>
+Další intrukce si můžete přečíst v
+<a href="ftp://ftp.openbsd.org/pub/OpenBSD/2.8/i386/INSTALL.linux">INSTALL.linux</a>
+</p>
+
+<br>
+
+<p>
+<a name="14.7"></a>
+<h2>14.7 - Jak dostanu dmesg z bootovací diskety?</h2>
+</p>
+<p>
+RAMDISK images (bootovací diskety) neobsahují utilitu <i>dmesg</i>. Nicméně
+mají namontovaný filesystém <code>/kern</code>. Abyste zkopírovali informaci
+dmesg do souboru, udělejte:
+</p>
+
+<ul><pre>
+# <strong>cat /kern/msgbuf >mydmesg</strong>
+</pre></ul>
+<P>
+Bootovací diskety dále mají 'more' abyste mohli stránkovat výstup:
+<pre><ul>
+# <strong>more /kern/msgbuf</strong>
+</ul></pre>
+
+Podívejte se do <a href= "faq4.html#4.5">sekce 4.5</a>
+
+<p>
+<a name="14.8"></a>
+<h2>14.8 - Instalace Bootbloků - pouze pro i386</h2>
+</p>
+
+<p>
+Starčí verze MS-DOSu mohou pracovat pouze disky, které mají geometrii 1024
+cylinderů nebo méně. Protože všechny nové disky mají více než 1024 cylindrů,
+většina SCSI BIOSů (které jsou na SCSI řadiči) a IDE BIOSů (které jsou částí
+BIOSU PC) mají volbu (někdy je defaultní) určenou k "překladu" skutečné
+geometrie disku do nečeho co je v rámci možností MS-DOSu. Nicméně ne všechny
+BIOSy provádějí tento překlad stejně. Pokud změníte váš BIOS (buď s novou
+základní deskou nebo SCSI BIOSem) a ten nový používá rozdílný "překlad"
+geometrie, nebudete schopni nahrát stage boot loader (tím pádem nebudete
+schopni nahrát kernel). (To je proto, že first stage boot loader obsahuje
+seznam bloků které skládají /boot v rámci originální "přeložené" geometrie.)
+Pokud používáte IDE disky, a provedete změny ve vašem nastavení BIOSu, můžete
+nechtěně) změnit také překlady (většina IDE disků nabízí 3 různé překlady.)
+Abyste spravili váas boot block abyste mohli nabootovat normálně, napište "b
+hd0a:/bsd", čímž vynutíte boot z prvního hard disku (a ne z floppy). Vaše
+mašina by měla naběhnout normálně. Teď budete potřebovat updatovat first stage
+boot loader abyste viděli novou geometrii (a znovu zapsat boot blok podle
+toho).
+<br>
+Náš příklad bude předpokládat že boot disk je sd0 (ale pro IDE disky to bude
+wd0, atd..):
+</p>
+<ul>
+<pre>
+# <strong>cd /usr/mdec; ./installboot /boot biosboot sd0</strong>
+</pre>
+</ul>
+<p>
+Pokud si installboot stěžuje že nemůže číst geometrii BIOS, v boot&gt; promptu
+můžete zadat &quot;machine diskinfo&quot; (nebo krátce &quot;ma di&quot;) aby
+se vytiskla požadovaná informace. Vyplňte hodnoty &quot;heads&quot; a
+&quot;secs&quot; pomocí flagů -h a -s, repsektive modifikujte installboot
+příkaz tak, aby vypadal následovně:
+</p>
+<ul><pre>
+#<strong> cd /usr/mdec; ./installboot -h &lt;heads&gt; -s &lt;secs&gt; /boot biosboot sd0</strong>
+</pre></ul>
+
+<p>
+Pokud ne vyžadovaná nová verze bootblocků, budete potřebovat zkompilovat tyto
+sami. To uděláte jednoduše:
+</p>
+
+<ul><pre>
+# <strong>cd /sys/arch/i386/stand/</strong>
+# <strong>make && make install </strong>
+# <strong>cd /usr/mdec; cp ./boot /boot</strong>
+# <strong>./installboot /boot biosboot sd0</strong> (or whatever device your hard disk is)
+</pre></ul>
+
+<p>
+<a name="14.9"></a>
+<h2>14.9 - Příprava na katastrofu: Zálohování a obnova z pásky.</h2>
+</p>
+
+<h3>Úvod:</h3>
+
+<p>
+Pokdu plánujete provozovat něco co se dá nazvat produkční server, je rozumné
+mít nějakou formu zálohování v případě, že některý z vašich pevných disků
+padne.
+</p>
+
+<p>
+Tato informace vám pomže v používání standartních utilit
+<a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=dump&sektion=8&format=html">dump(8)</a>/<a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=restore&sektion=8&format=html">restore(8)</a>
+dodávaných s OpenBSD. Lepší utilita nazvaná "Amanda" lze použít pro více
+serverů sdíljících jednu páskovou jednotku. V většině prostředí je kombinace
+<a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=dump&sektion=8&format=html">dump(8)</a>/<a
+href=http://www.openbsd.org/cgi-bin/man.cgi?query=restore&sektion=8&format=html">restore(8)</a>
+dostačující. Nicméně jestliže potřebujete zálohovat více strojů na jednu
+pásku, může stát výzkum Amandy za to.
+</p>
+
+<p>
+Příklady pro zařízení v tomto dokumentu jsou pro konfiguraci která zahrnuje
+SCSI disky a pásku. V produčním prostředí jsou SCSI disky doporučovány kvůli
+způsobů jakým zacházejí se špatnými bloky. Tím nechceme říci, že tyto
+informace budou zbytečné v případě že použíáte IDE disky, jenom se situace
+bude mírně lišit. Například sd0a by bylo v IDE systému wd0a.
+</p>
+
+<h3>Zálohování na pásku:</h3>
+
+<p>
+Zálohování na pásku vyžaduje znalost místa, kde jsou namontovány filesystémy.
+To můžete zjistit pomocí příkazu "mount" v shellu. Měli byste dostat výstup
+podobný tomuto:
+</p>
+
+<ul><pre>
+shell# <b>mount</b>
+/dev/sd0a on / type ffs (local)
+/dev/sd0h on /usr type ffs (local)  
+</ul></pre>
+
+<p>
+V tomto příkladě je root (/) filesystem umístěn fyzicky na sd0a, což indikuje
+pevná disk SCSI 0, diskový oddíl a. Filesystém /usr je na sd0h, což je pevný
+disk SCSI 0, diskový oddíl h.
+</p>
+
+<p>
+Další příklad více komplikované tabulky by mohl být:
+</p>
+
+<ul><pre>
+shell# <b>mount</b>
+/dev/sd0a on / type ffs (local)
+/dev/sd0d on /var type ffs (local)
+/dev/sd0e on /home type ffs (local)
+/dev/sd0h on /usr type ffs (local)  
+</ul></pre>
+
+<p>
+V tomto komplikovanějčím příkladě je  root (/) filesystem fyzicky na sd0a.
+Filesystém /var je na sd0d, /home je na sd0e a konečně /usr je na sd0h.
+</p>
+
+<p>
+Abyste zálohovali váš stroj budete potřebovat dodat dumpu jméno každého
+pevného diskového oddílu. Zde je příklad příkazů potřebných pro jednodušší
+mount tabulku uvedenou výše:
+</p>
+
+<ul><pre>
+# <b>/sbin/dump -0au -f /dev/nrst0 /dev/rsd0a</b>
+# <b>/sbin/dump -0au -f /dev/nrst0 /dev/rsd0h</b>
+# <b>mt -f /dev/rst0 rewind  </b>
+</ul></pre>
+
+<p>
+Pro složitější tabulku, byste použili nšco jako:
+</p>
+
+<ul><pre>
+# <b>/sbin/dump -0au -f /dev/nrst0 /dev/rsd0a</b>
+# <b>/sbin/dump -0au -f /dev/nrst0 /dev/rsd0d</b>
+# <b>/sbin/dump -0au -f /dev/nrst0 /dev/rsd0e</b>
+# <b>/sbin/dump -0au -f /dev/nrst0 /dev/rsd0h  </b>
+# <b>mt -f /dev/rst0 rewind  </b>
+</ul></pre>
+
+<p>
+Můžete si přečíst manuálovou stránku abyste se dozvěděli co přesně dělá který
+přepínač. Zde je krátký popis parametrů popsaných výše:
+</p>
+
+ul>
+<li><b>0</b> - Provede dump úrovně 0, na všechno
+<li><b>a</b> - Pokusí se automaticky zjistit délku páskového media
+<li><b>u</b> - Updatne soubor /etc/dumpdates, který slouží k indikaci data
+poslední zálohy
+<li><b>f</b> - Které páskové zařízení se má použít (v tomto případě /dev/nrst0)
+</ul>
+
+<p>
+Nakonec kterýž diskový oddíl chcete zálohovat (/dev/rsd0a, atd.)
+</p>
+
+<p>
+Příkaz mt je použit k přetočení pásky. Přečtěte si manuálovou stránku abyste
+se dozvěděli více options. (jako např. eject).
+</p>
+
+<p>
+Pokud si nejste jistí jménem páskového zařízení, použijte dmesg k tomu, abyste
+jej lokalizovali. Příklad záznamu páskového zařízení v dmesg by vypadal asi
+takto:
+</p>
+
+<ul><pre>
+st0 at scsibus0 targ 5 lun 0: &lt;ARCHIVE, Python 28388-XXX, 5.28&gt;
+</ul></pre>
+
+<p>
+Možná jste zaznamenali, že když zálohujete je k páskovému zařízení 
+přistupováno jako k "nrst0" namísto "st0", což je jméno které je uvedeno v
+dmesg. Když přistupujete k st0 jako k nrst0, přistupujete k tomu samému
+fyzickému zařízení, ale říkáte tím, aby se jednotka nepřevinula až dojde na
+konec a aby se k ní přistupovalo v raw modu. Abyste zálohovali více systémů na
+jednu pásku, ujistěte se, že používáte non-rewind zařízení, protože kdybyste
+použili rewind zařízení (rst0) na zálohování více systémů, dopadlo by to tak,
+že byste si přepsali filesystém s dalším dumpem na pásku. Příslušný popis
+různých rozhraní k páskovým zařízením můžete najít v manuálové stránce dumpu. 
+</p>
+
+<p>
+Pkud jste chtěli napsat malý skript nazvaný "backup", mohl by vypadat nějak
+takto:
+</p>
+
+<ul><pre>
+echo "  Startuji Plnou Zálohu..."
+/sbin/dump -0au -f /dev/nrst0 /dev/rsd0a
+/sbin/dump -0au -f /dev/nrst0 /dev/rsd0d
+/sbin/dump -0au -f /dev/nrst0 /dev/rsd0e
+/sbin/dump -0au -f /dev/nrst0 /dev/rsd0h
+echo
+echo -n "  Přetáčím pásku, čekejte prosím..."
+mt -f /dev/rst0 rewind
+echo "Hotovo."
+echo                      
+</ul></pre>
+
+<p>
+Pokud požadujete zálohy každou noc, použijte 
+<a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=cron&sektion=8&format=html">cron(8)</a>
+pro automatický start zálohovacího skriptu.
+</p>
+
+<p>
+Dále vám může pomoci napsat si (na kus papíru) jak velké by měly být
+jednotlivé filesystémy. Můžete použít df -h na zjištění kolik místa zabírají
+jednotlivé dikoé oddíly. To bude užitečné když disk spadne a vy budete
+potřebovat znovuvytvořit tabulku diskových oddílů na novém disku.
+</p>
+
+<p>
+Znovuobnovení vašich dat vám pomůže zmenšit fragmentaci. Abyste se ujistili,
+že dostanete všechny soubory, nejlepší způsob jak zálohovat je rebootovat vás
+sytem v single módu. File systémy nepotřebují být namontovány k tomu aby mohly
+být zálohovány. Nezapomeňte namontovat root (/) r/w po rebootu v single modu
+nebo váš dump spadne když se bude pokoušet zapsat data dumpu. Napište bsd -s v
+boot> promptu abyste se dostali do single modu. 
+</p>
+
+<h3>Prohlížení obsahu pásky:</h3>
+
+
+<p>
+Poté co jste zálohovali vaše filesystémy poprvé, byl by dobrý nápad otestovat
+vaši pásku a ujistit se, že na ní jsou data ve stavu v jakém jste očekávali.
+</p>
+
+<p>
+Můžete použít následující příklad k tomu abyste si prohlédli seznam souborů na
+pásce:
+</p>
+
+<ul><pre>
+# <b>/sbin/restore -tvs 1 -f /dev/rst0</b>
+</ul></pre>
+
+<p>
+To vylistuje seznam souborů které jsou na prvním diskovém oddílu pásky. S
+informacemi uvedenými výše můžeme říct, že 1 bude váš root (/) file system.
+</p>
+
+<p>
+Abyste si prohlédli co je uloženo na druhém diskovém oddílu, přesměrujte
+výstup do souboru, použijte něco jako:
+</p>
+
+<ul><pre>
+# <b>/sbin/restore -tvs 2 -f /dev/rst0 > /home/me/list.txt</b>
+</ul></pre>
+
+<p>
+Pokud máte mount tabulku podobnou té v jednodušším příkladu, 2ka by byla /usr,
+pokud je vaše složitější, tak 2ka by mohla být /var nebo jiný fs. Sekvenční
+čílo se shoduje s pořadím vkterém jsou file systémy azapisovány na pásku.  
+</p>
+
+
+<h3>Obnova z pásky:</h3>
+
+<p>
+Příklad scénáře vypsaného dále by mohl být užitečný pokud vám spadl disk
+kompletně. V případě že budete chtít obnovit pouze jeden soubor, podívejte se
+na manuálovou stránku a věnujte pozor instrukcím pro interaktvní mod. 
+</p>
+
+<p>
+Pokud jste se pořádně připravili, výměna disku a obnova dat bude velmi rychlý
+proces. Standartní instalční/bootovací disketa s OpenBSD už obsahuje
+požadovanou utilitu restore stejně jako binárky nutné k tomu abyste udělali
+nový disk bootovatelný. Ve většine případů jsou tato disketa a páska se
+zálohou vše co potřebujete abyste obnovili data a znovu se rozjeli.
+</p>
+
+<p>
+Jakmile jste fyzicky vyměnili disk, základní kroky jak obnovit vaše data by
+byly:
+</p>
+
+<ul>
+<li>
+<p>
+Nabootujte OpenBSD instalační/bootovací disketu. V selekci menu zvolte Shell.
+Ochraňte disketu proti zápisu a vložte vaši poslední pásku se zálohou do
+jednotky.
+<br>
+</p>
+
+<li>
+<p>
+Použijte příkaz <a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=fdisk&sektion=8&arch=i386&format=html">fdisk(8)</a>,
+vytvořte priární diskovou oblast pro OpenBSD na tomto nově nainstalovaném
+disku. Příklad:
+</p>
+
+<ul><pre>
+shell# <b>fdisk -e sd0</b>
+</ul></pre>
+
+<p>
+Více informací je v <a href="#14.2">fdisk FAQ</a>.
+</p>
+
+<li>
+<p>  
+Použijte příkaz disklabel, vytvořte znovu tabulku vašch diskových oddílů pro
+OpenBSD, kterou jste právě vytvořili fdiskem. Příklad:
+</p>
+
+<ul><pre>
+shell# <b>disklabel -E sd0</b>
+</ul></pre>
+
+<p>
+(Nezapomeňte na swap, přečtěte si <a href="#14.1">disklabel FAQ</a>)
+</p>
+
+<li>
+<p>
+Pužijte příkaz newfs pro vytvoření čistého filesystémy na každém diskovém
+oddílu který jste vytvořili v předchozím kroku. Příklad:
+</p>
+
+<ul><pre>
+shell# <b>newfs /dev/rsd0a</b>
+shell# <b>newfs /dev/rsd0h</b>
+</ul></pre>
+
+<li>
+<p>
+Namontujte váš nově připravený root (/) file system do /mnt. Příklad:
+</p>
+
+<ul><pre>
+shell# <b>mount /dev/sd0a /mnt</b>
+</ul></pre>
+
+<li>
+<p>
+
+Přesuňte se do toho namontovaného file systemu a začněte restore proces.
+Příklad:
+</p>
+
+<ul><pre>
+shell# <b>cd /mnt</b>
+shell# <b>restore -rs 1 -f /dev/rst0</b>
+</ul></pre>
+
+<li>
+<p>
+Budete chtít aby vás disk byl bootovatelný, použijte následující k tomu,
+abyste zapsali nový MBR na disk. Příklad:
+</p>
+
+<ul><pre>
+shell# <b>fdisk -i sd0</b>
+</ul></pre>
+
+<li>
+<p>
+Dále budete potřebovat instalovat nové boot bloky k tomu, abyste mohli z
+tohoto MBR nabootovat. Následující krátký příklad to provede:
+</p>
+
+<ul><pre>
+shell# <b>cp /usr/mdec/boot /mnt/boot</b>
+shell# <b>/usr/mdec/installboot -v /mnt/boot /usr/mdec/biosboot sd0</b>
+</ul></pre>
+
+<li>
+<p>
+Váš nový root file system na pevném disku by měl být dostatečně připraven na
+to, abyste z něj mohli nabootovat a pokračovat v obnově zbytku vašich file
+systémů. Protože operační systém není ještě kompletní, ujistěte se, že zpátky
+nabootujete v single módu. V promto zadejte následující příkazy k tomu abyste
+odmontovali a haltovali systém:
+</p>
+
+<ul><pre>
+shell# <b>umount /mnt</b>
+shell# <b>halt</b>
+</ul></pre>
+
+<li>
+<p>
+Vyndejte instalační/bootovací disketu z drajvu a rebootujte vás systém. V
+boot&gt; promptu OpenBSD zadejte následující příkaz:
+</p>
+
+<ul><pre>
+boot&gt; <b>bsd -s</b>
+</ul></pre>
+
+<p>
+bsd -s nastartuje systém v single módu, což vyžaduje pouze root (/) file
+system.
+</p>
+
+<li>
+<p>
+Předpokládejme, že jste provedli všechny kroky uvedené výše správně a nestalo
+se nic špatně, tj. že jste dostali prompt s tím abyste zadali cestu k shellu a
+zadali return. Zadejte return a dostanete se do shellu. Dále budete chtít
+remountovat root v r/w modu, to uděláte následujícím příkazem:
+</p>
+
+<ul><pre>
+shell# <b>mount -u -w /</b>
+</ul></pre>
+
+<li>
+<p>
+Jakmile jste remountovali v r/w módu, může pokračovat s obnovou vašich
+filesystémů. Příklad:
+</p>
+
+<ul><pre>
+(jednoduchá mount table)
+shell# <b>mount /dev/sd0h /usr; cd /usr; restore -rs 2 -f /dev/rst0</b>
+
+(složitější mount table)
+shell#	<b>mount /dev/sd0d /var; cd /var; restore -rs 2 -f /dev/rst0</b>
+shell#	<b>mount /dev/sd0e /home; cd /home; restore -rs 3 -f /dev/rst0</b>
+shell#	<b>mount /dev/sd0h /usr; cd /usr; restore -rs 4 -f /dev/rst0</b>
+</ul></pre>
+
+<p>
+mohli byste použít "<b>restore rvsf</b>" namísto pouhého rsf k tomu, abyste
+viděli obnovování objektů z dumpu. 
+</p>
+
+<li>
+<p>
+Nakonec poté co jste dokončili obnovu všech filesystémů na disk, rebotojte do
+multiuser módu. Pokud šlo všechno tak jak jste plánovali, bude váš systém
+zpátky ve stavu v jakém byla provedena poslední záloha a bude připraven k
+dalšímu použití.
+</p>
+</ul>
+
+<p>
+<a name=14.10></a>
+<h2>14.10 - Mountování disk images v OpenBSD</h2>
+</p>
+
+<p>
+Abyste namontovali v OpenBSD disk image (ISO images, diskové images vytvořené pomocí dd,
+atd.) musíte konfigurovat zařízení
+<a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=vnd&sektion=4">vnd(4)</a>.
+Na příklad pokud máte ISO image v <i>/tmp/ISO.image</i>, následující kroky vám
+tento image namontují.
+</p>
+
+<ul>
+<table border=0 width="800">
+        <tr>
+                <td nowrap bgcolor="#EEEEEE">
+<pre>
+# <strong>vnconfig svnd0 /tmp/ISO.image</strong>
+# <strong>mount -t cd9660 /dev/svnd0c /mnt</strong>
+</pre>
+                </td>
+        </tr>
+</table>
+</ul>
+
+<p>
+Všimněte si, že toto je CD image, takže při montování musíte specifikovat typ
+<i>cd9660</i>. To platí nezávisle na typu, například musíte zadat typ ffs
+pokud montujete diskové images.
+</p>
+
+<p>
+K tomu abyste odmontovali image, použijte následující príkazy:
+</p>
+
+<ul>
+<table border=0 width="800">
+        <tr>
+                <td nowrap bgcolor="#EEEEEE">
+<pre>
+# <strong>umount /mnt</strong>
+# <strong>vnconfig -u svnd0</strong>
+</pre>
+                </td>
+        </tr>
+</table>
+</ul>
+
+<p>
+Více informací naleznete v manuálové stránce
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vnconfig&sektion=8">vnconfig(8)</a>.
+</p>
+
+<p>
+<font color= "#0000e0">
+<a href= "index.html">[Zpět na Hlavní Index]</a>
+<a href= "faq13.html">[Na Sekci 13.0 - IPsec]</a>
+</font>
+</p>
+
+<p>
+<hr>
+<a href= "index.html"><img height= "24" width= "24" src= "../../images/back.gif" border= "0" alt="[zpět]"></a>
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<small>
+<br>
+Originally [OpenBSD: faq14.html,v 1.36 ]
+<br>
+$Translation: faq14.html,v 1.1 2001/05/04 17:10:58 certik Exp $
+<br>
+$OpenBSD: faq14.html,v 1.1 2001/05/11 06:28:56 jufi Exp $
+</small>
+
+</body>
+</html>

@@ -1,0 +1,2363 @@
+<html>
+<head>
+<meta http-equiv="Content-type" content="text/html; charset=iso-8859-2">
+<title>6.0 - Networking</title>
+<link rev= "made" href= "mailto:www@openbsd.org">
+<meta name= "resource-type" content= "document">
+<meta name= "description"   content= "the OpenBSD FAQ page">
+<meta name= "keywords"      content= "openbsd,faq">
+<meta name= "distribution"  content= "global">
+<meta name= "copyright"     content= "This document copyright 1998-1999 by OpenBSD.">
+</head>
+
+<body bgcolor= "#ffffff" text= "#000000" link= "#23238E">
+
+<img alt="[OpenBSD]" height=30 width=141 src="../../images/smalltitle.gif">
+<p>
+<h2><font color=#e00000>6.0 - Nastavení sítě</font><hr></h2>
+</p>
+
+<p>
+<ul><h3>Obsah</h3>
+<li><A href= "#6.0.1">6.0.1 - Předtím než půjdeme dále</a>
+<li><a href= "#6.1">6.1 - Úvodní nastavení sítě</a>
+<li><a href= "#6.2">6.2 - IP filtr</a>
+<li><a href= "#6.3">6.3 - Překlad síťových adres (NAT) </a>
+<li><a href= "#6.4">6.4 - Dynamic Host Configuration Protocol (DHCP)</a>
+<li><a href= "#6.5">6.5 - Point to Point Protokol</a>
+<li><A href= "#6.6">6.6 - Zlepšování výkonu sítě</a>
+<li><a href= "#6.7">6.7 - Používání NFS</a>
+<li><a href= "#6.8">6.8 - Domain Name Service  - DNS, BIND a named</a>
+<li><a href= "#6.9">6.9 - Nastavení PPTP spojení v OpenBSD</a>
+</ul>
+</p>
+<hr>
+
+<br>
+<P>
+<A name="6.0.1"></a>
+<H2>6.0.1 - Předtím než půjdeme dále</h2>
+<P>
+Na úvod předpokládáme, že čtenář přečetl a alespoň částečně chápe sekci <A href="faq5.html">Konfigurace jádra</a> těchto FAQ, stejně jako manuálové stránky
+příkazů <a href= "http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&apropos=0&sektion=8&format=html">
+ifconfig(8)</a> a 
+<a href= "http://www.openbsd.org/cgi-bin/man.cgi?query=netstat&apropos=0&sektion=1&format=html">
+netstat(1)</a> .
+<P>
+Pokud jste administrátor sítě a nastavujete směrovací protokoly, pokud používáte OpenBSD box jako router, pokud chcete hlouběji poznat princip fungovaní sítě
+s IP protokolem, pak byste si rozhodně měli přečíst <A HREF="http://www.3com.com/solutions/en_US/ncs/501302.html">Vše co potřebujete vědět o IP adresování</a>.
+Jedná se skutečně o vynikající dokument, který obsahuje zcela nepostradatelné informace pro práci se sítěmi na bázi IP protokolu, obzvláště pokud pokud máte co dočinění nebo zodpovídáte za více než jednu síť.
+<P>
+Pokud pracujete s aplikacemi jako jsou web servery, ftp servery a mail servery,
+můžete najít mnoho cenných informací <A HREF="http://the.rfceditor.org/rfc.html">čtením RFC dokumentů</a>.
+Samozřejmě, že je nemůžete přečíst všechny. 
+Raději si vyberte téma, o které se zajímáte, nebo které používáte v práci.
+RFC definují mnoho (řádově tisíce) standardů protokolů internetu a popisují,
+jak tyto protokoly jsou navrženy a jak pracují.
+
+<a name="6.1"></a>
+<h2>6.1 - Úvodní nastavení sítě</h2>
+
+<p>
+<a name="6.1.1"></a>
+<h3>6.1.1 - Identifikace a nastavení vašich síťových rozhraní</h3>
+</p>
+
+<p>
+Nejprve je nutné identifikovat v systému váš síťový hardware. V OpenBSD jsou
+síťová rozhraní pojmenovaná podle síťové karty, ne podle typu spojení. 
+To zda byla vaše síťová karta inicializovaná, můžete vidět při startu systému,
+nebo později pomocí příkazu <strong>dmesg(8)</strong>. Rovněž můžete svoje
+síťová rozhraní identifikovat ve výpisu příkazu <strong>ifconfig(8)</strong>.
+Například zde je výstup z příkazu dmesg pro síťovou kartu ne2000, které
+odpovídá název zařízení ne.
+</p>
+
+<ul><pre>
+ne3 at pcmcia1 function 0 "Linksys, EtherFast 10/100 PC Card (PCMPC100), " port 0x340/16 irq 9
+ne3: address 00:e0:98:04:95:ba
+</pre></ul>
+
+<p>
+Pokud nevíte, jaké jméno v systému odpovídá vaší kartě, zde je seznam běžných
+typů karet a odpovídajících názvů zařízení.
+<ul>
+<li> síťové karty ne2000 - <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ne&sektion=4&format=html">ne</a>
+<li>3Com EtherLink III a Fast EtherLink III Ethernet - <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ep&sektion=4&format=html">ep</a>
+<li>3Com EtherLink XL a Fast EtherLink XL Ethernet (3C9xx) - <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=xl&sektion=4&format=html">xl</a>
+<li>Intel 82586 chip Ethernet device driver - <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ie&sektion=4&format=html">ie</a>
+<ul>Který zahrnuje karty jako:
+  <li>3Com 3C507
+  <li>AT&T StarLAN 10
+  <li>AT&T EN100
+  <li>AT&T StarLan Fiber
+  <li>Intel EtherExpress 16
+</ul>
+<li>DEC/Intel 21142/3 a clone 10/100 Ethernet driver - <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dc&sektion=4&format=html">dc</a>
+<ul><FONT SIZE="-1"> <b>Pozn:</b> Některé drivery, které byly v OpenBSD 2.6,
+jako např. mx, ax, al a pn byly nahrazeny tímto driverem.</font><BR>
+Který zahrnuje rovněž karty jako:
+  <li>Intel 21142/21143 (dříve vyráběnými firmou DEC)
+  <li>Macronix 98713, 98713A, 98715, 98715A and 98725
+  <li>Davicom DM9100 a DM9102
+  <li>ASIX Electronics AX88140A a AX88141
+  <li>ADMtek AL981 Comet a AN985 Centaur
+  <li>Lite-On 82c168 a 82c169 PNIC
+  <li>Lite-On/Macronix 82c115 PNIC II
+<P>
+Pokud upgradujete na OpenBSD 2.7 ze starší verze OpenBSD, musíte zde dávat
+větší pozor.
+Jakékoliv odkazy v souborech /etc/ifaliases, /etc/ipf.rules, /etc/ipnat.rules
+na staré názvy zařízení jako mx, al, ax nebo pn musí být nahrazeny za dc.
+Stejně tak všechny soubory s názvem hostname.xxx se starým názvem zařízení musí
+být přejmenovány na hostname.dcX, aby byly akceptovány. 'X' nahraďte číslem
+vašeho zařízení.
+</ul>
+</ul>
+
+<p>
+Znovu připomeňme, že chcete-li zjistit, která zařízení byla identifikována,
+můžete použít příkaz <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&sektion=8&format=html">ifconfig(8)</a>. Zde je jeho výstup zobrazující  
+zařízení ne2k.
+</p>
+
+<ul><pre>
+$ <strong>ifconfig -a</strong>
+lo0: flags=8009&lt;UP,LOOPBACK,MULTICAST&gt;
+        inet 127.0.0.1 netmask 0xff000000
+lo1: flags=8008&lt;LOOPBACK,MULTICAST&gt;
+ne3: flags=8863&lt;UP,BROADCAST,NOTRAILERS,RUNNING,SIMPLEX,MULTICAST&gt;
+        media: Ethernet manual
+        inet 10.0.0.38 netmask 0xffffff00 broadcast 10.0.0.255
+sl0: flags=c010&lt;POINTOPOINT,LINK2,MULTICAST&gt;
+sl1: flags=c010&lt;POINTOPOINT,LINK2,MULTICAST&gt;
+ppp0: flags=8010&lt;POINTOPOINT,MULTICAST&gt;
+ppp1: flags=8010&lt;POINTOPOINT,MULTICAST&gt;
+tun0: flags=10&lt;POINTOPOINT&gt;
+tun1: flags=10&lt;POINTOPOINT&gt;
+enc0: flags=0&lt;&gt;
+bridge0: flags=0&lt;&gt;
+bridge1: flags=0&lt;&gt;
+</pre></ul>
+
+<p>
+Jak je vidět, <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&sektion=8&format=html">ifconfig(8)</a>
+dává více informací, než v této fázi potřebujeme. Umožňuje nám ale vidět naše
+zařízení. V předcházejícím příkladě je již síťová karta nakonfigurována.
+Poznáte to podle vypsaných hodnot &quot;inet 10.0.0.38 netmask
+0xffffff00 broadcast 10.0.0.255&quot;, odpovídající nastavení parametrů a také
+pomocí příznaků <strong>UP</strong> a <strong>RUNNING</strong> . Také jste
+si určitě všimli mnoha dalších zařízení. Zde je seznam zařízení, které byste
+zde měli nalézt.
+</p>
+
+<ul>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=lo&sektion-4&format=html">lo</a> - Loopback Interface
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sl&sektion=4&format=html">sl</a> - SLIP Network Interface
+<li>ppp - Point to Point Protocol
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tun&sektion=4&format=html">tun</a> - Tunnel Network Interface
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=enc&sektion=4&format=html">enc</a> - Encapsulating Interface
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridge&sektion=4&format=html">bridge</a> - Ethernet bridge interface
+</ul>
+
+<p>
+Pokud vaše zařízení nemáte nakonfigurované, prvním krokem je vytvoření souboru
+<strong>/etc/hostname.${IF}</strong> .
+Kde jméno zařízení se nachází na místě ${IF}. V předcházejícím příkladě by
+by jméno bylo <strong>/etc/hostname.ne3</strong>. Formát tohoto souboru
+je následující:
+Více informací o formátu tohoto souboru najdete v manuálové stránce <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hostname.if&sektion=5&format=html">hostname.if(5)</a>
+.
+</p>
+
+<ul><pre>
+[address_family] [vaše_ip] [vaše_síťová_maska] [media options]
+</pre></ul>
+
+<p>
+Pro předcházející příklad by tento soubor vypadal následovně:
+</p>
+
+<ul><pre>
+$ <strong>cat /etc/hostname.ne3</strong>
+inet 10.0.0.38 255.255.255.0 NONE
+</pre></ul>
+
+<p>
+Další krok je nastavení defaultního routeru. Provedete to tak, že jeho IP adresu
+umístíte do souboru s názvem <strong>/etc/mygate</strong>. Tak umožňíte, aby
+váš defaultní router byl nastaven při startu. 
+Poté byste měli nastavit vaše nameservery a soubor <strong>/etc/hosts</strong>.
+Nastavení nameserverů spočívá mmj. ve vytvoření souboru s názvem <strong>/etc/resolv.conf</strong>. Více informací o formátu tohoto souboru naleznete v manuálové stránce <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=resolv.conf&sektion=5&format=html">resolv.conf(5)</a>. Pro standardní použití zde je příklad
+takového souboru. V tomto příkladu předpokládejme, že adresy vašich nameserverů
+jsou  125.2.3.4 a 125.2.3.5. Patříte rovněž do domény &quot;yourdomain.com&quot;.
+</p>
+
+<ul><pre>
+$ <strong>cat /etc/resolv.conf</strong>
+search yourdomain.com
+nameserver 125.2.3.4
+nameserver 125.2.3.5
+lookup file bind
+</pre></ul>
+
+<p>
+Nyní můžete buďto restartovat počítač, nebo spustit skript <strong>/etc/netstart</strong>. Uděláte to jednodušše napsáním (jako uživatel root) :
+</p>
+
+<ul><pre>
+$ <strong>sh /etc/netstart</strong>
+writing to routing socket: File exists
+add net 127: gateway 127.0.0.1: File exists
+writing to routing socket: File exists
+add net 224.0.0.0: gateway 127.0.0.1: File exists
+</pre></ul>
+
+<p>
+Všimněte si, že došlo k několika chybám, ale ty se týkají jen zařízení loopback.
+Takže je můžeme ignorovat. Nyní by váš síťový subsystém měl být správně nastaven a měl by fungovat. Opět se můžete příkazem <strong>ifconfig(8)</strong> přesvědčit, že je vaše zařízení nastaveno správně. Směrování paketů na síťových rozhraních, nastavení rout můžete zkontrolovat pomocí příkazu <strong>netstat(1)</strong> nebo <strong>route(8)</strong>. Zde je příklad jak si prohlédnout vaše routovací tabulky.
+</p>
+
+<ul><pre>
+$ <strong>netstat -rn</strong>
+Routing tables
+
+Internet:
+Destination        Gateway            Flags     Refs     Use    Mtu  Interface
+default            10.0.0.1           UGS         0       86      -  ne3
+127/8              127.0.0.1          UGRS        0        0      -  lo0
+127.0.0.1          127.0.0.1          UH          0        0      -  lo0
+10.0.0/24          link#1             UC          0        0      -  ne3
+10.0.0.1           aa:0:4:0:81:d      UHL         1        0      -  ne3
+10.0.0.38          127.0.0.1          UGHS        0        0      -  lo0
+224/4              127.0.0.1          URS         0        0      -  lo0
+
+Encap:
+Source             Port  Destination        Port  Proto SA(Address/SPI/Proto)
+$ <strong>route show</strong>
+Routing tables
+
+Internet:
+Destination      Gateway            Flags
+default          10.0.0.1           UG
+127.0.0.0        LOCALHOST          UG
+localhost        LOCALHOST          UH
+10.0.0.0         link#1             U
+10.0.0.1         aa:0:4:0:81:d      UH
+10.0.0.38        LOCALHOST          UGH
+BASE-ADDRESS.MCA LOCALHOST          U
+</pre></ul>
+
+<p>
+<a name="6.1.2"></a>
+<h3>6.1.2 - Nastavení OpenBSD jako routeru</h3>
+</p>
+
+<p>
+Následují základní informace, které potřebujete znát, abyste mohli nastavit
+vaše OpenBSD jako router . Pokud používáte OpenBSD jako
+router v síti Internet, doporučujeme vám, abyste si přečetli rovněž nastavení
+IP filtru, o kterém pojednává další část, pomocí IP filtru můžete blokovat
+potenciálně nebezpečné síťové relace. Rovněž z důvodu nedostatků IP adres na
+Internetu pro IPv4 se můžete podívat na Překládání síťových adres (Network address translation), kde najdete informace jak rozšířit váš adresový prostor.
+</p>
+
+<p>
+Jádro kompilované jako GENERIC má již v sobě podporu IP Forwardingu, která musí
+být v tomto případě zapnutá. Můžete tak učinit pomocí příkazu  <strong>sysctl(8)</strong>. Pro trvalou změnu byste měli zeditovat soubor <strong>/etc/sysctl.conf</strong> . Uděláte to snadno přidáním následující řádky do tohoto souboru.
+</p>
+
+<ul><pre>
+net.inet.ip.forwarding=1
+</pre></ul>
+
+<p>
+Chcete-li tuto změnu provést bez restartu stroje, měli byste použít příkaz <strong>sysctl(8)</strong>. Pamatujte si však, že tato změna nebude trvalá, vydrží
+jen do rebootu a také že tento příkaz musíte spustit jako uživatel root.
+</p>
+
+<ul><pre>
+# <strong>sysctl -w net.inet.ip.forwarding=1</strong>
+net.inet.ip.forwarding: 0 -> 1
+</pre></ul>
+
+<p>
+Nyní změňte routovací tabulky na jiných strojích. Je mnoho způsobů použití OpenBSD jako router, pomocí softwaru <A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=routed&apropos=0&sektion=8&format=html">routed(8)</a>,
+<A HREF="http://www.gated.org">gated</a>, <a href="http://www.mrtd.net">mrtd</a>, a <A href="http://www.zebra.org">zebra</a>.
+OpenBSD podporuje porty v ports tree jak pro gated tak mrtd.
+OpenBSD podporuje mnoho síťových zařízení, jako T1, HSSI, ATM, FDDI, Ethernet
+a sériové PPP/SLIP zařízení.
+</p>
+
+<p>
+<a name="6.1.3"></a>
+<h3>6.1.3 - Nastavení aliasů zařízení.</h3>
+</p>
+
+<strong>Počínaje OpenBSD 2.8, <i>/etc/ifaliases</i> se už dále nepoužívá!</strong>
+
+<p>
+OpenBSD má jednoduchý mechanismus, který umožňuje nastavit ip aliasy na zařízení. Vše spočívá v jednoduché editaci souboru <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hostname.if&sektion=5&format=html"><i>/etc/hostname.&lt;if&gt;</i></a>. Tento soubor
+je přečten při startu systému skriptem <i>/etc/rc</i>, který je součástí <a href="faq10.html#10.3">rc startup hierarchy</a>. Například předpokládejme, že uživatel má zařízení <b>dc0</b> a je na síti 192.168.0.0. Další podstatné informace
+jsou:
+</p>
+
+<ul>
+<li>IP adresa pro dc0 je 192.168.0.2
+<li>síťová maska  255.255.255.0
+</ul>
+
+<p>
+Několik poznámek o aliasech. V OpenBSD používáte pouze název zařízení. Není tady rozdíl mezi prvním aliasem nebo druhým aliasem. Narozdíl od některých operačních systémů, OpenBSD se na ně neodkazuje jako dc0:0, dc0:1. Pokud se odkazujete
+na určitou aliasovanou IP adresu pomocí ifconfig, nebo přidáváte alias, ujistěte se, že píšete "<tt>ifconfig interface alias</tt>" namísto  "<tt>ifconfig interface</tt>". Smazat alias můžete pomocí "<tt>ifconfig interface delete</tt>".
+<P>
+Předpokládejme, že používáte více IP adres, které jsou na stejné podsíti, a používáte k tomu aliasy. vaše síťová maska pro každý alias má automaticky hodnotu
+255.255.255.255. Není nutné, aby síťové masky aliasů následovaly síťovou masku
+prvního IP spojeného s tímto zařízením. V následujícím příkladě <i>/etc/hostname.dc0</i> jsou přidány dva aliasy pro zařízení dc0, které mimo jiné bylo nastaveno
+jako 192.168.0.2 netmask 255.255.255.0.
+</p>
+
+<ul><pre>
+$ <b>cat /etc/hostname.dc0</b>
+inet 192.168.0.2 255.255.255.0 media 100baseTX
+dc0 192.168.0.3 255.255.255.255
+dc0 192.168.0.4 255.255.255.255
+</ul></pre>
+<P>
+Ve všech těchto příkladech je použitá maska taková, aby se zabránilo vytvoření
+duplicitní routovací tabulky pro stejnou síť.
+
+
+<p>
+<b>Poznámka:</b><br>
+
+Počínaje OpenBSD 2.7, můžete nastavit aliasy v souboru <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hostname.if&sektion=5&format=html"><i>/etc/hostname.*</i></a>. Pro provedení stejného nastavení jako v předcházejícím příkladě, byste vytvořili následující soubor  <i>/etc/hostname.dc0</i> :
+</p>
+
+
+<ul><pre>
+inet 192.168.0.2 255.255.255.0 media 100baseTX
+inet alias 192.168.0.3 255.255.255.255 NONE
+inet alias 192.168.0.4 255.255.255.255 NONE
+</pre></ul>
+
+
+<p>
+Poté co jste vytvořili tento soubor, budete muset rebootovat, aby se změny nastavení promítly. Nebo můžete nastavit aliasy ručně pomocí <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&sektion=8&format=html">ifconfig(8)</a>.
+ Nastavení prvního aliasu by se provedlo takto:
+</p>
+
+<ul><pre>
+# <b>ifconfig dc0 inet alias 192.168.0.3 netmask 255.255.255.255</b>
+</pre></ul>
+
+<p>
+Pro prohlížení těchto aliasů je vhodný příkaz:
+</p>
+
+<ul><pre>
+$ <b>ifconfig -A</b>
+dc0: flags=8863&lt;UP,BROADCAST,NOTRAILERS,RUNNING,SIMPLEX,MULTICAST&gt;
+        media: Ethernet manual
+        inet 192.168.0.2  netmask 0xffffff00 broadcast 192.168.0.255
+        inet 192.168.0.3 netmask 0xffffffff broadcast 192.168.0.3
+</pre></ul>
+
+
+
+<p>
+<a name= "6.2"></a>
+<h2>6.2 - IP Filter</h2>
+</p>
+
+<p>
+Softwarový balík IP Filter od Darrena Reeda slouží pro zajištění následujících dvou úloh:
+filtrovací pravidla pro filtrování na úrovni paketů <A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=ipf&apropos=0&sektion=8&format=html">ipf(8)</a> a mapování
+počítačů, podsítí na okruh externích adres <A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=ipnat&apropos=0&sektion=8&format=html">ipnat(8)</a>. Konfigurační soubory pro tyto dvě služby jsou /etc/ipf.rules a /etc/ipnat.rules.
+</p>
+
+<p>
+Je nutné zeditovat /etc/rc.conf pro jejich aktivaci při startu. Potřebujete také
+ mít net.inet.ip.forwarding=1 ve vašem /etc/sysctl.conf (nebo vaše jádro má
+zakompilované napevno IPFORWARDING nebo GATEWAY volby) . Jádro rovněž musí
+být zkompilované s volbami IPFILTER a IPFILTER_LOG (GENERIC jádra mají tuto vlastnost).
+</p>
+
+<P>
+Pokud máte IP filtr zakompilovaný v jádře, ale nemáte ho aktivován v /etc/rc.conf, můžete ho stále ještě jednodušše aktivovat.
+
+<ul><pre>
+# ipf -Fa -f /etc/ipf.rules -E
+# ipnat -CF -f /etc/ipnat.rules
+</pre></ul>
+
+<P>
+Volba <tt>-E</tt> u ipf 'umožňuje' IP filtr.  <Tt>-Fa</tt> maže všechna pravidla pro filtrování, která mohla být již nastavena. <tt>-f /etc/ipf.rules</tt> nahraje nová pravidla ze souboru /etc/ipf.rules.
+<p>
+Pokud uděláte změny v /etc/ipf.rules poté co ipf je nahrán, můžete pravidla
+jednodušše nahrát znova.
+
+<ul><pre>
+# ipf -Fa -f /etc/ipf.rules
+</pre></ul>
+Stejné pro ipnat...
+
+<ul><pre>
+# ipnat -CF -f /etc/ipnat.rules
+</pre></ul>
+Také budete chtít spustit ipmon pro ladění.
+<ul><pre>
+# ipmon -Ds
+</pre></ul>
+<p>
+Tento dokument obsahuje jen několik základních ipf a ipnat konfigurací.
+Spousta pěkných příkladů je v /usr/share/ipf/ . Doporučujeme, abyste si
+vybrali tu, která je vám nejbližší a modifikovali ji pro vaše potřeby.
+Informace o IP filtru naleznete na IP Filter <A HREF="http://false.net/ipfilter/">mailing list archív</a>, <A HREF="http://coombs.anu.edu.au/~avalon/">IP Filter web site</a>, a konečně <A
+HREF="http://www.obfuscation.org/ipf/">IP Filter HOWTO</a>.
+</p>
+
+<p>
+<h3>IPF</h3>
+</p>
+
+<p>
+Pro konfiguraci IP filtru při startu, budete muset modifikovat /etc/rc.conf ,aby zde bylo IPFILTER=YES. 
+IP Filtr  (ipf) je kontrolován sadou pravidel ze souboru /etc/ipf.rules, která
+jsou načtena při startu. Pro detailnější popis si přečtěte <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ipf&apropos=0&sektion=5&format=html">ipf(5)</a>. V přikladech, které následují, fxp0 reprezentuje externí rozhraní k internetu. Ve vašem  případě bude patrně jiné, na základě ethernetového adaptéru ve vašem počítači.  Pravidla předpokládají trvalé spojení s Internetem, jaké byste
+zařídili patrně pro webserver.
+</p>
+
+<p>
+Pravidla IP filtru jsou zpracovávána postupně od shora dolů. Každý paket musí
+přejít přes tyto pravidla, předtím než dosáhne svého určení.
+</p>
+
+<p>
+Například implicitní soubor pravidel umožňuje každému paketu cestovat dovnitř a ven:
+
+<ul><pre>
+pass out from any to any
+pass in from any to any
+</pre></ul>
+
+Nyní předpokládejme, že nechceme dovolit jakoukoliv přichozí konekci na port
+3306 (mysql) protože k databázi by měl být přístup pouze z localhostu.
+Soubor pravidel by vypadal takto:
+
+<ul><pre>
+pass out from any to any
+pass in from any to any
+block in on fxp0 from any to any port = 3306
+</pre></ul>
+
+Toto říká  &quot;blokuj všechny příchozí pakety, přicházející na interfejs fxp0 odkudkoliv, směřující kamkoliv, jejichž destinace je port 3306.&quot;
+Přirozeně, paket určený pro port 3306 na zařízení fxp0 projde přes první
+&quot;pass in&quot; pravidlo a potom bude odhozen díky pravidlu &quot;block in port = 3306&quot; . Pokud změníte pořadí vašich pravidel (pamatujte si, pořadí
+je důležité):
+
+<ul><pre>
+pass out from any to any
+block in on fxp0 from any to any port = 3306
+pass in from any to any
+</pre></ul>
+
+Pakety určené pro port 3306 projdou, protože poslední pravidlo souboru dovoluje
+všem příchozím paketům projít. Je důležité pamatovat si při psaní pravidel
+pro IP filtr, že:
+ <b> Poslední odpovídající pravidlo vítězí</b>.
+</p>
+
+<p>
+Samozřejmě, jsou zde vyjímky pro každé pravidlo. Volba <em>quick</em> ukončí 
+zpracování paketu na prvním pravidlu, které odpovídá. Podívejme se na předcházející příklad.
+Pokud přidáme  <em>quick</em>  k pravidlu &quot;block in&quot; :
+
+<ul><pre>
+pass out from any to any
+block in quick on fxp0 from any to any port = 3306
+pass in from any to any
+</pre></ul>
+
+ck</em> <p>
+Paket určený pro náš počítač na port 3306 bude zpracován bezprostředně pravidlem
+&quot;block in quick&quot; a bude odhozen. Všechny pakety určené pro jiné porty
+nenajdou odpovídající pravidlo, dokud nedosáhnou pravidla &quot;pass in&quot;, které jim dovolí projít.
+</p>
+
+<b>Default Deny</b>
+<p> Nejbezpečnější politika filtrování paketů je tzv. politika default deny.
+Všechny pakety, které nejsou přímo dovoleny, jsou odhozeny. Tato politika je
+mnohem bezpečnější než přímo nepovolovat každou chráněnou službu, také umožňuje
+mít relativně malý soubor pravidel a může ochránit od špatně nakonfigurované
+služby, která je ponechána svému osudu.
+<p>
+Nyní se podívejte na jiný příklad skutečného žijícího příkladu pravidel a vysvětleme si řádku po řádce jejich význam. Je zde příklad webserveru s default deny
+politikou, která povoluje pouze ssh spojení (pro administraci) a spojení
+http (port 80) a https (port 443).
+<ul><pre>
+#############################
+# begin ruleset
+#############################
+pass in quick on fxp0 from any to any port = 22
+pass in quick on fxp0 from any to any port = 80
+pass in quick on fxp0 from any to any port = 443
+block in quick on fxp0 from any to any
+pass out on fxp0 from any to any 
+##############################
+# end ruleset
+##############################
+</pre></ul>
+
+<p>
+Tyto pravidla dovolí příchozím spojením odkudkoliv na porty 22(ssh), 80(http)
+a 443(https) projít. Odhodí všechny ostatní pakety a umožní všechna odchozí
+spojení.
+Co ale když chcete dovolit ssh spojení pouze z interních strojů , ale dovolit
+spojení zvenku na http a https?
+</p>
+
+<ul><pre>
+#############################
+# begin ruleset
+#############################
+pass in quick on fxp0 from 1.1.1.0/24 to any port = 22
+pass in quick on fxp0 from any to any port = 80
+pass in quick on fxp0 from any to any port = 443
+block in quick on fxp0 from any to any
+pass out on fxp0 from any to any
+##############################
+# end ruleset
+##############################
+</pre></ul>
+
+Docela dobré, ale co když chceme dovolit pouze jednomu stroji (1.1.1.1) administrovat webserver vzdáleně?
+V tomto případě  můžeme změnit :
+
+<ul><pre>
+pass in quick on fxp0 from 1.1.1.0/24 to any port = 22
+</pre></ul>
+na:
+<ul><pre>
+pass in quick on fxp0 from 1.1.1.1/32 to any port = 22
+</pre></ul>
+IP filtr podporuje jak tečkovou desítkovou tak CIDR notaci síťové masky. Předcházející byste mohli napsat také jako:
+<ul><pre>
+pass in quick on fxp0 from 1.1.1.1/255.255.255.255 to any port = 22
+</pre></ul>
+ale proč byste to dělali?
+</p>
+<b> Příklad souboru pravidel</b>
+<p>
+Zde je několik pravidel pro každého (předpokládejme, že fxp0 je externí zařízení
+připojené na internet). Nejprve nastolíme jednoduchou address spoofing ochranu.
+<ul><pre>
+block in quick on fxp0 from 127.0.0.0/8 to any
+block in quick on fxp0 from 192.168.0.0/16 to any
+block in quick on fxp0 from 172.16.0.0/12 to any
+block in quick on fxp0 from 10.0.0.0/8 to any
+block out quick on fxp0 from any to 127.0.0.1/8
+block out quick on fxp0 from any to 192.168.0.0/16
+block out quick on fxp0 from any to 172.16.0.0/12
+block out quick on fxp0 from any to 10.0.0.0/8
+</pre></ul>
+Dobrá myšlenka je rovněž oddělit pravidla pro vaše loopback rozhraní od ostatních. 
+ 
+<ul><pre>
+pass out quick on lo0
+pass in quick on lo0
+</pre></ul>
+Náš soubor pravidel zdá se zatím vypadá dobře, když to dáme všechno dohromady,
+vypadá to takto:
+<ul><pre>
+###########################
+# begin ruleset
+###########################
+# loopback rules
+
+pass out quick on lo0
+pass in quick on lo0
+
+# don't allow anyone to spoof non-routeable addresses
+
+block in quick on fxp0 from 127.0.0.0/8 to any
+block in quick on fxp0 from 192.168.0.0/16 to any
+block in quick on fxp0 from 172.16.0.0/12 to any
+block in quick on fxp0 from 10.0.0.0/8 to any
+block out quick on fxp0 from any to 127.0.0.1/8
+block out quick on fxp0 from any to 192.168.0.0/16
+block out quick on fxp0 from any to 172.16.0.0/12
+block out quick on fxp0 from any to 10.0.0.0/8
+
+# only allow our administration machine to connect via ssh
+
+pass in quick on fxp0 from 1.1.1.1/32 to any port = 22
+
+# allow others to use http and https
+
+pass in quick on fxp0 from any to any port = 80
+pass in quick on fxp0 from any to any port = 443
+
+# finally lock the rest down with a default deny
+
+block in quick on fxp0 from any to any
+
+# and let out-going traffic out
+
+pass out on fxp0 from any to any
+
+#############################
+# end ruleset
+#############################
+</pre></ul>
+</p>
+
+<b>Logování paketů</b>
+<p>
+Nyní je naše situace dost dobrá, ale mohla by být ještě lepší. Co když chceme
+logovat každý pokus o spojení na port 22(ssh), který byl firewallem zablokován?
+Jednodušše, IP filtr to umožňuje pomocí slova <em>log</em> :
+<ul><pre>
+pass in quick on fxp0 from 1.1.1.1/32 to any port = 22
+block in log quick on fxp0 from any to any port = 22
+</pre></ul>
+Toto pravidlo dovolí našemu vzdálenému administračnímu počítači spojení na port
+22, ale blokuje a loguje všechny ostatní pokusy o spojení na port 22.
+</p>
+<b> Filtrování na základě protokolů</b>
+<p>
+IP filtr umí filtrovat jakýkoliv IP protokol podle jeho čísla nebo názvu
+v souboru <a href=file://localhost/etc/protocols>/etc/protocols</a>. My
+se zaměříme jen na protokoly tcp, udp a icmp. Tyto jsou nejčastěji užívány. 
+Všechny zásadní internetové aplikace závisí na implementaci a správném fungování těchto protokolů.</p>
+<p>
+Pro filtrování podle protokolů se užívá v konfiguraci ipf klíčové slovo <em>proto</em>. Podíváme-li se na náš předchozí příklad pravidla pro ssh, protože ssh
+používá pro svoji komunikaci tcp, měli bychom dovolit spojení pouze tcp paketům. Použitím slova <em>proto</em> umožníme uspět pouze tcp paketům a dostáváme pravidlo podobné tomuto:
+<ul><pre>
+pass in quick on fxp0 proto tcp from 1.1.1.1/32 to any port = 22
+</pre></ul>
+Co ale v případě, kdy potřebujeme umožnit spojení službě používající jak tcp
+tak i udp, jako je například bind? V případě tcp/udp IP filtr dovoluje spojit
+oba protokoly dohromady. Poznámka: toto je možné pouze v případě tcp/udp. Použití v případě služby dns v prostředí s defaultní politikou deny je následující:
+<ul><pre>
+pass in quick on fxp0 proto tcp/udp from any to any port = 53
+</pre></ul>
+</p>
+<b> Filtrování fragmentů</b>
+<p>
+Kromě filtrování založeného na protokolech je IP filtr schopen filtrovat
+rovněž fragmentované IP pakety (běžná metoda obcházení paket filtrů). Jsou
+zde dvě klíčová slova, která se používají pro práci s fragmentovanými ip pakety,  <em>frag</em> pro běžně fragmentované pakety nebo <em>short</em> pro IP pakety, jejichž hlavičky jsou příliš malé pro porovnávání. Protože fragmentované
+pakety se mohou vyskytnout v důsledku běžného provozu, je nejlepší filtrovat
+pouze pakety, jejichž hlavičky jsou příliš malé pro smysluplné porovnávání. 
+Toho dosáhneme použitím následujícího pravidla:
+<ul><pre>
+block in quick proto tcp all with short
+</pre></ul>
+A co IP paket s nastavenými IP volbami ?
+IP filtr pracuje i s těmito fenomény. Pakety mohou být odfiltrovány, pokud
+mají nastaveny volby jako takové, nebo pokud mají nastaveny určité volby.
+Například následující pravidlo zakáže a loguje všechny pakety s nastavenými
+volbami.
+<ul><pre>
+block in log quick on fxp0 all with ipopts
+</pre></ul>
+Toto pravidlo může ale znemožnit funkci některých programů, jako například
+ <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=traceroute&sektion=8&format=html">traceroute(8)</a>. Můžete rovněž specifikovat, které volby IP paketu
+nepovolujete. Například takto:
+<ul><pre>
+block in quick on fxp0 all with opt lsrr
+block in quick on fxp0 all with opt ssrr
+</pre></ul>
+<b>TCP příznaky, vytvořená spojení a keeping state</b>
+<p>
+Nyní začíná být filtrování progresivní. Největší silou IP filtru je totiž
+schopnost filtrovat pakety na základě nastavených příznaků TCP protokolu,
+udržovat vytvořená spojení a jejich stav. Doporučujeme, aby všichni uživatelé,
+kteří chtějí filtrovat podle TCP příznaků  věděli, jakou roli každý
+příznak má. Například , pokud chcete zakázat všechny pakety s nastavenými
+flagy FIN, URG a PSH (jako například v případě pokusu o OS fingerprinting pomocí nmap-u ) můžete použít pravidlo jako je toto:
+<ul><pre>
+block in quick on fxp0 proto tcp from any to any flags FUP
+</pre></ul>
+( Díky  <a href=mailto:halogen@nol.net>Kyle Hargraves</a> za tento tip)
+</p>
+<p>
+Další výborná vlastnost IP filtru je schopnost udržovat stav. Tato vlastnost
+spočívá v tom, že jakmile je jednou vytvořeno spojení, pakety týkající se
+tohoto spojení už dále nepodstupují filtrování. Toto je velmi silná vlastnost
+, která umožňuje psát pravidla filtru jednoduššeji a bezpečněji.</p>
+<p>
+Například, podívejme se, jak mužeme uplatnit tuto vlastnost při psaní naší ukázkové sestavy pravidel. Pro připomenutí, dovolujeme administrační přístup z
+naší adresy třídy C na port 22(ssh) a dovolujeme všechna příchozí spojení 
+na port 80 (http) a 443 (https). Blokujeme všechna ostatní spojení. Co ale
+dělat v případě, že se chceme spojit pomocí ssh z web serveru, nebo chceme
+použít lynx abychom se podívali na něco ve FAQ? To udělat nemůžeme, protože
+jsme zablokovali všechna příchozí spojení, které směřují na jiné než námi
+povolené porty. Ačkoliv nastavení ip filtru je tak bezpečné jak to jen jde,
+může být poněkud nevyhovující. Přídáním slova <em>keep state</em> do pravidla
+ &quot;pass out&quot; můžeme automaticky dovolit spojení, která přicházejí
+jako odezva na naše pokusy o spojení, jako je např. surfování na webu.
+<ul><pre>
+#############################
+# begin ruleset
+#############################
+pass in quick on fxp0 from 1.1.1.0/24 to any port = 22
+pass in quick on fxp0 from any to any port = 80
+pass in quick on fxp0 from any to any port = 443
+block in quick on fxp0 from any to any
+pass out on fxp0 proto tcp from any to any keep state
+##############################
+# end ruleset
+##############################
+</pre></ul>
+</p>
+<p>
+Tato malá změna dramaticky zvyšuje flexibilitu a bezpečnost naší sady pravidel
+. Například, v přecházejícím příkladě umožňujeme tcp spojení na port 80 a 443.
+Můžeme to ale ještě zlepšit. K tomu, aby se vytvořilo tcp spojení, potřebujeme
+aby proběhl jen počáteční handshake, jakmile k němu dojde, můžeme blokovat
+spojení na tento port a pomocí našeho &quot;keep state&quot; pravidlo bude
+udržovat vytvořené spojení. Abychom dovolili počáteční handshake, potřebujeme
+dovolit pakety pouze s nastavenými flagy SIN a SIN/ACK. Propuštěním paketů pouze s příznaky SIN a SIN/ACK se ubráníme mnoha formám port skenů jako je například
+FIN skenování. Pravidla nyní vypadají takto:
+<ul><pre>
+#############################
+# begin ruleset
+#############################
+pass in quick on fxp0 from 1.1.1.0/24 to any port = 22
+pass in quick on fxp0 from any to any port = 80 flags S/SA
+pass in quick on fxp0 from any to any port = 443 flags S/SA
+block in quick on fxp0 from any to any
+pass out on fxp0 proto tcp from any to any keep state
+##############################
+# end ruleset
+##############################
+</pre></ul>
+</p>
+<p>
+Nyní dejme dohromady všechny pravidla, která jsme měli dosud v naší sadě.
+Tato sada bude mít default deny politiku, umožňující pouze administrativní
+spojením z interní sítě (přes ssh) a umožňující příchozí spojení na porty
+80 (http) a 443 (https). Ochrání nás rovněž před spoofovanými neroutovatelnými
+ip adresami a zakáže všechny pakety, které jsou příliš fragmentované nato, aby
+se daly vyšetřit. Docela dobré nastavení pro veřejný webserver. Zde je
+ukázka souboru /etc/ipf.rules :
+<ul><pre>
+###########################
+# begin ruleset
+###########################
+# loopback rules
+pass out quick on lo0
+pass in quick on lo0
+
+# drop itsy bitsy frags
+block in quick proto tcp all with short
+
+# drop source routed packets
+block in quick on fxp0 all with opt lsrr
+block in quick on fxp0 all with opt ssrr
+
+# don't allow anyone to spoof non-routeable addresses
+block in quick on fxp0 from 127.0.0.0/8 to any
+block in quick on fxp0 from 192.168.0.0/16 to any
+block in quick on fxp0 from 172.16.0.0/12 to any
+block in quick on fxp0 from 10.0.0.0/8 to any
+block out quick on fxp0 from any to 127.0.0.1/8
+block out quick on fxp0 from any to 192.168.0.0/16
+block out quick on fxp0 from any to 172.16.0.0/12
+block out quick on fxp0 from any to 10.0.0.0/8
+
+# only allow our machines to connect via ssh
+pass in quick on fxp0 from 1.1.1.0/24 to any port = 22
+
+# allow others to use http and https
+pass in quick on fxp0 from any to any port = 80 flags S/SA
+pass in quick on fxp0 from any to any port = 443 flags S/SA
+
+# finally lock the rest down with a default deny
+block in quick on fxp0 from any to any
+
+# and let out-going traffic out and maintain state on established connections
+#  -- The flags S on the keep state is to ensure that state tracking starts
+#    only on the first outbound packet in a tcp session.
+#    unnecessary consumption of state table entries.
+# -- The flag s only works on the tcp protocol, so three entries are required to
+#    to cover all three protocols (tcp, udp, icmp).
+
+pass in        quick on fxp0 proto tcp  from any to any flags S keep state
+pass in        quick on fxp0 proto udp  from any to any         keep state
+pass in        quick on fxp0 proto icmp from any to any         keep state
+
+#############################
+# end ruleset
+#############################
+</pre></ul>
+</p>
+<p>
+Pokud se vyskytnou nějaké problémy, můžete chtít zprovoznit logování u jednotlivých pravidel, abyste věděli co se děje, např.:
+pass in log quick on fxp0 from 1.1.1.0/24 to any port = 22<br>
+Pokud změníte svůj konfigurační soubor, aby pravidla logovaly pakety, nezapmeňte dát ipf -Fa -f /etc/ipf.rules aby se změny promítly!
+<br>ipmon bude psat ip log hlášky do /var/log/ipflog .<br>
+Pro další informace o ipf je k dispozici excelentní <a href=http://www.obfuscation.org/ipf/ipf-howto.txt>IPF how-to</a>, stejně jako <a href=http://coombs.anu.edu.au/~avalon/ip-filter.html>IP Filter</a> homepage.
+</p>
+
+<p>
+<a name="6.3"></a>
+<h2>6.3 - IPNAT</h2>
+</p>
+
+<p>
+Initial work done by Wayne Fergerstrom &lt;wayne@methadonia.net&gt;
+</p>
+
+<a name="nat1.0"></a>
+<h3><u>6.3.1 NAT Úvod</u></h3>
+
+<a name="nat1.1"></a>
+<b>Sekce Úvod</b>
+<p>
+Tato sekce se pokouší pomoci těm, kteří instalují a konfigurují Network Address Translation ("NAT") na systému OpenBSD.
+
+Předpokládá se, že uživatel už nastavil a nakonfiguroval OpenBSD se dvěma
+síťovými kartami (jedna připojena k Internetu a druhá k lokální síti).
+Překlad IP adres bude fungovat i na strojích s jedním síťovým rozhraním, přesto
+je nutné poznamenat, že pakety budou procházet přes toto jediné rozhraní dovnitř a ven a že ethernetové kolize sníží významně výkon.
+</p>
+
+<p>
+Na základě <a HREF="http://www.geektools.com/rfc/rfc1631.txt">RFC 1631</a>, ipnat dává jednoduchý způsob jak namapovat interní síť na jedinou routovatelnou
+("reálnou") internetovou adresu. Toto je velmi užitečné, pokud ještě například
+nemáte oficiálně přiřazené adresy pro každý stroj na vaší interní síti. Při
+nastavování soukromé/interní sítě, můžete s výhodou použít rezervovaných adresových bloků (přiřazených v <A HREF="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a>), jako jsou:
+<P>
+
+10.0.0.0/8 (10.0.0.0 - 10.255.255.255)<br>
+172.16.0.0/12 (172.16.0.0 - 172.31.255.255)<br>
+192.168.0.0/16 (192.168.0.0 - 192.168.255.255)<br>
+
+</p>
+
+<a name="nat1.2"></a>
+<b>Terminologie</b>
+
+<p>
+Pro informaci uvádíme několik zkratek a formát jaký bude v dokumentu použit.
+<ul>
+<strong>"NAT"</strong>
+<p>
+Tato zkratka popisuje funkci "Network Address Translation"  tj. překladu
+síťových adres. Proces překladu je popsán později.
+</p>
+</ul>
+
+<ul>
+<strong>"ipnat"</strong>
+
+<p>
+Zkratka za "IP Network Address Translation." V podstatě může být použita
+podobně jako NAT. Přesto v tomto dokumentu bude označovat termín "ipnat" pouze
+pro použití na příkazové řádce.
+</p>
+</ul>
+
+<ul>
+<strong>"IPF"</strong>
+
+<p>
+Zkratka za IP filtr. IP filtr je portovatelný software pro filtrování paketů,
+který je dodáván jako součást OpenBSD. IP filtr musí být zapnut, předtím než
+spustíte ipnat. Je to snadné, docílíte toho editací souboru /etc/rc.conf a
+změníte ipf=NO na ipf=YES. Tato změna změní stav věcí pro další bootování.
+Pokud jste už systém nastartovali můžete ip filtr zapnout pomocí příkazu 'ipf -E' . Samozřejmě toto je popsáno dále.
+</p>
+</ul>
+
+<br>
+<a name="nat1.3"></a>
+<b>Nastavení</b>
+
+<p>
+Následují informace o nastavení počítačů, které figurují v tomto dokumentu.
+</p>
+
+<ul>
+<b>Operační systém: </b>OpenBSD v2.7 i386<br>
+<br>
+<b>Síťové karty: </b>
+<ul>
+  NetGear 10/100MB <b>dc0</b><br>
+  Connected to the EXTERNAL LAN (or WAN)<br>
+  <b>IP Address: </b>24.5.0.5<br>
+  <b>Netmask: </b>255.255.255.0<br>
+  <br>
+  NetGear 10/100MB <b>dc1</b><br>
+  Connected to the INTERNAL LAN<br>
+  <b>IP Address: </b>192.168.1.1<br>
+  <b>Netmask: </b>255.255.255.0<br>
+</ul>
+<br>
+<b>Externí, internetová routa (dodal ji ISP, v tomto případě se jedná o linku
+modemovou)<br></b>
+<ul>
+  <b>IP Address: </b>24.5.0.5<br>
+  <b>Netmask: </b>255.255.255.0<br>
+  <b>Gateway: </b>24.5.0.1<br>
+</ul>
+<br>
+<b>Lokální síť</b><br>
+<ul>
+Počítače na LAN používají adresové schéma 192.168.1.xxx (kde xxx je jedinečné
+číslo). Na LAN je mnoho různých OS, včetně Windows 98, Windows NT, OpenBSD a
+Linux. Každý stroj je připojen k hubu, který je vybaven pro interní použití.
+V tomto dokumentu a v jeho příkladech  klient na LAN bude používat IP adresu
+192.168.1.40
+</ul>
+<br>
+<b>Diagram nastavení</b>
+<ul><pre>
++-----+              +---------+         +----------+
+| Hub |--------- dc1 |   NAT   | dc0 ----| Internet |
++-----+              +---------+         +----------+
+  | |
+  | +-- Klient A
+  +---- Ostatní stroje  
+
+                              +-------------------------+
+                              |        LEGENDA          |
+                              +-------------------------+
+                              |  NIC dc0 - 24.5.0.5     |
+                              |  NIC dc1 - 192.168.1.1  |
+                              | Klient A - 192.168.1.40 |
+                              +-------------------------+
+
+</pre></ul>
+</ul>
+<br>
+<a name="nat2.0"></a>
+<h3><u>6.3.2 Překlad síťových adres</u></h3>
+<br>
+
+<a name="nat2.1"></a>
+<b>Seznámení s NATem</b>
+
+<p>
+Jak přibývají další a další firmy, které chtějí mít spojení na Internet, každá
+musí mít vlastní IP adresu. Veřejných IP adres je čímdál méně. Řešením pro mnoho lidí je Network Address Translation (NAT), neboli překlad síťových adres . NAT je jednoduchý způsob, jak připojit vaši LAN na Internet, aniž byste si
+museli zakoupit nebo pronajmout IP adresu pro každý stroj. 
+</p>
+
+<p>
+Způsob, jakým NAT pracuje je překvapivě jednoduchý. Když se klient na LAN chce
+spojit se strojem v Internetu, pošle ven TCP paket se žádostí o spojení. Uvnitř
+TCP hlavičky paketu je klientova IP adresa (např. 192.168.1.40) a požadovaná
+IP adresa cílového počítače (např. 123.45.67.89). Stroj, na kterém běží NAT
+obdržít tento TCP paket a změní klientovu IP adresu v hlavičce z 192.168.1.40
+na IP adresu připojenou na Internet (např.  24.5.0.5). Tímto způsobem
+efektivně docílíme toho, že cílový počítač se domnívá, že vlastní spojení přichází ze stroje, na kterém běží NAT. Cílový počítač (host) posílá dále pakety
+týkající se daného spojení na adresu stroje s NATem. Když stroj s NATem obdrží
+paket od host-a, přeloží rychle cílovou IP adresu na adresu klienta a pošle paket klientovi. Klient nemá ani tušení o tom, co se stalo a Internetové spojení
+je zcela transparentní.
+</p>
+
+<p>
+Následující příklad ozřejmí dosud nepochopené:
+</p>
+
+<ul><pre>
+Klient ----------------- dc1 [ NAT ] dc0 ---------- Internet Host
+192.168.1.40 --- 192.168.1.1 [ NAT ] 24.5.0.5 --- 123.45.67.89
+
+Odcházející TCP paket                     Odcházející TCP paket
+From: 192.168.1.40    >>=== NAT ===>>     From: 24.5.0.5
+To: 123.45.67.89                          To: 123.45.67.89
+
+Přicházející TCP paket                    Přicházející TCP paket
+From: 123.45.67.89                        From: 123.45.67.89
+To:   192.168.1.40    <<=== NAT ===<<     To: 24.5.0.5
+</pre></ul>
+
+<br>
+<a name="nat2.2"></a>
+<b>Proč používat NAT?</b>
+
+<p>
+Když jsem se nastěhoval do nového bytu, byl jsem postaven před menší problém.
+Jak dát připojení k Internetu mým spolubydlícím, když modemový kabel je
+pouze v mé místnosti? Bylo tu několik možností, které jsem mohl implementovat,
+počínají tím, že každý z nás obdrží vlastní IP adresu, přes nastavení proxy
+serveru až po nastavení NATu. (Nenechejte se mýlit příkladem s modemovým kabelem. NAT je dostatečně silný aby zamaskoval velikou LAN se stovkami ba i tisíci
+počítačů!)
+</p>
+
+<p>
+Je tu mnoho důvodů, proč jsem chtěl nastavit NAT. Důvodem číslo jedna bylo ušetřit peníze. V mém domě jsou tři spolubydlící (každý s vlastním PC) a já sám
+se třemi počítači. Můj ISP dovolí pouze tři IP adresy v každé domácnosti.
+To znamená, že zde není dostatek IP adres , aby každému počítači mohl být
+dovolen internetový přístup.
+</p>
+
+<p>
+Za použití NATu bude mít každý stroj unikátní (interní) IP adresu, ale budou
+sdílet jednu IP adresu pro přístup na Internet. Náklady jdou dolů.
+</p>
+
+<br>
+<a name="nat2.3"></a>
+<b>Setup</b>
+
+<p>
+Nejprve budete muset na vašem OpenBSD systému zapnout IPF a NAT. Toho jednodušše docílíte editací souborů uvedených dále (změny udělejte tak, aby odpovídající
+řádky vypadaly jako ty následující):
+</p>
+
+<p>
+<b>/etc/rc.conf</b> (Z tohoto souboru se startují programy při bootování)
+</p>
+
+<ul>
+  ipfilter=YES<br>
+  ipnat=YES
+</ul>
+
+<p>
+<b>/etc/sysctl.conf</b>
+</p>
+
+<ul>
+  net.inet.ip.forwarding=1
+</ul>
+
+<p>
+Po těchto změnách je stroj připraven pro konfiguraci NATu.
+</p>
+
+<br>
+<a name="nat2.4"></a>
+<b>Konfigurace</b>
+
+<p>
+Prvním krokem je nastavit soubor s pravidly pro IPF (<i>/etc/ipf.rules</i>).
+Pro účely tohoto dokumentu dovolíme spojení přes tento firewall bez omezení.
+Soubor by měl vypadat asi takto:
+</p>
+
+<ul><pre>
+pass in from any to any
+pass out from any to any
+</pre></ul>
+
+<p>
+Pro více informací si přečtěte <a href="#6.2">FAQ 6.2</a>
+</p>
+
+<p>
+Soubor s nastavením NATu (<i>/etc/ipnat.rules</i>) má velmi jednoduchý syntax.
+Pro případ nastaveného firewallu (viz. výše) bude vypadat takto:
+</p>
+
+<ul><pre>
+map dc0 192.168.1.0/24 -> 24.5.0.5/32 portmap tcp/udp 10000:60000
+map dc0 192.168.1.0/24 -> 24.5.0.5/32
+</pre></ul>
+
+<p>
+Zde je vysvětlení předcházejících řádek.
+</p>
+
+<ul>
+<strong>"map"</strong>
+<p>
+Tímto příkazem říkate NATu,  že podle následujících dat se bude měnit adresa
+mezi LAN a Internetem.
+</p>
+</ul>
+
+<ul>
+<strong>"dc0"</strong>
+<p>
+Název síťového rozhraní připojeného na Internet.
+</p>
+</ul>
+
+<ul>
+<b>"192.168.1.0/24"</b>
+<p>
+IP adresa a síťová maska (maska je v CIDR formátu). Dohromady to znamená
+"jakákoliv IP adresa o hodnotě od 192.168.1.1 do 192.168.1.254" má být
+mapována. Pokud nechcete použít CIDR (classless inter-domain routing) notaci,
+můžete  "/24" nahradit "/255.255.255.0".
+</p>
+</ul>
+
+<ul>
+<b>"24.5.0.5/32"</b>
+<p>
+Tato IP adresa a síťová maska zastupují IP adresu, na kterou budou namapovány
+adresy z LAN. /32 znamená, že se jedná o jednu IP adresu. Můžete také mapovat
+na /24 nebo  256 IP adres (nebo /27  nebo jakýkoliv počet bitů, který chcete)!!  Toto je užitečné, pokud máte několik tisíc klientů umístěných za NATem ....
+(Samozřejmě, je to užitečné jenom pokud těch /24 je směrováno na váš stroj s OpenBSD!)
+</p>
+</ul>
+
+<ul>
+<b>"portmap tcp/udp 10000:60000"</b>
+<p>
+Toto mapuje všechny tcp/udp pakety na porty v rozsahu od 10000 do 60000.
+</p>
+</ul>
+
+<p>
+Druhý řádek je téměř stejný s výjimkou poslední části.
+Ta říká ipnat-u aby mapoval všechno ostatní (ne tcp/udp, tyto pakety byly
+už obslouženy prvním řádkem) na jakýkoliv port, který je požadován (používá
+se pro ICMP a jiné protokoly). Jakmile máte tohle všechno v souboru, jediné
+co potřebujete je spustit IPF démona.
+</p>
+
+<br>
+
+<a name="nat2.5"></a>
+<b>Running</b>
+
+<p>
+Spuštění NATu je také velmi jednoduché. Jakmile je jednou konfigurace kompletní, jsou zde dva způsoby jak spustit NAT. První je rebootovat OpenBSD stroj.
+Je to však metoda poměrně nedeterministická a pro toho kdo si nainstaloval OpenBSD jenom poukazuje na neznalost problematiky.
+</p>
+
+<p>
+Spuštění ipnat-u z přikazové řádky docílíte příkazy:
+</p>
+
+<ul><pre>
+# ipf -Fa -f /etc/ipf.rules -E
+# ipnat -CF -f /etc/ipnat.rules
+</pre></ul>
+
+<p>
+První řádek spouští IPF (pamatujte si, že NAT závisí na IPF, proto IPF musí
+být spuštěn před inicializací NATu ). Volby na příkazové řádce: "-Fa" vyčistí
+filtrovací sadu od již existujících pravidel, "-f /etc/ipf.rules" říká ipf,
+kde najde filtrovací pravidla, "-E" je přepínač spouštějící IPF démona.
+</p>
+
+<p>
+Druhý řádek spouští NATa. "-CF" smaže a instaluje nová pravidla v NAT tabulce.
+"-f /etc/ipnat.rules" říká, kde NAT najde soubor s pravidly. NAT nyní běží.
+</p>
+
+
+<p>
+<b>Poznámka:</b> budete-li potřebovat updatovat nastavení NATu (v případě, že
+editujete soubor, ale nechcete rebootovat) stačí předchozí příkaz spustit znovu. Nastavení bude obnoveno s provedenými změnami.
+</p>
+
+<br>
+<a name="nat3.0"></a>
+<h3><u>6.3.3 Testování NATu</u></h3>
+
+<br>
+<a name="nat3.1"></a>
+<b>Kontrola stavu NATu</b>
+
+<p>
+Chcete-li zjistit, jak NAT právě pracuje,nebo se ujistit o tom, zda nastavení
+jsou funkční, použijte volbu "-l". Tato volba vypíše seznam všech nastavení
+a současných spojení, které zpracovává ipnat:
+</p>
+
+<ul><pre>
+# <b>ipnat -l</b>
+map dc0 192.168.1.0/24 -> 24.5.0.5/32 portmap tcp/udp 10000:60000
+map dc0 192.168.1.0/24 -> 24.5.0.5/32
+
+List of active sessions:
+MAP 192.168.1.40  2473  <- -> 24.5.0.5  13463 [129.128.5.191 80]
+</pre></ul>
+
+<p>
+První dva řádky informují o současném nastavení NATu, které jste zapsali
+do /etc/ipnat.rules již dříve. Řádek pod nimi ukazuje seznam současných spojení,
+které NAT kontroluje. 
+</p>
+
+<ul>
+<b>"MAP 192.168.1.40  2473"</b>
+<p>
+Toto vám říká IP adresu stroje na LAN, který používá NAT. Port použitý pro toto
+spojení je zobrazen za ní.
+</p>
+</ul>
+
+<ul>
+<b>"&lt;- -&gt;"</b>
+<p>
+Toto ukazuje, že NAT zpracovává spojení v obou směrech.
+</p>
+</ul>
+
+<ul>
+<b>"24.5.0.5  13463"</b>
+<p>
+Toto říká, že spojení jde do internetu přes IP adresu 24.5.0.5 a port 13463.
+</p>
+</ul>
+
+<ul>
+<b>"129.128.5.191 80"</b>
+<p>
+IP adresa a port, na který spojení vede jsou vypsány jako poslední.
+</p>
+</ul>
+
+<a name="nat3.2"></a>
+<b> Omezení NATu (v FTP)</b>
+
+<p>
+Existuje několik omezení, která s sebou NAT přináší. Jedním z nich je FTP.
+Když se uživatel spojí s FTP serverem v Internetu a žádá informace nebo soubory, FTP server vytvoří spojení s klientem a přenáší tyto informace. Spojení probíhá na náhodném volném portu. Toto je problém pro uživatele poukoušející se spojit
+s FTP serverem zevnitř LAN. Když FTP server odešle informaci, pošle ji na náhodný port na externí síťové rozhraní. Stroj s NATem ale nemá žádné mapování pro 
+neznámý paket a daný port, opustí tedy paket a nedodá jej. 
+
+<p>
+Vyřešit celý problém můžete tak, že se přepnete ve FTP klientovi  do "passivního módu". Poté, když vytváříte spojení ven, NAT bude správně pracovat.
+<P>
+IP filtr umožňuje jiné řešení v této situaci, tj. ftp proxy, která je vestavěna
+do kódu NATu. Aktivace dosáhnete tak, že umístíte podobné pravidlo jako je následující před vaše mapování NATu .
+<PRE>
+map dc0 192.168.1.0/24 -> 24.5.0.5/32 proxy port ftp ftp/tcp
+</pre>
+S tímto řádkem na svém místě bude kernel hlídat vaše FTP spojení a v okamžiku
+kdy se v něm objeví příkaz "PORT" přicházející z ftp klienta, nahradí
+IP adresu a port se svou vlastní IP adresou a portem, který si vybere. Potom
+otevře tento port a posílat data přes tunel na port vašeho ftp klienta, který
+jste požadovali. Sice takto docílíte poněkud pomalejšího zpracování paketů, domnívám se ale, že je ve své podstatě zanedbatelné.
+ok.
+<P>
+
+
+<br>
+<a name="nat3.3"></a>
+<b>Přesměrování spojení</b>
+
+<p>
+Stane se, že potřebujete přesměrovat příchozí nebo odchozí spojení pro určitý
+protokol nebo port. Dobrý příklad tohoto je váš web server nacházející se
+uvnitř LAN. Příchozí spojení na platnou Internetovu IP adresu však budou
+bez odezvy, protože na stroji s NATem neběží web server. Pro tento účel
+používáme direktivu NATu 'rdr' v souboru s pravidly, která dává instrukce pro
+přesměrování určitého spojení.
+</p>
+
+<p>
+
+V našem případě předpokládejme, že web server se nachází na LAN s IP adresou
+192.168.1.80. Soubor s pravidly pro NAT potřebuje novou direktivu, která se
+o toto postará. Přidejte řádku podobnou této do ipnat.conf :
+</p>
+
+<ul><pre>
+rdr dc0 24.5.0.5/32 port 80 -> 192.168.1.80 port 80
+</pre></ul>
+
+<p>
+Vysvětlení:
+</p>
+
+<ul>
+<b>"rdr"</b>
+<p>
+Příkaz, který dáváte ipnatu. Data na této řádce mají význam přesměrování spojení.
+</p>
+</ul>
+
+
+<ul>
+<b>"dc0"</b>
+<p>
+Síťové rozhraní připojené k Internetu.
+</p>
+</ul>
+
+<ul>
+<b>"24.5.0.5/32"</b>
+<p>
+Příchozí spojení na IP adresu výše (pouze na device dc0 )
+</p>
+</ul>
+
+<ul>
+<b>"port 80"</b>
+<p>
+Port, který má být přesměrován. "port 80" můžete nahradit "port www". Pokud
+chcete použít jméno namísto čísla, musí odpovídající název a číslo existovat
+v souboru /etc/services.
+</p>
+</ul>
+
+<ul>
+<b>"192.168.1.80"</b>
+<p>
+IP adresa a maska stroje na LAN, na který se budou přesměrovávat pakety.
+Maska je vždy "/32" a proto nemusí být uvedena.
+</p>
+</ul>
+
+<br>
+<a name="nat3.4"></a>
+<b>NAT versus Proxy</b>
+
+<p>
+Rozdíl mezi NATem a aplikačně založenou proxy je ten, že proxy software jedná
+jako prostředník mezi Internetem a strojem připojeným na LAN. To je v pořádku,
+přesto každá aplikace, kterou chcete spustit MUSÍ být schopna použít proxy
+server. Ne všechny aplikace to dokáží (obzvlášť hry). Dále, nejsou zde proxy
+server aplikace pro všechny Internetové služby. NAT průhledně mapuje vaši iterní síť, aby mohla být spojena s Internetem. Jediná výhoda, proč používat
+proxy software narozdíl od NATu je, že proxy software by měl být bezpečný a může
+provádět filtrování na základě obsahu paketů, uchrání tak váš stroj s Windows
+od macro viru, může ochránit od buffer overflowu software klienta a více. 
+Používání těchto filtrů je většinou náročný úkol.
+</p>
+
+<a name="nat4.0"></a>
+<b>6.3.4 Odkazy</b>
+
+<p>
+Soubory na OpenBSD:
+<ul>
+<li>/etc/ipnat.rules - pravidla pro NAT
+<li>/etc/rc.conf - nutné editovat pro spuštění ipnat a ipf při bootu
+<li>/etc/sysctl.conf - nutné editovat pro IP forwarding
+<li>/usr/share/ipf/nat.1 - příklad pravidel pro ipnat.
+</ul>
+</p>
+
+<p>
+NAT Internet Links:
+<ul>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ipnat&sektion=8">http://www.openbsd.org/cgi-bin/man.cgi?query=ipnat&sektion=8</a>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ipnat&sektion=5&format=html">Man page showing correct ipnat.rules syntax</a>
+<li><a href="http://coombs.anu.edu.au/~avalon/">http://coombs.anu.edu.au/~avalon/</a>
+<li><a href="http://www.geektools.com/rfc/rfc1631.txt">http://www.geektools.com/rfc/rfc1631.txt</a>
+</ul>
+<p>
+
+<br>
+
+<p>
+<a name= "6.4"></a> <h2>6.4 - DHCP</h2> </p>
+
+<h3>6.4.1 DHCP Klient</h3>
+<p>Pro používání DHCP klienta <A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=dhclient&apropos=0&sektion=8&format=html">dhclient(8)</a> dodávaného spolu
+s OpenBSD, zeditujte soubor /etc/hostname.xl0 (za předpokladu, že vaše hlavní
+ethernetové rozhraní je xl0. Můžete mít jiné rozhraní, např. ep0 nebo fxp0 nebo
+jiné!) Jediné slovo, které musí tento soubor po editaci obsahovat je 'dhcp' .
+<pre>
+# <strong>echo dhcp >/etc/hostname.xl0</strong>
+</pre>
+Tento příkaz způsobí automatické nastartovaní DHCP klienta při bootování. OpenBSD bude od DHCP serveru požadovat informaci o své IP adrese, defaultním routeru a DNS serverech.
+<p>
+Chcete-li spouštět DHCP klienta z příkazové řádky, ujistěte se, že existuje
+soubor /etc/dhclient.conf a potom vyzkoušejte:
+<PRE>
+# <strong>dhclient fxp0</strong>
+</pre>
+Kde fxp0 je rozhraní, na kterém chcete konfigurovat pomocí DHCP.
+<P>Bez ohledu na to, jak spustíte DHCP klienta, můžete zeditovat soubor /etc/dhclient.conf , aby např. nedošlo ke změně v již nakonfigurovaném DNS na základě
+odezvy DHCP serveru. V tomto případě stačí když odkomentujete řádku začínající
+slovem 'require' (tato řádka se nachází v původním souboru), tak docílíte změny v chování DHCP klienta.
+<pre>
+request subnet-mask, broadcast-address, time-offset, routers,
+      domain-name, domain-name-servers, host-name, lpr-servers, ntp-servers;
+</pre>
+a potom <b>odstraňte</b> slovo domain-name-servers. Samozřejmě můžete chtít
+odstranit i jiná nastavení jako např. hostname.
+<P>
+<h3>6.4.2 DHCP Server</h3>
+
+Pokud chcete používat OpenBSD jako DHCP server <A href="http://www.openbsd.org/cgi-bin/man.cgi?query=dhcpd&apropos=0&sektion=8&format=html">dhcpd(8)</a>,
+zeditujte /etc/rc.conf.  Nastavte v něm volbu  dhcpd_flags="-q"  namísto původní dhcpd_flags=NO.
+Nyní uveďte rozhraní, na kterých chcete aby <b>poslouchal</b> DHCP server, v
+souboru /etc/dhcpd.interfaces.
+<pre>
+# <strong>echo xl1 xl2 xl3 >/etc/dhcpd.interfaces</strong>
+</pre>
+Pak zeditujte /etc/dhcpd.conf.
+Volby uvedené v tomto souboru jsou dostatečně zřejmé.
+<pre>
+        option  domain-name "xyz.mil";
+        option  domain-name-servers 192.168.1.3, 192.168.1.5;
+
+        subnet 192.168.1.0 netmask 255.255.255.0 {
+                option routers 192.168.1.1;
+
+                range 192.168.1.32 192.168.1.127;
+        }
+</pre>
+<p>
+Takovéto nastavení říká vašim DHCP klientům, že doména, kterou mají přidávat
+k DNS dotazům je xyz.mil (tedy pokud uživatel napíše 'telnet joe' , pak ve skutečnosti se bude spojovat se strojem joe.xyz.mil).  Dále odkážete klienta, aby
+používal DNS servery 192.168.1.3 a 192.168.1.5.  Počítačům na stejné síti jako
+je ethernetové rozhraní DHCP serveru, jež je v rozsahu 192.168.1.0/24 , bude
+DHCP server přiřazovat IP adresy mezi 192.168.1.32 a 192.168.1.127.  Defaultní
+router klientů bude nastaven na 192.168.1.1.
+<p>
+Pokud chcete spouštět dhcpd z příkazové řádky, po editaci /etc/dhcpd.conf vyzkoušejte:
+<PRE>
+# <strong>dhcpd -q fxp0</strong>
+</PRE>
+Kde fxp0 je rozhraní, na kterém chcete nastartovat DHCP server. Volba -q říká
+dhcpd , aby vypisoval co nejméně informací, v opačném případě je totiž dhcpd
+velmi "ukecaný".
+<P>
+Používáte-li DHCP server pro stroje s Windows, můžete dát klientovi adresu
+'WINS' serveru. Docílíte toho tímto řádkem v /etc/dhcpd.conf:
+<pre>
+option  netbios-name-servers  192.168.92.55;
+</pre>
+(kde 192.168.92.55 je IP vašeho Windows nebo Samba serveru. )
+Více voleb pro dhcp klienty se nachází zde: <A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=dhcp-options&apropos=0&sektion=5&format=html">dhcp-options(5)</a> .
+<p>
+<a name= "6.5"></a>
+<h2>6.5 - PPP </h2>
+</p>
+
+Point-to-Point Protokol je tím protolem, který se dnes používá pro spojení s
+modemem vašeho ISP. OpenBSD má dva způsoby jak toto spojení nakonfigurovat.
+
+<ul>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pppd&sektion=8&format=html">pppd(8)</a> - Jedná se o ppp démona začleněného do jádra systému .
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ppp&sektion=8&format=html">ppp(8)</a> - Tento ppp démon pracuje jako uživatelský proces (nesystémový).
+</ul>
+
+<p>
+První, který popíšeme bude nesystémový ppp démon. Předtím než začnete s konfigurací je dobré zjistit si některé údaje od vašeho ISP. Jedná se především o:
+</p>
+
+<ul>
+<li>Telefonní (dialup) číslo vašeho ISP
+<li>váš nameserver
+<li>vaše uživatelské jméno a heslo
+<li>váš router
+</ul>
+
+<p>
+Některé z těchto informací nutně nepotřebujete, bez jiných se zase neobejdete.
+Nesystémový ppp démon používá <a href="http://www.openbsd.org/cgi-bin/cvsweb/src/etc/ppp/ppp.conf.sample">/etc/ppp/ppp.conf</a> jako svůj konfigurační soubor.
+V adresáři <b>/etc/ppp</b> se obecně nachází řada souborů, které nabízejí
+různé nastavení pro různé situace. Měli byste si je prohlédnout.
+</p>
+
+<p>
+Také se ujistěte, v případě, že používáte jádro GENERIC, že máte následující
+řádku ve vašem konfiguračním souboru:
+</p>
+
+<ul><pre><strong>
+pseudo-device   tun             2
+</strong></pre></ul>
+
+
+<h3>Úvodní nastavení - pro PPP(8)</h3>
+
+<p>
+Úvodní nastavení nesystémového démona se sestává z editace souboru <b>/etc/ppp/ppp.conf</b>. Tento soubor defaultně neexistuje, ale je tu soubor <b>/etc/ppp/ppp.conf.sample</b> , který můžete jednodušše zeditovat a vytvořit tak vlastní <b>ppp.conf</b> . Zde začneme s nejjednodušším a patrně také nejčastějším nastavením. Zde je soubor <b>ppp.conf</b>, díky kterému se ppp spojí s vaším ISP a nastaví defaultní routy a nameserver. S tímto souborem potřebujete vědět jen informaci
+o telefonním čísle vašeho ISP, uživatelském jménu a heslu.
+</p>
+
+<ul>
+<pre>
+default:
+set log Phase Chat LCP IPCP CCP tun command
+set device /dev/cua01
+set speed 115200
+set dial "ABORT BUSY ABORT NO\\sCARRIER TIMEOUT 5 \"\" AT OK-AT-OK ATE1Q0 OK\\dATDT\\T TIMEOUT 40 CONNECT"
+</pre>
+</ul>
+
+<p>
+<b>Poznámka</b> - Na OpenBSD 2.6 byl systém dodáván se souborem <i>/etc/ppp/ppp.conf.example</i> , který měl nesprávné nastavení sériového portu. Tento port
+byl označen jako zařízení <i>"/dev/cuaa0"</i>. Zatímco tam mělo být <i>/dev/cua00</i> , což odpovídá sériovému portu číslo 1. (COM1). Váš modem  nemusí být na
+ COM1, přesto schéma pojmenování bylo špatné.
+</p>
+
+<p>
+Sekce uvedená slovem <b>default:</b> bude vykonána při každém spuštění. Zde
+nastavujeme všechny kritické informace. Slovem  &quot;set log&quot; nastavujeme
+záznamovou úroveň. Je možné to změnit, více <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ppp&sektion=8&format=html">ppp(8)</a> man page. Sériový port
+se nastavuje příkazem &quot;set device&quot;. Toto je zařízení, na kterém se
+nachází modem. V našem  případě je modem na portu 2. Proto com port 1 by byl
+/dev/cua00. Slovem  &quot;set speed&quot; nastavujeme rychlost dialup spojení
+a pomocí &quot;set dial&quot; nastavujeme parametry dialup-u. Pomocí nich
+můžeme změnit náš timeout atd. 
+</p>
+
+<p>
+Nyní můžeme pokračovat nastavením informací o našem ISP. Provedeme to přidáním
+nové sekce za sekci <b>default:</b> . Tato sekce se může jmenovat jakkoliv,
+nejjednodušší je použít jméno vašeho ISP. My použijeme označení <b>myisp:</b> .
+Následuje krátké a jednoduché nastavení, které poskytuje to nejnutnější pro
+naše spojení.
+<p>
+
+<ul>
+<pre>
+myisp:
+set phone 1234567
+set login "ABORT NO\\sCARRIER TIMEOUT 5 ogin:--ogin: ppp word: ppp"
+set timeout 120
+set ifaddr 10.0.0.1/0 10.0.0.2/0 255.255.255.0 0.0.0.0
+add default HISADDR
+enable dns
+</pre>
+</ul>
+
+<p>
+Zde jsme nastavili  &quot;set phone&quot; telefonní číslo našeho ISP,  &quot;set login&quot; volby pro přihlášení (timeout nastavený na 5 znamená, že přerušíme
+pokus o přihlášení po pěti sekundách není-li na lince signál. Jinak budeme
+čekat na zaslání na poslání řetězce &quot;login:&quot; a pak pošleme naše uživatelské jméno a heslo. U nás to bude username=ppp a password=ppp. Tyto hodnoty
+si změnte na vaše vlastní. &quot;set timeout&quot; nastavuje timeout pro celý
+přihlašovací proces na 120 sekund. &quot;set ifaddr&quot; je poněkud trikové.
+Vysvětlení je zde:
+</p>
+
+<ul><pre>
+set ifaddr 10.0.0.1/0 10.0.0.2/0 255.255.255.0 0.0.0.0
+</pre></ul>
+
+<p>
+V řádku nahoře nastavujeme naši IP adresu ve formátu  &quot;<b>set ifaddr [myaddr[/nn] [hisaddr[/nn] [netmask
+[triggeraddr]]]]</b>&quot;. Tedy první IP adresa na řádce specifikuje číslo, které chceme obdržet od ISP jako naši IP adresu. Pokud máte statickou IP adresu,
+nastavte ji zde. U nás použijeme /0 , což říká, že žádný z bitů ip adresy nemusí odpovídat a proto celá adresa může být nahrazena jinou (dynamicky přiřazenou).
+Druhá IP adresa je adresa, kterou očekáváme jako IP adresu našeho ISP. Pokud
+ji znáte, můžete ji specifikovat. My opět nevíme, co máme očekávat, proto použijeme opět /0 . Třetí číslo je naše síťová maska, zde nastavena na 255.255.255.0 . Pokud specifikujeme triggeraddr, je použita namísto myaddr v původní IPCP komunikaci. Přesto, pouze adresa v rozsahu myaddr bude akceptována. Toto je užitečné
+při komunikaci s některými implementacemi PPP, které nedovolují přiřadit IP adresu, pokud peer žádá ``0.0.0.0''.
+</p>
+
+<p>
+Další volba  &quot;add default HISADDR&quot; nastavuje defaultní routu na IP adresu providera. Dobré je, že pokud se změní IP adresa providera za chodu, bude
+vaše routa automaticky upravena. Volbou  &quot;enable dns&quot; říkáme našemu
+ISP, aby nám sdělil adresu nameserveru. Nepřidávejte tuto volbu, pokud u vás
+běží lokální DNS, protože ppp lehce znemožní její používání tím, že přidá
+několik řádek do souboru /etc/resolv.conf.
+</p>
+
+<h3>Používání PPP(8)</h3>
+
+<p>
+Nyní máme základní nastavení v souboru <b>ppp.conf</b> připravené a můžeme
+začít zoušet spojení s naším ISP. Obvyklé formy přikazu jsou:
+</p>
+
+<ul>
+<li><b>ppp -auto myisp</b> - Spustí ppp, nastaví rozhraní a spojí se s našim isp, poté přechází na pozadí.
+<li><b>ppp -ddial myisp</b> - Podobné jako -auto, ale pokud konekce je zrušena, pokusí se znovu o spojení.
+</ul>
+
+<p>
+Spuštění <b>/usr/sbin/ppp</b> bez voleb vás zavede do interaktivního módu. V něm můžete komunikovat přímo s modemem, velmi vhodné při ladění problémů ve vašem  <b>ppp.conf</b> .
+</p>
+
+<h3>ppp(8) extra</h3>
+
+<p>
+V některých situacích můžete chtít spustit dodatečně nějaké příkazy, když je
+vytvořeno nebo naopak zrušeno spojení. Jsou zde dva soubory, které můžete vytvořit pro tyto situace. <b>/etc/ppp/ppp.linkup</b> a <b>/etc/ppp/ppp.linkdown</b>.
+Příklad nastavení je zde:
+</p>
+
+<ul>
+<li><a href="http://www.openbsd.org/cgi-bin/cvsweb/src/etc/ppp/ppp.linkup.sample">ppp.linkup</a>
+<li><a href="http://www.openbsd.org/cgi-bin/cvsweb/src/etc/ppp/ppp.linkdown.sample">ppp.linkdown</a>
+</ul>
+
+<p>
+Další informace: <a href="http://www.freebsd.org/handbook/userppp.html">http://www.freebsd.org/handbook/userppp.html</a> nebo <a href="http://www.freebsd.org/faq/userppp.html">http://www.freebsd.org/faq/userppp.html</a>.
+</p>
+
+<p>
+<a name= "6.6"></a>
+<h2>6.6 - Zlepšování výkonu sítě</h2>
+
+<H3>6.6.1 - Jak přinutit jádro, aby dovolovalo větší počet pokusů a delší timeout pro TCP spojení?</h3>
+Normálně byste to měl využít v případě směrovacích nebo spojovacích problémů.
+Samozřejmě, nejefektivnější je, když obě strany spojení používají podobné hodnoty. 
+<P>
+Použijte <tt>sysctl</tt> a zvětšete hodnoty proměnných:
+<pre>
+net.inet.tcp.keepinittime
+net.inet.tcp.keepidle
+net.inet.tcp.keepintvl
+</pre>
+Díky sysctl -a můžete vidět současné hodnoty těchto a mnoha dalších parametrů.
+Změnu provedete pomocí <tt>sysctl -w</tt> jako např. <tt>sysctl -w
+net.inet.tcp.keepidle=28800</tt>.
+<h3>6.6.2 - Jak mohu umožnit directed broadcast?</h3>
+Normálně to nepotřebujete dělat. Directed broadcast umožňuje komukoliv poslat pakety na veřejnou adresu vaší připojené sítě, pokud používáte OpenBSD jako router.<P>
+V některých případech uzavřených sítí může být directed broadcast užitečný,
+zejména při používání starých iplementací NetBIOS protokolu. Použijte <Tt>sysctl -w net.inet.ip.directed-broadcast=1</tt> pro tuto vlastnost. Rovnou si ale
+přečtěte také článek o <A HREF="http://www.netscan.org">smurf útocích</a>,
+pokud chcete vědět, proč je tato vlastnost defaultně vypnutá.
+<H3>6.6.3 - Nechci, aby kernel dynamicky alokoval určité porty</h3>
+Na tohle tu také máme jedno sysctl. v <A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&apropos=0&sektion=8&format=html">sysctl(8)</a> se píše:
+<PRE>
+Nastavení rezervovaných TCP portů, které by neměly být dynamicky přidělovány jádrem. Seznam čísel těchto portů může být oddělen čárkami a/nebo mezerami.
+
+sysctl -w net.inet.tcp.baddynamic=749,750,751,760,761,871
+
+Je také možné odstranit nebo přidat části současného seznamu.
+
+   sysctl -w net.inet.tcp.baddynamic=+748
+   sysctl -w net.inet.tcp.baddynamic=-871
+</pre>
+
+<a name="6.7"></a>
+<h2>6.7 - Jednoduché použití NFS</h2>
+
+<p> NFS , neboli Network File System, se používá pro sdílení souborových systémů na síti. Dobré je, když před pokusem o nastavení NFS serverů si přečtete pár manuálových stránek:
+
+<p>
+
+<ul>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=nfsd&sektion=8&format=html">nfsd(8)</a>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mountd&sektion=8&format=html">mountd(8)</a>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=exports&sektion=5&format=html">exports(5)</a>
+</ul>
+
+<p>
+Tato sekce vás provede základními kroky pro jednoduché nastavení NFS. V příkladě předpokládejme server na LAN, s klienty přistupujícími na NFS na LAN. Nemluvíme zde o zabezpečení NFS. Předpokládáme, že jste již nastavili filtrování paketů,
+nebo jinou firewallovou ochranu pro odepření přístupu zvenčí. Pokud dovolujete
+vnější přístup na váš NFS server a máte na něm nějaká citlivá data, důrazně doporučujeme, abyste zprovoznil <A HREF="faq13.html">IPSec</a>. V opačném případě
+mohou cizí lidé potenciálně vidět vaše  NFS spojení. Může to vést i k některým
+útokům. Pokud je IPSec protokol správně nastaven, může vás od tohoto typu útoků
+ochránit. 
+<P>
+Jiná podstatná bezpečnostní poznámka. Nepřidávejte filesystém do /etc/exports bez určitého seznamu povolených strojů. Bez seznamu strojů, které mohou připojit
+daný adesář může kdokoliv, kdo má spojení s vaším počítačem připojit adresáře,
+které přes NFS exportujete.
+</p>
+
+<p>
+Nastavení obsahuje server s ip <b>10.0.0.1</b>, který slouží jako NFS server
+pouze klientům na této síti. První krok při nastavení NFS je nastavit soubor 
+<i>/etc/exports</i> . Tento soubor obsahuje seznam filesystému, které chcete
+zpřístupnit přes NFS a definuje, komu je můžete zpřístupnit. V <i>/etc/exports</i> můžete použít spoustu voleb a nejlépe je přečíst si <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=exports&sektion=5&format=html">exports(5)</a> man page. My máme <i>/etc/exports</i> takovýto:
+</p>
+
+<ul><pre>
+#
+# NFS exports Database
+# See exports(5) for more information.  Be very careful, misconfiguration
+# of this file can result in your filesystems being readable by the world.
+/work -alldirs -ro -network 10.0.0 -mask 255.255.255.0
+</pre></ul>
+
+<p>
+To znamená, že lokální filesystém  <b>/work</b> bude zpřístupněn přes NFS.
+<b>-alldirs</b> říká, že klienti budou moci připojit kterýkoliv podadresář
+adresáře <b>/work</b>. <b>-ro</b> říká, že připojit filesystém bude možné jen
+pro čtení. Poslední dva argumenty říkají, že pouze klienti v rozsahu sítě 10.0.0.0 s maskou 255.255.255.0 budu oprávněni připojit filesystém. To je důležité
+zejména pro sítě, které jsou přistupné zvenku.
+</p>
+
+<p> Máte-li nastaven <i>/etc/exports</i>, můžete pokračovat v nastavení 
+NFS serveru. Nejprve se ujistěte, že máte zkompilované jádro s volbami NFSSERVER a NFSCLIENT. (jádra GENERIC jsou ok ). Dále nastavte v <i>/etc/rc.conf</i> <strong>nfs_server=YES</strong> . Tím spustíte nfsd(8) i mountd(8) po rebootování.
+Pro začátek můžete spustit démony ručně. Musíte je spustit jako root a potřebujete se ujistit, že vám na systému běží portmap(8). Příklad jak spustit nfsd(8),
+který pracuje jak na TCP tak na UDP ve 4 instancích. Měli byste nastavit maximální počet klientů se žádostí o spojení na službu NFS.
+
+<P>
+
+<ul><pre>
+# <strong>/sbin/nfsd -tun 4</strong>
+</pre></ul>
+
+<p>
+Nestačí pustit jen nfsd(8) server, musíte spustit i mountd(8). Jedná se o démona, který vlastně obsluhuje žádosti o NFS spojení. Napište:
+<p>
+
+<ul><pre>
+# <strong>/sbin/mountd</strong>
+</pre></ul>
+
+<P>
+Pokud uděláte změny v /etc/exports poté co už NFS běží, musíte na to mountd
+upozornit! Takhle:
+
+<UL><PRE>
+# <strong>kill -HUP `cat /var/run/mountd.pid`</strong>
+</pre></ul>
+
+<P>
+
+<h3>Kontrola stavu NFS</h3>
+
+<p>
+Nyní se můžete podívat a ujistit se, že démoni běží a jsou registrováni s RPC.
+Použijte procinfo(8).
+<p>
+
+<ul><pre>
+$ <strong>rpcinfo -p 10.0.0.1</strong>
+   program vers proto   port
+    100000    2   tcp    111  portmapper
+    100000    2   udp    111  portmapper
+    100005    1   udp    633  mountd
+    100005    3   udp    633  mountd
+    100005    1   tcp    916  mountd
+    100005    3   tcp    916  mountd
+    100003    2   udp   2049  nfs
+    100003    3   udp   2049  nfs
+    100003    2   tcp   2049  nfs
+    100003    3   tcp   2049  nfs
+</pre></ul>
+
+<p>V normálním provozu máte k dispozici další utility, které vám dovolují sledovat co se děje na NFS. Jedna z nich je <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=showmount&sektion=8&format=html">showmount(8)</a>
+, která umožňuje sledovat co je právě připojeno a kdo to připojil. Dále také nfsstat(8) s podrobnějším výpisem. Použití příkazu showmount(8): zkuste <b>/usr/bin/showmount -a host</b>. Například:
+
+<P>
+
+<ul><pre>
+$ <strong>/usr/bin/showmount -a 10.0.0.1</strong>
+All mount points on 10.0.0.1:
+10.0.0.37:/work
+</pre></ul>
+
+<h3>Připojení NFS filesystému</h3>
+
+<p>
+NFS filesystém by měl být připojen pomocí příkazu mount(8),  nebo speciálně <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mount_nfs&sektion=8&format=html">mount_nfs(8)</a>.
+Pro připojení filesystému /work na stroji 10.0.0.1 na lokální filesystém /mnt,
+udělejte toto: (pozn. nepotřebujete používat ip adresy, mount resolvuje jména):
+<p>
+
+<ul><pre>
+# <strong>mount -t nfs 10.0.0.1:/work /mnt</strong>
+</pre></ul>
+
+<P>
+Připojení systému při bootu:
+přidejte do <i>/etc/fstab</i>:
+<P>
+
+<UL><PRE>
+10.0.0.1:/work /mnt nfs rw 0 0
+</pre></ul>
+
+<P>
+Je důležité použít <tt>0 0</tt> na konci řádky, jinak bude váš počítač pouštět fsck na NFS filesystém při startu!!!!
+Jiné standardní security volby jsou noexec, nodev, a nosuid ta poslední by měla
+být použita kde jen to je možné. Např.:
+<P>
+
+<UL><PRE>
+10.0.0.1:/work /mnt nfs rw,nodev,nosuid 0 0
+</pre></ul>
+
+<P>
+Diky tomu nebudou moci žádné suid bit binárky na NFS serveru podlomit bezpečnost na NFS klientovi. Pokud nepřipojujete programy, které by měly běžet na klientovi, přidejte noexec.
+
+
+<a name="6.8"></a>
+<h2>6.8 - Domain Name Service  - DNS, BIND, a named</h2>
+
+<h3>6.8.1 Co je DNS?</h3>
+
+<p>
+Domain Name Service je síťová služba zprostředkující síťovým doménám na bázi IP
+překlad síťových IP adres na jména a jména strojů na síťové adresy. vaše instalace OpenBSD je nastavena defaultně jako DNS klient, ne jako DNS server. Tj. vaše instalace OpenBSD může dávat DNS serverům DNS dotazy, ale nemůže sama odpovídat
+na DNS dotazy , pokud není speciálně nastavena. Tu je info jak na to.</p>
+
+<p>
+Máte-li OpenBSD připojené k Internetu přes vašeho ISP, můžete spustit <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=nslookup&sektion=8&format=html">nslookup(8)</a>, program, který provádí DNS dotazy:
+</p>
+
+<ul><pre>
+$ <strong>nslookup www.openbsd.org</strong>
+Server:  ns4.us.prserv.net
+Address:  165.87.201.244
+
+Non-authoritative answer:
+Name:    www.openbsd.org
+Address:  129.128.5.191
+</pre></ul>
+
+<p>
+<b>165.87.201.244</b> je nameserver , který odpověděl, je to nameserver, který
+můj ISP doporučuje, abych ho používal v rámci svého účtu a toto číslo je
+uloženo v <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=resolv.conf&sektion=5&format=html">/etc/resolv.conf</a>. Odpověď ale nebyla autoritativní. Pro
+autoritativní odpověď na DNS dotaz zjistíme nejprve, který DNS server je autoritativní pro doménu <i>openbsd.org</i> a zeptáme se ho pak na adresu <i>www.openbsd.org</i>:
+</p>
+
+<ul><pre>
+# Identify the name servers for openbsd.org
+# with the help of my ISP's name server.
+$ <strong>nslookup -type=NS openbsd.org</strong>
+Server:  ns4.us.prserv.net
+Address:  165.87.201.244
+
+Non-authoritative answer:
+openbsd.org     nameserver = cvs.openbsd.org
+openbsd.org     nameserver = gandalf.sigmasoft.com
+openbsd.org     nameserver = cs.colorado.edu
+openbsd.org     nameserver = ns.appli.se
+openbsd.org     nameserver = zeus.theos.com
+
+Authoritative answers can be found from:
+cvs.openbsd.org internet address = 199.185.137.3
+gandalf.sigmasoft.com   internet address = 198.144.202.98
+cs.colorado.edu internet address = 128.138.243.151
+ns.appli.se     internet address = 194.198.196.230
+zeus.theos.com  internet address = 199.185.137.1
+
+# Use the info gained to query for an authoritative
+# resolution: query the authoritative zeus.theos.com.
+$ <strong>nslookup www.openbsd.org zeus.theos.com</strong>
+Server:  zeus.theos.com
+Address:  199.185.137.1
+
+Name:    www.openbsd.org
+Address:  129.128.5.191
+</pre></ul>
+
+<p>
+<i>zeus.theos.com</i> je , jak se dá předpokládat, server s OpenBSD, který
+je správně nastaven jako DNS server pro doménu <i>openbsd.org</i>.
+</p>
+
+<a name="6.8.1.1"></a>
+<h3>6.8.1.1 Kde se dozvím všechno o DNS a jeho iplementaci pod OpenBSD?</h3>
+
+<ul>
+<li>Jednak RFC <a href="http://www.faqs.org/rfcs/rfc1033.html">1033</a>, <a href="http://www.faqs.org/rfcs/rfc1034.html">1034</a>, a <a href="http://www.faqs.org/rfcs/rfc1035.html">1035</a> s více informacemi o DNS.</li>
+<li>Kniha od O'Reilly Associates <i><a href="http://www.openbsd.org/books.html#dns&bind">DNS a BIND</a> </i>.</li>
+<li>Dále pak <a href="http://www.openbsd.org/cgi-bin/man.cgi">OpenBSD Manual</a> speciálně manuálové stránky </li>
+  <ul>
+  <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dig&sektion=1&format=html">dig(1)</a>
+  <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=nslookup&sektion=8&format=html">nslookup(8)</a>
+  <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=gethostbyname&sektion=3&format=html">gethostbyname(3)</a>
+  <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=named&sektion=8&format=html">named(8)</a>
+  <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=resolver&sektion=3&format=html">resolver(3)</a>
+  <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=resolver&sektion=5&format=html">resolver(5)</a>
+  </ul>
+</ul>
+
+<p>
+Příkaz <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dig&sektion=1&format=html">dig(1)</a> je užitečný tím, že vrací informaci o doméně ve stejném formátu, jaký je nutný pro konfigurační soubory BINDu. Můžete použít  <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dig&sektion=1&format=html">dig(1)</a> pro prozkoumání nameserverů, které pracují správně, abyste mohli porovnat jejich
+nastavení s vaším.
+</p>
+
+<h3>6.8.2 Potřebuji, aby můj stroj sloužil jako nameserver?</h3>
+
+<p>
+Pokud si nejste jisti, zda by měl váš stroj sloužit jako DNS server, nekonfigurujte ho tak. Instalace OpenBSD defaultně neaktivuje stroj jako domain name server, ačkoliv všechny potřebné soubory jsou instalovány. Pro většinu počítačů
+je dostačující soubor  <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hosts&sektion=5&format=html">/etc/hosts</a> s názvy lokálních strojů a jejich IP
+adresami a soubor <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=resolv.conf&sektion=5&format=html">/etc/resolv.conf</a>, který udává adresy DNS serverů,
+používaných vámi na internetu nebo intranetu.
+</p>
+
+<p>
+Na druhou stranu může být ve vašem případě potřeba nastavit stroj jako domain
+name server:
+<ul>
+<li>Pokud máte IP LAN a nechcete replikovat "hosts" soubory lokálních adres
+stroj od stroje. V takovém případě byste mohli konfigurovat OpenBSD jako
+DNS server a odpovídat na DNS dotazy strojů z vaší LAN.</li>
+<ul>
+<li><b>Poznámka:</b> Neexistuje praktické omezení počtu DNS serverů na LAN.
+žádný nebo naopak všechny počítače na LAN mohou nabízet DNS service, pokud
+jsou tak konfigurovány. Zda je ten který server považován za autoritativní
+zvenku vaší LAN (nebo je vůbec znám venkovním sítím) je vlastnost konfigurace,
+která je většinou kontrolována na vyšší úrovni doménové hierarchie.</li>
+</ul>
+<li>Pokud máte IP LAN, na které se nacházejí počítače, které byste chtěli mít
+dostupné z hlediska DNS dotazů, ze strojů z jiných IP LAN nebo WAN.</li>
+<li>Pokud máte potíže s převodem názvu stroje na IP adresu nebo s převodem lokálních názvů na IP adresy, přestože máte správně nastaven obsah souborů <i>/etc/hosts</i> a <i>/etc/resolv.conf</i> (Např. Netscape na OpenBSD občas vykazuje
+podobné problémy, protože implementuje vlastní resolver místo použití funkce
+<i>gethostbyname(3)</i> pro kladení DNS dotazů.))</li>
+</ul>
+
+<p>
+Dalším faktorem je rychlost procesu. Protože překlad jmen na adresy je opakující se proces, ve kterém name servery opakovaně odpovídají jiným nameserverům na dotazy ohledně adres jiných domén, překlad jmen může trvat poněkud déle, pokud
+máte modemové spojení s Internetem a dotazujete se vlastního DNS serveru na adresy vzdálených počítačů (který se pak bude opakovaně dotazovat vzdálených name
+serverů pomocí modemu), než pokud se dotazujete name serveru vašeho ISP (který
+má zřejmě rychlejší spojení se vzdálenými name servery).
+</p>
+
+<h3>6.8.3 Jaké jsou softwarové komponenty DNS serveru?</h3>
+
+<ul>
+<li>named <i>("name daemon")</i></li>
+<li>Konfigurační soubory v adresářovém hierarchii pod <i>/var/named/</i></li>
+</ul>
+
+<h4>6.8.3.1 Jaká úroveň BINDu je podporována?</h4>
+
+<p>
+BIND je označení implementaci DNS. Komponenty domain name serveru společně implementují BIND.
+</p>
+
+<p>
+Existují dvě odlišné specifikace BIND:
+<ol>
+<li>BIND 4</li>
+<li>BIND 8</li>
+</ol>
+
+<p>
+V běžné instalaci OpenBSD <b>named</b> podporuje BIND 4.x.
+
+<h4>6.8.3.2 Jaké jsou některé možnosti provozování DNS prostřednictvím defaultní implementace BIND 4.x?</h4>
+
+<ul>
+<li>Iplementace BIND 8.x v <i>/usr/ports/net/bind8</i>.(Viz. <a href="../../cs/ports.html">ports</a>)
+<li>D. J. Bernstein's <a href="http://cr.yp.to/dnscache.html">DNSCache</a>. DNSCache je také dostupná v ports tree na <i>/usr/ports/net/dnscache/</i>.
+Tento program obsahuje minimalistický DNS server, který je vynikající pro místa,
+která nemají velkou databázi DNS položek. DNSCache může být jednodušše řízena
+pomocí skriptu. Více na home page.
+<LI>Někteří lidé, kteři měli špatné zkušenosti s BINDem se rozhodli napsat Dents, jejich vlastní DNS server, <A HREF="http://www.dents.org">Dents</a>.
+Obsahuje řadu zajímavých vlastností.
+</ul>
+
+<h5>6.8.3.2.1 <u>Poznámka o bezpečnosti</h5></u>
+
+<p>
+Pokud používáte tyto alternativní implementace domain name služby, provozujete kritickou síťovou službu za použití softwaru, který nebyl předmětem bezpečnostního auditu jako <a href="http://www.openbsd.org/security.html">auditovaný</a> <b>named</b> name daemon v základní instalaci. Toto je zapotřební zvážit, poněvadž
+v případě bezpečnostního narušení domain name serveru mohou být resolvery používající tento name server přesměrovány na cizí místa.
+</p>
+
+<h3>6.8.4 Kolik toho musím nainstalovat?</h3>
+
+<p>
+Pokud bylo náležitě nainstalováno původní síťové nastavení při instalaci OpenBSD, pak je už všechno vlastně instalováno. Musíte ještě nastavit name daemona ("<tt>named</tt>").
+</p>
+
+<h3>6.8.5 Jak konfigurovat DNS?</h3>
+
+<p>
+Konfigurace se sestává na OpenBSD z editace nebo vytvoření souborů, které řídí
+name daemona <tt>named</tt>. Tyto soubory se nacházejí původně v adresáři <i>/var/named</i> a v jeho podadresářích, obzvláště soubor  <i>/var/named/named.boot</i>, což je inicializační soubor pro <b>named</b>. Je tu rovněž několik dalších
+kroků konfigurace, které se nacházejí v <i>/etc</i>.
+</p>
+
+<p>
+V tomto dokumentu budeme konfigurovat name daemona na <i>nemo.yewtopia.com</i> jako primární nameserver pro (velmi malou!!!) doménu <i>yewtopia.com</i>. Adresa i>nemo.yewtopia.com</i> je <i>192.168.1.9</i>. Dva jiné počítače <i>crater.yewtopia.com </i> na 192.168.1.1 a <i>earhart.yewtopia.com</i> na 192.168.1.2 se nacházejí v její podsíti.
+</p>
+
+<h4>6.8.5.1 Konfigurace v <i>/etc/named</i></h4>
+
+<h5>6.8.5.1.1 <i>/var/named/named.boot</i></h5>
+
+<ul><pre>
+; tell what subdir has the lookup database files
+directory       /namedb
+
+; type    domain                source host/file
+backup file
+cache
+root.cache
+primary   0.0.127.IN-ADDR.ARPA  localhost.rev
+
+; example primary server config:
+primary  yewtopia.com yewtopia
+primary  1.168.192.IN-ADDR.ARPA yewtopia.rev
+</pre></ul>
+
+<p>
+Obsah souboru říká inicializačními procesu, ve kterém podadresáři a pod kterými
+jmény se nacházejí konfigurační soubory pro <i>yewtopia.com</i>.
+
+<h5>6.8.5.1.2 <i>/var/named/namedb/localhost.rev</i></h5>
+
+<ul><pre>
+; Reverse lookup for localhost interface
+@       IN      SOA     nemo.yewtopia.com.
+your_id.nemo.yewtopia.com.  (
+                                14      ; Serial
+                                3600    ; Refresh
+                                900     ; Retry
+                                3600000 ; Expire
+                                3600 )  ; Minimum
+        IN      NS      nemo.yewtopia.com.
+1       IN      PTR     localhost.yewtopia.com.
+</pre></ul>
+
+<h5>6.8.5.1.3 <i>/var/named/namedb/yewtopia</i></h5>
+
+<ul><pre>
+; yewtopia.com domain database
+yewtopia.com.        IN      SOA     nemo.yewtopia.com.
+your_id.nemo.yewtopia.com.  (
+                                14      ; Serial
+                                3600    ; Refresh
+                                900     ; Retry
+                                3600000 ; Expire
+                                3600 )  ; Minimum
+                     IN      NS      nemo.yewtopia.com.
+
+; Addresses
+localhost.yewtopia.com.      IN A    127.0.0.1
+crater.yewtopia.com.         IN A    192.168.1.1
+earhart.yewtopia.com.        IN A    192.168.1.2
+nemo.yewtopia.com.           IN A    192.168.1.9
+</pre></ul>
+
+<h5>6.8.5.1.4 <i>/var/named/namedb/yewtopia.rev</i></h5>
+
+<ul><pre>
+; yewtopia domain reverse lookup database
+1.168.192.in-addr.arpa. IN      SOA     nemo.yewtopia.com.
+your_id.nemo.yewtopia.com.  (
+                                14      ; Serial
+                                3600    ; Refresh
+                                900     ; Retry
+                                3600000 ; Expire
+                                3600 )  ; Minimum
+1.168.192.in-addr.arpa. IN      NS      nemo.yewtopia.com.
+
+; Addresses
+1.1.168.192.in-addr.arpa. IN PTR crater.yewtopia.com.
+2.1.168.192.in-addr.arpa. IN PTR earhart.yewtopia.com.
+9.1.168.192.in-addr.arpa. IN PTR nemo.yewtopia.com.
+</pre></ul>
+
+<h4>6.8.5.2 Konfigurace v <i>/etc</i></h4>
+
+<h5>6.8.5.2.1 <i>/etc/resolv.conf</i></h5>
+<p>
+Ujistěte se, že <i>/etc/resolv.conf</i> nyní odkazuje na doménu lokálního
+stroje (namísto například nameserveru vašeho ISP) tak, aby žádosti na DNS
+dotazy byly zasílány na <b>named</b>, kterého jste konfigurovali!
+</p>
+
+<ul><pre>
+domain yewtopia.com
+lookup file bind
+</pre></ul>
+
+<h4>6.8.5.2.2 <i>/etc/hosts</i></h4>
+
+<p>
+Pokud jste dříve přidali adresy různých strojů do souboru <i>/etc/hosts</i>, můžete zvážit zkrácení souboru <i>/etc/hosts</i> do původního stavu:
+</p>
+
+<ul><pre>
+# Host addresses
+127.0.0.1       localhost       localhost.localdomain
+192.168.1.9     nemo            nemo.yewtopia.com
+</pre></ul>
+
+<p>
+Takto není <b>named</b> obcházen v případě (možná zastaralých) adres v souboru
+<i>/etc/hosts</i>. <u>Ujistěte se, že máte přinejmenším v tomto souboru položku <i>localhost</i> </u> jinak se vaše síť správně nenastaví! Všimněte si také, že
+ <i>nemo</i> se mustí objevit ve vlastním hosts souboru, jinak uvidíte (většinou málo nebezpečnou) chybovou hlášku při startu, když <i>/etc/netstart</i> spustí <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=route&sektion=8&format=html">route(8)</a> , aby přidal <i>nemo</i> (jehož adresa se objeví v  <i>/etc/myname</i>).
+</p>
+
+<h4>6.8.5.3 Použití <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dig&sektion=1&format=html">dig(1)</a> pro zkoumání výsledků.</h4>
+
+<ul><pre>
+$ <strong>dig @nemo.yewtopia yewtopia any any</strong>
+
+; <<>> DiG 2.2 <<>> @nemo.yewtopia yewtopia any any
+; (1 server found)
+;; res options: init recurs defnam dnsrch
+;; got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 59904
+;; flags: qr rd ra; Ques: 1, Ans: 2, Auth: 0, Addit: 1
+;; QUESTIONS:
+;;      yewtopia, type = ANY, class = ANY
+
+;; ANSWERS:
+yewtopia.        3600   SOA     nemo.yewtopia.
+your_id.nemo.yewtopia. (
+                        14      ; serial
+                        3600    ; refresh (1 hour)
+                        900     ; retry (15 mins)
+                        3600000 ; expire (41 days 16 hours)
+                        3600 )  ; minimum (1 hour)
+yewtopia.        3600   NS      nemo.yewtopia.
+
+;; ADDITIONAL RECORDS:
+nemo.yewtopia.   3600   A       192.168.1.9
+
+;; Total query time: 4 msec
+;; FROM: nemo to SERVER: nemo.yewtopia.  192.168.1.9
+;; WHEN: Tue May  2 23:47:19 2000
+;; MSG SIZE  sent: 25  rcvd: 102
+</pre></ul>
+
+<h3>6.8.6 Jak a kdy mám nastartovat a zastavit DNS?</h3>
+
+<h4>6.8.6.1 Start DNS</h4>
+
+<p>
+Démon <b>named</b> je spuštěn při startu systému z <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rc&sektion=8&format=html">/etc/rc</a>, v řádce instalované v původním <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rc.conf&sektion=8&format=html">/etc/rc.conf</a>.
+</p>
+
+<ul><pre>
+named_flags=NO          # for normal use: ""
+</pre></ul>
+
+<p>
+je změněno na 
+</p>
+
+<ul><pre>
+named_flags=""          # for normal use: ""
+</pre></ul>
+
+<p>
+Rovněž si všimněte řádků v /etc/rc.conf:
+</p>
+
+<ul><pre>
+named_user=named                # Named should not run as root unless neccesary
+named_chroot=/var/named         # Where to chroot named if not empty
+</pre></ul>
+
+<p>
+Tato nastavení budou správná pro většinou míst.
+</p>
+
+<p>
+Ruční spuštění <b>named</b>: použijte příkaz <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ndc&sektion=8&format=html">ndc(8)</a>. Například:
+</p>
+
+<ul><pre>
+# <strong>ndc start</strong>
+nebo 
+# <strong>ndc reload</strong>
+</pre></ul>
+
+<h4>6.8.6.2 Zastavení DNS</h4>
+
+<p>
+Nejlepší způsob jak zastavit démona je použít příkaz <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ndc&sektion=8&format=html">ndc(8)</a>. Například:
+</p>
+
+<ul><pre>
+# <strong>ndc stop</strong>
+</pre></ul>
+
+<p>
+Pokud toto nefunguje, najděte proces id procesu named a použijte <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=kill&sektion=1&format=html">kill(1)</a> pro ukončení procesu. PID of <b>named</b>, pokud běží, můžete najít v první řádce souboru <i>/var/named/named.pid</i>
+</p>
+
+<ul><pre>
+# <strong>cat /var/named/named.pid</strong>
+4608
+named -t /var/named -u named
+# <strong>kill -KILL 4608</strong>
+</pre></ul>
+
+<h4>6.8.6.3 Restart DNS se změněnou konfigurací</h4>
+
+<p>
+Chcete-li, aby běžící instance déman named restartovala sama sebe, s načtením
+nové konfigurace, zašlete procesu signál "hangup":
+</p>
+
+<ul><pre>
+# <strong>kill -HUP 4608</strong>
+</pre></ul>
+
+<p>
+nebo použijte příkaz <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ndc&sektion=8&format=html">ndc(8)</a>. Např.:
+</p>
+
+<ul><pre>
+# <strong>ndc restart</strong>
+</pre></ul>
+
+<h3>6.8.7 Jak zablokovat AXFR dotazy? </h3>
+<p>
+příklad:
+<ul><pre>
+garden:/home/jeremy$<strong>  host -l openssh.com</strong>
+openssh.com.            NS      zeus.theos.com.
+openssh.com.            NS      cvs.openbsd.org.
+openssh.com.            NS      gandalf.sigmasoft.com.
+openssh.com.            NS      cs.colorado.edu.
+openssh.com.            NS      ns.appli.se.
+openssh.com.            A       199.185.137.4
+cvs.openssh.com.        A       199.185.137.4
+localhost.openssh.com.  A       127.0.0.1
+</pre></ul>
+<p>
+Tato informace je užitečná pri ladění DNS, ale v některých případech nemusí být vhodné nabízet tento výstup veřejně.
+Pokud používáte classless in-addr(rfc2317) jako reverz, host -l bude informovat o každé doméně, která se nachází ve vašem systému! Zákazu zónových transferů 
+docílíte pomocí klauzule 'allow-transfer' ve vašem zónovém souboru.
+<br><br>
+Pokud používáte Bind8, můžete specifikovat počítače, kterým dovolíte zónové
+transfery zón ve vašich zónových souborech:
+<ul><pre>
+zone "foo.com" in {
+        type master;
+        file "directory/zonefile";
+        allow-transfer {
+          127.0.0.1;
+          10.0.0.6;
+          10.0.255.12;
+        };
+};
+</pre></ul>
+Můžete také zablokovat transfery Všech domén editováním souboru /var/named.conf a přidáním parametru 'allow-transfer' do sekce options:
+<pre><ul>
+   options {
+        allow-transfer { 127.0.0.1; };
+    };
+</pre></ul>
+Metoda Bind8 pracuje taktéž s Bind9.<br>
+Pokud používáte Bind 4 (default v OpenBSD) můžete editovat /var/named/named.boot a použít volbu 'xfrnets'.<br>
+
+<pre><ul>
+xfrnets 209.142.221.5 12.7.96.7
+; type    domain                source host/file                backup file
+cache     .                                                     root.cache
+primary   0.0.127.IN-ADDR.ARPA  localhost.rev
+</pre></ul><br>
+Bind 4 dovoluje transfery z celých tříd, takže není tak přesný.
+Typicky jediné stroje, které potřebují vykonávat DNS transfery jsou vaši DNS slaves a stroje, ze kterých chcete DNS debugovat (127.0.0.1 je většinou dobrá volba, u které dovolit transferu!)
+Blokování AXFR dotazů přidává další úroveň soukromí, ale může znemožnit debugování DNS. 
+(Thanks to <a href=mailto:ntang@nachtwache.org>Nicholas Tang</a> za tento tip)
+</p>
+<h3>6.8.8 Co jste mi neřekli o nastavení DNS?</h3>
+<p>
+Je zde toho mnoho, například, jak nastavit DNS, aby dotazy na intranetové domény, které nejsou viditelné z kořene doménové hierarchie byly převáděny na servery v rámci vaší společnosti. Raději si přečtěte <a href="#6.8.1.1">Dokumenty které doporučujeme</a> , kde najdete více informací o DNS.
+</p>
+
+<a name="6.9"></a>
+<h2>6.9 - Nastavení PPTP spojení v OpenBSD</h2>
+
+<p>
+<strong>POZNÁMKA:</strong> Informace se nevztahují ke  <strong>VŠEM</strong> ADSL providerům, ale mnoho informací může být převzato z tohoto nastavení. O něm je známo, že funguje pro ADS providera v Rakousku <a href="http://www.inode.at">Inode</a>. 
+</p>
+
+<p>
+Pro začátek potřebujete nainstalovat pptp. Port byl přidán do OpenBSD portů POTÉ co bylo vydáno OpenBSD 2.8 a pracuje dobře s OpenBSD 2.8 ports tree. Port se nachází v <i>/ports/net/pptp</i>. Přečtěte si <a href="faq8.html#8.6">FAQ 8.6</a> pro více informací o OpenBSD ports tree.
+</p>
+
+<p>
+V důsledku konfliktu pptp s podporou <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=gre&apropos=0&sektion=0&manpath=OpenBSD+Current&arch=i386&format=html">gre(4)</a> v jádře budete nutné překompilovat jádro a odstranit podporu pro gre(4).
+</p>
+
+<ul>Patch pro odstranění GRE(4) podpory.
+pre>
+Index: sys/conf/GENERIC
+===================================================================
+RCS file: /cvs/src/sys/conf/GENERIC,v
+retrieving revision 1.66
+diff -u -r1.66 GENERIC
+--- sys/conf/GENERIC    2000/10/13 04:21:14     1.66
++++ sys/conf/GENERIC    2000/12/26 19:55:31
+@@ -97,6 +97,6 @@
+ pseudo-device  ksyms   1       # kernel symbols device
+ pseudo-device  bridge  2       # network bridging support
+ #pseudo-device vlan    2       # IEEE 802.1Q VLAN
+-pseudo-device  gre     1       # GRE encapsulation interface
++#pseudo-device gre     1       # GRE encapsulation interface
+
+ option         BOOT_CONFIG     # add support for boot -c
+</pre></ul>
+
+<p>
+Pro překompilování jádra proveďte checkout  OpenBSD 2.8-stable pomocí cvs (podívejte se na webovou stránku <a href="../../cs/stable.html">OpenBSD Stable</a> pro více informací), aplikujte předcházející patch a překompilujete kernel podle <a href="faq5.html#5.3">FAQ 5.3</a>.
+</p>
+
+<p>
+Poté co nainstalujete balík <b>pptp</b> a nové jádro, potřebujete zeditovat soubory pro nastavení spojení. Tento balík používá do OpenBSD zakomponované <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ppp&apropos=0&sektion=0&manpath=OpenBSD+Current&arch=i386&format=html">ppp(8)</a>, takže pokud se v něm vyznáte, pak velká část nastavení vypadá stejně. Rovněž se podívejte na <a href="#6.5">FAQ 6.5</a>.
+</p>
+
+<ul>
+<li>1 - /etc/ppp/options
+<li>2 - /etc/ppp/pap-secrets
+</ul>
+
+<p>
+Soubor <i>/etc/ppp/options</i> s následujícím nastavením bude dělat pravděpodobně co potřebujete:
+</p>
+
+<ul><pre>
+# <strong>cat /etc/ppp/options</strong>
+name "LOGINNAME"
+noauth
+noipdefault
+defaultroute
+debug
+</pre></ul>
+
+<p>
+<tt>LOGINNAME</tt> Mělo by být nahrazeno vaším User-ID.
+</p>
+
+<p>
+V  <i>/etc/ppp/pap-secrets</i> řádek:
+
+<ul><pre>
+# <strong>cat /etc/ppp/pap-secrets</strong>
+LOGINNAME 10.0.0.138 PASSWORD
+</pre></ul>
+
+<p>
+Kde LOGINNAME je vaše User-ID a PASSWORD je vaše heslo. 10.0.0.138 je IP přiřazené vašemu MODEMu v případě že používáte ADSL, atd. Ujistěte se, že soubor může číst pouze uživatel root (mód 600).
+</p>
+
+<h3>6.9.1 - Přiřazení adresy síťovému rozhraní</h3>
+
+<p>
+V předcházejícím případě měl náš modem předkonfigurovaný interfejs na 10.0.0.138. Nyní potřebujeme přiřadit adresu  NAŠEMU rozhraní. Nejlépe je vybrat si jedno IP blízko tomu, které vám bylo přiřazeno vaším modemem, nebo použít statické IP které vám přiřadili. Více si přečtěte v <a href="#6.1">FAQ 6.1</a>.
+</p>
+
+<p>
+Poté co nastavíte interfejsy, měli byste být schopni vytvořit pptp spojení příkazem.
+
+<ul><pre>
+# <strong>/usr/local/sbin/pptp 10.0.0.138 &</strong>
+</pre></ul>
+
+<p>
+Protože používáme do OpenBSD začleněné ppp(8), jsou nastartovány dva procesy. Můžete zastavit pptp ukončením obou procesů:
+</p>
+
+<ul><pre>
+# <strong>kill -9 [pid of pppd]</strong>
+% <strong>kill -9 [pid of pptp]</strong>
+</pre></ul>
+
+Doporučujeme otevřít si  <tt>/var/log/messages</tt> v odděleném terminálovém okně, abyste rozpoznali možné problémy.
+
+<ul>
+<pre>
+# <strong>tail -f /var/log/message</strong>
+</pre></ul>
+</p>
+
+<p>
+Rovněž si přidejte startovací příkaz do <i>/etc/rc.local</i> abyste se mohli automaticky spojit při restartu.
+</p>
+
+
+<p>
+<font color= "#0000e0">
+<a href= "index.html">[Zpět na hlavní stránku]</a>
+<a href= "faq5.html">[Do sekce 5.0 - Nastavení jádra]</a>
+<a href= "faq7.html">[Do sekce 7.0 - Keyboard controls]</a>
+</font>
+</p>
+
+<p>
+<hr>
+<a href= "index.html"><img height= "24" width= "24" src= "../../images/back.gif" border= "0" alt= "[zpět]"></a>
+<a href= "mailto:www@openbsd.org">www@openbsd.org</a>
+<small>
+<br>
+Originally [OpenBSD: faq6.html,v 1.93 ]
+<br>
+$Translation: faq6.html,v 1.2 2001/05/10 20:19:27 certik Exp $
+<br>
+$OpenBSD: faq6.html,v 1.1 2001/05/11 06:28:56 jufi Exp $
+</small>
+
+</body>
+</html>
+
+
