@@ -12,7 +12,8 @@ d'Authentification</title>
 </head>
 
 <!--
-Copyright (c) 2003, 2004 Joel Knight <enabled@myrealbox.com>
+
+Copyright (c) 2003-2005 Joel Knight <enabled@myrealbox.com>
 
 Permission to use, copy, modify, and distribute this documentation for
 any purpose with or without fee is hereby granted, provided that the
@@ -50,13 +51,16 @@ please, use a max of 72 chars per line -->
 <li><a href="#intro">Introduction</a>
 <li><a href="#config">Configuration</a>
         <ul>
+        <li><a href="#enable">Activer Authpf</a>
         <li><a href="#linkmain">Attacher Authpf au Jeu de Règles
             Principal</a>
         <li><a href="#loadrules">Configurer les Règles Chargées</a>
         <li><a href="#acl">Les Listes de Contrôle d'Accès</a>
+        <li><a href="#message">Présenter un Message de Login</a>
         <li><a href="#shell">Attribuer Authpf comme Shell
             Utilisateur</a>
         </ul>
+<li><a href="#loginclasse">Créer une classe d'authentification Authpf</a>
 <li><a href="#wholog">Voir Les Personnes Connectées</a>
 <li><a href="#moreinfo">Plus d'Information</a>
 <li><a href="#example">Exemple</a>
@@ -90,19 +94,25 @@ ouvertes. Ainsi, le trafic de l'utilisateur ne passera à travers la
 passerelle que si l'utilisateur garde sa session SSH ouverte.
 
 <p>
-Authpf altère le jeu de règles  
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+3.6">pf(4)</a> 
-en ajoutant des règles à un 
-<a href="anchors.html#named">jeu de règles nommé</a>
-attaché à un 
-<a href="anchors.html">point d'ancrage</a>. Chaque fois qu'un
-utilisateur s'authentifie, authpf crée un nouveau jeu de règles nommé et
-y charge les règles
-<a href="filter.html">de filtrage</a>, 
-<a href="nat.html"><tt>nat</tt></a>, 
-<a href="nat.html#binat"><tt>binat</tt></a>, et 
-<a href="rdr.html"><tt>rdr</tt></a>. Les règles qu'authpf
-charge peuvent être configurées par utilisateur ou globalement.
+Authpf charge les règles de filtres et de NAT dans un <a href="anchors.html">
+point d'ancrage</a> unique.
+L'ancre est nommée par la combinaison de l'identifiant UNIX de l'utilisateur
+et de l'id du processus authpf dans le format "<tt>identifiant(PID)</tt>".
+Chaque ancre utilisateur est stockée dans l'ancre <tt>authpf</tt> qui est
+elle même ancrée dans le jeu de règles principal.
+
+Le "chemin d'ancrage complet" devient dès lors :
+
+<blockquote>
+<tt>
+<i>jeu_de_regles_principal</i>/authpf/<i>identifiant</i>(<i>PID</i>)
+</tt>
+</blockquote>
+
+<p>
+
+Les règles qu'authpf charge peuvent être configurées par utilisateur ou
+globalement.
 
 <p>
 Voici quelques exemples d'utilisation d'authpf :
@@ -141,6 +151,26 @@ La section suivante fournit les étapes de base nécessaires pour
 configurer authpf. Pour une description complète de la configuration
 d'authpf, veuillez consulter la
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=authpf&amp;sektion=8&amp;manpath=OpenBSD+3.6">page du manuel authpf</a>.
+
+<a name="enable"></a>
+<h3>Activer Authpf</h3>
+
+<p>
+Authpf ne se lancera pas si le fichier de configuration <tt>/etc/authpf/authpf.conf</tt>
+n'est pas présent.
+Même si le fichier est vide (de taille nulle), il doit être présent ou Authpf
+se fermera automatiquement après qu'un utilisateur s'authentifie correctement.
+
+<p>
+Les directives de configuration suivantes peuvent êtres placées dans
+<tt>authpf.conf</tt> :
+
+<ul>
+<li><tt>anchor=<i>nom</i></tt> - Utiliser
+<a href="anchors.html">l'ancre</a> nom spécifiée au lieu de "authpf".
+<li><tt>table=<i>nom</i></tt> - Utiliser la table
+<a href="tables.html">table</a> nom spécifiée au lieu de "authpf_users".
+</ul>
 
 <a name="linkmain"></a>
 <h3>Attacher Authpf au Jeu de Règles Principal</h3>
@@ -198,6 +228,24 @@ Il est recommandé d'utiliser la macro <tt>$user_ip</tt> pour ne
 permettre que le trafic provenant de la machine de l'utilisateur
 authentifié.
 
+<p>
+An plus de la macro <tt>$user_ip</tt>, authpf utilisera la table
+<tt>authpf_users</tt> (si elle existe) pour stocker les adresses IP
+de tous les utilisateurs authentifiés.
+Soyez sûrs de définir la table avant de vouloir l'utiliser :
+
+<blockquote>
+<tt>
+table &lt;authpf_users&gt; persist<br>
+pass in on $ext_if proto tcp from &lt;authpf_users&gt; \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;to port  smtp flags S/SA keep state
+</tt>
+</blockquote>
+
+<p>
+Cette table ne devrait être utilisée que pour les règles devant s'appliquer
+à tous les utilisateurs authentifiés.
+
 <a name="acl"></a>
 <h3>Les Listes de Contrôle d'Accès</h3>
 On peut empêcher les utilisateurs d'utiliser authpf en créant un fichier
@@ -222,6 +270,25 @@ interdire l'accès à un utilisateur, il affichera un message bref et
 déconnectera l'utilisateur. Une entrée dans le fichier
 <tt>/etc/authpf/banned/</tt> est toujours prise en compte avant une
 entrée dans le fichier <tt>/etc/authpf/authpf.allow</tt>.
+
+<a name="message"></a>
+<h3>Présenter un Message de Login</h3>
+
+<p>
+Chaque fois qu'un utilisateur s'authentifie correctement à authpf,
+un message indiquant que l'utilisateur est correctement authentifié est affiché.
+
+<blockquote>
+<tt>
+Hello charlie. You are authenticated from host "64.59.56.140"
+</tt>
+</blockquote>
+
+<p>
+Ce message peut être suivi par un message personnalisé dans
+<tt>/etc/authpf/authpf.message</tt>. 
+Le contenu de ce fichier sera affiché après le message d'accueil
+par défaut.
 
 <a name="shell"></a>
 <h3>Attribuer Authpf comme Shell Utilisateur</h3>
@@ -252,6 +319,53 @@ comme shell de connexion :
 ><tt>/etc/login.conf</tt></a>.
 </ol>
 
+<a name="loginclass"></a>
+<h2>Créer une classe d'authentification authpf</h2>
+Lors de l'utilisation d'authpfsur un système qui dispose de comptes normaux
+et de comptes utilisateurs authpf, il peux être intéressant de créer une
+classe d'authentification authpf séparée pour les utilisateurs authpf.
+Cela autorise certains changements sur ces comptes à être faits
+de manière globale ainsi que de placer des politiques différentes
+sur les comptes normaux et les comptes authpf.
+
+Quelques exemples de ces polices peuvent être :
+
+<ul>
+<li><b>shell</b> - Spécifier un shell utilisateur de connexion.
+Cela peut être utilisé pour forcer un shell utilisateur à <tt>authpf</>>
+quelque soit l'entrée dans la base
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=passwd&amp;sektion=5"
+>passwd(5)</a>.
+<li><b>welcome</b> - Spécifie quel fichier de
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=motd&amp;sektion=5"
+>motd(5)</a> utiliser lorsqu'un utilisateur se connecte.
+Cela est très utile pour afficher des messages ne concernant que les
+utilisateurs authpf.
+</ul>
+
+<p>
+Les classes d'authentifications sont créées dans le fichier
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=login.conf&amp;sektion=5"
+>login.conf(5)</a>.
+Un exemple de classe d'authentification pour les utilisateurs authpf :
+
+<blockquote>
+<tt>
+authpf:\<br>
+&nbsp;&nbsp;&nbsp;&nbsp;:welcome=/etc/motd.authpf:\<br>
+&nbsp;&nbsp;&nbsp;&nbsp;:shell=/usr/sbin/authpf:\<br>
+&nbsp;&nbsp;&nbsp;&nbsp;:tc=default:
+</tt>
+</blockquote>
+
+<p>
+Les utilisateurs sont assignés à une classe d'authentification par l'édition
+du champ <tt>class</tt> de la base d'utilisateurs passwd(5).
+Une méthode pour le faire est l'utilisation de la commande
+
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=chsh&amp;sektion=1"
+>chsh(1)</a>.
+
 <a name="wholog"></a>
 <h2>Voir Les Personnes Connectées</h2>
 Une fois l'utilisateur connecté et les règles chargées par authpf, ce
@@ -272,13 +386,6 @@ l'utilisateur aura ouvert.
     # kill -TERM 23664
 </pre>
 
-<a name="moreinfo"></a>
-<h2>Plus d'Information</h2>
-Pour une description complète du fonctionnement d'authpf, veuillez vous
-référer à la
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=authpf&amp;sektion=8&amp;manpath=OpenBSD+3.6"
->page du manuel authpf</a>.
-
 <a name="example"></a>
 <h2>Exemple</h2>
 Dans cet exemple, authpf est utilisé sur une passerelle OpenBSD pour
@@ -298,10 +405,7 @@ suivantes :<br>
 <tr><td nowrap bgcolor="#EEEEEE">
 <pre>
 wifi_if = "wi0"
-dns_servers = "{ 10.0.1.56, 10.0.2.56 }"
 
-pass in quick on $wifi_if proto udp from $user_ip to $dns_servers \
-   port domain keep state
 pass in quick on $wifi_if proto tcp from $user_ip to port { ssh, http, \
    https } flags S/SA keep state
 </pre>
@@ -321,10 +425,7 @@ règles suivantes font partie du fichier
 wifi_if = "wi0"
 smtp_server = "10.0.1.50"
 pop3_server = "10.0.1.51"
-dns_servers = "{ 10.0.1.56, 10.0.2.56 }"
 
-pass in quick on $wifi_if proto udp from $user_ip to $dns_servers \
-   port domain keep state
 pass in quick on $wifi_if proto tcp from $user_ip to $smtp_server \
    port smtp flags S/SA keep state
 pass in quick on $wifi_if proto tcp from $user_ip to $pop3_server \
@@ -346,19 +447,25 @@ Voici le contenu du jeu de règles principal figurant dans le fichier
 # macros
 wifi_if = "wi0"
 ext_if  = "fxp0"
+dns_servers = "{ 10.0.1.56, 10.0.2.56 }"
+
+table &lt;authpf_users&gt; persist
 
 scrub in all
 
 # filtrage
 block drop all
 
-pass out quick on $ext_if proto tcp from $wifi_if:network flags S/SA \
-   modulate state
-pass out quick on $ext_if proto { udp, icmp } from $wifi_if:network \
-   keep state
+pass out quick on $ext_if inet proto tcp from \
+   { $wifi_if:network, $ext_if } flags S/SA modulate state
+pass out quick on $ext_if inet proto { udp, icmp } from \
+   { $wifi_if:network, $ext_if } keep state
 
-pass in quick on $wifi_if proto tcp from $wifi_if:network to $wifi_if \
+pass in quick on $wifi_if inet proto tcp from $wifi_if:network to $wifi_if \
    port ssh flags S/SA keep state
+
+pass in quick on $wifi_if inet proto { tcp, udp } from &lt;authpf_users&gt; \
+   to $dns_servers port domain keep state
 
 anchor "authpf/*" in on $wifi_if
 </pre>
@@ -370,10 +477,13 @@ Le jeu de règles est très simple :
 <ul>
 <li>Bloquer tout par défaut.
 <li>Autoriser les trafics TCP, UDP et ICMP sortants sur l'interface
-    externe en provenance du réseau sans fil.
+    externe en provenance du réseau sans fil et depuis la passerelle
+    elle même.
 <li>Autoriser le trafic SSH entrant en provenance du réseau sans
     fil et destiné à la passerelle. Cette règle est nécessaire pour
     permettre aux utilisateurs de s'authentifier.
+<li>Autoriser les requêtes DNS entrantes provenant de tous les utilisateurs
+authpf authentifiés et destinées aux serveurs DNS du campus.
 <li>Créer le point d'ancrage "authpf" pour le trafic entrant sur
     l'interface sans fil.
 </ul>
@@ -400,10 +510,10 @@ quand une nouvelle connexion traverse la passerelle.
 <br>
 <small>
 <!--
-Originally [OpenBSD: authpf.html,v 1.10 ]<br>
-$Translation: authpf.html,v 1.15 2005/01/17 21:34:48 aanriot Exp $<br>
+Originally [OpenBSD: authpf.html,v 1.14 ]<br>
+$Translation: authpf.html,v 1.16 2005/02/13 16:52:28 svincent Exp $<br>
 -->
-$OpenBSD: authpf.html,v 1.13 2005/01/18 09:54:52 jufi Exp $
+$OpenBSD: authpf.html,v 1.14 2005/02/13 17:41:41 saad Exp $
 </small>
 
 </body>
