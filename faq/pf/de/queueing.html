@@ -457,6 +457,8 @@ respektiv Bits, Kilobits, Megabits und Gigabits pro Sekunde darstellen oder
 als Prozent der Bandbreite der Eltern-Warteschlange.
 Dieser Parameter ist nur anwendbar, wenn der <tt>cbq</tt>-,scheduler'
 verwendet wird.
+Wenn nicht angegeben, wird standardmäßig 100% der Bandbreite der
+Eltern-Warteschlange genutzt.
 <li><tt><i>pri</i></tt> - Die Priorität der Warteschlange. Für <tt>cbq</tt>
 ist der Prioritätsbereich von 0 bis 7 und für <tt>priq</tt> 0 bis 15.
 Priorität 0 ist die niedrigste Priorität. Wenn nicht angegeben, wird ein
@@ -496,9 +498,9 @@ Das oben angegebene Beispiel weiterführend:
 <blockquote>
 <tt>
 queue std bandwidth 50% cbq(default)<br>
-queue ssh { ssh_login, ssh_bulk }<br>
-&nbsp;&nbsp;queue ssh_login  priority 4 cbq(ecn)<br>
-&nbsp;&nbsp;queue ssh_bulk   cbq(ecn)<br>
+queue ssh bandwidth 25% { ssh_login, ssh_bulk }<br>
+&nbsp;&nbsp;queue ssh_login bandwidth 25% priority 4 cbq(ecn)<br>
+&nbsp;&nbsp;queue ssh_bulk  bandwidth 75% cbq(ecn)<br>
 queue ftp bandwidth 500Kb priority 3 cbq(borrow red)<br>
 </tt>
 </blockquote>
@@ -507,13 +509,23 @@ queue ftp bandwidth 500Kb priority 3 cbq(borrow red)<br>
 Hier werden die Parameter der zuvor definierten ,child'-Warteschlangen
 gesetzt. Der <tt>std</tt>-Warteschlange wird eine Bandbreite von 50% der
 Bandbreite der root-Warteschlange (oder 1 Mbps) zugewiesen und als
-standardmäßige Warteschlange definiert. Die <tt>ssh</tt>-Warteschlange
-definiert zwei ,child'-Warteschlangen, <tt>ssh_login</tt> und
-<tt>ssh_bulk</tt>. Der <tt>ssh_login</tt>-Warteschlange wird eine
+standardmäßige Warteschlange definiert. Der <tt>ssh</tt>-Warteschlange
+werden 25% der Bandbreite der ,root'-Warteschlange (500kb) zugewiesen
+und beinhaltet ebenfalls zwei ,child'-Warteschlangen, <tt>ssh_login</tt>
+und <tt>ssh_bulk</tt>. Der <tt>ssh_login</tt>-Warteschlange wird eine
 höhere Priorität als <tt>ssh_bulk</tt> gegeben und für beide ist
 ECN aktiv. Der <tt>ftp</tt>-Warteschlange wird eine Bandbreite von
 500 Kbps zugewiesen und eine Priorität von 3. Sie kann ebenfalls
 Bandbreite leihen, wenn weitere verfügbar ist, und hat RED aktiviert.
+
+<p>
+<b>HINWEIS:</b> Jede ,child'-Warteschlange hat ihre eigene Bandbreite
+angegeben. Ohne Angabe der Bandbreite wird PF der Warteschlange 100%
+der Bandbreite der Eltern-Warteschlange zuweisen.
+In diesem Fall wird dies einen Fehler verursachen, wenn die Regeln
+geladen werden, da, falls eine Warteschlange existiert, die 100% der
+Bandbreite nutzt, keine weitere Warteschlange auf diesem Level angegeben
+werden kann, da keine weitere Bandbreite genutzt werden kann.
 
 <a name="assign"></a>
 <h3>Verkehr einer ,Queue' zuweisen</h3>
@@ -547,7 +559,7 @@ angegeben wurde:
 <blockquote>
 <tt> 
 altq on fxp0 cbq bandwidth 2Mb queue { std, ftp }<br>
-queue std cbq(default)<br>
+queue std bandwidth 500Kb cbq(default)<br>
 queue ftp bandwidth 1.5Mb<br>
 <br>
 pass in on dc0 from any to any port 21 queue ftp<br>
@@ -700,9 +712,9 @@ altq on dc0 cbq bandwidth 2Mb queue { std_in, ssh_im_in, dns_in, bob_in }
 # bob_in      - für bobs workstation reservierte bandbreite. erlaube ihm,
 #               zu leihen.
 
-queue std_in    cbq(default)
-queue ssh_im_in priority 4
-queue dns_in    priority 5
+queue std_in    bandwidth 1.6Mb cbq(default)
+queue ssh_im_in bandwidth 200Kb priority 4
+queue dns_in    bandwidth 120Kb priority 5
 queue bob_in    bandwidth 80Kb cbq(borrow)
 
 
@@ -775,13 +787,19 @@ läuft. Alle anderen Netzwerksegmente verwenden Fast Ethernet (100 Mbps).
 <p>
 Der Netzwerkadministrator hat sich für die folgende Richtlinie entschieden:
 <ul>
-<li>Begrenze den Verkehr zwischen dem WWW-Server un dem Internet auf
-500 Kbps in beide Richtungen.
-<li>Keine Bandbreiten-Begrenzungen für den Verkehr zwischen dem WWW-Server
-und dem internen Netzwerk.
-<li>Gib dem HTTP-Verkehr zwischen dem WWW-Server und dem Internet eine
-höhere Priorität als dem anderen Verkehr zwischen dem WWW-Server und dem
-Internet (zum Beispiel FTP-Uploads).
+<li>Begrenze den gesamten Verkehr zwischen dem WWW-Server un dem Internet
+auf 500 Kbps in beide Richtungen.
+	<ul>
+	<li>Vergebe 250 Kbps an den HTTP-Verkehr
+	<li>Vergebe 250 Kbps an ,anderen' Verkehr (z.B. Nicht-HTTP-Verkehr)
+	<li>Erlaube beiden Warteschlangen, bis zu den gesamten 500 Kbps
+	Bandbreite zu leihen.
+	<li>Gebe dem HTTP-Verkehr zwischen dem WWW-Server und dem Internet
+	eine höhere Priorität als dem anderen Verkehr zwischen dem
+	WWW-Server und dem Internet (wie zum Beispiel FTP-Uploads).
+	</ul>
+<li>Der Verkehr zwischen dem WWW-Server und dem internen Netzwerk kann
+bis die gesamten 100 Mbps, die das Netzwerk bereitstellt, nutzen.
 <li>Reserviere 500 Kbps für das IT-Abt-Netzwerk, so dass sie die aktuellsten
 Software-Updates in einer zeitlichen Manier herunterladen können. Sie
 sollten in der Lage sein, mehr als 500 Kbps zu verwenden, wenn mehr zur
@@ -813,15 +831,15 @@ altq on fxp0 cbq bandwidth 1.5Mb queue { std_ext, www_ext, boss_ext }
 #                  auf fxp0.
 # www_ext        - container-warteschlange für WWW-server-warteschlangen.
 #                  begrenzt für 500 Kbps.
-#   www_ext_http - http-verkehr von dem WWW-server
-#   www_ext_misc - jeder nicht-http-verkehr von dem WWW-server
-# boss_ext       - verkehr, der vom computer des chefs kommt
+#   www_ext_http - http-verkehr von dem WWW-server; höhere priorität.
+#   www_ext_misc - jeder nicht-http-verkehr von dem WWW-server.
+# boss_ext       - verkehr, der vom computer des chefs kommt.
 
-queue std_ext        cbq(default)
+queue std_ext        bandwidth 500Kb cbq(default borrow)
 queue www_ext        bandwidth 500Kb { www_ext_http, www_ext_misc }
-  queue www_ext_http priority 3 cbq(red)
-  queue www_ext_misc priority 1
-queue boss_ext       priority 3
+  queue www_ext_http bandwidth 50% priority 3 cbq(red borrow)
+  queue www_ext_misc bandwidth 50% priority 1 cbq(borrow)
+queue boss_ext       bandwidth 500Kb priority 3 cbq(borrow)
 
 # aktiviere ,queueing' auf dem internen interface, um verkehr zu
 # kontrollieren, der vom internet oder der DMZ kommt. verwende
@@ -839,15 +857,15 @@ altq on dc0 cbq bandwidth 100% queue { net_int, www_int }
 #              bandbreite ist 1,0 Mbps.
 #   std_int  - die standard-warteschlange. ebenfalls die
 #              standard-warteschlange für ausgehenden verkehr auf dc0.
-#   it_int   - verkehr zum it-abt-netzwerk.
-#   boss_int - verkehr zum PC des chefs.
-# www_int    - verkehr vom WWW-server in die DMZ.
+#   it_int   - verkehr zum it-abt-netzwerk; reserviere ihnen 500 Kbps.
+#   boss_int - verkehr zum PC des chefs, eine höhere Priorität zuweisen
+# www_int    - verkehr vom WWW-server in die DMZ; volle Geschwindigkeit.
 
 queue net_int    bandwidth 1.0Mb { std_int, it_int, boss_int }
-  queue std_int  cbq(default)
+  queue std_int  bandwidth 250Kb cbq(default borrow)
   queue it_int   bandwidth 500Kb cbq(borrow)
-  queue boss_int priority 3
-queue www_int    cbq(red)
+  queue boss_int bandwidth 250Kb priority 3 cbq(borrow)
+queue www_int    bandwidth 99Mb cbq(red borrow)
 
 # aktivere ,queueing' auf dem DMZ-interface, um den verkehr, der für
 # den WWW-server bestimmt ist, zu kontrollieren. cbq wird auf diesem
@@ -862,14 +880,15 @@ altq on fxp1 cbq bandwidth 100% queue { internal_dmz, net_dmz }
 # definiere die parameter für die ,child'-warteschlangen.
 # internal_dmz   - verkehr vom internen netzwerk.
 # net_dmz        - container-warteschlange für den verkehr vom internet.
-#   net_dmz_http - http verkehr.
+#   net_dmz_http - http verkehr; höhere Priorität.
 #   net_dmz_misc - der gesamte nicht-http-verkehr. dies ist ebenfalls die
 #                  standardmäßige warteschlange.
 
-queue internal_dmz      # keine speziellen einstellungen benötigt
+queue internal_dmz   bandwidth 99Mb cbq(borrow)
 queue net_dmz        bandwidth 500Kb { net_dmz_http, net_dmz_misc }
-  queue net_dmz_http priority 3 cbq(red)
-  queue net_dmz_misc priority 1 cbq(default)
+  queue net_dmz_http bandwidth 50% priority 3 cbq(red borrow)
+  queue net_dmz_misc bandwidth 50% priority 1 cbq(default borrow)
+
 
 
 # ... in der filter-sektion von pf.conf ...
@@ -932,10 +951,10 @@ pass out on fxp1 proto tcp from $int_nets to $wwwserv port { 80, \
 <br>
 <small>
 <!--
-Originally [OpenBSD: queueing.html,v 1.25 ]
-$Translation: queueing.html,v 1.6 2005/02/07 12:39:02 paldium Exp $
+Originally [OpenBSD: queueing.html,v 1.26 ]
+$Translation: queueing.html,v 1.7 2005/02/27 11:58:48 paldium Exp $
 -->
-$OpenBSD: queueing.html,v 1.6 2005/02/08 13:59:02 jufi Exp $
+$OpenBSD: queueing.html,v 1.7 2005/02/28 20:30:24 saad Exp $
 </small>
 
 </body>

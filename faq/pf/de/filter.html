@@ -12,7 +12,7 @@
 </head>
 
 <!--
-Copyright (c) 2003, 2004 Joel Knight <enabled@myrealbox.com>
+Copyright (c) 2003-2005 Joel Knight <enabled@myrealbox.com>
 
 Permission to use, copy, modify, and distribute this documentation for
 any purpose with or without fee is hereby granted, provided that the
@@ -53,6 +53,7 @@ please, use a max of 72 chars per line -->
 <li><a href="#quick">Das <tt>quick</tt>-Schlüsselwort</a>
 <li><a href="#state">,state' halten</a>
 <li><a href="#udpstate">,state' für UDP halten</a>
+<li><a href="#stateopts">Optionen für ,Stateful' Tracking</a>
 <li><a href="#tcpflags">TCP-Flags</a>
 <li><a href="#synproxy">TCP-SYN-Proxy</a>
 <li><a href="#antispoof">,spoofed' Pakete blocken</a>
@@ -484,6 +485,91 @@ der ,state' gelöscht. Der Timeout-Wert kann in der
 <a href="options.html">options</a>-Sektion in der Datei
 <tt>pf.conf</tt> gesetzt werden.
 
+<a name="stateopts"></a>
+<h2>Optionen für ,Stateful' Tracking</h2>
+Wenn eine Filterregel einen ,state'-Tabelleneintrag durch das Verwenden
+irgendeines <tt>keep state</tt>-, <tt>modulate state</tt>- oder
+<tt>synproxy state</tt>-Schlüsselwort anlegt, können bestimmte Optionen
+angegeben werden, die das Verhalten der ,state'-Erstellung beeinflussen.
+Die folgenden Optionen sind verfügbar:
+
+<dl>
+<dt><tt>max <i>anzahl</i></tt>
+<dd>Begrenzt die maximale Anzahl an ,state'-Einträgen, die die Regel
+erstellen kann, auf <i>anzahl</i>.
+Wenn das Maximum erreicht wurde, werden Pakete, die normalerweise
+,state' erstellen würden, fallen gelassen, bis die Anzahl der
+existierenden ,states' wieder sinkt.
+
+<dt><tt>source-track</tt>
+<dd>Diese Option aktiviert das Tracking der Anzahl an States, die für
+jede einzelne IP-Adresse erstellt wurden.
+Diese Option hat zwei Formate:
+	<ul>
+	<li><tt>source-track rule</tt> - Die maximale Anzahl an ,states',
+	die durch diese Regel erstellt werden können, wird durch
+	die <tt>max-src-nodes</tt>- und <tt>max-src-states</tt>-Optionen
+	dieser Regel begrenzt. Nur ,state'-Einträge, die durch diese
+	bestimmte Regel erstellt wurden, werden gezählt und mit der
+	Grenze dieser Regel überprüft.
+	<li><tt>source-track global</tt> - Die Anzahl an ,states'
+	aller Regeln, die diese Option nutzen, werden begrenzt. Jede
+	Regel kann unterschiedliche <tt>max-src-nodes</tt>- und
+	<tt>max-src-states</tt>-Optionen angeben, jedoch werden
+	,state'-Einträge, die durch eine der teilnehmenden Regeln erstellt
+	wurden, mit der individuellen Begrenzung der Regel überprüft.
+	</ul>
+Die gesamte Anzahl an Quell-IP-Adressen, die verfolgt werden, kann
+systemweit durch die Verwendung der
+<a href="options.html#limit"><tt>src-nodes</tt>-Laufzeit-Option</a>
+kontrolliert werden.
+
+<dt><tt>max-src-nodes <i>anzahl</i></tt>
+<dd>Wenn die <tt>source-track</tt>-Option genutzt wird, wird
+<tt>max-src-nodes</tt> die Anzahl an Quell-IP-Adressen begrenzen, die
+gleichzeitig einen ,state' anlegen können.
+Der Bereich dieser Begrenzung (z.B. ,states', die nur durch diese Regel
+erstellt wurden, oder ,states', die durch alle Regeln unter Verwendung
+von <tt>source-track</tt> erstellt wurden) ist abhängig von der
+angegebenen <tt>source-track</tt>-Option.
+
+<dt><tt>max-src-states <i>anzahl</i></tt>
+<dd>Wenn die <tt>source-track</tt>-Option verwendet wird,
+wird <tt>max-src-states</tt> die Anzahl an gleichzeitig erstellten
+,state'-Einträge begrenzen, die pro Quell-IP-Adresse angelegt werden
+können.
+Der Bereich dieser Begrenzung (z.B. ,states', die nur durch diese Regel
+erstellt wurden, oder ,states', die durch alle Regeln unter Verwendung
+von <tt>source-track</tt> erstellt wurden) ist abhängig von der
+angegebenen <tt>source-track</tt>-Option.
+</dl>
+
+<p>
+Eine Beispielregel:
+
+<blockquote>
+<tt>
+pass in on $ext_if proto tcp to $web_server \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;port www flags S/SA keep state \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;(max 200, source-track rule, max-src-nodes 100,
+max-src-states 3)
+</tt>
+</blockquote>
+
+<p>
+Die oben angegebene Regel sorgt für folgendes Verhalten:
+
+<ul>
+<li>Begrenze die maximale Anzahl an ,states', die diese Regel erstellen
+kann, auf 200
+<li>Aktiviere ,source tracking'; begrenze die Anzahl der
+,state'-Erstellung nur für diese Regel
+<li>Begrenze die maximale Anzahl an ,nodes', die gleichzeitig ,states'
+Erstellen, auf 100
+<li>Begrenze die maximale Anzahl an gleichzeitigen ,states' pro Quell-IP
+auf 3
+</ul>
+
 <a name="tcpflags"></a>
 <h2>TCP-Flags</h2>
 TCP-Pakete anhand ihrer Flags zu überprüfen wird meistens verwendet, um
@@ -784,10 +870,10 @@ Filterregel anzugeben, wird das <tt>os</tt>-Schlüsselwort verwendet:
 
 <blockquote>
 <tt>
-pass &nbsp;in on $ext_if any os OpenBSD keep state<br>
-block in on $ext_if any os "Windows 2000"<br>
-block in on $ext_if any os "Linux 2.4 ts"<br>
-block in on $ext_if any os unknown
+pass &nbsp;in on $ext_if from any os OpenBSD keep state<br>
+block in on $ext_if from any os "Windows 2000"<br>
+block in on $ext_if from any os "Linux 2.4 ts"<br>
+block in on $ext_if from any os unknown
 </tt>
 </blockquote>
 
@@ -900,10 +986,10 @@ pass in log on $ext_if proto tcp from any to ! &lt;firewall&gt; \
 <br>
 <small>
 <!--
-Originally [OpenBSD: filter.html,v 1.27 ]
-$Translation: filter.html,v 1.6 2005/01/30 10:46:52 paldium Exp $
+Originally [OpenBSD: filter.html,v 1.30 ]
+$Translation: filter.html,v 1.7 2005/02/27 11:58:48 paldium Exp $
 -->
-$OpenBSD: filter.html,v 1.6 2005/01/31 10:57:42 saad Exp $
+$OpenBSD: filter.html,v 1.7 2005/02/28 20:30:24 saad Exp $
 </small>
 
 </body>
