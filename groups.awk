@@ -26,23 +26,23 @@ $1 == "0" {
 	next;
 	}
 
-$1 == "C" { country = substr($0, 2);
+$1 == "C" { country = substr($0, 3);
 	if (country != oldCountry) {
 		print "<TR><TD BGCOLOR=\"#FFFF00\" COLSPAN=6 ALIGN=CENTER><B>" country "</B>"
 	 }
 	oldCountry = country
 	next
 }
-$1 == "P" { prov = substr($0, 2); next }
-$1 == "T" { city = substr($0, 2); next }
-$1 == "A" { addr = substr($0, 2); next }
-$1 == "O" { org = substr($0, 2); next }
-$1 == "I" { indv = substr($0, 2); next }
-$1 == "B" { phone = substr($0, 2); next }
-$1 == "F" { fax = substr($0, 2); next }
-$1 == "M" { email = substr($0, 2); next }
-$1 == "U" { url = substr($0, 2); next }
-$1 == "N" { note = substr($0, 2); next }
+$1 == "P" { prov = substr($0, 3); next }
+$1 == "T" { city = substr($0, 3); next }
+$1 == "A" { addr = substr($0, 3); next }
+$1 == "O" { org = substr($0, 3); next }
+$1 == "I" { indv = substr($0, 3); next }
+$1 == "B" { phone = substr($0, 3); next }
+$1 == "F" { fax = substr($0, 3); next }
+$1 == "M" { email = substr($0, 3); next }
+$1 == "U" { url = substr($0, 3); next }
+$1 == "N" { note = substr($0, 3); next }
 
 # left over - must be part of note?
 	{
