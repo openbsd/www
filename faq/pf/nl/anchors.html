@@ -1,0 +1,280 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Ankers</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+</head>
+
+<!--
+Copyright (c) 2003-2005 Joel Knight <enabled@myrealbox.com>
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<a href="../../../nl/index.html">
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif" border="0">
+</a>
+<p>
+[<a href="scrub.html">Vorige: Scrub (Pakket Normalisatie)</a>]
+[<a href="index.html">Inhoud</a>]
+[<a href="queueing.html">Volgende: Packet Queueing en Prioritisering</a>]
+
+<p>
+<h1><font color="#e00000">PF: Ankers</font></h1>
+
+<hr>
+
+<h3>Inhoudstafel</h3>
+<ul>
+<li><a href="#intro">Inleiding</a>
+<li><a href="#anchors">Ankers</a>
+<li><a href="#options">Ankeropties</a>
+<li><a href="#manip">Ankers Manipuleren</a>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Inleiding</h2>
+Bovenop de hoofd-regelset, kan PF ook sub-regelsets evalueren.
+Aangezien sub-regelsets "on the fly" kunnen gemanipuleerd worden door
+gebruik van
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>pfctl(8)</a>, vormen ze een handige manier om dynamisch een actieve
+regelset te wijzigen. Zoals een a <a href="tables.html">tabel</a> 
+gebruikt wordt om een dynamische lijst van adressen te bevatten, wordt
+een sub-regelset gebruikt om een dynamische set van filter, <tt>nat</tt>,
+<tt>rdr</tt> en <tt>binat</tt> regels te bevatten.
+
+<p>
+Sub-regelsets worden aan de hoofd-regelset vastgehangen met behulp van
+ankers. Er zijn vier types van <tt>anchor</tt> regels:
+<ul>
+<li><tt>anchor <i>name</i></tt> - evalueert alle
+<a href="filter.html">filter</a> regels in het anker <i><tt>name</tt></i>
+<li><tt>binat-anchor <i>name</i></tt> - evalueert alle
+<a href="nat.html#binat"><tt>binat</tt></a> regels in het
+anker <i><tt>name</tt></i>
+<li><tt>nat-anchor <i>name</i></tt> - evalueert alle
+<a href="nat.html"><tt>nat</tt></a> regels in het anker <i><tt>name</tt></i>
+<li><tt>rdr-anchor <i>name</i></tt> - evalueert alle
+<a href="rdr.html"><tt>rdr</tt></a> regels in het anker <i><tt>name</tt></i>
+</ul>
+
+Ankers kunnen genest zijn, wat toelaat dat regelsets samengeketend worden.
+Ankerregels zullen geëvalueerd worden relatief ten opzichte van het anker
+waarin ze geladen worden.
+Bijvoorbeeld, ankerregels in de hoofd-regelset zullen anker vastknopingspunten
+creëren met de hoofd-regelset als hun ouder, en ankerregels geladen vanuit
+bestanden met de <tt>load anchor</tt> opdracht zullen ankerpunten
+creëren met dat anker als hun ouder.
+
+<a name="named"></a>
+<a name="anchors"></a>
+<h2>Ankers</h2>
+Een anker is een verzameling van filter- en/of vertalingsregels, tabellen
+en andere ankers waaraan een naam toegekend is.
+Wanneer PF een <tt>anchor</tt> regel tegenkomt in de hoofd-regelset,
+zal het de regels bevat binnen het ankerpunt evalueren zoals het de
+regels in de hoofd-regelset evalueert.
+De verwerking zal vervolgens verdergaan in de hoofd-regelset tenzij het
+pakket overeenstemt met een filterregel die de <tt>quick</tt> optie
+gebruikt of met een vertalingsregel binnen het anker, in welk geval
+de overeenstemming als definitief zal beschouwd worden en de evaluatie
+van regels in zowel het anker als de hoofd-regelsets zal afgebroken worden.
+
+<p>
+Bijvoorbeeld:
+<blockquote>
+<tt>
+ext_if = "fxp0"<br>
+<br>
+block on $ext_if all<br>
+pass &nbsp;out on $ext_if all keep state<br>
+anchor goodguys
+</tt>
+</blockquote>
+
+<p>
+Deze regelset stelt een "standaard weigeren" beleid in op <tt>fxp0</tt>
+voor zowel binnenkomend als buitengaand verkeer. Het verkeer wordt dan
+met behoud van toestand naar buiten gelaten en een ankerregel met de
+naam <tt>goodguys</tt> wordt aangemaakt. Ankers kunnen op twee manieren
+met regels gevuld worden:
+<ul>
+<li>met een <tt>load</tt> regel
+<li>met
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>pfctl(8)</a>
+</ul>
+
+<p>
+De <tt>load</tt> regel zorgt ervoor dat <tt>pfctl</tt> het opgegeven
+anker opvult door de regels uit een tekstbestand in te lezen.
+De <tt>load</tt> regel moet na de <tt>anchor</tt> regel geplaatst worden.
+Voorbeeld:
+<blockquote>
+<tt>
+anchor goodguys<br>
+load anchor goodguys from "/etc/anchor-goodguys-ssh"
+</tt>
+</blockquote>
+
+<p>
+Om regels aan een anker toe te voegen met <tt>pfctl</tt> kan het volgende
+type van commando gebruikt worden:
+<blockquote>
+<tt>
+# echo "pass in proto tcp from 192.0.2.3 to any port 22" \<br>
+&nbsp;&nbsp;&nbsp;| pfctl -a goodguys -f -
+</tt>
+</blockquote>
+
+<p>
+Regels kunnen ook via een tekstbestand bewaard en ingeladen worden:
+<blockquote>
+<tt>
+# cat &gt;&gt; /etc/anchor-goodguys-www<br>
+pass in proto tcp from 192.0.2.3 to any port 80<br>
+pass in proto tcp from 192.0.2.4 to any port { 80 443 }<br>
+<br>
+# pfctl -a goodguys -f /etc/anchor-goodguys-www<br>
+</tt>
+</blockquote>
+
+<p>
+Filter- en vertalingsregels kunnen in een anker geladen worden met
+dezelfde syntaxis en opties als regels die in de hoofd-regelset geladen
+worden. Een valstrik is echter dat gelijk welke
+<a href="macros.html">macro's</a> die gebruikt worden, ook binnen het anker
+zelf moeten gedefinieerd worden; macro's die gedefinieerd worden in de
+ouder-regelset, zijn <i>niet</i> zichtbaar vanuit het anker.
+
+<p>
+Aangezien ankers genest kunnen worden, is het mogelijk om aan te geven
+dat alle kind-ankers binnen een gespecificeerd anker geëvalueerd moeten
+worden:
+
+<blockquote>
+<tt>
+anchor "spam/*"
+</tt>
+</blockquote>
+
+<p>
+Deze syntaxis zorgt ervoor dat elke regel binnen elk anker vastgemaakt aan
+het <tt>spam</tt> anker, geëvalueerd wordt.
+De kind-ankers zullen in alfabetische volgorde geëvalueerd worden maar
+er wordt niet recursief in afgedaald.
+Ankers worden altijd geëvalueerd relatief ten opzichte van het anker
+waarin ze gedefinieerd zijn.
+
+<p>
+Elk anker, en ook de hoofd-regelset, bestaat afzonderlijk van de andere
+regelsets. Operaties gedaan op één regelset, zoals het doorspoelen ("flush")
+van de regels, hebben geen invloed op gelijk welke andere regel. Daarenboven
+leidt het verwijderen van een ankerpunt uit de hoofd-regelset niet tot
+de vernietiging van het anker of gelijk welke kind-ankers die aan dat
+anker vastgemaakt zijn. Een anker wordt niet vernietigd voordat alle
+regels er uit gespoeld zijn met
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>pfctl(8)</a> en er geen kind-ankers meer zijn binnen het anker.
+
+<a name="options"></a>
+<h2>Ankeropties</h2>
+Optioneel kunnen <tt>anchor</tt> regels interface, protocol, bron- en
+bestemmingsadres, markering ("tag"), enz. specificeren met dezelfde syntaxis
+als filterregels. Wanneer zulke informatie gegeven wordt, worden
+ankerregels alleen verwerkt als het pakket overeenstemt met de definitie
+van de <tt>anchor</tt> regel.
+Bijvoorbeeld:
+<blockquote>
+<tt>
+ext_if = "fxp0"<br>
+<br>
+block on $ext_if all<br>
+pass &nbsp;out on $ext_if all keep state<br>
+anchor ssh in on $ext_if proto tcp from any to any port 22<br>
+</tt>
+</blockquote>
+
+<p>
+De regels in het anker <tt>ssh</tt> worden alleen geëvalueerd voor TCP
+pakketten bestemd voor poort 22 die binnenkomen op <tt>fxp0</tt>. Regels
+als de volgende worden dan toegevoegd aan het <tt>anchor</tt>:
+<blockquote>
+<tt>
+# echo "pass in from 192.0.2.10 to any" | pfctl -a ssh -f -
+</tt>
+</blockquote>
+
+<p>
+Dus, zelfs al specificeert de filterregel geen interface, protocol of
+poort, toch zal de host 192.0.2.10 alleen toegestaan worden via SSH te
+verbinden omwille van de definitie van de <tt>anchor</tt> regel.
+
+<a name="manip"></a>
+<h2>Ankers Manipuleren</h2>
+Manipulatie van ankers gebeurt via <tt>pfctl</tt>. Het kan gebruikt worden
+om regels toe te voegen aan en te verwijderen uit het anker zonder de
+hoofd-regelset te herladen.
+
+<p>
+Om alle regels in het anker met de naam <tt>ssh</tt> op te sommen:
+<blockquote>
+<tt>
+# pfctl -a ssh -s rules
+</tt>
+</blockquote>
+
+<p>
+Om alle filterregels uit hetzelfde anker weg te spoelen ("flush"):
+<blockquote>
+<tt>
+# pfctl -a ssh -F rules
+</tt>
+</blockquote>
+
+<p>
+Bekijk voor een volledige lijst van commando's alstublieft
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>pfctl(8)</a>.
+
+<p>
+[<a href="scrub.html">Vorige: Scrub (Pakket Normalisatie)</a>]
+[<a href="index.html">Inhoud</a>]
+[<a href="queueing.html">Volgende: Packet Queueing en Prioritisering</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[terug]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: anchors.html,v 1.16 ]<br>
+$Translation: anchors.html,v 1.1 2005/02/20 00:54:28 smestdag Exp $<br>
+$OpenBSD: anchors.html,v 1.1 2005/02/21 12:39:53 saad Exp $
+</small>
+
+</body>
+</html> 

@@ -1,0 +1,912 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Packet Queueing en Prioritisering</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+</head>
+
+<!--
+Copyright (c) 2003-2005 Joel Knight <enabled@myrealbox.com>
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<a href="../../../nl/index.html">
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif" border="0">
+</a>
+<p>
+[<a href="anchors.html">Vorige: Ankers</a>]
+[<a href="index.html">Inhoud</a>]
+[<a href="pools.html">Volgende: Adres Pools en Load Balancing</a>]
+
+<p>
+<h1><font color="#e00000">PF: Packet Queueing en Prioritisering</font></h1>
+
+
+<hr>
+
+<h3>Inhoudstafel</h3>
+<ul>
+<li><a href="#queueing">Queueing</a>
+<li><a href="#sched">Schedulers</a>
+	<ul>
+	<li><a href="#cbq">Class Based Queueing</a>
+	<li><a href="#priq">Priority Queueing</a>
+	<li><a href="#red">Random Early Detection</a>
+	<li><a href="#ecn">Explicit Congestion Notification</a>
+	</ul>
+<li><a href="#altq">Queueing Configureren</a>
+<li><a href="#assign">Verkeer Toekennen aan een Wachtrij</a>
+<li><a href="#example1">Voorbeeld #1: Klein Thuisnetwerk</a>
+<li><a href="#example2">Voorbeeld #2: Bedrijfsnetwerk</a>
+</ul>
+
+<hr>
+
+<a name="queueing"></a>
+<h2>Queueing</h2>
+<p>
+Iets in een wachtrij zetten is het in volgorde bewaren, terwijl het wacht
+op verwerking. Wanneer gegevenspakketten in een computernetwerk vanaf een
+host verzonden worden, komen ze in een wachtrij binnen, waar ze op verwerking
+door het besturingssyteem wachten. Het besturingssysteem beslist vervolgens
+welke wachtrij en welk(e) pakket(ten) van die wachtrij verwerkt moeten
+worden. De volgorde waarin het besturingssysteem de pakketten selecteert
+om ze te verwerken, kan de netwerkprestatie beïnvloeden. Stel bijvoorbeeld
+een gebruiker die twee netwerktoepassingen uitvoert: SSH en FTP. Ideaal
+zouden de SSH pakketten vóór de FTP pakketten moeten verwerkt worden
+omwille van de tijdsgevoelige aard van SSH; wanneer een toets ingetypt
+wordt in de SSH client, verwacht men onmiddellijke reactie, terwijl een FTP
+transfer die met enkele extra seconden vertraagd wordt, nauwelijks opgemerkt
+wordt. Maar wat gebeurt er als de router die deze verbindingen behandelt,
+een grote brok pakketten van de FTP verbinding verwerkt alvorens de SSH
+verbinding te verwerken? Pakketten van de SSH verbinding zullen in de
+wachtrij blijven (of mogelijk laat de router ze vallen als de wachtrij
+niet groot genoeg is om alle pakketten te bevatten) en de SSH sessie kan
+lijken te haperen of te vertragen. Door de gebruikte wachtrijstrategie
+te wijzigen, kan netwerkbandbreedte eerlijk gedeeld worden tussen
+verschillende toepassingen, gebruikers en computers.
+
+<p>
+Merk op dat queueing alleen nuttig is voor pakketten in de <i>uitgaande</i>
+richting. Zodra een pakket aankomt op een interface in de binnengaande
+richting, is het al te laat om het in een wachtrij te zetten -- het heeft
+al netwerkbandbreedte verbruikt om de interface te bereiken waarop het
+zonet ontvangen werd. De enige oplossing is om queueing in te schakelen
+op de nabijgelegen router of, als de host die het pakket ontving als router
+fungeert, queueing in te schakelen op de interne interface waar pakketten
+de router verlaten.
+
+<a name="sched"></a>
+<h2>Schedulers</h2>
+De scheduler is datgene wat beslist welke wachtrijen te verwerken en in
+welke volgorde. Standaard gebruikt OpenBSD een First In First Out (FIFO)
+scheduler. Een FIFO wachtrij werkt zoals de wachtrij aan de kassa in een
+supermarkt -- het eerste item in de wachtrij is het eerste dat verwerkt
+wordt. Naarmate nieuwe pakketten aankomen, worden ze toegevoegd aan het
+einde van de wachtrij. Als de wachtrij vol raakt, en hier houdt de analogie
+met de supermarkt op, worden nieuwe aankomende pakketten gedropt. Dit staat
+bekend als tail-drop.
+
+<p>
+OpenBSD ondersteunt twee bijkomende schedulers:
+<ul>
+<li>Class Based Queueing
+<li>Priority Queueing
+</ul>
+
+<a name="cbq"></a>
+<h3>Class Based Queueing</h3>
+Class Based Queueing (CBQ) is een wachtrij-algoritme dat de bandbreedte van
+een netwerkverbinding verdeelt tussen meerdere wachtrijen of klassen. Aan
+elke wachtrij wordt dan verkeer toegekend op basis van bron- of
+bestemmingsadres, poortnummer, protocol, enz. Een wachtrij kan optioneel
+geconfigureerd worden om bandbreedte te lenen van zijn ouder-wachtrij indien
+de ouder niet ten volle gebruikt wordt. Wachtrijen wordt ook een prioriteit
+gegeven zodat de pakketten van de wachtrijen die interactief verkeer, zoals
+SSH, bevatten, verwerkt kunnen worden vóór die van wachtrijen die
+volumeverkeer, zoals FTP, bevatten.
+
+<p>
+CBQ wachtrijen worden op een hiërachische manier gerangschikt. Aan het hoofd
+van de hiërarchie staat de root-wachtrij die de totale hoeveelheid beschikbare
+bandbreedte definieert. Kind-wachtrijen worden aangemaakt onder de
+root-wachtrij, en aan elk daarvan kan een bepaald deel van de bandbreedte
+van de root-wachtrij toegekend worden. Wachtrijen zouden bijvoorbeeld als
+volgt kunnen gedefinieerd worden:
+<dl>
+<dd>Root Queue (2Mbps)
+	<dl>
+	<dd>Queue A (1Mbps)
+	<dd>Queue B (500Kbps)
+	<dd>Queue C (500Kbps)
+	</dl>
+</dl>
+
+<p>
+In dit geval is de totale beschikbare bandbreedte op 2 megabits per
+seconde (Mbps) ingesteld. Deze bandbreedte wordt vervolgens gesplitst
+over drie kind-wachtrijen.
+
+<p>
+De hiërarchie kan verder ontvouwen worden door wachtrijen te definiëren
+binnen wachtrijen. Om bandbreedte gelijk te verdelen onder verschillende
+gebruikers en ook hun verkeer in te delen zodat bepaalde protocols
+andere niet verhongeren qua bandbreedte, zou een wachtrijstructuur als
+deze gedefinieerd kunnen worden:
+<dl>
+<dd>Root Queue (2Mbps)
+	<dl>
+	<dd>UserA (1Mbps)
+		<dl>
+		<dd>ssh (50Kbps)
+		<dd>bulk (950Kbps)
+		</dl>
+	<dd>UserB (1Mbps)
+		<dl>
+		<dd>audio (250Kbps)
+		<dd>bulk (750Kbps)
+			<dl>
+			<dd>http (100Kbps)
+			<dd>other (650Kbps)
+			</dl>
+		</dl>
+	</dl>
+</dl>
+
+<p>
+Merk op dat op elk niveau de som van de bandbreedte toegekend aan elk van
+de wachtrijen niet meer bedraagt dan de bandbreedte toegekend aan de
+ouder-wachtrij.
+
+<p>
+Een wachtrij kan geconfigureerd worden om bandbreedte te lenen van zijn
+ouder indien de ouder een overschot aan bandbreedte beschikbaar heeft
+doordat deze niet gebruikt wordt door de andere kind-wachtrijen. Beschouw
+een wachtrij-setup als deze:
+<dl>
+<dd>Root Queue (2Mbps)
+	<dl>
+	<dd>UserA (1Mbps)
+		<dl>
+		<dd>ssh (100Kbps)
+		<dd>ftp (900Kbps, borrow)
+		</dl>
+	<dd>UserB (1Mbps)
+	</dl>
+</dl>
+
+<p>
+Indien het verkeer in de <tt>ftp</tt> wachtrij 900Kbps overschrijdt en
+verkeer in de <tt>UserA</tt> wachtrij minder is dan 1Mbps (omdat de
+<tt>ssh</tt> wachtrij minder gebruikt dan de haar toegekende 100Kbps),
+dan zal de <tt>ftp</tt> wachtrij de overschot-bandbreedte lenen van
+<tt>UserA</tt>. Op deze manier kan de <tt>ftp</tt> wachtrij meer gebruiken
+dan de haar toegekende bandbreedte wanneer ze met overbelasting te maken
+krijgt. Wanneer de <tt>ssh</tt> wachtrij haar belasting verhoogt, zal de
+geleende bandbreedte teruggegeven worden.
+
+<p>
+CBQ kent aan elke wachtrij een prioriteitsniveau toe. Wachtrijen met een
+hogere prioriteit genieten bij verstopping de voorkeur boven wachtrijen met
+een lagere prioriteit zolang beide wachtrijen dezelfde ouder
+gemeenschappelijk hebben (met andere woorden: zolang beide wachtrijen
+tot dezelfde vertakking behoren in de hiërarchie). Wachtrijen met
+dezelfde prioriteit worden verwerkt op een "round-robin" manier.
+Bijvoorbeeld:
+<dl>
+<dd>Root Queue (2Mbps)
+	<dl>
+	<dd>UserA (1Mbps, priority 1)
+		<dl>
+		<dd>ssh (100Kbps, priority 5)
+		<dd>ftp (900Kbps, priority 3)
+		</dl>
+	<dd>UserB (1Mbps, priority 1)
+	</dl>
+</dl>
+
+<p>
+CBQ zal de <tt>UserA</tt> en <tt>UserB</tt> wachtrijen verwerken op een
+"round-robin" manier -- geen van de wachtrijen zal boven de andere
+verkozen worden. Gedurende de tijd wanneer de <tt>UserA</tt> wachtrij
+verwerkt wordt, zal CBQ ook haar kind-wachtrijen verwerken. In dit geval
+heeft de <tt>ssh</tt> wachtrij een hogere prioriteit en zal een
+voorkeursbehandeling krijgen boven de <tt>ftp</tt> wachtrij als het
+netwerk verstopt zit. Merk op hoe de prioriteiten van de <tt>ssh</tt>
+en <tt>ftp</tt> wachtrijen niet vergeleken worden met de <tt>UserA</tt>
+en <tt>UserB</tt> wachtrijen omdat ze niet allemaal tot dezelfde vertakking
+in de hiërarchie behoren.
+
+<p>
+Bekijk voor een meer gedetailleerde kijk op de theorie achter CBQ alstublieft
+<a href="http://www.icir.org/floyd/cbq.html">Referenties over CBQ</a>.
+
+<a name="priq"></a>
+<h3>Priority Queueing</h3>
+Priority Queueing (PRIQ) kent meerdere wachtrijen toe aan een netwerkinterface
+waarbij aan elke wachtrij een uniek prioriteitsniveau toegekend wordt. Een
+wachtrij met een hogere prioriteit wordt <i>altijd</i> verwerkt vóór een
+wachtrij met een lagere prioriteit.
+
+<p>
+De wachtrijstructuur in PRIQ is vlak -- u kan geen wachtrijen definiëren
+binnen wachtrijen. De root-wachtrij wordt gedefinieerd, die de totale
+hoeveelheid beschikbare bandbreedte instelt, en vervolgens worden
+sub-wachtrijen gedefinieerd onder de root. Beschouw het volgende voorbeeld:
+<dl>
+<dd>Root Queue (2Mbps)
+	<dl>
+	<dd>Queue A (priority 1)
+	<dd>Queue B (priority 2)
+	<dd>Queue C (priority 3)
+	</dl>
+</dl>
+
+<p>
+De root-wachtrij is gedefinieerd met 2Mbps bandbreedte ter beschikking
+en er zijn drie sub-wachtrijen gedefinieerd. De wachtrij met de hoogste
+prioriteit (het hoogste prioriteitsgetal) wordt eerst bediend. Zodra
+alle pakketten in die wachtrij verwerkt zijn, of als vastgesteld wordt
+dat de wachtrij leeg is, gaat PRIQ verder met de wachtrij met de volgende
+hoogste prioriteit. Binnen een gegeven wachtrij worden pakketten op een
+First In First Out (FIFO) manier verwerkt.
+
+<p>
+Het is belangrijk op te merken dat u bij gebruik van PRIQ uw wachtrijen
+heel zorgvuldig moet plannen. Omdat PRIQ <i>altijd</i> een wachtrij met
+hogere prioriteit verwerkt vóór één met lagere prioriteit, is het mogelijk
+dat een wachtrij met hogere prioriteit ervoor zorgt dat pakketten in een
+wachtrij met lagere prioriteit vertraagd of gedropt worden als de wachtrij
+met hoge prioriteit een constante stroom van pakketten ontvangt.
+
+<a name="red"></a>
+<h3>Random Early Detection</h3>
+Random Early Detection (RED) is een algoritme dat verstopping vermijdt.
+Zijn taak is netwerkverstopping te vermijden door er voor te zorgen dat de
+wachtrij niet vol komt te zitten. Het doet dit door voortdurend de
+gemiddelde lengte (grootte) van de wachtrij te berekenen en deze te
+vergelijken met twee drempelwaarden, een minimumdrempel en een maximumdrempel.
+Als de gemiddelde wachtrijgrootte onder de minimumdrempel zit, dan zullen
+er geen pakketten gedropt worden. Als het gemiddelde boven de maximumdrempel
+zit, dan zullen <i>alle</i> nieuwe aankomende pakketten gedropt worden.
+Als het gemiddelde tussen de drempelwaarden ligt, dan zullen pakketten
+gedropt worden op basis van een waarschijnlijkheid berekend uit de
+gemiddelde wachtrijgrootte. Met andere woorden, naarmate de gemiddelde
+wachtrijgrootte de maximumdrempel nadert, worden meer en meer pakketten
+gedropt. Bij het laten vallen van pakketten kiest RED willekeurig van welke
+verbindingen het pakketten laat vallen. Verbindingen die grotere hoeveelheden
+bandbreedte gebruiken, hebben een hogere waarschijnlijkheid om hun pakketten
+gedropt te zien worden.
+
+<p>
+RED is nuttig omdat het een situatie vermijdt gekend als globale
+synchronisatie en kan pieken van verkeer onderbrengen. Globale
+synchronisatie verwijst naar een verlies van totale doorvoer doordat
+pakketten van verscheidene verbindingen terzelfdertijd gedropt worden.
+Als verstopping zich bijvoorbeeld voordoet op een router die verkeer
+vervoert voor 10 FTP verbindingen en pakketten van al (of de meeste van)
+deze verbindingen worden gedropt (zoals het geval is met FIFO queueing),
+dan zal de totale doorvoer steil dalen. Dit is geen ideale situatie omdat
+het ervoor zorgt dat alle FTP verbindingen hun doorvoer verminderen en
+het betekent ook dat het netwerk niet meer op zijn maximale potentieel
+gebruikt wordt. RED vermijdt dit door willekeurig te kiezen van welke
+verbindingen het pakketten laat vallen in plaats van ze allemaal te
+kiezen. Verbindingen die grote hoeveelheden bandbreedte gebruiken hebben
+een grotere kans om hun pakketten gedropt te zien. Op deze manier zullen
+hoge bandbreedte verbindingen afgeremd worden, verstopping zal vermeden
+worden, en er zullen zich geen steile dalingen voordoen in de totale
+doorvoer. Bovendien kan RED pieken van verkeer aan omdat het begint met
+pakketten te laten vallen <i>vóórdat</i> de wachtrij vol komt te zitten.
+Wanneer er een piek van verkeer doorkomt zal er genoeg ruimte zijn in de
+wachtrij om de nieuwe pakketten te bevatten.
+
+<p>
+RED wordt best alleen gebruikt wanneer het transportprotocol op
+verstoppingsindicators van het netwerk kan antwoorden. In de meeste
+gevallen betekent dit dat RED gebruikt moet worden om TCP verkeer
+te queue'en en niet voor UDP of ICMP verkeer.
+
+<p>
+Bekijk voor een meer gedetailleerde kijk op de theorie achter RED alstublieft
+<a href="http://www.icir.org/floyd/red.html">Referenties over RED</a>.
+
+<a name="ecn"></a>
+<h3>Explicit Congestion Notification</h3>
+Explicit Congestion Notification (ECN) werkt in samenwerking met RED om
+twee hosts die over het netwerk communiceren, te informeren over gelijk
+welke verstopping op het communcatiepad. Het doet dit door RED in te
+schakelen om een vlag in te stellen in de pakkethoofding in plaats van
+het pakket te laten vallen. In de veronderstelling dat de verzendende
+host ondersteuning heeft voor ECN, kan het dan deze vlag lezen en zijn
+netwerkverkeer overeenkomstig afremmen.
+
+<p>
+Refereer voor meer informatie over ECN alstublieft naar
+<a href="http://www.rfc-editor.org/rfc/rfc3168.txt">RFC 3168</a>.
+
+<a name="altq"></a>
+<h2>Queueing Configureren</h2>
+Sedert OpenBSD 3.0 is de 
+<a href="http://www.csl.sony.co.jp/person/kjc/kjc/software.html#ALTQ"
+>Alternate Queueing (ALTQ)</a> queueing implementatie een onderdeel van
+het base systeem. Te beginnen bij OpenBSD 3.3 werd ALTQ geïntegreerd in
+PF. OpenBSD's ALTQ implementatie ondersteunt de Class Based Queueing (CBQ)
+en Priority Queueing (PRIQ) schedulers. Ze ondersteunt ook Random Early
+Detection (RED) en Explicit Congestion Notification (ECN).
+
+<p>
+Omdat ALTQ samengevoegd is met PF, moet PF ingeschakeld worden opdat
+queueing zou werken. Instructies over hoe PF in te schakelen, vindt u
+terug in
+<a href="config.html#activate">Van Start Gaan</a>.
+
+<p>
+Queueing wordt geconfigureerd in
+<tt><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+3.6"
+>pf.conf</a></tt>. Er zijn twee types van opdrachten die gebruikt worden
+om queueing te configureren:
+<ul>
+<li><tt>altq on</tt> - schakelt queueing in op een interface, definieert
+welke scheduler te gebruiken, en maakt de root-wachtrij aan
+<li><tt>queue</tt> - definieert de eigenschappen van een kind-wachtrij
+</ul>
+
+<p>
+De syntaxis voor de <tt>altq on</tt> opdracht is:
+<blockquote>
+<tt>
+altq on <i>interface scheduler</i> bandwidth <i>bw</i> qlimit 
+<i>qlim</i> \<br>
+&nbsp;&nbsp;&nbsp;tbrsize <i>size</i> queue { <i>queue_list</i> }
+</tt>
+</blockquote>
+
+<ul>
+<li><tt><i>interface</i></tt> - de netwerkinterface om queueing op te activeren.
+<li><tt><i>scheduler</i></tt> - de queueing scheduler om te gebruiken. Mogelijke waarden zijn
+<tt>cbq</tt> en <tt>priq</tt>. Slechts één scheduler mag actief zijn op
+een interface op een ogenblik.
+<li><tt><i>bw</i></tt> - de totale hoeveelheid bandbreedte ter beschikking van de scheduler.
+Dit kan gespecificeerd worden als een absolute waarde met de suffixen
+<tt>b</tt>, <tt>Kb</tt>, <tt>Mb</tt> en <tt>Gb</tt> om respectievelijk bits,
+kilobits, megabits en gigabits per seconde voor te stellen, of als een
+percentage van de <tt><i>interface</i></tt>-bandbreedte.
+<li><tt><i>qlim</i></tt> - het maximale aantal pakketten om in de wachtrij
+bij te houden.
+Deze parameter is optioneel. De standaardwaarde is 50.
+<li><tt><i>size</i></tt> - de grootte van de "token bucket regulator" in bytes.
+Indien niet gespecificeerd, wordt de grootte ingesteld op basis van de
+<tt><i>interface</i></tt>-bandbreedte.
+<li><tt><i>queue_list</i></tt> - een lijst van kind-wachtrijen om aan te maken
+onder de root-wachtrij.
+</ul>
+
+<p>
+Bijvoorbeeld:
+<blockquote>
+<tt>
+altq on fxp0 cbq bandwidth 2Mb queue { std, ssh, ftp }
+</tt>
+</blockquote>
+Dit schakelt CBQ in op de <tt>fxp0</tt> interface. De totale beschikbare
+bandbreedte is ingesteld op 2Mbps. Er zijn drie kind-wachtrijen gedefinieerd:
+<tt>std</tt>, <tt>ssh</tt> en <tt>ftp</tt>.
+
+<p>
+De syntaxis voor de <tt>queue</tt> opdracht is:
+<blockquote>
+<tt>
+queue <i>name</i> [on <i>interface</i>] bandwidth <i>bw</i> [priority 
+<i>pri</i>] [qlimit <i>qlim</i>] \<br>
+&nbsp;&nbsp;&nbsp;<i>scheduler</i> ( <i>sched_options</i> )
+{ <i>queue_list</i> }
+</tt>
+</blockquote>
+
+<ul>
+<li><tt><i>name</i></tt> - de naam van de wachtrij. Dit moet overeenstemmen
+met de naam van één van de wachtrijen gedefinieerd in de
+<tt><i>queue_list</i></tt> van de <tt>altq on</tt> opdracht. Voor <tt>cbq</tt>
+kan het ook overeenstemmen met de naam van een wachtrij in de
+<tt><i>queue_list</i></tt> van een vorige <tt>queue</tt> opdracht.
+Wachtrijnamen mogen niet langer zijn dan 15 karakters.
+<li><tt><i>interface</i></tt> - de netwerkinterface waarop de wachtrij geldig
+is. Deze waarde is optioneel, en wanneer ze niet gespecificeerd wordt, zal
+de wachtrij geldig zijn op alle interfaces.
+<li><tt><i>bw</i></tt> - de totale hoeveelheid bandbreedte ter beschikking
+van de wachtrij.
+Dit kan gespecificeerd worden als absolute waarde met de suffixen <tt>b</tt>,
+<tt>Kb</tt>, <tt>Mb</tt> en <tt>Gb</tt> om respectievelijk bits, kilobits,
+megabits en gigabits per seconde voor te stellen, of als percentage van de
+bandbreedte van de ouder-wachtrij.
+Deze parameter is alleen van toepassing bij gebruik van de <tt>cbq</tt>
+scheduler.
+<li><tt><i>pri</i></tt> - de prioriteit van de wachtrij. Voor <tt>cbq</tt> is
+het prioriteitsbereik 0 tot 7 en voor <tt>priq</tt> is het bereik 0 tot 15.
+Prioriteit 0 is de laagste prioriteit. Wanneer ze niet gespecificeerd wordt,
+wordt een standaardwaarde van 1 gebruikt.
+<li><tt><i>qlim</i></tt> - het maximale aantal pakketten om in de wachtrij
+bij te houden. Wanneer dit niet gespecificeerd wordt, wordt een
+standaardwaarde van 50 gebruikt.
+<li><tt><i>scheduler</i></tt> - de scheduler die gebruikt wordt, ofwel
+<tt>cbq</tt> ofwel <tt>priq</tt>. Moet dezelfde zijn als de root-wachtrij.
+<li><tt><i>sched_options</i></tt> - bijkomende opties kunnen aan de scheduler
+meegegeven worden om zijn gedrag te regelen:
+	<ul>
+	<li><tt>default</tt> - definieert een standaardwachtrij waarin alle
+	pakketten die niet overeenstemmen met een andere wachtrij, ge-queued
+	zullen worden. Precies één standaardwachtrij is vereist.
+	<li><tt>red</tt> - schakelt Random Early Detection (RED) in op deze
+	wachtrij.
+	<li><tt>rio</tt> - schakelt RED in met IN/OUT. In deze modus zal RED
+	meerdere gemiddelde wachtrijlengtes en meerdere drempelwaarden
+	onderhouden, één voor elk IP Quality of Service niveau.
+	<li><tt>ecn</tt> - schakelt Explicit Congestion Notification (ECN) in
+	op deze wachtrij. <tt>Ecn</tt> impliceert <tt>red</tt>.
+	<li><tt>borrow</tt> - de wachtrij kan bandbreedte lenen van haar
+	ouder. Dit kan alleen gespecificeerd worden bij gebruik van de
+	<tt>cbq</tt> scheduler.
+	</ul>
+<li><tt><i>queue_list</i></tt> - een lijst van kind-wachtrijen om onder deze
+wachtrij aan te maken. Een <tt><i>queue_list</i></tt> kan alleen gedefinieerd
+worden bij gebruik van de <tt>cbq</tt> scheduler.
+</ul>
+
+<p>
+Verdergaand met het voorbeeld hierboven:
+<blockquote>
+<tt>
+queue std bandwidth 50% cbq(default)<br>
+queue ssh { ssh_login, ssh_bulk }<br>
+&nbsp;&nbsp;queue ssh_login  priority 4 cbq(ecn)<br>
+&nbsp;&nbsp;queue ssh_bulk   cbq(ecn)<br>
+queue ftp bandwidth 500Kb priority 3 cbq(borrow red)<br>
+</tt>
+</blockquote>
+
+<p>
+Hier worden de parameters van de voorheen gedefinieerde wachtrijen ingesteld.
+Aan de <tt>std</tt> wachtrij wordt een bandbreedte van 50% van de
+root-wachtrij (of 1Mbps) toegekend en deze wachtrij wordt als de
+standaardwachtrij ingesteld. De <tt>ssh</tt> wachtrij definieert twee
+kind-wachtrijen, <tt>ssh_login</tt> en <tt>ssh_bulk</tt>. De <tt>ssh_login</tt>
+wachtrij wordt een hogere prioriteit gegeven dan <tt>ssh_bulk</tt> en beide
+hebben ECN ingeschakeld. De <tt>ftp</tt> wordt een bandbreedte van 500Kbps
+toegekend en een prioriteit van 3 gegeven. Deze kan ook bandbreedte lenen
+wanneer overschot beschikbaar is en heeft RED ingeschakeld.
+
+<a name="assign"></a>
+<h3>Verkeer Toekennen aan een Wachtrij</h3>
+<p>
+Om verkeer toe te kennen aan een wachtrij wordt het <tt>queue</tt>
+sleutelwoord gebruikt in samenwerking met PF's
+<a href="filter.html">filterregels</a>. Beschouw bijvoorbeeld een set
+filterregels die een lijn als deze bevat:
+<blockquote>
+<tt>pass out on fxp0 from any to any port 22</tt>
+</blockquote>
+
+<p>
+Pakketten die overeenstemmen met die regel kunnen toegekend worden aan een
+specifieke wachtrij door het <tt>queue</tt> sleutelwoord te gebruiken:
+<blockquote>
+<tt>pass out on fxp0 from any to any port 22 queue ssh</tt>
+</blockquote>
+
+<p>
+Bij gebruik van het <tt>queue</tt> sleutelwoord met <tt>block</tt>
+opdrachten worden resulterende TCP RST of ICMP Unreachable pakketten
+toegekend aan de gespecificeerde wachtrij.
+
+<p>
+Merk op dat wachtrijtoewijzing kan gebeuren op een interface verschillend
+van degene die in de <tt>altq on</tt> opdracht werd gedefinieerd:
+<blockquote>
+<tt> 
+altq on fxp0 cbq bandwidth 2Mb queue { std, ftp }<br>
+queue std cbq(default)<br>
+queue ftp bandwidth 1.5Mb<br>
+<br>
+pass in on dc0 from any to any port 21 queue ftp<br>
+</tt>
+</blockquote>
+
+<p>
+Queueing wordt ingeschakeld op <tt>fxp0</tt> maar de toewijzing gebeurt
+op <tt>dc0</tt>.
+Indien pakketten die overeenstemmen met de <tt>pass</tt> regel de interface
+<tt>fxp0</tt> verlaten, zullen ze in de <tt>ftp</tt> wachtrij geplaatst
+worden. Dit type van queueing kan heel nuttig zijn op routers.
+
+<p>
+Normaal wordt slechts één wachtrijnaam gegeven met het <tt>queue</tt>
+sleutelwoord, maar als een tweede naam wordt gespecificeerd, zal die
+wachtrij gebruikt worden voor pakketten met een
+<a href="http://www.rfc-editor.org/rfc/rfc791.txt">Type of
+Service (ToS)</a> van low-delay en voor TCP ACK pakketten zonder netto
+gegevenslading. Een goed voorbeeld hiervan wordt gevonden bij het gebruik
+van SSH. SSH login sessies zullen de ToS op low-delay instellen terwijl
+SCP en SFTP sessies dit niet zullen doen. PF kan deze informatie gebruiken
+om pakketten die horen bij een loginverbinding in een verschillende wachtrij
+te queue'en dan die van niet-login verbindingen. Dit kan nuttig zijn om
+loginverbindingspakketten te prioritiseren boven bestandstransfer-pakketten.
+<blockquote>
+<tt>pass out on fxp0 from any to any port 22 queue(ssh_bulk, ssh_login)</tt>
+</blockquote>
+
+<p>
+Dit kent pakketten die horen bij SSH loginverbindingen toe aan de
+<tt>ssh_login</tt> wachtrij en pakketten die horen bij SCP en SFTP
+verbindingen aan de <tt>ssh_bulk</tt> wachtrij. SSH loginverbindingen zullen
+dan hun pakketten verwerkt zien vóór SCP en SFTP verbindingen omdat de
+<tt>ssh_login</tt> wachtrij een hogere prioriteit heeft.
+
+<p>
+TCP ACK pakketten toekennen aan een wachtrij met hogere prioriteit is
+nuttig op asymmetrische verbindingen, d.w.z. verbindingen die verschillende
+upload- en downloadbandbreedtes hebben zoals ADSL lijnen. Bij een ADSL lijn,
+als het uploadkanaal maximaal benut wordt en er wordt een download gestart,
+dan zal de download nadeel ondervinden omdat de TCP ACK pakketten die hij
+moet verzenden in verstopping terechtkomen wanneer ze doorheen het
+uploadkanaal proberen te passeren. Tests hebben getoond dat om de beste
+resultaten te bekomen, de bandbreedte op de uploadwachtrij best ingesteld
+wordt op een waarde kleiner dan wat de verbinding aankan. Als een ADSL
+lijn bijvoorbeeld een maximale upload van 640Kbps heeft, zou het instellen
+van de <tt>bandwidth</tt> van de root-wachtrij op een waarde als 600Kb
+moeten leiden tot betere prestatie. Trial and error zal de beste
+<tt>bandwidth</tt> instelling opleveren.
+
+<p>
+Bij gebruik van het <tt>queue</tt> sleutelwoord met regels die
+<tt>keep state</tt> doen zoals:
+<blockquote>
+<tt>
+pass in on fxp0 proto tcp from any to any port 22 flags S/SA \<br>
+&nbsp;&nbsp;&nbsp;keep state queue ssh
+</tt>
+</blockquote>
+
+<p>
+zal PF de wachtrij registreren in de toestandstabel-entry zodat pakketten
+die terug naar buiten keren uit <tt>fxp0</tt> en overeenstemmen met de
+"stateful" verbinding, in de <tt>ssh</tt> wachtrij zullen belanden.
+Merk op dat zelfs al wordt het <tt>queue</tt> sleutelwoord gebruikt op
+een regel die binnenkomend verkeer filtert, het doel is om een wachtrij
+te specificeren voor het overeenkomstige buitengaande verkeer; de
+bovenstaande regel queue't geen binnenkomende pakketten.
+
+<a name="example1"></a>
+<h2>Voorbeeld #1: Klein Thuisnetwerk</h2>
+<pre>
+  
+    [ Alice ]    [ Charlie ]
+        |             |                              ADSL
+     ---+-----+-------+------ dc0 [ OpenBSD ] fxp0 -------- ( Internet )
+              |
+           [ Bob ]
+
+</pre>
+
+<p>
+In dit voorbeeld wordt OpenBSD gebruikt op een Internet gateway voor een
+klein thuisnetwerk met drie werkstations. De gateway voert pakketfiltering
+en NAT taken uit. De Internetverbinding is via een ADSL lijn aan 2Mbps
+neerwaarts en 640Kbps opwaarts.
+
+<p>
+Het queueing beleid voor dit netwerk:
+<ul>
+<li>Reserveer 80Kbps van downloadbandbreedte voor Bob zodat hij zijn online
+spelletjes kan spelen zonder vertraagd te worden door de downloads van Alice
+of Charlie. Laat Bob toe om meer dan 80Kbps te gebruiken wanneer het
+beschikbaar is.
+<li>Interactief SSH en instant message verkeer zal een hogere prioriteit
+hebben dan gebruikelijk verkeer.
+<li>DNS opzoekingen en antwoorden zullen de tweede hoogste prioriteit hebben.
+<li>Buitengaande TCP ACK pakketten zullen een hogere prioriteit hebben dan
+al het andere buitengaande verkeer.
+</ul>
+
+<p>
+Hieronder staat de regelset die aan dit netwerkbeleid tegemoetkomt. Merk
+op dat alleen de <tt>pf.conf</tt> opdrachten aanwezig zijn die rechtstreeks
+op het bovenstaande beleid van toepassing zijn;
+<a href="nat.html"><tt>nat</tt></a>, <a href="rdr.html"><tt>rdr</tt></a>,
+<a href="options.html">opties</a>, enz. zijn niet getoond.
+
+<p>
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+# schakel queueing in op de externe interface om het verkeer te regelen
+# dat naar het Internet gaat. gebruik de priq scheduler om alleen
+# prioriteiten te regelen. stel de bandbreedte in op 610Kbps om de
+# beste prestatie te halen uit de TCP ACK wachtrij.
+
+altq on fxp0 priq bandwidth 610Kb queue { std_out, ssh_im_out, dns_out, \
+	tcp_ack_out }
+
+# definieer de parameters voor de kind-wachtrijen.
+# std_out      - de standaard wachtrij. filterregels hieronder die niet
+#                expliciet een wachtrij specificeren, zullen hun verkeer
+#                aan deze wachtrij toegevoegd zien worden.
+# ssh_im_out   - interactief SSH en allerlei instant message verkeer.
+# dns_out      - DNS opzoekingen.
+# tcp_ack_out  - TCP ACK pakketten zonder nuttige gegevenslading.
+
+queue std_out     priq(default)
+queue ssh_im_out  priority 4 priq(red)
+queue dns_out     priority 5
+queue tcp_ack_out priority 6
+
+# schakel queueing in op de interne interface om verkeer te regelen dat
+# van het Internet komt. gebruik de cbq scheduler om bandbreedte te
+# regelen. max bandbreedte is 2Mbps.
+
+altq on dc0 cbq bandwidth 2Mb queue { std_in, ssh_im_in, dns_in, bob_in }
+
+# definieer de parameters voor de kind-wachtrijen.
+# std_in      - de standaard wachtrij. filterregels hieronder die niet
+#               expliciet een wachtrij specificeren, zullen hun verkeer
+#               aan deze wachtrij toegevoegd zien worden.
+# ssh_im_in   - interactief SSH en allerlei instant message verkeer.
+# dns_in      - DNS antwoorden.
+# bob_in      - bandbreedte gereserveerd voor Bobs werkstation. laat
+#               hem toe te lenen.
+
+queue std_in    cbq(default)
+queue ssh_im_in priority 4
+queue dns_in    priority 5
+queue bob_in    bandwidth 80Kb cbq(borrow)
+
+
+# ... in de filtering sectie van pf.conf ...
+
+alice         = "192.168.0.2"
+bob           = "192.168.0.3"
+charlie       = "192.168.0.4"
+local_net     = "192.168.0.0/24"
+ssh_ports     = "{ 22 2022 }"
+im_ports      = "{ 1863 5190 5222 }"
+
+# filterregels voor fxp0 inwaarts
+block in on fxp0 all
+
+# filterregels voor fxp0 uitwaarts
+block out on fxp0 all
+pass  out on fxp0 inet proto tcp from (fxp0) to any flags S/SA \
+	keep state queue(std_out, tcp_ack_out)
+pass  out on fxp0 inet proto { udp icmp } from (fxp0) to any keep state
+pass  out on fxp0 inet proto { tcp udp } from (fxp0) to any port domain \
+	keep state queue dns_out
+pass  out on fxp0 inet proto tcp from (fxp0) to any port $ssh_ports \
+	flags S/SA keep state queue(std_out, ssh_im_out)
+pass  out on fxp0 inet proto tcp from (fxp0) to any port $im_ports \
+	flags S/SA keep state queue(ssh_im_out, tcp_ack_out)
+
+# filterregels voor dc0 inwaarts
+block in on dc0 all
+pass  in on dc0 from $local_net
+
+# filterregels voor dc0 uitwaarts
+block out on dc0 all
+pass  out on dc0 from any to $local_net
+pass  out on dc0 proto { tcp udp } from any port domain to $local_net \
+	queue dns_in
+pass  out on dc0 proto tcp from any port $ssh_ports to $local_net \
+	queue(std_in, ssh_im_in)
+pass  out on dc0 proto tcp from any port $im_ports to $local_net \
+	queue ssh_im_in
+pass  out on dc0 from any to $bob queue bob_in
+</pre>
+</td></tr>
+</table>
+
+<a name="example2"></a>
+<h2>Voorbeeld #2: Bedrijfsnetwerk</h2>
+<pre>
+
+  ( IT Dept )  [ Baas z'n PC ]
+       |          |                                   T1
+     --+----+-----+---------- dc0 [ OpenBSD ] fxp0 -------- ( Internet )
+            |                         fxp1
+         [ COMP1 ]    [ WWW ]         /
+                         |           / 
+                       --+----------' 
+
+</pre>
+
+<p>
+In dit voorbeeld fungeert de OpenBSD host als een firewall voor een
+bedrijfsnetwerk. Het bedrijf draait een WWW server in het DMZ gedeelte
+van hun netwerk waar klanten hun websites uploaden via FTP. Het IT
+departement heeft zijn eigen subnet verbonden met het hoofdnetwerk, en
+de baas heeft een PC op zijn bureau die gebruikt wordt voor e-mail en
+om op het web te surfen. De verbinding naar het Internet is via een T1
+lijn tegen 1.5Mbps in beide richtingen. Alle andere netwerksegmenten
+gebruiken Fast Ethernet (100Mbps).
+
+<p>
+De netwerkbeheerder heeft over het volgende beleid beslist:
+<ul>
+<li>Beperk verkeer tussen de WWW server en het Internet tot 500Kbps in
+elke richting.
+<li>Geen bandbreedtebeperking op verkeer tussen de WWW server en het interne
+netwerk.
+<li>Geef HTTP verkeer tussen de WWW server en het Internet een hogere
+prioriteit dan ander verkeer tussen de WWW server en het Internet
+(zoals FTP uploads).
+<li>Reserveer 500Kbps voor het IT Dept netwerk zodat zij de laatste software
+updates op een geschikte manier kunnen downloaden. Ze zouden meer dan 500Kbps
+moeten kunnen gebruiken wanneer er extra bandbreedte beschikbaar is.
+<li>Geef verkeer tussen de PC van de baas en het Internet een hogere
+prioriteit dan ander verkeer naar/van het Internet.
+</ul>
+
+<p>
+Hieronder staat de regelset die aan dit netwerkbeleid tegemoetkomt. Merk
+op dat alleen de <tt>pf.conf</tt> opdrachten aanwezig zijn die rechtstreeks
+op het bovenstaande beleid van toepassing zijn;
+<a href="nat.html"><tt>nat</tt></a>, <a href="rdr.html"><tt>rdr</tt></a>,
+<a href="options.html">opties</a>, enz. zijn niet getoond.
+
+<p>
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+# schakel queueing in op de externe interface om pakketten te queue'en
+# die naar het Internet gaan. gebruik de cbq scheduler zodat het
+# bandbreedtegebruik van elke wachtrij geregeld kan worden. de max
+# uitgaande bandbreedte is 1.5Mbps.
+
+altq on fxp0 cbq bandwidth 1.5Mb queue { std_ext, www_ext, boss_ext }
+
+# definieer de parameters voor de kind-wachtrijen.
+# std_ext        - de standaard wachtrij. ook de standaard wachtrij voor
+#                  buitengaand verkeer op fxp0.
+# www_ext        - container-wachtrij voor WWW server wachtrijen. beperk
+#                  tot 500Kbps.
+#   www_ext_http - http verkeer van de WWW server
+#   www_ext_misc - alle niet-http verkeer van de WWW server
+# boss_ext       - verkeer afkomstig van de computer van de baas
+
+queue std_ext        cbq(default)
+queue www_ext        bandwidth 500Kb { www_ext_http, www_ext_misc }
+  queue www_ext_http priority 3 cbq(red)
+  queue www_ext_misc priority 1
+queue boss_ext       priority 3
+
+# schakel queueing in op de interne interface om het verkeer te regelen
+# dat van het Internet of de DMZ komt. gebruik de cbq scheduler om de
+# bandbreedte van elke wachtrij te regelen. bandbreedte is op deze
+# interface ingesteld op het maximum. verkeer afkomstig van de DMZ zal
+# al deze bandbreedte kunnen gebruiken terwijl verkeer afkomstig van
+# het Internet beperkt zal worden tot 1.0Mbps (omdat 0.5Mbps (500Kbps)
+# toegekend wordt aan fxp1).
+
+altq on dc0 cbq bandwidth 100% queue { net_int, www_int }
+
+# definieer de parameters voor de kind-wachtrijen.
+# net_int    - container-wachtrij voor verkeer vanaf het Internet.
+#              bandbreedte is 1.0Mbps.
+#   std_int  - de standaardwachtrij. ook de standaardwachtrij voor uitgaand
+#              verkeer op dc0.
+#   it_int   - verkeer naar het IT Dept netwerk.
+#   boss_int - verkeer naar de PC van de baas.
+# www_int    - verkeer vanaf de WWW server in de DMZ.
+
+queue net_int    bandwidth 1.0Mb { std_int, it_int, boss_int }
+  queue std_int  cbq(default)
+  queue it_int   bandwidth 500Kb cbq(borrow)
+  queue boss_int priority 3
+queue www_int    cbq(red)
+
+# schakel queueing in op de DMZ interface om het verkeer te regelen dat
+# bestemd is voor de WWW server. cbq zal gebruikt worden op deze
+# interface aangezien gedetailleerde regeling van bandbreedte noodzakelijk
+# is. bandbreedte op deze interface is ingesteld op het maximum.
+# verkeer vanaf het interne netwerk zal al deze bandbreedte kunnen
+# gebruiken terwijl verkeer vanaf het Internet beperkt zal worden tot
+# 500Kbps.
+
+altq on fxp1 cbq bandwidth 100% queue { internal_dmz, net_dmz }
+
+# definieer de parameters voor de kind-wachtrijen.
+# internal_dmz   - verkeer vanaf het interne netwerk.
+# net_dmz        - container-wachtrij voor verkeer vanaf het Internet.
+#   net_dmz_http - http verkeer.
+#   net_dmz_misc - alle niet-http verkeer. dit is ook de standaardwachtrij.
+
+queue internal_dmz      # geen speciale instellingen nodig
+queue net_dmz        bandwidth 500Kb { net_dmz_http, net_dmz_misc }
+  queue net_dmz_http priority 3 cbq(red)
+  queue net_dmz_misc priority 1 cbq(default)
+
+
+# ... in de filtering sectie van pf.conf ...
+
+main_net  = "192.168.0.0/24"
+it_net    = "192.168.1.0/24"
+int_nets  = "{ 192.168.0.0/24, 192.168.1.0/24 }"
+dmz_net   = "10.0.0.0/24"
+
+boss      = "192.168.0.200"
+wwwserv   = "10.0.0.100"
+
+# standaard weigeren ("default deny")
+block on { fxp0, fxp1, dc0 } all
+
+# filterregels voor fxp0 inwaarts
+pass in on fxp0 proto tcp from any to $wwwserv port { 21, \
+	&gt; 49151 } flags S/SA keep state queue www_ext_misc
+pass in on fxp0 proto tcp from any to $wwwserv port 80 \
+	flags S/SA keep state queue www_ext_http
+
+# filterregels voor fxp0 uitwaarts
+pass out on fxp0 from $int_nets to any keep state
+pass out on fxp0 from $boss to any keep state queue boss_ext
+
+# filterregels voor dc0 inwaarts
+pass in on dc0 from $int_nets to any keep state
+pass in on dc0 from $it_net to any queue it_int
+pass in on dc0 from $boss to any queue boss_int
+pass in on dc0 proto tcp from $int_nets to $wwwserv port { 21, 80, \
+	&gt; 49151 } flags S/SA keep state queue www_int
+
+# filterregels voor dc0 uitwaarts
+pass out on dc0 from dc0 to $int_nets
+
+# filterregels voor fxp1 inwaarts
+pass in on fxp1 proto { tcp, udp } from $wwwserv to any port 53 \
+	keep state
+
+# filterregels voor fxp1 uitwaarts
+pass out on fxp1 proto tcp from any to $wwwserv port { 21, \
+	&gt; 49151 } flags S/SA keep state queue net_dmz_misc
+pass out on fxp1 proto tcp from any to $wwwserv port 80 \
+	flags S/SA keep state queue net_dmz_http
+pass out on fxp1 proto tcp from $int_nets to $wwwserv port { 80, \
+	21, &gt; 49151 } flags S/SA keep state queue internal_dmz
+</pre>
+</td></tr>
+</table>
+
+<p>
+[<a href="anchors.html">Vorige: Ankers</a>]
+[<a href="index.html">Inhoud</a>]
+[<a href="pools.html">Volgende: Adres Pools en Load Balancing</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[terug]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: queueing.html,v 1.25 ]<br>
+$Translation: queueing.html,v 1.1 2005/02/20 00:54:28 smestdag Exp $<br>
+$OpenBSD: queueing.html,v 1.1 2005/02/21 12:39:53 saad Exp $
+</small>
+
+</body>
+</html> 

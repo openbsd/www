@@ -1,0 +1,332 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Pakketmarkering</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+</head>
+
+<!--
+Copyright (c) 2003, 2004 Joel Knight <enabled@myrealbox.com>
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<a href="../../../nl/index.html">
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif" border="0">
+</a>
+<p>
+[<a href="pools.html">Vorige: Adrespools en Load Balancing</a>]
+[<a href="index.html">Inhoud</a>]
+[<a href="../logging.html">Volgende: Loggen</a>]
+
+<p>
+<h1><font color="#e00000">PF: Pakketmarkering</font></h1>
+
+<hr>
+
+<h3>Inhoudstafel</h3>
+<ul>
+<li><a href="#intro">Inleiding</a>
+<li><a href="#assign">Markeringen Toekennen aan Pakketten</a>
+<li><a href="#check">Zoeken naar Aangebrachte Markeringen</a>
+<li><a href="#policy">Beleid Filtering</a>
+<li><a href="#ethernet">Ethernet Frames Markeren</a>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Inleiding</h2>
+Pakketmarkering is een manier om pakketten met een interne identifier te
+markeren die later kan gebruikt worden in filter- en veralingsregel criteria.
+Met markering is het mogelijk om dingen te doen zoals het aanmaken van
+"trusts" tussen interfaces en bepalen of pakketten verwerkt zijn door
+vertalingsregels.
+Het is ook mogelijk om regel-gebaseerd filteren te verlaten en te beginnen
+met beleid-gebaseerd filteren.
+
+<a name="assign"></a>
+<h2>Markeringen Toekennen aan Pakketten</h2>
+Om een markering aan een pakket toe te voegen, gebruikt u het <tt>tag</tt>
+sleutelwoord:
+<blockquote>
+<tt>
+pass in on $int_if all tag INTERNAL_NET keep state
+</tt>
+</blockquote>
+
+<p>
+De markering <tt>INTERNAL_NET</tt> zal toegevoegd worden aan gelijk welk
+pakket dat overeenstemt met de bovenstaande regel. Merk het gebruik van
+<tt>keep state</tt> op; <tt>keep state</tt>
+(or <tt>modulate state</tt>/<tt>synproxy state</tt>) moet gebruikt worden
+in <tt>pass</tt> regels die pakketten markeren.
+
+<p>
+Een markering kan ook toegekend worden door gebruik van een
+<a href="macros.html#macros">macro</a>.
+Bijvoorbeeld:
+
+<blockquote>
+<tt>
+name = "INTERNAL_NET"<br>
+pass in on $int_if all tag $name keep state
+</tt>
+</blockquote>
+
+<p>
+Er zijn een stel van voorgedefinieerde macro's die ook kunnen gebruikt worden.
+<ul>
+<li><tt>$if</tt> - De interface
+<li><tt>$srcaddr</tt> - Bron-IP adres
+<li><tt>$dstaddr</tt> - Bestemmings-IP adres
+<li><tt>$srcport</tt> - De bronpoort specificatie
+<li><tt>$dstport</tt> - De bestemmingspoort specificatie
+<li><tt>$proto</tt> - Het protocol
+<li><tt>$nr</tt> - Het regelnummer
+</ul>
+
+<p>
+Deze macro's worden ontvouwen bij het laden van de regelset en NIET in
+runtime.
+
+<p>
+Markering volgt deze regels:
+<ul>
+<li>Markeringen zijn "sticky". Zodra een markering aangebracht wordt op een
+pakket door een overeenstemmende regel, wordt deze nooit meer verwijderd.
+Ze kan echter vervangen worden door een verschillende markering.
+<li>Omwille van de "stickiness" van een markering kan een pakket een
+markering hebben zelfs al gebruikt de laatste overeenstemmende regel het
+<tt>tag</tt> sleutelwoord niet.
+<li>Op een pakket wordt slechts een maximum van één markering per keer
+aangebracht.
+<li>Markeringen zijn <i>interne</i> identifiers. Markeringen worden niet
+over de draad verzonden.
+</ul>
+
+<p>
+Neem de volgende regelset als voorbeeld.
+<blockquote>
+<tt>
+(1) pass in on $int_if tag INT_NET keep state<br>
+(2) pass in quick on $int_if proto tcp to port 80 tag \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;INT_NET_HTTP keep state<br>
+(3) pass in quick on $int_if from 192.168.1.5 keep state
+</tt>
+</blockquote>
+
+<p>
+<ul>
+<li>Pakketten die binnenkomen op <tt>$int_if</tt> zal een markering van
+<tt>INT_NET</tt> gegeven worden door regel #1.
+<li>TCP pakketten die binnenkomen op <tt>$int_if</tt> en bestemd zijn voor
+poort 80 zal eerst een markering van <tt>INT_NET</tt> gegeven worden door
+regel #1. Die markering zal vervolgens vervangen worden door de
+<tt>INT_NET_HTTP</tt> markering door regel #2.
+<li>Pakketten die binnenkomen op <tt>$int_if</tt> vanaf 192.168.1.5 zullen
+doorgelaten worden door regel #3 aangezien het de laatste overeenstemmende
+regel is.
+Die pakketten zullen echter gemarkeerd worden met de <tt>INT_NET_HTTP</tt>
+markering als ze bestemd waren voor TCP poort 80, anders zullen ze
+gemarkeerd worden met de <tt>INT_NET</tt> markering.
+</ul>
+
+<p>
+Bovenop het aanbrengen van markeringen met filterregels, kunnen
+de <tt>nat</tt>, <tt>rdr</tt> en <tt>binat</tt> vertalingsregels ook
+markeringen aanbrengen op pakketten door gebruik van het <tt>tag</tt>
+sleutelwoord.
+
+<a name="check"></a>
+<h2>Zoeken naar Aangebrachte Markeringen</h2>
+Om te zoeken naar voorheen aangebrachte markeringen, gebruikt u het
+<tt>tagged</tt> sleutelwoord:
+<blockquote>
+<tt>
+pass out on $ext_if tagged INT_NET keep state
+</tt>
+</blockquote>
+
+<p>
+Buitengaande pakketten op <tt>$ext_if</tt> moeten gemarkeerd zijn met de
+<tt>INT_NET</tt> markering om overeen te stemmen met de bovenstaande regel.
+Inverse overeenstemming kan ook gedaan worden door de <tt>!</tt> operator
+te gebruiken:
+<blockquote>
+<tt>
+pass out on $ext_if tagged ! WIFI_NET keep state
+</tt>
+</blockquote>
+
+<a name="policy"></a>
+<h2>Beleid Filtering</h2>
+Beleid filtering neemt een andere aanpak om een filterregelset te schrijven.
+Een beleid wordt gedefinieerd dat de regels opstelt voor welke types van
+verkeer doorgelaten worden en welke types geblokkeerd worden.
+Pakketten worden vervolgens ingedeeld in het beleid op basis van de
+traditionele criteria van bron/bestemmings-IP adres/poort, protocol, enz.
+Onderzoek bijvoorbeeld het volgende firewall beleid:
+<ul>
+<li>Verkeer vanaf de interne LAN naar de DMZ is toegelaten (LAN_DMZ)
+<li>Verkeer vanaf het Internet naar servers in de DMZ is toegelaten
+(INET_DMZ)
+<li>Verkeer vanaf het Internet dat omgeleid wordt naar
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=spamd&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>spamd(8)</a> is toegelaten (SPAMD)
+<li>Alle ander verkeer wordt geblokkeerd
+</ul>
+
+<p>
+Merk op hoe het beleid <i>alle</i> verkeer omvat dat doorheen de firewall
+zal passeren.
+Het item tussen haakjes duidt de markering aan die gebruikt zal worden
+voor dat beleidsitem.
+
+<p>
+Filter- en vertalingsregels moeten nu geschreven worden om pakketten in het
+beleid in te delen.
+<blockquote>
+<tt>
+rdr on $ext_if proto tcp from &lt;spamd&gt; to port smtp \<br>
+&nbsp;&nbsp;&nbsp;tag SPAMD -&gt; 127.0.0.1 port 8025<br>
+<br>
+block all<br>
+pass in on $int_if from $int_net tag LAN_INET keep state<br>
+pass in on $int_if from $int_net to $dmz_net tag LAN_DMZ keep state<br>
+pass in on $ext_if proto tcp to $www_server port 80 tag INET_DMZ keep state
+</tt>
+</blockquote>
+
+<p>
+Nu worden de regels die het beleid definiëren, ingesteld.
+<blockquote>
+<tt>
+pass in &nbsp;quick on $ext_if tagged SPAMD keep state<br>
+pass out quick on $ext_if tagged LAN_INET keep state<br>
+pass out quick on $dmz_if tagged LAN_DMZ keep state<br>
+pass out quick on $dmz_if tagged INET_DMZ keep state
+</tt>
+</blockquote>
+
+<p>
+Nu de gehele regelset opgesteld is, zijn veranderingen een kwestie van
+de indelingsregels te wijzigen.
+Als er bijvoorbeeld een POP3/SMTP server wordt toegevoegd aan de DMZ,
+zal het nodig zijn om indelingsregels voor POP3 en SMTP verkeer toe te
+voegen, zoals:
+<blockquote>
+<tt>
+mail_server = "192.168.0.10"<br>
+...<br>
+pass in on $ext_if proto tcp to $mail_server port { smtp, pop3 } \<br>
+&nbsp;&nbsp;&nbsp;tag INET_DMZ keep state
+</tt>
+</blockquote>
+
+<p>
+Email verkeer zal nu doorgelaten worden als onderdeel van het INET_DMZ
+beleidsitem.
+
+<p>
+De volledige regelset:
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+# macro's
+int_if  = "dc0"
+dmz_if  = "dc1"
+ext_if  = "ep0"
+int_net = "10.0.0.0/24"
+dmz_net = "192.168.0.0/24"
+www_server = "192.168.0.5"
+mail_server = "192.168.0.10"
+
+table &lt;spamd&gt; persist file "/etc/spammers"
+
+# indeling -- deel pakketten in op basis van het gedefinieerde firewall
+# beleid.
+rdr on $ext_if proto tcp from &lt;spamd&gt; to port smtp \
+    tag SPAMD -&gt; 127.0.0.1 port 8025
+
+block all
+pass in on $int_if from $int_net tag LAN_INET keep state
+pass in on $int_if from $int_net to $dmz_net tag LAN_DMZ keep state
+pass in on $ext_if proto tcp to $www_server port 80 tag INET_DMZ keep state 
+pass in on $ext_if proto tcp to $mail_server port { smtp, pop3 } \
+    tag INET_DMZ keep state 
+
+# beleid afdwingen -- pass/block gebaseerd op het gedefinieerde firewall
+# beleid.
+pass in  quick on $ext_if tagged SPAMD keep state
+pass out quick on $ext_if tagged LAN_INET keep state
+pass out quick on $dmz_if tagged LAN_DMZ keep state
+pass out quick on $dmz_if tagged INET_DMZ keep state 
+</pre>
+</td></tr>
+</table>
+
+<a name="ethernet"></a>
+<h2>Ethernet Frames Markeren</h2>
+Markering kan uitgevoerd worden op het Ethernet-niveau indien de machine
+die markering/filtering doet ook fungeert als een
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridge&amp;sektion=4&amp;manpath=OpenBSD+3.6"
+>bridge(4)</a>. 
+Door bridge(4) filterregels te creëren die het <tt>tag</tt> sleutelwoord
+gebruiken, kan men PF laten filteren op basis van bron/bestemmings-MAC adres.
+Bridge(4) regels worden aangemaakt met het
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=brconfig&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>brconfig(8)</a> commando. Voorbeeld:
+<blockquote>
+<tt>
+# brconfig bridge0 rule pass in on fxp0 src 0:de:ad:be:ef:0 \<br>
+&nbsp;&nbsp;&nbsp;tag USER1
+</tt>
+</blockquote>
+
+<p>
+En vervolgens in <tt>pf.conf</tt>:
+<blockquote>
+<tt>
+pass in on fxp0 tagged USER1
+</tt>
+</blockquote>
+
+<p>
+[<a href="pools.html">Vorige: Adrespools en Load Balancing</a>]
+[<a href="index.html">Inhoud</a>]
+[<a href="../logging.html">Volgende: Loggen</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[terug]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: tagging.html,v 1.6 ]<br>
+$Translation: tagging.html,v 1.1 2005/02/20 00:54:28 smestdag Exp $<br>
+$OpenBSD: tagging.html,v 1.1 2005/02/21 12:39:53 saad Exp $
+</small>
+
+</body>
+</html> 

@@ -1,0 +1,362 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Afkortingen om Regelsets aan te maken</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+</head>
+
+<!--
+Copyright (c) 2003, 2004 Joel Knight <enabled@myrealbox.com>
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<a href="../../../nl/index.html">
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif" border="0">
+</a>
+<p>
+[<a href="rdr.html">Vorige: Verkeersomleiding (Port Forwarding)</a>]
+[<a href="index.html">Inhoud</a>]
+[<a href="options.html">Volgende: Runtime Opties</a>]
+
+<p>
+<h1>
+<font color="#e00000">PF: Afkortingen om Regelsets aan te maken</font>
+</h1>
+
+<hr>
+
+<h3>Inhoudstafel</h3>
+<ul>
+<li><a href="#intro">Inleiding</a>
+<li><a href="#macros">Macro's Gebruiken</a>
+<li><a href="#lists">Lijsten Gebruiken</a>
+<li><a href="#grammar">PF Grammatica</a>
+	<ul>
+	<li><a href="#elim">Eliminatie van Sleutelwoorden</a>
+	<li><a href="#return"><tt>Return</tt> Vereenvoudiging</a>
+	<li><a href="#order">Volgorde van Sleutelwoorden</a>
+	</ul>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Inleiding</h2>
+PF biedt vele manieren waarop een regelset kan vereenvoudigd worden. Enkele
+goede voorbeelden zijn door gebruik te maken van
+<a href="macros.html#macros">macro's</a> en
+<a href="macros.html#lists">lijsten</a>.
+Bovendien biedt de regelset-taal, of grammatica, ook enkele afkortingen
+om een regelset eenvoudiger te maken. Als algemene vuistregel geldt: hoe
+eenvoudiger een regelset is, hoe gemakkelijker hij te begrijpen en te
+onderhouden is.
+
+<a name="macros"></a>
+<h2>Macro's Gebruiken</h2>
+Macro's zijn nuttig omdat ze een alternatief bieden voor het hard coderen
+van adressen, poortnummers, interfacenamen, enz. in een regelset. Is er
+een IP adres van een server veranderd? Geen probleem, pas gewoon de macro
+aan; niet nodig om te knoeien aan de filterregels, waaraan u zoveel tijd
+en energie hebt besteed om ze perfect op uw noden af te stemmen.
+
+<p>
+Een veel voorkomende conventie in PF regelsets is om voor elke netwerkinterface
+een macro te definiëren. Als een netwerkkaart ooit moet vervangen worden
+door één die een verschillende driver gebruikt, bijvoorbeeld een 3Com
+vervangen door een Intel, dan kan de macro bijgewerkt worden en de filterregels
+zullen nog steeds werken zoals voorheen. Een ander voordeel ontstaat bij
+de installatie van dezelfde regelset op meerdere machines. Bepaalde machines
+kunnen verschillende netwerkkaarten hebben, en macro's gebruiken om de
+netwerkinterfaces te definiëren laat toe dat de regelsets geïnstalleerd
+worden met minimale aanpassing. Het wordt aanbevolen macro's te gebruiken
+om in regelsets informatie te definiëren die aan verandering onderhevig is,
+zoals poortnummers, IP adressen en interfacenamen.
+<blockquote>
+<tt>
+# defineer macro's voor elke netwerkinterface<br>
+IntIF = "dc0"<br>
+ExtIF = "fxp0"<br>
+DmzIF = "fxp1"
+</tt>
+</blockquote>
+
+<p>
+Een andere veel voorkomende conventie is macro's gebruiken om IP adressen
+en netwerkblokken te definiëren. Dit kan het onderhoud van een regelset
+aanzienlijk verminderen wanneer er IP adressen veranderen.
+<blockquote>
+<tt>
+# definieer onze netwerken<br>
+IntNet = "192.168.0.0/24"<br>
+ExtAdd = "24.65.13.4"<br>
+DmzNet = "10.0.0.0/24"
+</tt>
+</blockquote>
+
+<p>
+Als het interne netwerk ooit uitgebreid wordt of hernummerd wordt in een
+verschillend IP blok, dan kan de macro bijgewerkt worden:
+<blockquote>
+<tt>
+IntNet = "{ 192.168.0.0/24, 192.168.1.0/24 }"
+</tt>
+</blockquote>
+
+<p>
+Zodra de regelset opnieuw wordt geladen, zal alles werken zoals voorheen.
+
+<a name="lists"></a>
+<h2>Lijsten Gebruiken</h2>
+Laten we een goede set van regels bekijken om in uw regelset te hebben om
+<a href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a> adressen
+te behandelen die gewoon niet op het Internet zouden mogen rondzweven,
+en wanneer ze dat toch doen, gewoonlijk problemen proberen te veroorzaken:
+<blockquote>
+<tt>
+block in &nbsp;quick on tl0 inet from 127.0.0.0/8 to any<br>
+block in &nbsp;quick on tl0 inet from 192.168.0.0/16 to any<br>
+block in &nbsp;quick on tl0 inet from 172.16.0.0/12 to any<br>
+block in &nbsp;quick on tl0 inet from 10.0.0.0/8 to any<br>
+block out quick on tl0 inet from any to 127.0.0.0/8<br>
+block out quick on tl0 inet from any to 192.168.0.0/16<br>
+block out quick on tl0 inet from any to 172.16.0.0/12<br>
+block out quick on tl0 inet from any to 10.0.0.0/8
+</tt>
+</blockquote>
+
+<p>
+Bekijk nu de volgende vereenvoudiging:
+<blockquote>
+<tt>
+block in &nbsp;quick on tl0 inet from { 127.0.0.0/8, 192.168.0.0/16, \<br>
+&nbsp;&nbsp;&nbsp;172.16.0.0/12, 10.0.0.0/8 } to any<br>
+block out quick on tl0 inet from any to { 127.0.0.0/8, \<br>
+&nbsp;&nbsp;&nbsp;192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }
+</tt>
+</blockquote>
+
+<p>
+De regelset werdt herleid van acht lijnen naar twee.
+De dingen worden zelfs nog beter wanneer macro's samen met een lijst
+gebruikt worden:
+<blockquote>
+<tt>
+NoRouteIPs = "{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, \<br>
+&nbsp;&nbsp;&nbsp;10.0.0.0/8 }"
+<br>
+ExtIF = "tl0"<br>
+block in &nbsp;quick on $ExtIF from $NoRouteIPs to any<br>
+block out quick on $ExtIF from any to $NoRouteIPs
+</tt>
+</blockquote>
+
+<p>
+Merk op dat macro's en lijsten het <tt>pf.conf</tt> bestand vereenvoudigen,
+maar de lijnen worden in werkelijkheid door
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>pfctl(8)</a> ontvouwen in meerdere regels. Dus, het bovenstaande voorbeeld
+ontvouwt eigenlijk tot de volgende regels:
+<blockquote>
+<tt>
+block in &nbsp;quick on tl0 inet from 127.0.0.0/8 to any<br>
+block in &nbsp;quick on tl0 inet from 192.168.0.0/16 to any<br>
+block in &nbsp;quick on tl0 inet from 172.16.0.0/12 to any<br>
+block in &nbsp;quick on tl0 inet from 10.0.0.0/8 to any<br>
+block out quick on tl0 inet from any to 10.0.0.0/8<br>
+block out quick on tl0 inet from any to 172.16.0.0/12<br>
+block out quick on tl0 inet from any to 192.168.0.0/16<br>
+block out quick on tl0 inet from any to 127.0.0.0/8
+</tt>
+</blockquote>
+
+<p>
+Zoals u kan zien is de PF ontvouwing uitsluitend een gemak voor de schrijver
+en onderhouder van het <tt>pf.conf</tt> bestand, en geen werkelijke
+vereenvoudiging van de regels verwerkt door
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+3.6"
+>pf(4)</a>.
+
+<p>
+Macro's kunnen gebruikt worden om meer dan alleen adressen en poorten
+te definiëren; ze kunnen gelijk waar in een PF regels bestand gebruikt
+worden:
+<blockquote>
+<tt>
+pre  = "pass in quick on ep0 inet proto tcp from "<br>
+post = "to any port { 80, 6667 } keep state"<br>
+<br>
+# David's classroom<br>
+$pre 21.14.24.80 $post<br>
+<br>
+# Nick's home<br>
+$pre 24.2.74.79 $post<br>
+$pre 24.2.74.178 $post
+</tt>
+</blockquote>
+
+<p>
+Ontvouwt tot:
+<blockquote>
+<tt>
+pass in quick on ep0 inet proto tcp from 21.14.24.80 to any \<br>
+&nbsp;&nbsp;&nbsp;port = 80 keep state<br>
+pass in quick on ep0 inet proto tcp from 21.14.24.80 to any \<br>
+&nbsp;&nbsp;&nbsp;port = 6667 keep state<br>
+pass in quick on ep0 inet proto tcp from 24.2.74.79 to any \<br>
+&nbsp;&nbsp;&nbsp;port = 80 keep state<br>
+pass in quick on ep0 inet proto tcp from 24.2.74.79 to any \<br>
+&nbsp;&nbsp;&nbsp;port = 6667 keep state<br>
+pass in quick on ep0 inet proto tcp from 24.2.74.178 to any \<br>
+&nbsp;&nbsp;&nbsp;port = 80 keep state<br>
+pass in quick on ep0 inet proto tcp from 24.2.74.178 to any \<br>
+&nbsp;&nbsp;&nbsp;port = 6667 keep state
+</tt>
+</blockquote>
+
+<a name="grammar"></a>
+<h2>PF Grammatica</h2>
+Packet Filter's grammatica is erg flexibel, wat op zijn beurt enorme
+flexibiliteit toelaat in een regelset. PF kan bepaalde sleutelwoorden
+afleiden, wat betekent dat ze niet expliciet vermeld moeten worden in
+een regel, en de volgorde van de sleutelwoorden wordt versoepeld zodat
+het niet noodzakelijk is om stricte syntaxis te memoriseren.
+
+<a name="elim"></a>
+<h3>Eliminatie van Sleutelwoorden</h3>
+<p>
+Om een "default deny" beleid te definiëren, worden twee regels gebruikt:
+<blockquote>
+<tt>
+block in &nbsp;all<br>
+block out all
+</tt>
+</blockquote>
+
+<p>
+Dit kan nu gereduceerd worden tot:
+<blockquote>
+<tt>
+block all
+</tt>
+</blockquote>
+
+<p>
+Wanneer er geen richting wordt opgegeven, zal PF veronderstellen dat de
+regel van toepassing is op pakketten die in beide richtingen bewegen.
+
+<p>
+Gelijkaardig kunnen de "<tt>from any to any</tt>" en "<tt>all</tt>"
+zinssneden uit een regel gelaten worden, bijvoorbeeld:
+<blockquote>
+<tt>
+block in on rl0 all<br>
+pass &nbsp;in quick log on rl0 proto tcp from any to any port 22 keep state
+</tt>
+</blockquote>
+
+<p>
+kan vereenvoudigd worden tot:
+<blockquote>
+<tt>
+block in on rl0<br>
+pass &nbsp;in quick log on rl0 proto tcp to port 22 keep state</tt>
+</blockquote>
+
+<p>
+De eerste regel blokkeert alle binnenkomende pakketten van gelijk waar
+naar gelijk waar op rl0, en de tweede regel laat TCP verkeer binnen op
+rl0 naar poort 22.
+
+<a name="return"></a>
+<h3><tt>Return</tt> Vereenvoudiging</h3>
+<p>
+Een regelset die gebruikt wordt om pakketten te blokkeren en te antwoorden
+met een TCP RST of ICMP Unreachable antwoord, zou er als volgt kunnen
+uitzien:
+<blockquote>
+<tt>
+block in all<br>
+block return-rst in proto tcp all<br>
+block return-icmp in proto udp all<br>
+block out all<br>
+block return-rst out proto tcp all<br>
+block return-icmp out proto udp all
+</tt>
+</blockquote>
+
+<p>
+Dit kan vereenvoudigd worden tot:
+<blockquote>
+<tt>
+block return
+</tt>
+</blockquote>
+
+<p>
+Wanneer PF het <tt>return</tt> sleutelwoord ziet, is het slim genoeg om
+het gepaste antwoord te sturen, of helemaal geen antwoord, afhankelijk
+van het protocol van het pakket dat geblokkeerd wordt.
+
+<a name="order"></a>
+<h3>Volgorde van Sleutelwoorden</h3>
+<p>
+De volgorde waarin sleutelwoorden gespecificeerd worden, is in de meeste
+gevallen flexibel. Bijvoorbeeld, een regel geschreven als:
+<blockquote>
+<tt>
+pass in log quick on rl0 proto tcp to port 22 \<br> 
+&nbsp;&nbsp;&nbsp;flags S/SA keep state queue ssh label ssh
+</tt>
+</blockquote>
+
+<p>
+Kan ook geschreven worden als:
+<blockquote>
+<tt>
+pass in quick log on rl0 proto tcp to port 22 \<br>
+&nbsp;&nbsp;&nbsp;queue ssh keep state label ssh flags S/SA
+</tt>
+</blockquote>
+
+<p>
+Andere, gelijkaardige variaties zullen ook werken.
+
+<p>
+[<a href="rdr.html">Vorige: Verkeersomleiding (Port Forwarding)</a>]
+[<a href="index.html">Inhoud</a>]
+[<a href="options.html">Volgende: Runtime Opties</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[terug]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: shortcuts.html,v 1.14 ]<br>
+$Translation: shortcuts.html,v 1.1 2005/02/20 00:54:28 smestdag Exp $<br>
+$OpenBSD: shortcuts.html,v 1.1 2005/02/21 12:39:53 saad Exp $
+</small>
+
+</body>
+</html> 

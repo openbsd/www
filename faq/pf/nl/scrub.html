@@ -1,0 +1,194 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Scrub (Pakket Normalisatie)</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+</head>
+
+<!--
+Copyright (c) 2003, Nick Holland <nick@openbsd.org>
+Copyright (c) 2003-2005, Joel Knight <enabled@myrealbox.com>
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<a href="../../../nl/index.html">
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif" border="0">
+</a>
+<p>
+[<a href="options.html">Vorige: Runtime Opties</a>]
+[<a href="index.html">Inhoud</a>]
+[<a href="anchors.html">Volgende: Ankers</a>]
+
+<p>
+<h1><font color="#e00000">PF: Scrub (Pakket Normalisatie)</font></h1>
+<hr>
+
+<h3>Inhoudstafel</h3>
+<ul>
+<li><a href="#intro">Inleiding</a>
+<li><a href="#options">Opties</a>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Inleiding</h2>
+"Schrobben" (scrubbing) is de normalisatie van pakketten zodat er geen
+ambiguïteiten in interpretatie zijn bij de ultieme bestemming van het pakket.
+De scrub opdracht herassembleert ook gefragmenteerde pakketten, waarbij ze
+sommige besturingssystemen voor enkele vormen van aanvallen beschermt, en
+laat TCP pakketten vallen die ongeldige 
+<a href="filter.html#tcpflags">flag</a>combinaties hebben. Een eenvoudige
+vorm van de scrub opdracht:
+<blockquote>
+<tt>
+scrub in all
+</tt>
+</blockquote>
+
+<p>
+Dit zal alle binnenkomende pakketten op alle interfaces schrobben.
+
+<p>
+Eén reden om niet te schrobben op een interface is als men NFS doorlaat
+doorheen PF. Sommige niet-OpenBSD platformen verzenden (en verwachten)
+vreemde pakketten -- gefragmenteerde pakketten met de "do not fragment"
+bit ingesteld, die (juist) verworpen worden door <tt>scrub</tt>. Dit kan
+opgelost worden door gebruik van de <tt>no-df</tt> optie. Een andere
+reden is dat enkele spelletjes met meerdere spelers verbindingsproblemen
+hebben wanneer ze doorheen PF gaan met <tt>scrub</tt> ingeschakeld.
+Buiten deze ietwat ongewone gevallen, is alle pakketten schrobben een
+<i>ten zeerste aanbevolen</i> praktijk.
+
+<p>
+De <tt>scrub</tt> opdrachtsyntaxis is heel gelijkaardig aan de
+<a href="filter.html">filter</a> syntaxis, wat het gemakkelijk maakt om
+selectief bepaalde pakketten te schrobben en andere niet.
+Het <tt>no</tt> sleutelwoord kan gebruikt worden vóór <tt>scrub</tt> om
+pakketten aan te geven die niet geschrobd zullen worden.
+Net zoals bij <a href="nat.html#except"><tt>nat</tt> regels</a>, wint de
+eerste overeenstemmende regel.
+
+<p>
+Meer over het principe en de concepten van schrobben kan teruggevonden
+worden in de paper
+<a href="http://www.icir.org/vern/papers/norm-usenix-sec-01-html/index.html"
+>Network Intrusion Detection: Evasion, Traffic Normalization, and
+End-to-End Protocol Semantics</a>.
+
+<a name="options"></a>
+<h2>Opties</h2>
+<tt>Scrub</tt> heeft de volgende opties:
+<dl>
+<dt><tt>no-df</tt> 
+<dd>Veegt de <i>don't fragment</i> bit leeg in de IP pakkethoofding.
+Van sommige besturingssystemen is bekend dat ze gefragmenteerde
+pakketten genereren met de <i>don't fragment</i> bit ingesteld. Dit
+is in het bijzonder waar bij NFS. <tt>Scrub</tt> zal zulke pakketten
+laten vallen tenzij de <tt>no-df</tt> optie gespecificeerd wordt.
+Omdat sommige besturingssystemen <i>don't fragment</i> pakketten
+genereren met een nul IP identificatiehoofdingsveld, wordt het aanbevolen
+<tt>no-df</tt> in samenwerking met <tt>random-id</tt> te gebruiken.
+
+<dt><tt>random-id</tt> 
+<dd>Vervangt het IP identificatieveld van buitengaande pakketten door
+random waarden om te compenseren voor besturingssystemen die voorspelbare
+waarden gebruiken. Deze optie is alleen van toepassing op buitengaande
+pakketten die niet gefragmenteerd zijn na de optionele pakketherassemblage.
+
+<dt><tt>min-ttl <i>num</i></tt> 
+<dd>Legt een minimale Time To Live (TTL) op
+in IP pakkethoofdingen.
+
+<dt><tt>max-mss <i>num</i></tt> 
+<dd>Legt een maximale Maximum Segment
+Size (MSS) op in TCP pakkethoofdingen.
+
+<dt><tt>fragment reassemble</tt> 
+<dd>Buffert binnenkomende pakketfragmenten en herassembleert ze tot een
+volledig pakket alvorens ze aan de filtermotor door te geven.
+Het voordeel is dat filterregels alleen volledige pakketten hoeven af te
+handelen en fragmenten kunnen negeren. Het nadeel is het verhoogde
+geheugen nodig om de pakketfragmenten te bufferen. Dit is het
+standaardgedrag wanneer er geen <tt>fragment</tt> gespecificeerd wordt.
+Dit is ook de enige <tt>fragment</tt> optie die werkt met NAT.
+
+<dt><tt>fragment crop</tt> 
+<dd>Zorgt ervoor dat dubbele fragmenten gedropt worden en dat overlappingen
+geknipt worden. In tegenstelling tot bij <tt>fragment reassemble</tt>,
+worden fragmenten niet gebufferd maar doorgelaten zodra ze aankomen.
+
+<dt><tt>fragment drop-ovl</tt> 
+<dd>Gelijkaardig aan <tt>fragment crop</tt>
+behalve dat alle dubbele of overlappende fragmenten gedropt worden evenals
+gelijk welke verdere overeenkomstige fragmenten.
+
+<dt><tt>reassemble tcp</tt>
+<dd>Normaliseert TCP verbindingen "statefully".
+Bij gebruik van <tt>scrub reassemble tcp</tt> kan er geen richting (in/uit)
+gespecificeerd worden.
+De volgende normaliseringen worden uitgevoerd:
+	<ul>
+	<li>Geen enkele zijde van de verbinding wordt toegelaten hun IP TTL
+	te verlagen. Dit wordt gedaan om te beschermen tegen een aanvaller
+	die een pakket verstuurt zodat het de firewall bereikt, de bijgehouden
+	toestandsinformatie voor de verbinding beïnvloedt, en vervalt voordat
+	het de bestemmingshost bereikt. De TTL van alle pakketten wordt
+	verhoogd tot de hoogste waarde die gezien werd voor de verbinding.
+	<li>Het moduleren van
+	<a href="http://www.geektools.com/rfc/rfc1323.txt">RFC1323</a>
+	timestamps in TCP pakkethoofdingen met een random getal. Dit kan
+	voorkomen dat een waarnemer de uptime van de host afleidt of raadt
+	hoeveel hosts er achter een NAT gateway zitten.
+	</ul>
+</dl>
+
+<p>
+Voorbeelden:
+<blockquote>
+<tt>
+scrub in on fxp0 all fragment reassemble min-ttl 15 max-mss 1400<br>
+scrub in on fxp0 all no-df<br>
+scrub &nbsp;&nbsp; on fxp0 all reassemble tcp
+</tt>
+</blockquote>
+
+<p>
+[<a href="options.html">Vorige: Runtime Opties</a>]
+[<a href="index.html">Inhoud</a>]
+[<a href="anchors.html">Volgende: Ankers</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[terug]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: scrub.html,v 1.12 ]<br>
+$Translation: scrub.html,v 1.1 2005/02/20 00:54:28 smestdag Exp $<br>
+$OpenBSD: scrub.html,v 1.1 2005/02/21 12:39:53 saad Exp $
+</small>
+
+</body>
+</html> 

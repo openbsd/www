@@ -1,0 +1,311 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Adrespools en Load Balancing</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+</head>
+
+<!--
+Copyright (c) 2003, 2004 Joel Knight <enabled@myrealbox.com>
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<a href="../../../nl/index.html">
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif" border="0">
+</a>
+<p>
+[<a href="queueing.html">Vorige: Packet Queueing en Prioritisering</a>]
+[<a href="index.html">Inhoud</a>]
+[<a href="tagging.html">Volgende: Pakketmarkering</a>]
+
+<p>
+<h1>
+<font color="#e00000">PF: Adrespools en Load Balancing</font>
+</h1>
+
+<hr>
+
+<h3>Inhoudstafel</h3>
+<ul>
+<li><a href="#intro">Inleiding</a>
+<li><a href="#nat">NAT Adrespool</a>
+<li><a href="#incoming">Load Balancing van Binnenkomende Verbindingen</a>
+<li><a href="#outgoing">Load Balancing van Buitengaand Verkeer</a>
+	<ul>
+	<li><a href="#outexample">Regelset Voorbeeld</a>
+	</ul>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Inleiding</h2>
+Een adrespool is een voorraad van twee of meer adressen waarvan het
+gebruik gedeeld wordt onder een groep van gebruikers. Een adrespool kan
+gespecificeerd worden als het omleidingsadres in
+<a href="rdr.html"><tt>rdr</tt></a> regels, als het vertalingsadres in
+<a href="nat.html"><tt>nat</tt></a> regels, en als het doeladres in
+<tt>route-to</tt>, <tt>reply-to</tt> en <tt>dup-to</tt>
+<a href="filter.html">filter</a>opties.
+
+<p>
+Er zijn vier methodes om een adrespool te gebruiken:
+<ul>
+<li><tt>bitmask</tt> - ent het netwerkgedeelte van het pooladres bovenop
+het adres dat gewijzigd wordt (bronadres voor <tt>nat</tt> regels,
+bestemmingsadres voor <tt>rdr</tt> regels).
+Voorbeeld: als de adrespool 192.0.2.1/24 is en het adres dat gewijzigd
+wordt 10.0.0.50, dan zal het resulterende adres 192.0.2.50 zijn. Als de
+adrespool 192.0.2.1/25 is en het adres dat gewijzigd wordt 10.0.0.130,
+dan zal het resulterende adres 192.0.2.2 zijn.
+<li><tt>random</tt> - selecteert random een adres uit de pool.
+<li><tt>source-hash</tt> - gebruikt een hash van het bronadres om te bepalen
+welk adres uit de pool gebruikt moet worden. Deze methode verzekert dat een
+gegeven bronadres steeds afgebeeld wordt op hetzelfde pooladres.
+De sleutel waarmee het hash-algoritme gevoed wordt, kan optioneel gespecificeerd
+worden na het <tt>source-hash</tt> sleutelwoord in hex formaat of als een
+string. Standaard zal
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+>pfctl(8)</a> een random sleutel genereren elke keer de regelset wordt
+geladen.
+<li><tt>round-robin</tt> - loopt door de adrespool in volgorde. Dit is
+de standaardmethode en ook de enige toegelaten methode wanneer de adrespool
+gespecificeerd wordt met een <a href="tables.html">tabel</a>.
+</ul>
+
+<p>
+Behalve voor de <tt>round-robin</tt> methode, moet de adrespool uitgedrukt
+worden als een
+<a href="http://public.pacbell.net/dedicated/cidr.html">CIDR</a>
+(Classless Inter-Domain Routing) netwerkblok. De <tt>round-robin</tt>
+methode zal meerdere individuele adressen aannemen bij gebruik van een
+<a href="macros.html#lists">lijst</a> of <a href="tables.html">tabel</a>.
+
+<p>
+De <tt>sticky-address</tt> optie kan gebruikt worden met de <tt>random</tt>
+en <tt>round-robin</tt> pooltypes om te verzekeren dat een bepaald bronadres
+steeds afgebeeld wordt op hetzelfde omleidingsadres.
+
+<a name="nat"></a>
+<h2>NAT Adrespool</h2>
+Een adrespool kan gebruikt worden als het vertalingsadres in
+<a href="nat.html"><tt>nat</tt></a> regels. Het source adres van verbindingen
+zal vertaald worden naar een adres van de pool op basis van de gekozen
+methode. Dit kan nuttig zijn in situaties waar PF NAT uitvoert vor een heel
+groot netwerk. Aangezien het aantal NAT-verbindingen per vertalingsadres
+beperkt is, zal het toevoegen van bijkomende vertalingsadressen de NAT
+gateway toelaten te vergroten om een groter aantal gebruikers te bedienen.
+
+<p>
+In dit voorbeeld wordt een pool van twee adressen gebruikt om buitengaande
+pakketten te vertalen. Voor elke buitengaande verbinding zal PF doorheen
+de adressen roteren op een "round-robin" manier.
+<blockquote>
+<tt>
+nat on $ext_if inet from any to any -&gt; { 192.0.2.5, 192.0.2.10 }
+</tt>
+</blockquote>
+
+<p>
+Eén nadeel met deze methode is dat opeenvolgende verbindingen vanaf hetzelfde
+interne adres niet altijd zullen vertaald worden naar hetzelfde
+vertalingsadres. Dit kan interferentie veroorzaken, bijvoorbeeld wanneer men
+naar websites surft die gebruikerlogins traceren op basis van IP adres. Een
+alternatieve aanpak is om de <tt>source-hash</tt> methode te gebruiken zodat
+elk intern adres altijd vertaald wordt naar hetzelfde vertalingsadres.
+Om dit te doen, moet de adrespool een 
+<a href="http://public.pacbell.net/dedicated/cidr.html">CIDR</a>
+netwerkblok zijn.
+<blockquote>
+<tt>
+nat on $ext_if inet from any to any -&gt; 192.0.2.4/31 source-hash
+</tt>
+</blockquote>
+
+<p>
+Deze <tt>nat</tt> regel gebruikt de adrespool 192.0.2.4/31 (192.0.2.4 -
+192.0.2.5) als het vertalingsadres voor buitengaande pakketten. Elk intern
+adres zal altijd vertaald worden naar hetzelfde vertalingsadres omwille van
+het <tt>source-hash</tt> sleutelwoord.
+
+<a name="incoming"></a>
+<h2>Load Balance van Binnenkomende Verbindingen</h2>
+Adrespools kunnen ook gebruikt worden om de belasting te verdelen voor
+binnenkomende verbindingen. Binnenkomende webserver verbindingen kunnen
+bijvoorbeeld verdeeld worden onder een webserver farm:
+<blockquote>
+<tt>
+web_servers = "{ 10.0.0.10, 10.0.0.11, 10.0.0.13 }"<br>
+<br>
+rdr on $ext_if proto tcp from any to any port 80 -&gt; $web_servers \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;round-robin sticky-address
+</tt>
+</blockquote>
+
+<p>
+Opeenvolgende verbindingen zullen omgeleid worden naar de webservers op
+een "round-robin" manier waarbij verbindingen van hetzelfde bronadres
+naar dezelfde webserver gestuurd worden.
+Deze "sticky" verbinding zal bestaan zolang er toestanden zijn die naar
+deze verbinding verwijzen.
+Zodra de toestanden vervallen, zal ook de sticky verbinding dat doen.
+Verdere verbindingen vanaf die host zullen omgeleid worden naar de volgende
+webserver in de round robin.
+
+<a name="outgoing"></a>
+<h2>Load Balance van Buitengaand Verkeer</h2>
+Adrespools kunnen gebruikt worden in combinatie met de <tt>route-to</tt>
+filteroptie om de belasting te verdelen van twee of meer Internetverbindingen
+wanneer een echt multi-path routeringsprotocol (zoals
+<a href="http://www.rfc-editor.org/rfc/rfc1771.txt">BGP4</a>) niet
+beschikbaar is. Door <tt>route-to</tt> te gebruiken met een
+<tt>round-robin</tt> adrespool, kunnen buitengaande verbindingen gelijk
+verdeeld worden tussen meerdere uitwaartse paden.
+
+<p>
+Een bijkomend stuk informatie dat nodig is om dit te doen is het IP adres
+van de nabijgelegen router op elke Internetverbinding. Dit wordt aan de
+<tt>route-to</tt> optie meegegeven om de bestemming van buitengaande
+pakketten te regelen.
+
+<p>
+Het volgende voorbeeld balanceert buitengaand verkeer over twee
+Internetverbindingen:
+<blockquote>
+<tt>
+lan_net = "192.168.0.0/24"<br>
+int_if &nbsp;= "dc0"<br>
+ext_if1 = "fxp0"<br>
+ext_if2 = "fxp1"<br>
+ext_gw1 = "68.146.224.1"<br>
+ext_gw2 = "142.59.76.1"<br>
+<br>
+pass in on $int_if route-to \<br>
+&nbsp;&nbsp;&nbsp;{ ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) } round-robin \<br>
+&nbsp;&nbsp;&nbsp;from $lan_net to any keep state
+</tt>
+</blockquote>
+
+<p>
+De <tt>route-to</tt> optie wordt gebruikt op verkeer dat <i>binnen</i> komt
+op de <i>interne</i> interface om de buitengaande netwerkinterfaces te
+specificeren waartussen verkeer gebalanceerd zal worden, samen met hun
+respectievelijke gateways. Merk op dat de <tt>route-to</tt> optie aanwezig
+moet zijn op <i>elke</i> filterregel waarvoor verkeer gebalanceerd moet
+worden. Terugkerende pakketten zullen teruggerouteerd worden naar dezelfde
+externe interface die ze verlieten (dit wordt gedaan door de ISP's) en
+zullen normaal teruggerouteerd worden naar het interne netwerk.
+
+<p>
+Om te verzekeren dat pakketten met een bronadres horend bij
+<tt>$ext_if1</tt> altijd gerouteerd worden naar <tt>$ext_gw1</tt> (en
+gelijkaardig voor <tt>$ext_if2</tt> en <tt>$ext_gw2</tt>), moeten de
+volgende twee lijnen in de regelset staan:
+<blockquote>
+<tt>
+pass out on $ext_if1 route-to ($ext_if2 $ext_gw2) from $ext_if2 \<br>
+&nbsp;&nbsp;&nbsp;to any<br>
+pass out on $ext_if2 route-to ($ext_if1 $ext_gw1) from $ext_if1 \<br>
+&nbsp;&nbsp;&nbsp;to any 
+</tt>
+</blockquote>
+
+<p>
+Tenslotte kan NAT ook gebruikt worden op elke buitengaande interface:
+<blockquote>
+<tt>
+nat on $ext_if1 from $lan_net to any -&gt; ($ext_if1)<br>
+nat on $ext_if2 from $lan_net to any -&gt; ($ext_if2)
+</tt>
+</blockquote>
+
+<a name="outexample"></a>
+<p>
+Een volledig voorbeeld dat buitengaand verkeer balanceert, zou er
+ongeveer als volgt kunnen uitzien:
+
+<p>
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+lan_net = "192.168.0.0/24"
+int_if  = "dc0"
+ext_if1 = "fxp0"
+ext_if2 = "fxp1"
+ext_gw1 = "68.146.224.1"
+ext_gw2 = "142.59.76.1"
+
+#  nat buitengaande verbindingen op elke internet interface
+nat on $ext_if1 from $lan_net to any -&gt; ($ext_if1)
+nat on $ext_if2 from $lan_net to any -&gt; ($ext_if2)
+
+#  default deny
+block in  from any to any
+block out from any to any
+
+#  laat alle buitengaande pakketten door op interne interface
+pass out on $int_if from any to $lan_net
+#  pass in quick pakketten bestemd voor de gateway zelf
+pass in quick on $int_if from $lan_net to $int_if
+#  load balance buitengaand tcp verkeer vanaf intern netwerk
+pass in on $int_if route-to \
+    { ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) } round-robin \
+    proto tcp from $lan_net to any flags S/SA modulate state
+#  load balance buitengaand udp en icmp verkeer vanaf intern netwerk
+pass in on $int_if route-to \
+    { ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) } round-robin \
+    proto { udp, icmp } from $lan_net to any keep state
+
+#  algemene "pass out" regels voor externe interfaces
+pass out on $ext_if1 proto tcp from any to any flags S/SA modulate state
+pass out on $ext_if1 proto { udp, icmp } from any to any keep state
+pass out on $ext_if2 proto tcp from any to any flags S/SA modulate state
+pass out on $ext_if2 proto { udp, icmp } from any to any keep state
+
+#  routeer pakketten van gelijk welke IPs op $ext_if1 naar $ext_gw1 en
+#  hetzelfde voor $ext_if2 en $ext_gw2
+pass out on $ext_if1 route-to ($ext_if2 $ext_gw2) from $ext_if2 to any 
+pass out on $ext_if2 route-to ($ext_if1 $ext_gw1) from $ext_if1 to any 
+</pre>
+</td></tr>
+</table>
+
+<p>
+[<a href="queueing.html">Vorige: Packet Queueing en Prioritisering</a>]
+[<a href="index.html">Inhoud</a>]
+[<a href="tagging.html">Volgende: Pakketmarkering</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[terug]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+Originally [OpenBSD: pools.html,v 1.14 ]<br>
+$Translation: pools.html,v 1.1 2005/02/20 00:54:28 smestdag Exp $<br>
+$OpenBSD: pools.html,v 1.1 2005/02/21 12:39:53 saad Exp $
+</small>
+
+</body>
+</html> 
