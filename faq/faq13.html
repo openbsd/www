@@ -23,15 +23,16 @@
 
 <p>
 <Font size="-1">
-This document borrows large pieces from:
+Portions of this document were taken from:
 <UL>
+<LI><A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=ipsec&sektion=4&format=html">ipsec(4)</a>
+<LI><A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=vpn&sektion=8&format=html">vpn(8)</a>
 <LI><A HREF="http://www.freebsd.org/~julian/IPSEC_4_Dummies.html">IPSec for Dummies</a> by Julian Elischer
-<LI><A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=ipsec&sektion=4&format=html">ipsec(4)</a> by Niels Provos, and several other people from the OpenBSD team
-<LI><A HREF="http://www.secureops.com/resources/vpn/">Secureops VPN</a>
+<LI><A HREF="http://www.secureops.com/resources/vpn/">ISAKMP Howto</a> by Patrick Ethier
+<LI><A HREF="http://hem.passagen.se/hojg/isakmpd/">X.509v3 certificates with isakmpd</a> by Jörgen Granstam
 </UL>
-Thanks, folks!
 </font>
-<p>
+<P>
 <h1>13.0 - Using IPSec (IP Security Protocol)</h1>
 <UL>
 <LI><A HREF="#13.1">13.1 - What is IPSec?</a>
@@ -40,11 +41,12 @@ Thanks, folks!
 <LI><A HREF="#13.4">13.4 - On the wire format</a>
 <LI><A HREF="#13.5">13.5 - Configuring IPSec</a>
 <LI><A HREF="#13.6">13.6 - How do I setup IPSec with manual keying?</a>
-<LI><A HREF="#13.7">13.7 - How do I setup IPSec with photurisd?</a>
-<LI><A HREF="#13.8">13.8 - How do I setup IPSec with isakmpd?</a>
-<LI><A HREF="#13.9">13.9 - What IKE clients are compatible with isakmpd?</a>
-<LI><A HREF="#13.10">13.10 - Troubleshooting IPSec/VPN</a>
-<LI><A HREF="#13.11">13.11 - Related Documentation</a>
+<LI><A HREF="#13.7">13.7 - How do I setup photurisd?</a>
+<LI><A HREF="#13.8">13.8 - How do I setup isakmpd?</a>
+<LI><A HREF="#13.9">13.9 - How do I use isakmpd with X.509 certificates?</a>
+<LI><A HREF="#13.10">13.10 - What IKE clients are compatible with isakmpd?</a>
+<LI><A HREF="#13.11">13.11 - Troubleshooting IPSec/VPN</a>
+<LI><A HREF="#13.12">13.12 - Related Documentation</a>
 </UL>
 <p>
 <a name= "13.1">
@@ -355,11 +357,34 @@ There is a nice sysctl to enable these protocols.
 net.inet.esp.enable: 0 -> 1<br>
 # <b>sysctl -w net.inet.ah.enable=1</b><br>
 net.inet.ah.enable: 0 -> 1
-</ul></tt>
+</tt></ul>
+If you are using OpenBSD-current, 
+<ul><tt>
+# <b>sysctl -w net.inet.ip.ipsec-acl = 1</b>
+</tt></ul>
 You can edit <tt>/etc/sysctl.conf</tt> to turn these on at boot time.
 You need to remove the # mark from in front of net.inet.esp.enable and/or
 net.inet.ah.enable
 (depending on which you plan to use) and make sure they are set to 1.
+<P>
+You also need to generate your manual keys.
+Since the security of the VPN is based on these keys being unguessable,
+it is very important that the keys be chosen using a strong random
+source.  One practical method of generating them is by using the
+<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=random&sektion=4&format=html">random(4)</a>
+device.  To produce 160 bits of randomness, for example, do:
+<UL><tt>
+# <b>dd if=/dev/urandom bs=1024 count=1 | sha1</b>
+</TT></UL>
+The number of bits produced is important.  Different cipher types may require different sized keys.
+<PRE>
+Cipher    Key Length
+DES       56 bits
+3DES      168 bits
+BLF       Variable (160 bits recommended)
+CAST      Variable (160 bits recommended)
+SKIPJACK  80 bits
+</PRE>
 <P>
 Now, you need to setup SAs, or Security Associations.
 A Security Association is a combination of your IP addresses, an SPI, and
@@ -371,7 +396,7 @@ Index, is a number that OpenBSD uses to classify different SAs.
 authentication of the contained encrypted data, but does not authenticate
 the surrounding IP header, as AH would.  This "limited authentication"
 is nevertheless quite sufficient in most cases, especially for ESP in a
-tunnel environment.</i>
+tunnel environment.</I>
 <P>
 <ul>
 <tt>
@@ -383,44 +408,40 @@ tunnel environment.</i>
 Let's put this into practice with two routers, 192.168.5.1 and 192.168.25.9.
 <P>
 On Host 192.168.5.1:
-<ul>
-<tt>
+<UL>
+<TT>
 # <b>ipsecadm new esp -spi 1000 -src 192.168.5.1 -dst 192.168.25.9 -forcetunnel -enc blf -auth sha1 -key 7762d8707255d974168cbb1d274f8bed4cbd3364 -authkey 6a20367e21c66e5a40739db293cf2ef2a4e6659f</b><BR>
 # <b>ipsecadm new esp -spi 1001 -dst 192.168.5.1 -src 192.168.25.9 -forcetunnel -enc blf -auth sha1 -key 7762d8707255d974168cbb1d274f8bed4cbd3364 -authkey 6a20367e21c66e5a40739db293cf2ef2a4e6659f</b>
-</tt>
-</ul>
+</TT>
+</UL>
 On Host 192.168.25.9:
 <UL>
-<tt>
+<TT>
 # <b>ipsecadm new esp -spi 1001 -src 192.168.25.9 -dst 192.168.5.1 -forcetunnel -enc blf -auth sha1 -key 7762d8707255d974168cbb1d274f8bed4cbd3364 -authkey 6a20367e21c66e5a40739db293cf2ef2a4e6659f</b><BR>
 # <b>ipsecadm new esp -spi 1000 -dst 192.168.25.9 -src 192.168.5.1 -forcetunnel -enc blf -auth sha1 -key 7762d8707255d974168cbb1d274f8bed4cbd3364 -authkey 6a20367e21c66e5a40739db293cf2ef2a4e6659f</b>
 </TT>
-</ul>
+</UL>
 <P>
 Notice that the SPIs are different.  See <A HREF="#13.4">On the wire format</a> for a complete description of what the SPI is and where it is used.
 <P>
 Now that you have your Security Associations in place,
 set up your flows.
 <P>
-Note that, with the -local option, ipsecadm will actually create two flows,
-one with the source address set to 0.0.0.0/32, which handles packets
-originating from the gateway.
-<P>
 On 192.168.5.1:<P>
-So, right here, <b>two</b> flows will be created, one with 0.0.0.0/32 as the
+So, right here, <b>two</b> flows will be created, one the local
 source address, which covers all packets originating from the local host
 to the destination, as well as a flow from the destination back to the local
 host.
 <ul>
 <tt>
 # <b>ipsecadm flow -proto esp -dst 192.168.25.9 -spi 1000
--addr 192.168.5.1 255.255.255.255 192.168.25.9 255.255.255.255 -local</b>
+-addr 192.168.5.1 255.255.255.255 192.168.25.9 255.255.255.255</b>
 </tt></ul>
 On 192.168.25.9:
 <ul>
 <tt>
 # <b>ipsecadm flow -proto esp -dst 192.168.5.1 -spi 1001
--addr 192.168.25.9 255.255.255.255 192.168.5.1 255.255.255.255 -local</b>
+-addr 192.168.25.9 255.255.255.255 192.168.5.1 255.255.255.255</b>
 </tt></ul>
 <P>
 If you want less overhead on your Host-to-Host VPNs, creating the SPI
@@ -450,7 +471,7 @@ First, set up the security associations (SAs):<BR>
 </ul></tt>
 Next, setup a flow from 208.1.1.1 to 208.2.2.2
 <ul><tt>
-# <b>ipsecadm flow -proto esp -dst 208.2.2.2 -spi 1001 -addr 208.1.1.1 255.255.255.255 208.2.2.2 255.255.255.255 -local</b><br>
+# <b>ipsecadm flow -proto esp -dst 208.2.2.2 -spi 1001 -addr 208.1.1.1 255.255.255.255 208.2.2.2 255.255.255.255</b><br>
 </ul></tt>
 Next, setup a flow from 208.1.2.0/24, which is behind 208.2.2.2, to 192.168.99.0/24
 <ul><tt>
@@ -462,11 +483,11 @@ Next, setup a flow from 208.1.5.0/24, which is behind 208.2.2.2, to 192.168.99.0
 </ul></tt>
 Now, setup a flow from 208.1.2.0/24, which is behind 208.2.2.2 to the router 208.1.1.1.
 <ul><tT>
-# <b>ipsecadm flow -proto esp -dst 208.2.2.2 -spi 1001 -addr 208.1.1.1 255.255.255.255 208.1.2.0 255.255.255.0 -local</b><br>
+# <b>ipsecadm flow -proto esp -dst 208.2.2.2 -spi 1001 -addr 208.1.1.1 255.255.255.255 208.1.2.0 255.255.255.0</b><br>
 </ul></tt>
 OK, setup a flow from 208.1.5.0/24, which is behind 208.2.2.2, to the router 208.1.1.1
 <ul><tt>
-# <b>ipsecadm flow -proto esp -dst 208.2.2.2 -spi 1001 -addr 208.1.1.1 255.255.255.255 208.1.5.0 255.255.255.0 -local</b><br>
+# <b>ipsecadm flow -proto esp -dst 208.2.2.2 -spi 1001 -addr 208.1.1.1 255.255.255.255 208.1.5.0 255.255.255.0</b><br>
 </ul></tt>
 Finally, setup a flow from the router 208.2.2.2 to 192.168.99.0/24
 <ul><tt>
@@ -482,7 +503,7 @@ Same as before, we setup the SAs...
 Now, this is the reverse side...
 Setup a flow from the router 208.2.2.2 to 208.1.1.1
 <ul><tt>
-# <b>ipsecadm flow -proto esp -dst 208.1.1.1 -spi 1000 -addr 208.2.2.2 255.255.255.255 208.1.1.1 255.255.255.255 -local</b><br>
+# <b>ipsecadm flow -proto esp -dst 208.1.1.1 -spi 1000 -addr 208.2.2.2 255.255.255.255 208.1.1.1 255.255.255.255</b><br>
 </ul></tt>
 Setup a flow from the network 192.168.99.0/24, which is behind 208.1.1.1, to 208.1.2.0/24
 <ul><tT>
@@ -494,14 +515,14 @@ Setup a flow from the network 192.168.99.0/24, which is behind 208.1.1.1, to 208
 </ul></tt>
 Now, setup a flow from 192.169.99.0/24, which is behind 208.1.1.1, to the router 208.2.2.2
 <ul><tt>
-# <b>ipsecadm flow -proto esp -dst 208.1.1.1 -spi 1000 -addr 208.2.2.2 255.255.255.255 192.168.99.0 255.255.255.0 -local</b><br>
+# <b>ipsecadm flow -proto esp -dst 208.1.1.1 -spi 1000 -addr 208.2.2.2 255.255.255.255 192.168.99.0 255.255.255.0</b><br>
 </ul></tt>
 We're almost done...
 Two flows left to get 208.1.2.0/24 and 208.1.5.0/24 from the router 208.2.2.2
 to the router 208.1.1.1.
 <ul><tt>
-# <b>ipsecadm flow -proto esp -dst 208.1.1.1 -spi 1000 -addr 208.1.2.0 255.255.255.0 208.2.2.2 255.255.255.255</b><br>
-# <b>ipsecadm flow -proto esp -dst 208.1.1.1 -spi 1000 -addr 208.1.5.0 255.255.255.0 208.2.2.2 255.255.255.255</b><br>
+# <b>ipsecadm flow -proto esp -dst 208.1.1.1 -spi 1000 -addr 208.1.2.0 255.255.255.0 208.2.2.2 255.255.255.255 -ingress</b><br>
+# <b>ipsecadm flow -proto esp -dst 208.1.1.1 -spi 1000 -addr 208.1.5.0 255.255.255.0 208.2.2.2 255.255.255.255 -ingress</b><br>
 </ul></tt>
 <P>
 If you have been using ipsecadm, and you want to get rid of any work
@@ -512,7 +533,7 @@ that you've done, and start from scratch, do
 This will flush all IPSec info (SPIs, flows, routing entries) from your system.
 <P>
 <a name="13.7">
-<h1>13.7 - How do I setup IPSec with photurisd?</h1>
+<h1>13.7 - How do I setup photurisd?</h1>
 </a>
 <P>
 Photuris is not widely used and is still considered experimental
@@ -560,7 +581,7 @@ bsd# <b>tcpdump host remote.host</b>
 You can make photurisd automatically set the source and destination
 host or networks in /etc/photuris/photuris.startup
 
-<P> <a name="13.8"> <h1>13.8 - How do I setup IPSec with isakmpd?</h1>
+<P> <a name="13.8"> <h1>13.8 - How do I setup isakmpd?</h1>
 </a> <P>If you are thinking about VPNs or other traditional applications
 of IPSec, you probably are going to use ISAKMP.  Some commercial
 implementations of IPSec do not provide any manual keying ability, instead
@@ -622,6 +643,9 @@ to /etc/isakmpd.policy.  Copy <i>VPN-east.conf</i> to /etc/isakmpd/isakmpd.conf.
 Here we attempt to show you how to setup a VPN (tunnel).  If you want to
 use isakmpd between single hosts, there are other configuration files in
 the <i>samples</i> directory.
+The manual pages have detailed information..  Don't forget
+<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd.conf&sektion=5">isakmpd.conf(5)</a> and 
+<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd.policy&sektion=5">isakmpd.policy(5)</a>.
 
 <P>
 Your first step is to turn on esp.  The <A HREF="#13.6" TARGET="_blank">top
@@ -634,48 +658,50 @@ want to allow data signed with certain digital certificates or using a certain e
 allow anybody to access IPSec.  This is only recommended for testing.
 To do this, edit your policy file to contain only the following lines:
 <BR>
-<PRE>
+<UL><PRE>
 KeyNote-Version: 2
 Authorizer: "POLICY"
-</PRE>
+</PRE></UL>
 <P>
 The same policy file contains two lines that start with the $ character.
 You need to remove these lines before using it, they are only for cvs.  
 <P>
 A more useful policy file for this example looks like this:
-<BR><PRE>
+<BR><UL><PRE>
 KeyNote-Version: 2
 Comment: This policy accepts ESP SAs from a remote that uses the right password
 Authorizer: "POLICY"
-Licensees: "mekmitasdigoat"
+Licensees: "passphrase:mekmitasdigoat"
 Conditions: app_domain == "IPSec policy" &&
             esp_present == "yes" -> "true"; 
-</pre>
-This should be identical to the policy file included with OpenBSD 2.6.
+</pre></UL>
+This is newer then the policy file included with OpenBSD 2.6.
+2.6 users should attempt to compile a current keynote library.
+Or, you can remove "passphrase" from the above Licensees line.
 <P>
 Implementing this will give you a basic VPN (tunnel) using ESP only.
 On host A, edit /etc/isakmpd/isakmpd.conf.  The 249.2.2.2 sample IP address
 should be replaced with the external IP address of host A.
 
-<PRE>
+<UL><PRE>
 [General] 
 Retransmits=		5
 Exchange-max-time=	120
 Listen-on=		249.2.2.2
-</PRE>
+</PRE></UL>
 
 Do similar for isakmpd.conf on host B.  249.3.3.3 represents the
 external IP address for host B.
 
-<PRE>
+<UL><PRE>
 [General]
 Retransmits=		5
 Exchange-max-time=	120
 Listen-on=		249.3.3.3
-</PRE>
+</PRE></UL>
 
 <p>This is where you can setup the variables that will affect the main behaviour of isakmpd. It is okay to 
-use the defaults here.<br>
+use the defaults here.
 The <b>Listen-on</b>= value specifies the IP 
 that isakmpd should listen on. Only the Internet IP of your gateway is necessary.
 If you have multiple external interfaces on your gateway, 
@@ -683,35 +709,35 @@ you could list which interfaces you want to listening on by entering them using 
 <P>
 Next, on host A, edit isakmpd.conf again.
 
-<PRE>
+<UL><PRE>
 [Phase 1]
 249.3.3.3=		HostB
-</PRE>
+</PRE></UL>
 
 On host B:
 
-<PRE>
+<UL><PRE>
 [Phase 1]
 249.2.2.2=		HostA
-</PRE>
+</PRE></UL>
 
 <p>This section describes the IP addresses to accept in order to negotiate the phase 1 connection. 
 Its value points to the section below (Remember that phase 1 simply 
 authenticates the remote peer to make sure they are who they say they are). You can list multiple peers with additional lines in the format of
-IP_Address=<i> &lt;PEER-NAME&gt;.</i><br>
+IP_Address=<i> &lt;PEER-NAME&gt;.</i>
 <p>
 Next, on host A:
-<PRE>
+<UL><PRE>
 [Phase 2]
 Connections=		HostA-HostB
-</PRE>
+</PRE></UL>
 
 On host B:
 
-<PRE>
+<UL><PRE>
 [Phase 2]
 Connections=		HostB-HostA
-</PRE>
+</PRE></UL>
 
 <p>This describes Phase 2 of the connection. This is the phase that determines what protocols the two 
 peers will use to communicate.
@@ -727,7 +753,7 @@ to a section describing a generic entry that will be referenced by any
 incoming IP that is not listed in the <b>Connections</b>= tag.
 <P>
 On host A:
-<PRE>
+<UL><PRE>
 [HostB]
 Phase=			1
 Transport=		udp
@@ -736,11 +762,11 @@ Address=		249.3.3.3
 Configuration=		Default-main-mode
 Authentication=		mekmitasdigoat
 #Flags=
-</PRE>
+</PRE></UL>
 
 On host B:
 
-<PRE>
+<UL><PRE>
 [HostA]
 Phase=			1
 Transport=		udp
@@ -749,73 +775,73 @@ Address=		249.2.2.2
 Configuration=		Default-main-mode
 Authentication=		mekmitasdigoat
 #Flags=
-</PRE>
+</PRE></UL>
 
 These represent the sections referred to by the Phase 1 section above. They each 
 describe the requirements that the peer gateway must fulfil in order to proceed to Phase 2. There are 
-many other options here but the ones mentioned above are the minimum requirements.<br>
+many other options here but the ones mentioned above are the minimum requirements.
 <b>Phase=1 </b>is required because the ISAKMPD code uses the same procedures to process Phase 1 and 
-Phase 2. It must be <b>1</b> or nothing will work.<br>
+Phase 2. It must be <b>1</b> or nothing will work.
 <b>Transport= </b>is gives you different possibilities for different peers. It's 
-suggested that udp be used here so we'll leave it at that.<br>
+suggested that udp be used here so we'll leave it at that.
 Please note that some peers may be behind a firewall that doesn't let UDP traffic through.  Obviously, this needs to be determined before setup.
 <b>Local-address </b>is the destination address that the incoming packets point to. In some cases, you 
 can be listening on different Interfaces for Phase 1 connections.
 In this example, there is only 1 interface listening, therefore this is the IP of the listening 
-interface on this peer.<br>
+interface on this peer.
 <b>Address= </b>is the address that points to the source IP of the incoming packets. This usually points 
 to the peer gateway. 
 This needs further explanation, because the source IP address of the peer may be unknown!
 <b>Configuration= </b>points to the section below. You can specify 
 multiple sections like this. We use the default one 
-specified by the sample file.<br>
+specified by the sample file.
 <b>Authentication=</b> is the pre-shared secret to be used for this particular peer. It is more or less 
 a passphrase that each peer uses. This passphrase gets passed to policy to verify whether this 
 peer is allowed to use IPSEC with this host. If you change this phrase, you must also change it in the 
 policy file because the sample file provides for this passphrase. If you decided to go with a 
-minimum policy file then you can specify whatever you want here.<br>
+minimum policy file then you can specify whatever you want here.
 <b>Flags=</b> is not currently being used. The RFCs leave room for extra options to be specified for 
-phase 1.<br>
+phase 1.
 There are other tags here that will allow for other options to be set. Refer to 
 <A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd.conf&apropos=0&sektion=5&format=html">isakmpd.conf(5)</a>
 for descriptions.
 <P>
 On Host A:
-<PRE>
+<UL><PRE>
 [HostA-HostB]
 Phase=			2
 ISAKMP-peer=		HostB
 Configuration=		Default-quick-mode
 Local-ID=		Net-A
 Remote-ID=		Net-B
-</PRE>
+</PRE></UL>
 
 On Host B:
-<PRE>
+<UL><PRE>
 [HostB-HostA]
 Phase=			2
 ISAKMP-peer=		HostA
 Configuration=		Default-quick-mode
 Local-ID=		Net-B
 Remote-ID=		Net-A
-</PRE>
+</PRE></UL>
 
 <p>These represent the sections referred to by the Phase 2 section above. They are the 
 individual settings that ISAKMPD must use to talk between the two gateways for the particular 
 connection.
 <b>Phase=2</b> is required because ISAKMPD code uses the same functions to authenticate Phase 1 and Phase 
-2. This is required for the VPN to work.<br>
+2. This is required for the VPN to work.
 <b>ISAKMPD-Peer=</b> is the name of Host section above. This means that we are 
 talking to that particular peer to establish a Phase 2 connection. This is provided because you can have 
 multiple sections to describe isakmp peers and connections.
 <b>Configuration=</b> refers to the section below that describes the 
-standards by which this host and the particular peer for this connection must abide.<br>
+standards by which this host and the particular peer for this connection must abide.
 <b>Local-ID=</b> refers to an IPSec-ID section below that describes our Private Network to 
 the peer gateway. This is the portion that is passed so that the other gateway can set up the proper 
-routing table that will transfer data over the VPN to our network.<br>
+routing table that will transfer data over the VPN to our network.
 <b>Remote-ID=</b> refers to an IPSec-ID section below that describes what is supposed to be 
 the remote Private Network to our host. This portion is interpreted to set up the proper routing tables 
-that will transfer data from our Private Network over the VPN to the remote Private Network.<br>
+that will transfer data from our Private Network over the VPN to the remote Private Network.
 There is another tag that is supported here called Flags=. If you require this tag, read 
 <A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd.conf&apropos=0&sektion=5&format=html">isakmpd.conf(5)</a>.
 <P>
@@ -823,7 +849,7 @@ This is the IPSec-ID section.  These entries need to exist
 in the isakmpd.conf files for both Host A and Host B.  This example
 will setup 192.168.1.0/255.255.255.0 for Host A (which was connected
 to Net-A above) and 192.168.20.0/255.255.255.0 for Host B (Net-B above).
-<PRE>
+<UL><PRE>
 [Net-A]
 ID-type=		IPV4_ADDR_SUBNET
 Network=		192.168.1.0
@@ -833,26 +859,26 @@ Netmask=		255.255.255.0
 ID-type=		IPV4_ADDR_SUBNET
 Network=		192.168.20.0
 Netmask=		255.255.255.0
-</PRE>
+</PRE></UL>
 
 <p>These two sections are in the <b>conf</b> file of each host. They are the sections referenced by the 
 <b>Local-ID</b> and <b>Remote-ID</b> identifiers. They describe the 
-routes that should be set up to allow traffic from one private network to another.<br>
+routes that should be set up to allow traffic from one private network to another.
 <b>ID-type</b>= can be <b>IPV4_ADDR_SUBNET</b> or <b>IPV4_ADDR</b> (RFC2708 mentions more possible values. Currently only IPv4 is supported in the OpenBSD 2.6 implementation.  IPv6 may be supported in OpenBSD-current. )
  
 <P>
 Now, on both hosts, the sample file should read:
-<PRE>
+<UL><PRE>
 [Default-main-mode]
 DOI=			IPSEC
 EXCHANGE_TYPE=		ID_PROT
 Transforms=		3DES-SHA
-</PRE>
+</PRE></UL>
 
 This section describes the requirements for the encryption methods of Phase 1 connections. The name 
 reflects the value of <i>Configuration=</i> variable.  As we can see here, we are stating our 
 Domain of Interest which is IPSEC. The <b>EXCHANGE_TYPE</b> variable is set to <b>ID_PROT</b> for Phase 1, 
-which identifies the protocols to be covered by this Authentication.<br>
+which identifies the protocols to be covered by this Authentication.
 <b>Transforms=</b> is the transform required (or assigned) for this exchange. In this case, this points to 
 the section below in the configuration file that says we are receiving a packet 
 encrypted with 3DES and a checksum verifiable with SHA. There are a bunch of different transforms defined 
@@ -860,19 +886,19 @@ inside the sample <b>VPN-east.conf</b>. These are provided because 3DES and SHA 
 across different platforms. For OpenBSD there should be no reason to change this for a basic setup. Feel 
 free to create multiples of this section and change the transform. The only requirement is that you change  the Configuration= variable.
 
-<PRE>
+<UL><PRE>
 [Default-quick-mode]
 DOI=			IPSEC
 EXCHANGE_TYPE=		QUICK_MODE
 Suites=			QM-ESP-3DES-SHA-PFS-SUITE,QM-ESP-DES-MD5-PFS-SUITE
-</PRE>
+</PRE></UL>
 
 <p>This section describes the requirements for the encryption of the data to be sent through the VPN and 
 is referred to by <i>Configuration</i> above. Note the difference between this 
 section and the Phase 1 equivalent just above is that the <b>EXCHANGE_TYPE</b> is <b>QUICK_MODE</b>. 
-This is always the case for Phase 2.<br>
+This is always the case for Phase 2.
 <b>Suites=</b> points to a IPSec Suite section describing the different encryption 
-schemes available between the two hosts.<br>
+schemes available between the two hosts.
 There is much more to be said about ISAKMP and IPSec. By using the above basic descriptions you should 
 be able to create a simple but solid VPN that cares and feeds itself.
 This is the bare <i>minimum</i> 
@@ -880,15 +906,835 @@ This is the bare <i>minimum</i>
  
 <h3>13.8.3 - Starting isakmpd</h3>
 You may wish to use
-<b>$ isakmpd -d -DA=99</b><br>
+<P>
+<ul>
+<tt># <b>isakmpd -d -DA=99</b></tt>
+</ul>
+<P>
 the first time you decide to run this daemon. The daemon will not be running in daemon mode but as a 
 regular process. It will log everything to your terminal.  To stop isakmpd
 and flush the routes, you need to kill the isakmpd process on each node,
 and run <b>ipsecadm flush</b>.
 
+<P> <a name="13.9"> <h1>13.9 - How do I use isakmpd with X.509 certificates?</h1>
+</a>
 <P>
-<a name= "13.9">
-<h1>13.9 - What IKE clients are compatible with isakmpd?</h1>
+X.509v3 certificates work with <i>OpenBSD-current's</i> isakmpd.  This feature
+is not functional in the OpenBSD 2.6 release.  Users who want to use this
+technology are encouraged to test <A HREF="/ftp.html">snapshots</a>.  
+Alternately, you can manually upgrade to an RSA-enabled libcrypto, current
+libkeynote and isakmpd.  No attempt has been made to make these
+instructions compatible with OpenBSD 2.6.
+<P>
+Setting up isakmpd to use certificates instead of pre-shared keys is not really that much harder in a big network with many untrusted peers then it would
+be with a small network.  It may actually simplify configuration, and more
+importantly, key management.
+<P>
+
+<h2>Generating certificates.</h2>
+
+There is a good description of how to generate keys and certificates
+in the
+<A HREF="http://www.openbsd.org/cgi-bin/cvsweb/src/sbin/isakmpd/README.PKI?rev=1.7">README.PKI</a>
+ file in the isakmpd source directory.  You need to
+have a CA key, a corresponding CA X.509 certificate, one private key
+for each computer on the network that will use isakmpd and one X.509
+certificate for each such key.
+<p>
+The X.509 certificates need to have a Subject Alternative Name
+(SubjectAltName) extension describing the certificate holder.  How to
+set a SubjectAltName extension using certpatch for a certificate is
+also described in README.PKI for the case of setting an IP address as
+the SubjectAltName. Using an IP address here is also the default
+behaviour for isakmpd.
+<p>
+Certpatch also support using either a FQDN (Fully Qualified Domain
+Name) or a UFQDN (User FQDN). An example of an FQDN might be
+<tt>www.openbsd.org</tt>, an example of an UFQDN would be an email
+address. Something like <tt>Jorgen.Granstam@abc.se</tt> for example. 
+<p>
+In this howto document I am going to use FQDNs as
+SubjectAltNames. Using IP addresses would be a bit easier since that
+is the default behaviour of isakmpd but it is not much of a difference 
+as we soon will see. 
+<p>
+To insert an FQDN SubjectAltName into a certificate one would do
+something like this:
+<p>
+<UL><TT>
+$ <b>/usr/sbin/certpatch -t fqdn -i home.mysite.se -k ca.key originalcert.crt newcert.crt</b>
+</TT></UL>
+Here the ca.key is the private key of the CA, thus this can only be
+done by whoever has access to the CA private key. The (fictional) 
+home.mysite.se is the FQDN to be inserted into the certificate. The
+originalcert.crt and newcert.crt filenames may be the same name in
+which case the original file will be overwritten by the new moified
+certificate. 
+<p>
+Put the keys and certificates in the directories as decribed at the
+end of README.PKI. The CA key (ca.key) should be kept in some safe
+place if the keys are really to be seriously used. 
+
+
+<h2>Configuration of isakmpd</h2>
+  
+Lets now look at the /etc/isakmpd/isakmpd.conf configuration file.  It
+was originally taken from the example file in
+<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd.conf&sektion=5">isakmpd.conf(5)</a>
+but have been heavily modified. I will also use a much shorter file
+here than the example file in the man-page, I have removed most parts.
+from that file that is not needed in this setup. In part to simplify
+the understanding of this setup. I have also added some commenting
+(some comments are left as in the isakmpd.conf(5)) and changed some
+names. None of the domain names used here exists as far as I know.
+<p>
+Actually since everyone who reads this already have a working
+configuration for the preshared keys case (see previos section) there won't be
+many surprises in this file. I won't explain this in every detail,
+check isakmpd.conf(5) for descriptions of the parts I don't
+comment on. 
+<p>
+Lets assume our setup looks something like this
+<p>
+
+<center>
+<pre>
+one.mysite.se                                        one.worksite.se
+ 192.168.1.2--+    10.0.0.1====/======10.0.0.2     +--192.168.2.2 
+              |  gw.mysite.se       gw.worksite.se |
+              +--192.168.1.1         192.168.2.1---+
+two.mysite.se |                                    | two.worksite.se
+ 192.168.1.3--+                                    +--192.168.2.3
+</pre>
+</center>
+
+<p>
+That is, two networks that should be connected using an IPSec tunnel over an 
+otherwise insecure network. Ignore the fact that I am using IP
+addresses reserved for private Internets here (RFC1918), I have to use
+something. I wont explain how to use isakmpd in combination with NAT
+or similar (because I haven't tried that myself).
+<p>
+Now, lets look at the configuration file. This is the file for the
+security gateway gw.mysite.se:
+<UL>
+<pre>
+
+# *****************************************************************
+# ************* Start of the gw.mysite.se isakmpd.conf ************
+# *****************************************************************
+
+# A configuration sample for the isakmpd ISAKMP/Oakley (aka IKE) daemon.
+[General]
+Policy-File=            /etc/isakmpd/policy
+Retransmits=            5
+Exchange-max-time=      120
+Listen-on=              10.0.0.1
+
+
+# The name work-gw here is used just as a section name and a tag for
+# use in this configuration file below and need not actually be the 
+# real hostname or domain name of the peer (but it could be). The IP 
+# address however needs to be correct. Phase 1 as you might already
+# know is to negotiate an ISAKMP security association (SA). There 
+# should ofcourse be one IP and name for each peer we want to
+# communicate with.
+[Phase 1]
+10.0.0.2=               work-gw
+
+
+# Now phase 2 is negotiating IPSec SAs. As in phase 1, the name here
+# is a section name to be used later. Actually, it can be a comma
+# separated list of section names here. Thus if traffic from many
+# networks (or individual hosts) should be forwarded through this
+# tunnel, more sectionnames would be added (and ofcourse corresponding 
+# new sections further down). 
+[Phase 2]
+Connections=            work-gw-my-gw
+
+
+# Now, here are some parameters for the ISAKMP SA negotiations. Almost 
+# self documenting. The section name is from [Phase 1] above. The most 
+# interesting tag might be the ID tag. The ID tag is set to the name
+# of the section where the identity information about this host that 
+# will be presented to connecting peers, can be found. If the ID tag 
+# is not available, isakmpd will assume that it will identify itself 
+# using the IP address. You might also notice that there is no longer 
+# any authentication tag here in this configuration. The authentication
+# data is currently used only in the preshared key case. 
+[work-gw]
+Phase=                  1
+Transport=              udp
+Local-address=          10.0.0.1                # Local address
+Address=                10.0.0.2                # Peer address
+ID=                     my-ID
+Configuration=          Default-main-mode
+
+
+# This is the identity data. ID-type may also be IPV4_ADDR (the
+# default), IPV4_ADDR_SUBNET or UFQDN. The Name tag is used for 
+# FQDN and UFQDN, for IPV4_ADDR an Address tag would be used instead.
+# For IPV4_ADDR_SUBNET a Network and a Netmask tag would be used.  
+[my-ID]
+ID-type=                FQDN
+Name=                   gw.mysite.se
+
+
+# This is the section for the IPSec connection. The section name is
+# from the list in the [Phase 2] section above. The ISAKMP-peer is
+# ofcourse the tag of our peer from section [Phase 1] above. The 
+# Local-ID and Remote-ID tags should be section names describing which
+# packages should be forwarded over the IPSec tunnel to the remote 
+# network.
+[work-gw-my-gw]
+Phase=                  2
+ISAKMP-peer=            work-gw
+Configuration=          Default-quick-mode
+Local-ID=               Net-west
+Remote-ID=              Net-east
+
+# Any packet originating from a computer on the network described
+# here... 
+[Net-west]
+ID-type=                IPV4_ADDR_SUBNET
+Network=                192.168.1.0
+Netmask=                255.255.255.0
+
+# ... and with a destination matching the network described here, 
+# will be encrypted and forwarded over the IPSec tunnel to the remote 
+# system. 
+[Net-east]
+ID-type=                IPV4_ADDR_SUBNET
+Network=                192.168.2.0
+Netmask=                255.255.255.0
+
+# Main mode descriptions
+
+
+# Here are the data for main mode. Using DES here for real purposes
+# are not very smart since DES is no longer considered a secure
+# encryption algorithm. 3DES is generally considered to have much better
+# security since it has has enough bits in the key to be considered secure. 
+# Transforms is a list of tags describing main mode transforms. In 
+# this example we have only one.
+[Default-main-mode]
+DOI=                    IPSEC
+EXCHANGE_TYPE=          ID_PROT
+Transforms=             3DES-MD5
+
+
+# Certificates stored in PEM format
+# This is important when using certificates. The CA certificates should 
+# be in the CA-directory (but not the CA private key ofcourse).
+# The Cert-directory should have at least the certificate for the
+# local host but other certificates are also allowed. The private key 
+# should be the private key of the local host. 
+[X509-certificates]
+CA-directory=           /etc/isakmpd/ca/
+Cert-directory=         /etc/isakmpd/certs/
+Private-key=            /etc/isakmpd/private/local.key
+
+# Main mode transforms
+######################
+
+# Here is our main mode transform the important thing here is to use
+# RSA_SIG as authentication method when using certificates. It is the
+# only method supported when using certificates so far. Commercial
+# entities in the US will thus have to wait until September 2000 to
+# use this due to the RSA patent. Luckily, I am not living in the US. 
+# Also important is the GROUP_DESCRIPTION tag. It must match the
+# GROUP_DESCRIPTION tag in the Quick mode transforms further down. 
+# The Life tag here could possibly be modified. The LIFE_60_SECS might 
+# be shorter than necessary for normal use. 
+
+[3DES-MD5]
+ENCRYPTION_ALGORITHM=   3DES_CBC
+HASH_ALGORITHM=         MD5
+AUTHENTICATION_METHOD=  RSA_SIG
+GROUP_DESCRIPTION=      MODP_1024
+Life=                   LIFE_60_SECS,LIFE_1000_KB
+
+# Quick mode description
+########################
+
+[Default-quick-mode]
+DOI=                    IPSEC
+EXCHANGE_TYPE=          QUICK_MODE
+Suites=                 QM-ESP-3DES-MD5-PFS-SUITE
+
+# Quick mode protection suites
+##############################
+# 3DES
+
+[QM-ESP-3DES-MD5-PFS-SUITE]
+Protocols=              QM-ESP-3DES-MD5-PFS
+
+# 3DES
+
+[QM-ESP-3DES-MD5-PFS]
+PROTOCOL_ID=            IPSEC_ESP
+Transforms=             QM-ESP-3DES-MD5-PFS-XF
+
+# Quick mode transforms
+
+# Don't forget. The GROUP_DESCRIPTION must match the GROUP_DESCRIPTION 
+# in main mode above. For forwarding packets between two networks (or
+# from a host to a network, we use TUNNEL mode. Between two hosts we
+# may also use TRANSPORT mode instead. 
+[QM-ESP-3DES-MD5-PFS-XF]
+TRANSFORM_ID=           3DES
+ENCAPSULATION_MODE=     TUNNEL
+AUTHENTICATION_ALGORITHM=       HMAC_MD5
+GROUP_DESCRIPTION=      MODP_1024
+Life=                   LIFE_60_SECS
+
+
+# As we know from the isakmpd.config manpage The LIFE_DURATION here is 
+# an offer value (60), a minimum acceptable value (45) and a maximum
+# acceptable value. The isakmpd.conf example has this set to 
+# 600,450/720 instead. That might be a better value for normal use.
+[LIFE_60_SECS]
+LIFE_TYPE=              SECONDS
+LIFE_DURATION=          60,45:72
+
+[LIFE_1000_KB]
+LIFE_TYPE=              KILOBYTES
+LIFE_DURATION=          1000,768:1536
+
+# *****************************************************************
+# ************* End of the gw.mysite.se isakmpd.conf **************
+# *****************************************************************
+</pre>
+</UL>
+<p>
+So far the configuration for the local system. The remote system is
+configured just the same way only opposite. Thus only the first part
+of the isakmpd.conf file differs. Lets just look at that first part 
+of the isakmpd.conf file for the security gateway gw.worksite.se:
+<p>
+<UL>
+<pre>
+# *****************************************************************
+# ************* Start of the gw.worksite.se isakmpd.conf **********
+# *****************************************************************
+
+[General]
+Policy-File=            /etc/isakmpd/policy
+Retransmits=            5
+Exchange-max-time=      120
+Listen-on=              10.0.0.2
+
+[Phase 1]
+10.0.0.1=               my-gw
+
+[Phase 2]
+Connections=            work-gw-my-gw
+
+[my-gw]
+Phase=                  1
+Transport=              udp
+Local-address=          10.0.0.2                # Local address
+Address=                10.0.0.1                # Peer address
+ID=                     work-ID
+Configuration=          Default-main-mode
+
+[work-ID]
+ID-type=                FQDN
+Name=                   gw.worksite.se
+
+[work-gw-my-gw]
+Phase=                  2
+ISAKMP-peer=            my-gw
+Configuration=          Default-quick-mode
+Local-ID=               Net-east
+Remote-ID=              Net-west
+
+# *****************************************************************
+# ********************** ... to be continued **********************
+# *****************************************************************
+</pre>
+</UL>
+<p>
+Now that wasn't so hard, just a bit boring to read perhaps. A
+slightly more interresting part next.
+<p>
+
+
+<h2>The policy file.</h2>
+
+Actually, the policy file might slightly confusing for anyone who has
+not used it before, especially if things doesn't work as expected. The man-page
+<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd.policy&sektion=5">isakmpd.policy(5)</a>
+is not really that bad. It might perhaps be a
+little bit unclear in some parts but generally it's good. 
+<p>
+The simplest possible working policy file would containg just a
+single line:
+<p>
+<UL>
+<pre>
+authorizer: "POLICY"
+</pre>
+</UL>
+<p>
+This basically means that that there is no policy limitations on who
+would be allowed to connect. Thus not a very secure setup. The
+authorizer tag here means the one who has the authorization to decide
+the policy. The special authorizer "POLICY" has the ultimate and
+unlimited authority on policy. Any other authorizer must first be
+authorized by "POLICY" to have any authority here.
+<p>
+There can also be a set of conditions for what is allowed. The
+following policy thus would mean that only someone using the ESP
+protocol with some real encryption would be authorized (oh well,
+someone using DES would also be authorized here although DES could
+almost be considered snakeoil today, it is left as an excercise for the
+reader to change this policy into not allowing DES either). Note
+that anyone who does encrypts with ESP would still be allowed.
+<p>
+<UL>
+<pre>
+authorizer: "POLICY"
+conditions: app_domain == "IPsec policy" &&
+            esp_present == "yes" &&
+            esp_enc_alg != "null" -> "true";
+
+</pre>
+</UL>
+<p>
+It is also possible to "sublicense" authority to someone else (might
+be one or more entities). The simple case would be the preshared key
+case. In that case, anyone who knows the preshared passphrase is
+authorized. Thus:
+<p>
+<UL>
+<pre>
+authorizer: "POLICY"
+licensees:  "passphrase:something really secret"
+conditions: app_domain == "IPsec policy" &&
+            esp_present == "yes" &&
+            esp_enc_alg != "null" -> "true";
+</pre>
+</UL>
+<p>
+This would authorize anyone who knows this passphrase to connect and
+comply with the conditions (but remember that the passphrase must also
+be set in the Authentication tag in isakmpd.conf).
+<p>
+Nothing difficult so far. Now to the interesting stuff. First there
+can be many licensees, although all must be authorized by "POLICY". 
+Further, authorized licencees can sublicense to other licensees. A
+licensee can be just a string in case it is further described in the
+policy file:
+<p>
+<UL>
+<pre>
+authorizer: "POLICY"
+licensees:  "subpolicyAH" ||  "subpolicyESP"
+conditions: app_domain == "IPsec policy" -> "true";
+
+authorizer: "subpolicyESP" 
+licensees:  "passphrase:something more secret"
+conditions: esp_present == "yes" -> "true";
+
+authorizer: "subpolicyAH" 
+licensees:  "passphrase:something really secret"
+conditions: ah_present == "yes" -> "true";
+</pre>
+</UL>
+<p>
+And now to what everyone has been waiting for. Policy can also be
+sublicensed or delegated to a key. In this case it is usually a
+X.509 certificate. The simples use of certificates would be to use
+them like the passphrases. Just insert individual users certificates
+in the policy file:
+<p>
+<UL>
+<pre>
+keynote-version: 2
+comment: This is an example of a policy delegating to a key.
+authorizer: "POLICY"
+licensees: "x509-base64:\
+        MIIBsTCCARoCAQAwDQYJKoZIhvcNAQEEBQAwITELMAkGA1UEBhMCc2UxEjAQBgNV\
+        BAMTCUlLRUxBQiBDQTAeFw0wMDAxMjgxNzQyMTZaFw0wMTAxMjcxNzQyMTZaMCEx\
+        CzA           This is would be a user certificate           AQEB\
+        BQA                                                         IUuz\
+        eOW8P5UGJUH2JVkiA2CTDryFf0CHYwd2P003dtVYw5RvET7XLMpRZiCcWtBdxneW\
+        ct+016zUBP/cQMMl+KownxAUq9ezA8GvTyUWC97SOMOgoVj/QR3FHmEjpUi3AgMB\
+        AAEwDQYJKoZIhvcNAQEEBQADgYEALGShaAxHvGncev0iFnKrJI4x5T4vlaMP1ad+\
+        iWLV5q9H3wickVGN0NPerq0YLwx/VA9WaecYN8V+ALtNKYPuDiT11zwvE8GQeaai\
+        NuzgmQ9hh3GifEgN9VEiC3j4kTytonKr0Q+vTLM7xYzheOxvrtUErRwZ9Xs1KzHe\
+        yiXHSU8="
+conditions: app_domain == "IPsec policy" &&
+            esp_present == "yes" &&
+            esp_enc_alg != "null" -> "true";
+</pre>
+</UL>
+<p>
+Now, this is obviously a stupid idea if there are a lot of users The
+certificates that isakmpd reads from the CA- and Certificate
+directories, and the certificates received from the peer is converted
+into pseudo credentials. Such certificates converted into pseudo
+credentials essentially would look something like:
+<p>
+<UL>
+<pre>
+
+authorizer: "x509-base64:\
+        MIIBsTCCARoCAQAwDQYJKoZIhvcNAQEEBQAwITELMAkGA1UEBhMCc2UxEjAQBgI2\
+	CzA  This is would be the public key/certificate of the     AQEB\
+        BQA signer of the user certificate (i.e. the CA certificate)IUuz\
+        eOW8P5UGJUH2JVkiA2CTDryFf0CHYwd2P003dtVYw5RvET7XLMpRZiCcWtBdxneW\
+        ct+016zUBP/cQMMl+KownxAUq9ezA8GvTyUWC97SOMOgoVj/QR3FHmEjpUi3AgMB\
+        AAEwDQYJKoZIhvcNAQEEBQADgYEALGShaAxHvGncev0iFnKrJI4x5T4vlaMP1ad+\
+        iWLV5q9H3wickVGN0NPerq0YLwx/VA9WaecYN8V+ALtNKYPuDiT11zwvE8GQeaai\
+        NuzgmQ9hh3GifEgN9VEiC3j4kTytonKr0Q+vTLM7xYzheOxvrtUErRwZ9Xs1KzHe\
+        yiXHSU8="
+licensees:  "x509-base64:\
+        MIIBsTCCARoCAQAwDQYJKoZIhvcNAQEEBQAwITELMAkGA1UEBhMCc2UxEjAQBgNV\
+        BAMTCUlLRUxBQiBDQTAeFw0wMDAxMjgxNzQyMTZaFw0wMTAxMjcxNzQyMTZaMCEx\
+        CzA      This is would be the key of the subject of the     AQEB\
+        BQA                        certificate                      IUuz\
+        eOW8P5UGJUH2JVkiA2CTDryFf0CHYwd2P003dtVYw5RvET7XLMpRZiCcWtBdxneW\
+        ct+016zUBP/cQMMl+KownxAUq9ezA8GvTyUWC97SOMOgoVj/QR3FHmEjpUi3AgMB\
+        AAEwDQYJKoZIhvcNAQEEBQADgYEALGShaAxHvGncev0iFnKrJI4x5T4vlaMP1ad+\
+        iWLV5q9H3wickVGN0NPerq0YLwx/VA9WaecYN8V+ALtNKYPuDiT11zwvE8GQeaai\
+        NuzgmQ9hh3GifEgN9VEiC3j4kTytonKr0Q+vTLM7xYzheOxvrtUErRwZ9Xs1KzHe\
+        yiXHSU8="
+conditions: app_domain == "IPsec policy" -> "true";
+</pre>
+</UL>
+<p>
+Now note that these are not authorized by "POLICY" and thus won't have
+any effect without a policy authorizing them somehow. Further, this
+showed what happens to certificates internally. The above credential
+is thus not seen in the policy file. However, it is possible to
+sublicence to such credentials. Remember sublicensing above. It is
+thus possble to license all certificates that are signed by a certain
+CA by putting the CA certificate as a licensee to "POLICY":
+<p>
+<UL>
+<pre>
+keynote-version: 2
+comment: This is an example of a policy delegating to a key.
+authorizer: "POLICY"
+licensees: "x509-base64:\
+        MIIBsTCCARoCAQAwDQYJKoZIhvcNAQEEBQAwITELMAkGA1UEBhMCc2UxEjAQBgNV\
+        BAMTCUlLRUxBQiBDQTAeFw0wMDAxMjgxNzQyMTZaFw0wMTAxMjcxNzQyMTZaMCEx\
+        CzA               This would be the CA certificate          AQEB\
+        BQA                                                         IUuz\
+        eOW8P5UGJUH2JVkiA2CTDryFf0CHYwd2P003dtVYw5RvET7XLMpRZiCcWtBdxneW\
+        ct+016zUBP/cQMMl+KownxAUq9ezA8GvTyUWC97SOMOgoVj/QR3FHmEjpUi3AgMB\
+        AAEwDQYJKoZIhvcNAQEEBQADgYEALGShaAxHvGncev0iFnKrJI4x5T4vlaMP1ad+\
+        iWLV5q9H3wickVGN0NPerq0YLwx/VA9WaecYN8V+ALtNKYPuDiT11zwvE8GQeaai\
+        NuzgmQ9hh3GifEgN9VEiC3j4kTytonKr0Q+vTLM7xYzheOxvrtUErRwZ9Xs1KzHe\
+        yiXHSU8="
+conditions: app_domain == "IPsec policy" &&
+            esp_present == "yes" &&
+            esp_enc_alg != "null" -> "true";
+</pre>
+</UL>
+<p>
+Thus the above policy is a simple example of a policy that delegates
+to a CA. Thus any user that has a certificate that is signed by the CA
+that has this certificate and otherwise comply to other conditions set
+by the policy and the configuration file would be authorized.
+<p>
+
+<h2>Almost secure...is not secure!</h2>
+
+Now, to be really safe, this is not enough unfortunately. There are
+ways to attack a security gateway that is configured in this way. If
+you really don't want the details, skip a to the next section now. To
+everyone else, lets try to understand why this is not secure. It's
+not hard.
+<p>
+Consider what information one of the isakmpds has access to at this
+stage. From the configuraton file, isakmpd knows which IP-address its
+peer will send from (in the [Phase 1] section). From the information
+it gets at the phase 1 negotiation it knows the ID that the peer
+presents itself with and the certificate it gets from the peer proves
+that the peer really have this ID. Looks fine so far?
+<p>
+Well, if the ID information was the IP (the default situation if we
+do not provide a phase 1 ID section) everything would be fine. The CA
+would have tied the IP to the cert and the IP in the configuration
+would be all information we need. It would be possible for an
+imposter to use the same IP from another computer in some cases
+(i.e. if both computers were on the same local network and the
+computer that usually have this IP is down for some reason). It
+should however not be possible for an imposter to be able to have a
+certificate and a corresponding private key that (falsely) proves
+that this IP belongs to the imposter.
+<p>
+If that ever happened, the imposter have managed to either steal the
+private key from the real owner of the IP, or the imposter has
+managed to fool the CA into issuing a certificate containing false
+information somehow. If any of these things happens, then either the
+private key have not been protected well enough, the CA have failed
+to check the identity of the imposter well enough (or the ID info for
+the cert) or the CA private key has net been well enough protected.
+Since all these are prerequisities for security to work at all, none
+of these situations can be allowed to ever occur.
+
+<p>
+Now, in our example the situation is different. Here we actually have
+an FQDN in the certificate instead of an IP address. Since we still
+have an IP address in the [Phase 1] section this will result in a
+possible security problem. What now would happen during an ISAKMP
+phase 1 negotiation would be that we could check that the peer was
+sending from the expected IP (but as explained earlier that could
+possibly be forged in some situations). We could check that the ID
+our peer presents actually belongs to our peer. But what we can not
+check now is if that ID really is the ID we expect our peer to have,
+because isakmpd have never been told what ID that should be.
+<p>
+Someone now might say that the DNS system ties the IP to the FQDN for
+the host. That is true, however todays DNS system is not secure and
+can in under some circumstances be fooled to give out false
+information (or, it could be subjected to a denial of service (DoS)
+attack by an attacker, and the attackers computer might be able to
+fake the DNS servers answer). Secure DNS will come in the future, but
+it is not here yet (at least most DNS servers are not secure yet),
+thus today, using DNS to check if the FQDN in the cert corresponds to
+the expected IP is no guarantee. In fact isakmpd does not check this
+with DNS. Even if DNS was secure, checking this would not help in the
+case of using an UFQDN.
+<p>
+Thus in the case of having an FQDN as ID, it could be possible for an
+attacker to get an own private key and having this key signed by the
+same CA that we use (but with the attackers own FQDN ofcourse). Then
+launch a DoS attack on our peer so that it goes down (in fact, there
+are some flaws in the ISAKMP protocol itself that possibly could be
+used to launch a remote DoS against the peer an make it go down,
+althoug I don't know how sensitive isakmpd is to those attacks). Then
+the attacker could configure its own computer in the same way as our
+peer, connect it to our peers network and try to connect using its
+own ID, private key and certificate.
+<p>
+Since our own isakmpd has not been informed about what ID to our peer (and it is because the attacker is identically configured as
+our peer besides the certificate, ID and private key). Further our
+isakmpd can check that the certificate was signed by the same CA (but
+most CAs sign lots of certs, a cert might not be hard to get), and that
+the presented ID is the same as the ID in the cert. However it would
+not with the configuration presented so far check that this ID is the
+expected ID. Thus the attacker would be allowed to connect.
+<p>
+
+<h3>Preventing the attack.</h3>
+
+The question now thus is, how can we inform isakmpd about what ID to
+expect? This is fortunately easy, and documented in the
+<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd.policy&sektion=5">isakmpd.policy(5)</a>.
+We must do the check in the policy. Like
+this:
+<p>
+<UL>
+<pre>
+keynote-version: 2
+comment: This is an example of a policy delegating to a key.
+authorizer: "POLICY"
+licensees: "x509-base64:\
+        MIIBsTCCARoCAQAwDQYJKoZIhvcNAQEEBQAwITELMAkGA1UEBhMCc2UxEjAQBgNV\
+        BAMTCUlLRUxBQiBDQTAeFw0wMDAxMjgxNzQyMTZaFw0wMTAxMjcxNzQyMTZaMCEx\
+        CzA               This would be the CA certificate          AQEB\
+        BQA                                                         IUuz\
+        eOW8P5UGJUH2JVkiA2CTDryFf0CHYwd2P003dtVYw5RvET7XLMpRZiCcWtBdxneW\
+        ct+016zUBP/cQMMl+KownxAUq9ezA8GvTyUWC97SOMOgoVj/QR3FHmEjpUi3AgMB\
+        AAEwDQYJKoZIhvcNAQEEBQADgYEALGShaAxHvGncev0iFnKrJI4x5T4vlaMP1ad+\
+        iWLV5q9H3wickVGN0NPerq0YLwx/VA9WaecYN8V+ALtNKYPuDiT11zwvE8GQeaai\
+        NuzgmQ9hh3GifEgN9VEiC3j4kTytonKr0Q+vTLM7xYzheOxvrtUErRwZ9Xs1KzHe\
+        yiXHSU8="
+conditions: app_domain == "IPsec policy" &&
+            esp_present == "yes" &&
+            esp_enc_alg != "null" &&
+            remote_id == "gw.worksite.se" -> "true";
+</pre>
+</UL>
+<p>
+Now only gw.worksite.se should be able to get an IPsec connection.
+More allowed IDs could easily be added by adding more alternative
+remote_id checks, i.e. by having conditions like these in the policy:
+<p>
+<UL>
+<pre>
+conditions: app_domain == "IPsec policy" &&
+            esp_present == "yes" &&
+            esp_enc_alg != "null" &&
+            (remote_id == "gw.worksite.se"  ||
+               remote_id == "gw.whatsite.se") -> "true";
+</pre>
+</UL>
+<p>
+With this policy either of gw.worksite.se, gw.somesite.se or 
+gw.whatsite.se could connect.
+
+<p>
+Some might say that is unfortunate that there has to be entire
+certificates inserted in the policy. It requires some work to
+reformat the certificates into the format in the policy and it makes
+the policy rather unreadable. If someone by mistake replaced a user
+certificate with the corresponding CA certificate somewhere in a
+complex policy it might cause unauthorized users to be allowed to
+connect in some cases and worse, it would not be easily detectable by
+reading through the policy file (since X.509 certificates are not in
+a human readable format). 
+
+<p>
+Now, for the really bleeding edge people out there a solution to this
+problem is available. It is now possible to use the certificate
+Distinguished Name (DN) instead of a certificate in the policy (the
+corresponding certificate must ofcourse be available from the certs
+or ca directories on disk so that isakmpd can find it). With this
+format the policy above might look like something like this instead:
+
+<p>
+<UL>
+<pre>  
+keynote-version: 2
+comment: This is an example of a policy delegating to a key.
+authorizer: "POLICY"
+licensees: "DN:\C=se\CN=IKELAB CA"
+conditions: app_domain == "IPsec policy" &&
+            esp_present == "yes" &&
+            esp_enc_alg != "null" &&
+            (remote_id == "gw.worksite.se"  ||
+             remote_id == "gw.somesite.se"  ||
+             remote_id == "gw.whatsite.se") -> "true";
+</pre>
+</UL>
+<p>
+Much more readable, isn't it? The information about what the exact DN
+for a certificate is can be found by looking at the certificate using
+the openssl utility. Something like:
+<p>
+<UL><tt>
+$ <b>openssl x509 -text < ca.crt</b>
+</tt></UL>
+<p>
+More complicated policy configurations are ofcourse possible but
+this is a start anyway, and there are another example in the next
+section. 
+<p>
+This should provide the necessary information about the certificate in
+ca.crt. Now this is good as long as we have a small or at least
+resonably small policy. It is however still not too great if we have
+a gigantic site with lots of users that should be allowed to connect.
+
+<H2>Multiuser configurations and/or centrally managed authorisation.</h2>
+
+Now, lets look at some really cool features of isakmpd. Previously we
+assumed that the expected peer was well known and had a static IP
+address. This is not always the case. Lots of people use dynamically
+assigned IPs or use many different computers. In other cases (like
+for a server) we might not know for sure who wants to connect. 
+
+<p>
+Therefor one very nice feature of isakmpd is the ability to use a
+default tag instead of an IP in the [Phase 1] section, thus allowing
+isakmpd negotiations from any IP. This might thus look something like
+this:
+<p>
+<UL>
+<pre>
+[phase 1]
+Default=        work-gw
+</pre>
+</UL>
+<p>
+First, it should be said that this configuration might not be secure
+from DoS attacks. As said before, there are some flaws in the
+ISAKMP/IKE protocols. Anyway, using a default [phase 1] section also
+enable us to use a kind of "authorisation certificates" instead.
+<p>
+Consider the case where we have a lot of authorized users but when we
+would not accept just any user.  Like at a company. We would like
+company employees to be allowed to connect but nobody else. Now,
+imagine a big company where there might be thousands of employees. We
+might like them to all be able to connect from any computer (not only
+from within the company network) but everyone should not be allowed to
+do anything. It should now be possible to write a policy like this:
+<P>
+<UL>
+<pre>
+keynote-version: 2
+authorizer: "POLICY"
+licensees: "telnet@work" || "telnet@lab" || "pop3@work" 
+conditions: app_domain == "IPsec policy" &&
+            esp_present == "yes" &&
+            esp_enc_alg != "null" &&
+            remote_id_type == "UFQDN" &&
+            (remote_id == "telnet@worksite.se"  ||
+             remote_id == "pop3@worksite.se"  ||
+             remote_id == "telnet@lab.worksite.se") -> "true";
+
+authorizer: "telnet@work"
+licensees: "DN:\C=se\CN=IKELAB CA"
+conditions: remote_id == "telnet@worksite.se" &&
+            local_filter_type == "IPv4 address" &&
+            local_filter_port == "23" &&
+            local_filter == "192.168.002.003"
+
+authorizer: "telnet@lab"
+licensees: "DN:\C=se\CN=IKELAB CA"
+conditions: remote_id == "telnet@lab.worksite.se" &&
+            local_filter_type == "IPv4 address" &&
+            local_filter_port == "23" &&
+            local_filter == "192.168.002.002" -> "true";
+
+authorizer: "pop3@work"
+licensees: "DN:\C=se\CN=IKELAB CA"
+conditions: local_filter_type == "IPv4 address" &&
+            local_filter_port == "110" &&
+            local_filter == "192.168.002.003" &&
+            remote_id == "telnet@worksite.se" -> "true";
+
+</pre> 
+</UL>
+<p> 
+
+This might not be exactly how it should be. This is as far as I know
+completely untested (in fact, these filter conditions might not work
+at all as I expect). Also, a policy such as this one (in fact any
+with default as peer IP), would require rewrites of the isakmpd.conf
+file too. This would have some security implications too. Further,
+for this kind of connections where anyone should be allowed to
+connect, It would probably be desirable to log the DN of anyone who
+connected. Isakmpd does not yet support that to my knowledge. Also
+this probably could have other security implications.  You are on 
+your own, you have been warned.  The basic idea should be clear anyway.
+
+<p> 
+
+Just in case someone missed the really interesting possibilities this would
+have. If all computers using ISAKMP/IKE this way had a standard set of
+conditions for all services the users might like to use from remote, the CA
+could actually authorize users by just putting the right SubjectAltName
+extensions in their certificates. Further, the expiration time for such
+certificates could be set to expire relatively often although the users
+would be able to download new reissued certificates when their current
+certificate is getting old. If the users misuse their authorizations, just
+stop reissuing the certificates and they wont get in more after it has
+expired. No need to change policy files on all computers just because an
+employee i.e. quits their job. The same scheme should work for other
+purposes than ISAKMP/IPsec too (including authorization for off-line
+systems!) although that would require special software. In any case, any
+organisation doing this would probably want to be their own CA.
+
+<p>
+
+Multiuser configurations (mobile users) like these are possible with
+pre-shared keys too, but then it is required that AGGRESSIVE mode is
+used instead of ID_PROT mode since we then must be able to choose the
+right password phrase based on ID since we do not know that from what
+the IP is in this case (in AGGRESSIVE mode the ID is sent over at an
+earlier stage of the negotiation, but it is sent unencrypted, thus
+AGGRESSIVE mode is faste because it needs fewer message exchanges,
+but it also is a bit less secure since the ID is sent in clear).
+
+<P>
+<a name= "13.10">
+<h1>13.10 - What IKE clients are compatible with isakmpd?</h1>
 </a>
 <P>
 <tt>isakmpd</tt> is the ISAKMP/Oakley key management daemon that comes with OpenBSD.
@@ -902,7 +1748,7 @@ The following MS-Windows clients have been reported to be compatible:
 <LI><A HREF="http://www.vpcom.com/">Ashley Laurent</a> VPCom VPN software
 <LI><A HREF="http://www.nai.com/asp_set/products/tns/pgp_vpn.asp">PGP VPN</a> software
 <LI><A HREF="http://www.radguard.com/">Radguard</a> cIPro client
-<LI><A HREF="http://www.cisco.com/">Cisco</a> Win32 client (<i>unreleased?</i>)
+<LI><A HREF="http://www.cisco.com/">Cisco</a> IRE client
 </UL>
 <P>
 The following gateways/routers have been reported to be compatible:
@@ -924,8 +1770,8 @@ The following gateways/routers have been reported to be compatible:
 <LI><A HREF="http://www.checkpoint.com/">CheckPoint</a> FW-1
 </UL>
 <P>
-<a name= "13.10">
-<h1>13.10 - Troubleshooting IPSec/VPN</h1>
+<a name= "13.11">
+<h1>13.11 - Troubleshooting IPSec/VPN</h1>
 </a>
 <P>
 Your first tool for troubleshooting IPSec is <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tcpdump&apropos=0&sektion=8&format=html">tcpdump(8)</a>.
@@ -973,8 +1819,47 @@ tcpdump: listening on fxp7
 </PRE>
 </ul>
 <P>
-<LI>IKE runs on UDP port 500.  If this is locked out through a firewall
+<LI>ISAKMP runs on UDP port 500.  If this is locked out through a firewall
 or packet filter, then you need to change it!
+<UL><PRE>
+# Passing in ISAKMP traffic from the security gateways
+pass in on ne0 proto udp from gatewB/32 port = 500 to gatewA/32 port = 500
+pass out on ne0 proto udp from gatewA/32 port = 500 to gatewB/32 port = 500
+
+# Passing in encrypted traffic from security gateways
+pass in proto esp from gatewB/32 to gatewA/32
+pass out proto esp from gatewA/32 to gatewB/32
+</PRE></UL>
+<P>
+<LI>Photuris runs on UDP port 468.  Same considerations, but the protocol is ah.
+<UL><PRE>
+# Passing in Photuris traffic from the security gateways
+pass in on ne0 proto udp from gatewB/32 port = 468 to gatewA/32 port = 468
+pass out on ne0 proto udp from gatewA/32 port = 468 to gatewB/32 port = 468
+
+# Passing in encrypted traffic from security gateways
+pass in proto ah from gatewB/32 to gatewA/32
+pass out proto ah from gatewA/32 to gatewB/32
+</PRE></UL>
+<P>
+<LI>
+To turn on all debugging in isakmpd, start it as
+<P>
+<UL><TT>
+# <b>/sbin/isakmpd -d -DA=99</b>
+</UL></TT><P>
+or (to skip the most detailed timer debug info)
+<P>
+<UL><TT>
+# <b>/sbin/isakmpd -d -DA=99 -D1=70</b>
+</UL></TT>
+<P>
+<LI>You need to allow traffic which has been processed by IPSec from netB
+into your local firewalled netA.
+<UL><PRE>
+# Passing in traffic from the designated subnets.
+pass in on enc0 from netB/netBmask to netA/netAmask
+</PRE></UL>
 <P>
 <LI>With tcpdump on OpenBSD, you can decode most cleartext parts of Internet
 Key Exchange sessions.  If you are using tcpdump from a version of OpenBSD
@@ -1018,21 +1903,22 @@ to the OpenBSD developers.  Alternately, if you are not sure you have
 actually run into a bug, you may want to send a message to one of the <A HREF="../mail.html">mailing lists</a>.
 </UL>
 <P>
-<a name= "13.11">
-<h1>13.11 - Related Documentation</h1>
+<a name= "13.12">
+<h1>13.12 - Related Documentation</h1>
 </a>
 <p>
 IPSec is partially documented in the 
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vpn&apropos=0&sektion=0&format=html">vpn(8)</a>
 man page.  There are various configuration templates in <A HREF="http://www.openbsd.org/cgi-bin/cvsweb/src/share/ipsec/">/usr/share/ipsec/</a>
 directory which can also assist you.  The manual pages for
-<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=enc&apropos=0&sektion=4&format=html">enc(4)</a>,
-<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=ipsec&apropos=0&sektion=4&format=html">ipsec(4)</a>,
-<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=ipsecadm&apropos=0&sektion=8&format=html">ipsecadm(8)</a>,
-<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=photurisd&apropos=0&sektion=8&format=html">photurisd(8)</a>,
-<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=startkey&apropos=0&sektion=1&format=html">startkey(1)</a>,
-<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd&apropos=0&sektion=8&format=html">isakmpd(8)</a> and
-<a HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd.conf&apropos=0&sektion=5&format=html">isakmpd.conf(5)</a>
+<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=enc&sektion=4">enc(4)</a>,
+<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=ipsec&sektion=4">ipsec(4)</a>,
+<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=ipsecadm&sektion=8">ipsecadm(8)</a>,
+<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=photurisd&sektion=8">photurisd(8)</a>,
+<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=startkey&sektion=1">startkey(1)</a>,
+<A HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd&sektion=8">isakmpd(8)</a>,
+<a HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd.conf&sektion=5">isakmpd.conf(5)</a> and
+<a HREF="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd.policy&sektion=5">isakmpd.policy(5)</a>
 are detailed and can assist in setup and operation of IPSec.
 <P>
 Other links...
@@ -1079,7 +1965,7 @@ And on to the RFCs...
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq13.html,v 1.27 2000/03/24 14:05:02 wvdputte Exp $</small>
+<small>$OpenBSD: faq13.html,v 1.28 2000/04/13 00:46:27 chris Exp $</small>
 </p>
 </body>
 </html>
