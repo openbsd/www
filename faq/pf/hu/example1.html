@@ -1,0 +1,467 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+  <title>PF: Példa: Tűzfal Otthonra és Kis Irodába</title>
+  <link rev="made" href="mailto:www@openbsd.org">
+  <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-2">
+  <meta name="resource-type" content="document">
+  <meta name="description" content="OpenBSD FAQ weblap">
+  <meta name="keywords" content="openbsd,faq,pf">
+  <meta name="distribution" content="global">
+<!--
+Copyright (c) 2003, 2004 Joel Knight <enabled@myrealbox.com>
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<a href="../../../hu/index.html">
+<img alt="[OpenBSD]" src="../../../images/smalltitle.gif" border="0"
+height="30" width="141"></a>
+
+<p>
+[<a href="../authpf.html">Előző: Authpf: Felhasználói
+Héjprogram az Útválasztók Autentikálásához</a>]
+[<a href="../index.html">Tartalom</a>]
+
+
+<p>
+<h1><font color="#e00000">PF: Példa: Tűzfal Otthonra és Kis Irodába</font></h1>
+<hr>
+<h3>Tartalom</h3>
+<ul>
+  <li><a href="#scenario">Bevezetés</a>
+    <ul>
+      <li><a href="#network">A Hálózat</a> 
+      <li><a href="#objective">Céljaink</a> 
+      <li><a href="#prep">Előkészítés</a> 
+    </ul>
+  <li><a href="#ruleset">A szabályok</a>
+    <ul>
+      <li><a href="#macros">Makrók</a> 
+      <li><a href="#options">Opciók</a> 
+      <li><a href="#scrub">Scrub</a> 
+      <li><a href="#nat">Címfordítás (NAT)</a> 
+      <li><a href="#rdr">Átirányítás</a> 
+      <li><a href="#filter">Csomagszűrő szabályok</a> 
+    </ul>
+  <li><a href="#allrules">Az teljes szabálylista</a> 
+</ul>
+<hr>
+
+<a name="scenario"></a>
+<h2>Bevezetés</h2>
+A következő példában PF (csomagszűrő) átjáróként
+működik egy otthoni vagy kis céges hálózat számára.
+Fő célunk a hálózat gépeinek a tűzfal felé korlátozott
+Internet hozzáférést biztosítani. Ez a dokumentum lépésről
+lépésre követi végig a beállítás folyamatát. <a name="network"></a>
+
+<h3>A Hálózat</h3>
+A hálózat beállítása a következő:
+<pre>
+
+  [ GÉP1 ]    [ GÉP3 ]
+      |            |                               ADSL
+   ---+------+-----+------- fxp0 [ OpenBSD ] ep0 -------- ( Internet )
+             |
+         [ GÉP2 ]
+
+</pre>
+
+<p>
+Bizonyos számú gép van jelen helyi hálózatunkon,
+példánkban három van belőlük, számuk azonban lényegtelen.
+Ezek általános célú gépek, felhasználóik interneteznek rajtuk:
+Weben szörfölnek, leveleznek, beszélgetéseket kezdeményeznek, stb;
+kivétel ez alól "GÉP3", melyen fut egy web-kiszolgáló alkalmazás is.
+A belső hálózat címe 192.168.0.0 / 255.255.255.0 hálózati maszkkal. 
+
+<p>
+Az OpenBSD-alapú csomagirányító (router) egy Pentium 100 MHz-es
+processzorú számítógép, melybe két hálózati interfészt tettünk:
+egy 3com 3c509B (<tt>ep0</tt>), valamint egy Intel EtherExpress
+Pro/100 (<tt>fxp0</tt>) kártyát. A gép ADSL-kapcsolaton keresztül
+éri el az internetet; címfordítással osztja meg a többiek számára.
+A külső kártya címe dinamikus: az internet-szolgáltató (ISP)
+osztja ki dinamikusan.
+
+<a name="objective"></a>
+<h3>Céljaink</h3>
+Céljaink a következőek:
+<ul>
+<li>Korlátozás nélküli internet-hozzáférés biztosítása
+    minden belső számítógép számára.
+<li>Alapértelmezett "tiltó" szabály használata.
+<li>A következő bejövő forgalmat engedélyezzük:
+    <ul>
+    <li>SSH (TCP port 22): a tűzfalgép külső adminisztrációja céljából.
+    <li>Auth/Ident (TCP port 113): SMTP és IRC szolgáltatások használják.
+    <li>ICMP Echo Requests: az ICMP csomag olyan típusa, melyet a
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ping&amp;sektion=8&amp;manpath=OpenBSD+3.6">ping(8)</a>
+    program használ.
+    </ul>
+<li>A 80-as TCP-portra érkező kéréseket átirányítjuk GÉP3-ra,
+    ezek webes kérések. Ezzel összefüggésben engedjük az ilyen
+    irányú forgalmat.
+<li>Csomag-logolást végzünk a külső csatlakozáson. 
+<li>Alapértelmezésben a tiltott csomagokra TCP RST vagy
+    ICMP Unreachable választ küldünk. 
+<li>Egyszerű, könnyen áttekinthető csomagszabályt készítünk,
+    amennyire csak lehetséges, így könnyebb karbantartani. 
+</ul>
+
+<a name="prep"></a>
+<h3>Előkészítés</h3>
+Alapul vesszük, hogy a számítógép, melyen OpenBSD fut,
+megfelelően van beállítva mint forgalomirányító gép (router).
+Azaz ellenőrizd az IP hálózati beállításokat, az
+internet kapcsolatot, és hogy a <tt>net.inet.ip.forwarding</tt>
+1-re van-e állítva.
+
+<a name="ruleset"></a>
+<h2>A szabályok</h2>
+A következő lépésben létrehozunk egy olyan szabálycsomagot,
+amely megvalósítja céljainkat.
+
+<a name="macros"></a>
+<h3>Makrók</h3>
+A következő makrókat azért hozzuk létre, hogy egyszerűsítsék a
+szabályokat, megkönnyítsék a konfiguráció olvasását:
+
+<blockquote><tt>
+int_if = "fxp0"<br>
+ext_if = "ep0"<br>
+<br>
+tcp_services = "{ 22, 113 }"<br>
+icmp_types = "echoreq"<br>
+<br>
+priv_nets = "{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"<br>
+<br>
+comp3 = "192.168.0.3"
+</tt></blockquote>
+
+<p>
+Az első két sor határozza meg a csomagszűrésben résztvevő
+hálózati interfészeket. A harmadik és negyedik sorban a
+megnyitni kívánt szolgáltatások (SSH és ident/auth) portjai,
+valamint az ICMP csomagtípusok vannak fölsorolva. Az
+ötödik sorban definiáljuk a loopback és
+<a href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a>
+szerinti hálózati címeket. Az utolsó sor a GÉP3 címét írja le.
+
+<p>
+<b>Megjegyzés</b>: Ha az ADSL-kapcsolatot
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pppoe&amp;sektion=8&amp;manpath=OpenBSD+3.6">PPPoE</a>
+segítségével hoztuk létre, akkor a csomagszűrést és a címfordítást
+a <tt>tun0</tt> interfészen végezzük, <i>ne</i> pedig <tt>ep0</tt>-án.
+
+<a name="options"></a>
+<h3>Opciók</h3>
+A következő két opció állítja be az alapértelmezett választ
+<tt>block</tt> csomagszabályokra valamint elindítja a
+logolást a külső hálózati csatlakozón:
+
+<blockquote><tt>
+set block-policy return<br>
+set loginterface $ext_if
+</tt></blockquote>
+
+
+<a name="scrub"></a>
+<h3>Scrub</h3>
+Nincs oka nem használni a javasolt forgalom-ellenőrző és
+javító eljárást, íme hogyan:
+
+<blockquote><tt>
+scrub in all
+</tt></blockquote>
+
+<a name="nat"></a>
+<h3>Címfordítás (NAT)</h3>
+Teljes hálózat címfordításához használd a következő <tt>nat</tt> szabályt:
+
+<blockquote><tt>
+nat on $ext_if from $int_if:network to any -&gt; ($ext_if)
+</tt></blockquote>
+
+<p>
+Miután a külső "láb" címe változó, zárójelek közé tesszük a nevét,
+mellyel hivatkozunk rá, így PF mindig az aktuális címet fogja
+behelyettesíteni.
+
+<a name="rdr"></a>
+<h3>Átirányítás</h3>
+Az első átirányítási szabály az
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+3.6">ftp-proxy(8)</a>
+programhoz szükséges, mely segítségével a belső
+FTP programok el tudják érni a külső FTP szervereket.
+
+<blockquote><tt>
+rdr on $int_if proto tcp from any to any port 21 -&gt; 127.0.0.1 port 8021
+</tt></blockquote>
+
+<p>
+Ez a szabály csak a 21-es porton közlekedő FTP-kapcsolatokkal foglalkozik.
+Amennyiben a felhasználók más portokat is használnak, példa
+kedvéért a 2121-es számút, módosítsd a következők
+szerint: <tt>from any to any port { 21, 2121 }</tt>.
+
+<p>
+A második átirányítási szabály a tűzfal 80-as portján kopogtató
+forgalommal foglalkozik. Ezeket a GÉP3 felé irányítjuk:
+
+<blockquote><tt>
+rdr on $ext_if proto tcp from any to any port 80 -&gt; $comp3
+</tt></blockquote>
+
+<a name="filter"></a>
+<h3>Csomagszűrő szabályok</h3>
+Most következnek a tűzfal-szabályok. Vegyük alapul a teljes tiltást:
+
+<blockquote><tt>
+block all<br>
+</tt></blockquote>
+
+<p>
+Most semmilyen forgalom nem tud keresztülmenni tűzfalunkon,
+beleértve a helyi hálózatot is. Céljaink érdekében a
+következő szabályokkal megnyitjuk.
+
+<p>
+Minden Unix rendszer rendelkezik "loopback" hálózati
+interfésszel. Ez egy virtuális csatlakozó, mely lehetővé teszi,
+hogy az alkalmazások egymással beszélgessenek a gépen belül.
+Ezért általánosságban engedélyezzük a loopback csatolón folyó
+forgalmat. Íme a loopback interfész manuálja:
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=lo&amp;sektion=4&amp;manpath=OpenBSD+3.6">lo(4)</a>.
+
+<blockquote><tt>
+pass quick on lo0 all
+</tt></blockquote>
+
+<p>
+Ezután az
+<a href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a>
+szerinti címeket kizárjuk a külső forgalomból. Megállapodás
+szerint ezek a címek nem jelenhetnek meg az internetes
+forgalomban (ha megjelennének is, az internetes útválasztók
+a következő szabályokhoz hasonlóan nem továbbítanák őket,
+a szabály biztosítja ezt:
+
+<blockquote><tt>
+block drop in &nbsp;quick on $ext_if from $priv_nets to any<br>
+block drop out quick on $ext_if from any to $priv_nets </tt></blockquote>
+
+<p>
+Figyelem: <tt>block drop</tt> arra való, hogy a PF ne TCP RST
+vagy ICMP Unreachable választ adjon a kérésre. Ez azért
+jó, mert az RFC 1918-féle címeket fentiek szerint amúgy sem lehetne elérni,
+így nem érdemes válaszolni sem nekik. A <tt>quick</tt> opció
+utasítja PF-et arra, hogy az első egyezésnél fejezze be a szabály
+kiértékelését, a <tt>$priv_nets</tt> címek felől illetve oda
+irányuló forgalmat tiltjuk.
+
+<p>
+Most megnyitjuk azokat a portokat, melyeket az internet felől
+elérhetővé kívánunk tenni:
+
+<blockquote><tt>
+pass in on $ext_if inet proto tcp from any to ($ext_if) \<br>
+&nbsp;&nbsp;&nbsp;port $tcp_services flags S/SA keep state
+</tt></blockquote>
+
+<p>
+Amennyiben a <tt>$tcp_services</tt> makróba helyezzük a
+kívánt portokat, később egyszerűen módosíthatjuk,
+bővíthetjük azok körét: módosítjuk a makrót, majd
+újratöltjük a szabályrendszert. Egy <tt>$udp_services</tt>
+makró létrehozásával pedig UDP-szolgáltatásokat tudunk
+engedélyezni; itt a <tt>proto udp</tt> opció jelenti ezt.
+
+<p>
+Ezen kívül, a <tt>rdr</tt> szabályunk, mely a belső
+web-szerverre irányít bizonyos forgalmat, szükségessé
+teszi, hogy őrá vonatkozó engedélyt is szerepeltessünk
+a konfigurációban:
+
+<blockquote><tt>
+pass in on $ext_if proto tcp from any to $comp3 port 80 \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;flags S/SA synproxy state
+</tt></blockquote>
+
+<p>
+További biztonsági lépésként használjuk a
+<a href="../filter.html#synproxy">TCP SYN Proxy</a>
+opciót, mellyel bizonyos védelmet nyújtunk a
+web-szervernek. 
+
+
+<p>
+Annak érdekében, hogy az aktív módú FTP csatlakozás működjön a
+belső hálózatból, a következő szabályokat kell elhelyezni,
+amelyek engedélyezik az FTP kiszolgálóról kezdeményezett
+forgalmat a kliensek felé. Mivel az FTP forgalmat proxyzza
+az ftp-proxy, valójában ő fogadja az ftp-adat csatlakozást,
+azután továbbítja az adatot a belső hálózatban levő kliensnek.
+
+<blockquote><tt>
+pass in on $ext_if inet proto tcp from port 20 to ($ext_if) \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;user proxy flags S/SA keep state
+</tt></blockquote>
+
+<p>
+Az ICMP forgalmat is áteresztjük:
+
+<blockquote><tt>
+pass in inet proto icmp all icmp-type $icmp_types keep state
+</tt></blockquote>
+
+<p>
+Mint a <tt>$tcp_services</tt> makrónál láthattuk,
+az <tt>$icmp_types</tt> makró könnyedén módosítható,
+mellyel beállítható, milyen típusú ICMP-forgalmat
+engedélyezünk. Ezek minden hálózati kártyán keresztül
+tudnak menni, ha engedjük a konfigurációban.
+
+<p>
+Következő lépésként engednünk kell a helyi hálózat felől
+érkező és oda irányuló forgalmat. Feltételezzük, hogy
+a belső gépek használói jóhiszeműen cselekszenek; elképzelhető
+ennél szigorúbb szabályozás is.
+
+<blockquote><tt>
+pass in on $int_if from $int_if:network to any keep state
+</tt></blockquote>
+
+<p>
+Fenti szabály enged bármely helyi gépről származó, tűzfalon
+keresztülhaladó forgalmat; de <i>nem</i> engedi, hogy a
+tűzfal-gépről kezdeményezzen valaki kapcsolatot a belső gép
+felé. Jó ötlet ez? Függ a hálózati beállításoktól.
+Ha például a tűzfal egyben DHCP szerver is, képesnek kell lennie
+"pingelni" az ip-címeket, hogy megtudja, kioszthatóak-e.
+Ha engedjük, hogy a tűzfal kapcsolatot kezdeményezzen a belső gépek
+felé, az egyben lehetőséget ad a tűzfalra bejelentkező
+felhasználóknak, hogy az internet felől elérjék a belső gépeket.
+Tartsa észben, hogy nem jelent valódi biztonsági többletet,
+ha <i>nem</i> engedélyezi az efféle kapcsolatokat, hiszen ha
+valaki hozzáfér a tűzfalhoz, esetlegesen meg tudja változtatni
+a beállításokat. A következő szabály engedélyezi az ilyenfajta
+kapcsolatot: 
+<blockquote><tt>
+pass out on $int_if from any to $int_if:network keep state
+</tt></blockquote>
+
+<p>
+Amennyiben mindkét szabályt alkalmazod, nincs szükség a
+<tt>keep state</tt> opcióra, minden csomag át fog jutni a tűzfalon,
+mivel mindkét irányt engedélyezted. Ezzel szemben, ha a
+<tt>pass out</tt> sor <i>nem</i> szerepel, a <tt>pass in</tt> sorban
+szükség van a <tt>keep state</tt> direktívára. A keep state
+használata némi teljesítmény növekedéssel is jár: az állapottáblát
+előbb értékeli ki a szoftver, mint a szabályokat, így
+állapoti találat esetén nem kell keresztülfuttatnia a szabályokon,
+mely csökkentheti a tűzfal terhelését, ám a példában szereplő
+környezetekben nem valószínű, hogy a sebesség szűkös volna.
+
+<p>
+Végül engedjük ki a külső csatolón a forgalmat:
+
+<blockquote><tt>
+pass out on $ext_if proto tcp all modulate state flags S/SA<br>
+pass out on $ext_if proto { udp, icmp } all keep state </tt></blockquote>
+
+<p>
+TCP, UDP, é ICMP forgalom kiléphet a csatolón az internet
+irányába, állapotaikat feljegyzi a rendszer.
+
+<a name="allrules"></a>
+<h2>A teljes szabálylista</h2>
+<table border="0" width="650">
+<tbody><tr><td bgcolor="#eeeeee" nowrap="nowrap">
+<pre>
+# macros<br>
+int_if = "fxp0"
+ext_if = "ep0"
+
+tcp_services = "{ 22, 113 }"
+icmp_types = "echoreq"
+
+priv_nets = "{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"
+
+comp3 = "192.168.0.3"
+
+# options
+set block-policy return
+set loginterface $ext_if
+
+# scrub
+scrub in all
+
+# nat/rdr
+nat on $ext_if from $int_if:network to any -&gt; ($ext_if)
+rdr on $int_if proto tcp from any to any port 21 -&gt; 127.0.0.1 \
+   port 8021
+rdr on $ext_if proto tcp from any to any port 80 -&gt; $comp3
+
+# filter rules
+block all
+
+pass quick on lo0 all
+
+block drop in  quick on $ext_if from $priv_nets to any
+block drop out quick on $ext_if from any to $priv_nets
+
+pass in on $ext_if inet proto tcp from any to ($ext_if) \
+   port $tcp_services flags S/SA keep state
+
+pass in on $ext_if proto tcp from any to $comp3 port 80 \
+   flags S/SA synproxy state
+
+pass in on $ext_if inet proto tcp from port 20 to ($ext_if) \
+   user proxy flags S/SA keep state
+   
+
+pass in inet proto icmp all icmp-type $icmp_types keep state
+
+pass in  on $int_if from $int_if:network to any keep state
+pass out on $int_if from any to $int_if:network keep state
+
+pass out on $ext_if proto tcp all modulate state flags S/SA
+pass out on $ext_if proto { udp, icmp } all keep state
+</pre>
+</td></tr></tbody></table>
+
+<p>
+[<a href="../authpf.html">Előző: Authpf: Felhasználói
+Héjprogram az Útválasztók Autentikálásához</a>]
+[<a href="../index.html">Tartalom</a>]
+
+<p>
+<hr>
+<a href="../index.html"><img src="../../../images/back.gif" alt="[back]"
+border="0" height="24" width="24"></a>
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+
+Originally [OpenBSD: example1.html,v 1.18 ]<br>
+$Translation: example1.html,v 1.2 2005/01/17 17:00:32 ishida Exp $<br>
+$OpenBSD: example1.html,v 1.1 2005/01/18 20:10:38 jufi Exp $
+</body>
+</html>
