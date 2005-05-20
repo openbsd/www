@@ -1,7 +1,7 @@
 <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
 <html>
 <head>
-<title>PF: Pakete markieren</title>
+<title>PF: Pakete markieren (Richtlinienfilterung)</title>
 <link rev="made" href="mailto:www@openbsd.org">
 <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
 <meta name="resource-type" content="document">
@@ -41,7 +41,7 @@ please, use a max of 72 chars per line -->
 [<a href="logging.html">Weiter: Aufzeichnen</a>]
 
 <p>
-<h1><font color="#e00000">PF: Pakete markieren</font></h1>
+<h1><font color="#e00000">PF: Pakete markieren (Richtlinienfilterung)</font></h1>
 
 <hr>
 
@@ -182,8 +182,13 @@ pass out on $ext_if tagged ! WIFI_NET keep state
 </tt>
 </blockquote>
 
+<p>
+Übersetzungsregeln (<tt>nat</tt>/<tt>rdr</tt>/<tt>binat</tt>) können
+ebenfalls das <tt>tagged</tt>-Schlüsselwort nutzen, um auf Pakete
+zutreffen zu können.
+
 <a name="policy"></a>
-<h2>Richtlinien-Filterung</h2>
+<h2>Richtlinienfilterung</h2>
 Richtlinien-Filterung schlägt einen anderen Weg ein als es das Schreiben
 von Filter-Regelsätzen tut. Eine Richtlinie wird so definiert, dass sie sagt,
 welche Regeln für welchen Vekehrstyp gesetzt werden, und welcher Typ
@@ -192,10 +197,12 @@ Pakete werden dann in die Richtlinie klassifiziert, basierend auf den
 traditionellen Kriterien der Quell-/Ziel-IP-Adresse/-Port, Protokoll, etc.
 Betrachte zum Beispiel die folgende Firewall-Richtlinie:
 <ul>
+<li>Verkehr vom internen LAN zum Internet ist erlaubt (LAN_INET) und
+muss übersetzt werden (LAN_INET_NAT)
 <li>Verkehr vom internen LAN zur DMZ ist erlaubt (LAN_DMZ)
 <li>Verkehr vom Internet zu Servern in der DMZ ist erlaubt (INET_DMZ)
 <li>Verkehr vom Internet, der zum
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=spamd&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=spamd&amp;sektion=8&amp;manpath=OpenBSD+3.7"
 >spamd(8)</a> umgeleitet wird, ist erlaubt (SPAMD)
 <li>Jeglicher andere Verkehr wird geblockt
 </ul>
@@ -213,6 +220,7 @@ in die Richtlinie zu klassifizieren.
 <tt>
 rdr on $ext_if proto tcp from &lt;spamd&gt; to port smtp \<br>
 &nbsp;&nbsp;&nbsp;tag SPAMD -&gt; 127.0.0.1 port 8025<br>
+nat on $ext_if tagged LAN_INET tag LAN_INET_NAT -&gt; ($ext_if)<br>
 <br>
 block all<br>
 pass in on $int_if from $int_net tag LAN_INET keep state<br>
@@ -226,7 +234,7 @@ Nun sind die Regeln, die die Richtlinie definieren, gesetzt.
 <blockquote>
 <tt>
 pass in &nbsp;quick on $ext_if tagged SPAMD keep state<br>
-pass out quick on $ext_if tagged LAN_INET keep state<br>
+pass out quick on $ext_if tagged LAN_INET_NAT keep state<br>
 pass out quick on $dmz_if tagged LAN_DMZ keep state<br>
 pass out quick on $dmz_if tagged INET_DMZ keep state
 </tt>
@@ -271,6 +279,7 @@ table &lt;spamd&gt; persist file "/etc/spammers"
 # firewall-richtlinie
 rdr on $ext_if proto tcp from &lt;spamd&gt; to port smtp \
     tag SPAMD -&gt; 127.0.0.1 port 8025
+nat on $ext_if tagged LAN_INET tag LAN_INET_NAT -&gt; ($ext_if)
 
 block all
 pass in on $int_if from $int_net tag LAN_INET keep state
@@ -282,7 +291,7 @@ pass in on $ext_if proto tcp to $mail_server port { smtp, pop3 } \
 # richtlinien-erzwingung -- lässt durch/blockt basierend auf der
 # definierten firewall-richtlinie
 pass in  quick on $ext_if tagged SPAMD keep state
-pass out quick on $ext_if tagged LAN_INET keep state
+pass out quick on $ext_if tagged LAN_INET_NAT keep state
 pass out quick on $dmz_if tagged LAN_DMZ keep state
 pass out quick on $dmz_if tagged INET_DMZ keep state 
 </pre>
@@ -293,13 +302,13 @@ pass out quick on $dmz_if tagged INET_DMZ keep state
 <h2>Ethernet-Frames markieren</h2>
 Das Markieren kann auf der Ethernet-Ebene stattfinden, wenn die Maschine,
 die das Markieren/Filtern durchführt, ebenfalls als
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridge&amp;sektion=4&amp;manpath=OpenBSD+3.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridge&amp;sektion=4&amp;manpath=OpenBSD+3.7"
 >bridge(4)</a> eingesetzt wird.
 Durch das Erzeugen von bridge(4)-Filterregeln, die das
 <tt>tag</tt>-Schlüsselwort verwenden, kann PF dazu gebracht werden,
 basierend auf der Quell-/Ziel-MAC-Adresse zu filtern.
 Bridge(4)-Regeln werden anhand des
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=brconfig&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=brconfig&amp;sektion=8&amp;manpath=OpenBSD+3.7"
 >brconfig(8)</a>-Kommandos erzeugt. Beispiel:
 <blockquote>
 <tt>
@@ -328,10 +337,10 @@ pass in on fxp0 tagged USER1
 <br>
 <small>
 <!--
-Originally [OpenBSD: tagging.html,v 1.6 ]
-$Translation: tagging.html,v 1.3 2005/01/18 14:33:46 paldium Exp $
+Originally [OpenBSD: tagging.html,v 1.7 ]
+$Translation: tagging.html,v 1.4 2005/05/20 16:33:52 paldium Exp $
 -->
-$OpenBSD: tagging.html,v 1.3 2005/01/18 17:18:11 jufi Exp $
+$OpenBSD: tagging.html,v 1.4 2005/05/20 17:13:26 jufi Exp $
 </small>
 
 </body>
