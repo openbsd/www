@@ -49,6 +49,8 @@
     have over 100% of my disk used?</a>
 <li><a href="#OhBugger"   >14.15 - Recovering partitions after deleting
     the disklabel</a>
+<li><a href="#foreignfs"  >14.16 - Can I access data on filesystems other than FFS?</a>
+<li><a href="#flashmem"   >14.17 - Can I use a flash memory device with OpenBSD?</a>
 
 </ul>
 <hr>
@@ -1687,6 +1689,278 @@ unreadable, you will be able to
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mount;sektion=8">mount(8)</a>
 it until the next reboot.
 
+
+<a name="foreignfs"></a>
+<h2>14.16 - Can I access data on filesystems other than FFS?</h2>
+<!-- This article written by Steven Mestdagh,
+steven.mestdagh@esat.kuleuven.be, and released under the BSD license -->
+
+Yes. Other supported filesystems include: ext2 (Linux), ISO9660 (CD-ROM,
+DVD media), FAT (MS-DOS and Windows), NFS, NTFS (Windows), AmigaDOS.
+Some of them have limited, for instance read-only, support.
+
+<p>
+We will give a general overview on how to use one of these filesystems
+under OpenBSD. To be able to use a filesystem, it must be mounted.
+For details and mount options, please consult the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mount&amp;sektion=8">mount(8)</a>
+manual page, and that of the mount command for the filesystem you will be
+mounting, e.g. mount_msdos, mount_ext2fs, ...
+
+<p>
+First, you must know on which device your filesystem is located. This can be
+simply your first hard disk, <tt>wd0</tt> or <tt>sd0</tt>, but it may be
+less obvious.
+All recognized and configured devices on your system are mentioned in the
+output of the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dmesg&amp;sektion=1">dmesg(1)</a>
+command: a device name, followed by a one-line description of the device.
+For example, my first CD-ROM drive is recognized as follows:
+
+<blockquote><pre>
+cd0 at scsibus0 targ 0 lun 0: &lt;COMPAQ, DVD-ROM LTD163, GQH3&gt; SCSI0 5/cdrom removable
+</pre></blockquote>
+
+<p>
+At this point, it is time to find out which partitions are on the device, and
+in which partition the desired filesystem resides.
+Therefore, we examine the device using
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=disklabel&amp;sektion=8">disklabel(8)</a>.
+The disklabel contains a list of partitions, with a maximum number of 16.
+Partition c always indicates the entire device.
+Partitions a-b and d-p are used by OpenBSD.
+Partitions i-p may be automatically allocated to file systems of other
+operating systems.
+In this case, I'll be viewing the disklabel of my hard disk, which contains
+a number of different filesystems.
+
+<blockquote><pre>
+# <b>disklabel wd0</b>
+
+# using MBR partition 2: type A6 off 20338290 (0x1365672) size 29318625 (0x1bf5de1)
+# /dev/rwd0c:
+type: ESDI
+disk: ESDI/IDE disk
+label: ST340016A       
+flags:
+bytes/sector: 512
+sectors/track: 63
+tracks/cylinder: 16
+sectors/cylinder: 1008
+cylinders: 16383
+total sectors: 78165360
+rpm: 3600
+interleave: 1
+trackskew: 0
+cylinderskew: 0
+headswitch: 0           # microseconds
+track-to-track seek: 0  # microseconds
+drivedata: 0 
+
+16 partitions:
+#             size        offset  fstype [fsize bsize  cpg]
+  a:        408366      20338290  4.2BSD   2048 16384   16 # Cyl 20176*- 20581 
+  b:       1638000      20746656    swap                   # Cyl 20582 - 22206 
+  c:      78165360             0  unused      0     0      # Cyl     0 - 77544 
+  d:       4194288      22384656  4.2BSD   2048 16384   16 # Cyl 22207 - 26367 
+  e:        409248      26578944  4.2BSD   2048 16384   16 # Cyl 26368 - 26773 
+  f:      10486224      26988192  4.2BSD   2048 16384   16 # Cyl 26774 - 37176 
+  g:      12182499      37474416  4.2BSD   2048 16384   16 # Cyl 37177 - 49262*
+  i:         64197            63 unknown                   # Cyl     0*-    63*
+  j:      20274030         64260 unknown                   # Cyl    63*- 20176*
+  k:       1975932      49656978   MSDOS                   # Cyl 49262*- 51223*
+  l:       3919797      51632973 unknown                   # Cyl 51223*- 55111*
+  m:       2939832      55552833  ext2fs                   # Cyl 55111*- 58028*
+  n:       5879727      58492728  ext2fs                   # Cyl 58028*- 63861*
+  o:      13783707      64372518  ext2fs                   # Cyl 63861*- 77535*
+
+</pre></blockquote>
+
+<p>
+As can be seen in the above output, the OpenBSD partitions are listed first.
+Next to them are a number of ext2 partitions and one MSDOS partition, as
+well as a few 'unknown' partitions. On i386 and amd64 systems, you can
+usually find out more about those using the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fdisk&amp;sektion=8">fdisk(8)</a>
+utility.
+For the curious reader: partition i is a maintenance partition created by
+the vendor, partition j is a NTFS partition and partition l is a Linux swap
+partition.
+
+<p>
+Once you have determined which partition it is you want to use, you can
+move to the final step: mounting the filesystem contained in it.
+Most filesystems are supported in the GENERIC kernel: just have a look at
+the kernel configuration file, located in the
+<tt>/usr/src/sys/arch/&lt;<i>arch</i>&gt;/conf</tt> directory.
+However, some are not, e.g. the NTFS support is experimental and therefore
+not included in GENERIC.
+If you want to use one of the filesystems not supported in GENERIC, you
+will need to <a href="faq5.html#Options">build a custom kernel</a>.
+
+<p>
+When you have gathered the information needed as mentioned above, it is
+time to mount the filesystem.
+Let's assume a directory <tt>/mnt/otherfs</tt> exists, which we will use as
+a moint point where we will mount the desired filesystem.
+In this example, we will mount the ext2 filesystem in partition m:
+
+<blockquote><pre>
+# <b>mount -t ext2fs /dev/wd0m /mnt/otherfs</b>
+</pre></blockquote>
+
+<p>
+If you plan to use this filesystem regularly, you may save yourself some
+time by inserting a line for it in <tt>/etc/fstab</tt>, for example something
+like:
+
+<blockquote><pre>
+/dev/wd0m /mnt/otherfs ext2fs rw,noauto,nodev,nosuid 0 0
+</pre></blockquote>
+
+Notice the 0 values in the fifth and sixth field.
+This means we do not require the filesystem to be dumped, and checked using
+fsck.
+Generally, those are things you want to have handled by the native
+operating system associated with the filesystem.
+
+
+<a name="flashmem"></a>
+<h2>14.17 - Can I use a flash memory device with OpenBSD?</h2>
+<!-- This article written by Steven Mestdagh,
+steven.mestdagh@esat.kuleuven.be, and released under the BSD license -->
+
+Normally, the memory device should be recognized upon plugging it into a
+port of your machine.
+Shortly after inserting it, a number of messages are written to the console
+by the kernel.
+For instance, when I plug in my USB flash memory device, I see the following
+on my console:
+
+<blockquote><pre>
+umass0 at uhub1 port 1 configuration 1 interface 0
+umass0: LEXR PLUG DRIVE LEXR PLUG DRIVE, rev 1.10/0.01, addr 2
+umass0: using SCSI over Bulk-Only
+scsibus2 at umass0: 2 targets
+sd0 at scsibus2 targ 1 lun 0: &lt;LEXAR, DIGITAL FILM, /W1.&gt; SCSI2 0/direct removable
+sd0: 123MB, 123 cyl, 64 head, 32 sec, 512 bytes/sec, 251904 sec total
+</pre></blockquote>
+
+These lines indicate that the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=umass&amp;sektion=4">umass(4)</a>
+(USB mass storage) driver has been attached to the memory device, and that
+it is using the SCSI system.
+The last two lines are the most important ones: they are saying to which
+device node the memory device has been attached, and what the total amount of
+storage space is.
+If you somehow missed these lines, you can still see them afterwards with the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dmesg&amp;sektion=1">dmesg(1)</a>
+command.
+The reported CHS geometry is a rather fictitious one, as the flash memory
+is being treated like any regular SCSI disk.
+
+<p>
+We will discuss two scenarios below.
+
+<h3>The device is new/empty and you want to use it with OpenBSD only</h3>
+
+You will need to initialize a disklabel onto the device, and create at
+least one partition.
+Please read <a href="#disklabel">Using OpenBSD's disklabel</a> and the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=disklabel&amp;sektion=8">disklabel(8)</a>
+manual page for details about this.
+
+<p>
+In this example I created just one partition <i>a</i> in which I will place
+a FFS filesystem:
+
+<blockquote><pre>
+# <b>newfs sd0a</b>
+Warning: inode blocks/cyl group (125) >= data blocks (62) in last
+    cylinder group. This implies 1984 sector(s) cannot be allocated.
+/dev/rsd0a:     249856 sectors in 122 cylinders of 64 tracks, 32 sectors
+        122.0MB in 1 cyl groups (122 c/g, 122.00MB/g, 15488 i/g)
+super-block backups (for fsck -b #) at:
+ 32,
+</pre></blockquote>
+
+Let's mount the filesystem we created in the <i>a</i> partition on
+<tt>/mnt/flashmem</tt>.
+Create the mount point first if it does not exist.
+
+<blockquote><pre>
+# <b>mkdir /mnt/flashmem</b>
+# <b>mount /dev/sd0a /mnt/flashmem</b>
+</pre></blockquote>
+
+<h3>You received the memory device from someone with whom you want to exchange data</h3>
+
+<p>
+There is a considerable chance the other person is not using OpenBSD, so there
+may be a foreign filesystem on the memory device.
+Therefore, we will first need to find out which partitions are on the device,
+as described in <a href="#foreignfs">FAQ 14 - Foreign Filesystems</a>.
+
+<blockquote><pre>
+# <b>disklabel sd0</b>
+
+# /dev/rsd0c:
+type: SCSI
+disk: SCSI disk
+label: DIGITAL FILM    
+flags:
+bytes/sector: 512
+sectors/track: 32
+tracks/cylinder: 64
+sectors/cylinder: 2048
+cylinders: 123
+total sectors: 251904
+rpm: 3600
+interleave: 1
+trackskew: 0
+cylinderskew: 0
+headswitch: 0           # microseconds
+track-to-track seek: 0  # microseconds
+drivedata: 0 
+
+16 partitions:
+#             size        offset  fstype [fsize bsize  cpg]
+  c:        251904             0  unused      0     0      # Cyl     0 -   122 
+  i:        250592            32   MSDOS                   # Cyl     0*-   122*
+</pre></blockquote>
+
+As can be seen in the disklabel output above, there is only one partition
+<i>i</i>, containing a FAT filesystem created on a Windows machine.
+As usual, the <i>c</i> partition indicates the entire device.
+
+<p>
+Let's now mount the filesystem in the <i>i</i> partition on
+<tt>/mnt/flashmem</tt>.
+
+<blockquote><pre>
+# <b>mount -t msdos /dev/sd0i /mnt/flashmem</b>
+</pre></blockquote>
+
+Now you can start using it just like any other disk.
+
+<p>
+<b>WARNING:</b>
+You should <b>always unmount</b> the filesystem <b>before unplugging</b> the
+memory device.
+If you don't, the filesystem may be left in an inconsistent state, which
+may result in data corruption.
+
+<p>
+Upon detaching the memory device from your machine, you will again see the
+kernel write messages about this to the console:
+
+<blockquote><pre>
+umass0: at uhub1 port 1 (addr 2) disconnected
+sd0 detached
+scsibus2 detached
+umass0 detached
+</pre></blockquote>
+
 <p>
 <font color= "#0000e0">
 <a href= "index.html">[FAQ Index]</a>
@@ -1698,7 +1972,7 @@ it until the next reboot.
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq14.html,v 1.127 2005/05/30 03:25:13 nick Exp $</small>
+<small>$OpenBSD: faq14.html,v 1.128 2005/05/30 15:58:55 nick Exp $</small>
 
 </body>
 </html>
