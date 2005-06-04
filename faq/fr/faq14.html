@@ -66,6 +66,10 @@ vers une bande et effectuer une restauration</a>
 de 100% d'espace disque utilisé ?</a>
 <li><a href="#OhBugger"   >14.15 - Récupération de partitions après une
 suppression du disklabel</a>
+<li><a href="#foreignfs"  >14.16 - Est-il possible d'accéder aux données
+présentes sur des systèmes de fichiers autres que FFS ?</a>
+<li><a href="#flashmem"   >14.17 - Est-il possible d'utiliser un
+périphérique de masse ('flash memory device') sous OpenBSD ?</a>
 
 </ul>
 <hr>
@@ -1650,6 +1654,22 @@ manuel de raid(4)</a>
 La partition racine peut être directement configurée en miroir par OpenBSD en
 utilisant l'option "Autoconfiguration" de RAIDframe.
 
+<p>
+A partir d'OpenBSD 3.7-stable, le pilote <a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=ccd&amp;sektion=4">
+ccd(4)</a> inclu également une fonction de "mirroring". Il n'est pas
+recommandé d'utiliser 3.7-release pour ceci, un bug ayant été corrigé
+dans 3.7-stable. Ce système est inclu dans le noyau GENERIC et est
+présent dans le noyau bsd.rd, ce qui facilite son utilisation même s'il
+possède certaines limitations dans la reconstruction de l'array.
+Référez-vous aux manuels :
+<ul>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ccd&amp;sektion=4">
+ccd(4)</a>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ccdconfig&amp;sektion=8">
+ccdconfig(8)</a>
+</ul>
+
 <h3>Options matérielles</h3>
 <p>
 De nombreuses <a href="../../fr/plat.html">plateformes</a> OpenBSD supportent
@@ -1775,6 +1795,284 @@ mesure de la monter avec
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mount;sektion=8">mount(8)</a>
 jusqu'au prochain redémarrage.
 
+
+<a name="foreignfs"></a>
+<h2>14.16 - Est-il possible d'accéder aux données présentes sur des
+systèmes de fichiers autres que FFS ?</h2>
+<!-- This article written by Steven Mestdagh,
+steven.mestdagh@esat.kuleuven.be, and released under the BSD license -->
+
+Oui. Les systèmes de fichiers supportés sont : ext2 (Linux), ISO9660
+(CD-ROM, DVD), FAT (MS-DOS et Windows), NFS, NTFS (Windows), AmigaDOS.
+Certains n'ont qu'un support limité, comme par exemple l'accès en
+lecture uniquement.
+
+<p>
+Nous allons donner un aperçu sur la façon d'utiliser un de ces systèmes
+de fichiers sous OpenBSD. Afin d'utiliser un système de fichiers,
+celui-ci doit être monté. Pour plus de détails sur les options de
+montage, référez-vous au manuel de <a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=mount&amp;sektion=8">
+mount(8)</a> ainsi qu'à celui correspondant au système de fichiers que
+vous souhaitez monter. Par exemple, mount_msdos, mount_ext2fs, ...
+
+<p>
+Tout d'abord, vous devez connaître le périphérique sur lequel votre
+système de fichiers est présent. Cela peut être tout simplement votre
+disque dur, <tt>wd0</tt> ou <tt>sd0</tt>, mais ça n'est pas toujours
+évident. Tous les périphériques reconnus et configurés par votre système
+apparaissent dans la sortie de la commande <a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=dmesg&amp;sektion=1">
+dmesg(1)</a> : un nom de périphérique, suivi par une ligne descriptive.
+Ainsi, mon premier CD-ROM est reconnu de la façon suivante :
+
+<blockquote><pre>
+cd0 at scsibus0 targ 0 lun 0: &lt;COMPAQ, DVD-ROM LTD163, GQH3&gt; SCSI0 5/cdrom removable
+</pre></blockquote>
+
+<p>
+A présent, il est temps de déterminer quelles partitions sont présentes
+sur le périphérique et sur quelle partition le système de fichiers qui
+nous intéresse est présent. Nous examinerons le périphérique en
+utilisant <a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=disklabel&amp;sektion=8">
+disklabel(8)</a>. Le 'disklabel' comporte une liste de partitions, 16 au
+maximum. La partition c désigne toujours le périphérique dans son
+ensemble. Les partitions a-b et d-p sont utilisées par OpenBSD. Les
+partitions i-p peuvent être allouées automatiquement aux systèmes de
+fichiers d'autres systèmes d'exploitation. Dans notre cas, j'analyserai
+le 'disklabel' de mon disque dur qui contient un certain nombre de
+systèmes de fichiers.
+
+<blockquote><pre>
+# <b>disklabel wd0</b>
+
+# using MBR partition 2: type A6 off 20338290 (0x1365672) size 29318625 (0x1bf5de1)
+# /dev/rwd0c:
+type: ESDI
+disk: ESDI/IDE disk
+label: ST340016A
+flags:
+bytes/sector: 512
+sectors/track: 63
+tracks/cylinder: 16
+sectors/cylinder: 1008
+cylinders: 16383
+total sectors: 78165360
+rpm: 3600
+interleave: 1
+trackskew: 0
+cylinderskew: 0
+headswitch: 0           # microseconds
+track-to-track seek: 0  # microseconds
+drivedata: 0
+
+16 partitions:
+#             size        offset  fstype [fsize bsize  cpg]
+  a:        408366      20338290  4.2BSD   2048 16384   16 # Cyl 20176*- 20581 
+  b:       1638000      20746656    swap                   # Cyl 20582 - 22206 
+  c:      78165360             0  unused      0     0      # Cyl     0 - 77544 
+  d:       4194288      22384656  4.2BSD   2048 16384   16 # Cyl 22207 - 26367 
+  e:        409248      26578944  4.2BSD   2048 16384   16 # Cyl 26368 - 26773 
+  f:      10486224      26988192  4.2BSD   2048 16384   16 # Cyl 26774 - 37176 
+  g:      12182499      37474416  4.2BSD   2048 16384   16 # Cyl 37177 - 49262*
+  i:         64197            63 unknown                   # Cyl     0*-    63*
+  j:      20274030         64260 unknown                   # Cyl    63*- 20176*
+  k:       1975932      49656978   MSDOS                   # Cyl 49262*- 51223*
+  l:       3919797      51632973 unknown                   # Cyl 51223*- 55111*
+  m:       2939832      55552833  ext2fs                   # Cyl 55111*- 58028*
+  n:       5879727      58492728  ext2fs                   # Cyl 58028*- 63861*
+  o:      13783707      64372518  ext2fs                   # Cyl 63861*- 77535*
+
+</pre></blockquote>
+
+<p>
+Comme on peut le constater, les partitions OpenBSD sont affichées en
+premier. Puis l'on peut voir un certain nombre de partitions ext2, une
+partition MSDOS ainsi que plusieurs partitions inconnues ('unknown').
+Sous i386 ou amd64, vous pouvez généralement en savoir plus sur
+celles-ci en utilisant l'utilitaire <a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=fdisk&amp;sektion=8&amp;arch=i386">
+fdisk(8)</a>. Pour le lecteur curieux, la parition i est une partition
+de maintenance créée par le revendeur, la partition j est une partition
+NTFS et et la parition l est une partition d'échange Linux
+('Linux swap').
+
+<p>
+Après avoir déterminée la partition que vous souhaitez utiliser, vous
+pouvez enfin monter le système de fichiers qu'elle contient. La plupart
+des systèmes de fichiers sont supportés par de noyau GENERIC :
+référez-vous à son fichier de configuration situé dans le répertoire
+<tt>/usr/src/sys/arch/&lt;<i>arch</i>&gt;/conf</tt>. Cependant, certains
+dont le support est expérimental (comme NTFS) ne sont pas inclus dans le
+noyau GENERIC. Si vous souhaitez utiliser un de ces systèmes de
+fichiers, vous devrez <a href="faq5.html#Options">recompiler votre noyau
+</a>.
+
+<p>
+Une fois les informations nécessaires entre vos mains, il est temps de
+monter le système de fichiers. Imaginons que le répertoire
+<tt>/mnt/otherfs</tt> existe, nous l'utiliserons pour monter le système
+de fichiers souhaité. Dans l'exemple suivant, nous monterons un système
+de fichiers ext2 dans la partition m :
+
+<blockquote><pre>
+# <b>mount -t ext2fs /dev/wd0m /mnt/otherfs</b>
+</pre></blockquote>
+
+<p>
+Si vous souhaitez utiliser ce système de fichiers régulièrement, vous
+gagnerez du temps en insérant la ligne suivante dans votre fichier
+<tt>/etc/fstab</tt> :
+
+<blockquote><pre>
+/dev/wd0m /mnt/otherfs ext2fs rw,noauto,nodev,nosuid 0 0
+</pre></blockquote>
+
+Notez les valeurs 0 dans les cinquièmes et sixièmes champs. Cela indique
+que nous ne souhaitons pas que le système de fichiers soit sauvegardé
+(avec dump) ni vérifié avec fsck. Généralement, il est préférable de
+laisser le système d'exploitation associé à ces systèmes de fichiers
+s'occuper de ces choses.
+
+
+<a name="flashmem"></a>
+<h2>14.17 - Est-il possible d'utiliser un périphérique de masse ('flash
+memory device') sous OpenBSD ?</h2>
+<!-- This article written by Steven Mestdagh,
+steven.mestdagh@esat.kuleuven.be, and released under the BSD license -->
+
+Théoriquement, un périphérique mémoire devrait être reconnu dès sont
+insertion dans la machine. Peut après l'avoir branché, un certain nombre
+de messages du noyau devrait apparaître sur la console. Ainsi, lorsque
+je branche mon périphérique USB, voici ce qui apparait sur la console :
+
+<blockquote><pre>
+umass0 at uhub1 port 1 configuration 1 interface 0
+umass0: LEXR PLUG DRIVE LEXR PLUG DRIVE, rev 1.10/0.01, addr 2
+umass0: using SCSI over Bulk-Only
+scsibus2 at umass0: 2 targets
+sd0 at scsibus2 targ 1 lun 0: &lt;LEXAR, DIGITAL FILM, /W1.&gt; SCSI2 0/direct removable
+sd0: 123MB, 123 cyl, 64 head, 32 sec, 512 bytes/sec, 251904 sec total
+</pre></blockquote>
+
+Ces lignes indiquent que le pilote <a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=umass&amp;sektion=4">
+umass(4)</a> (périphérique de masse USB -'USB mass storage') à été
+rattaché au périphérique mémoire et qu'il utilise le système SCSI. Les
+deux dernières lignes sont les plus importantes : elles indiquent sur
+quel fichier de périphérique le matériel a été rattaché ainsi que le
+montant total d'espace de stockage. Si vous avez manqué ces lignes, vous
+pouvez vous y référez plus tard à l'aide de la commande <a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=dmesg&amp;sektion=1">
+dmesg(1)</a>. La géométrie CHS est fictive puisque le périphérique USB
+est traité comme un disque SCSI classique.
+
+<p>
+Nous allons voir deux scénarios possibles.
+
+<h3>Le périphérique est nouveau/vide et vous souhaitez l'utiliser
+exclusivement avec OpenBSD.</h3>
+
+Vous allez devoir initialiser un 'disklabel' sur le périphérique et
+créer au minimum une partition. Pour plus de détails, lisez
+<a href="#disklabel">Utilisation de disklabel(8) sous OpenBSD</a> ainsi
+que sa page de manuel, <a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=disklabel&amp;sektion=8">
+
+<p>
+Dans cet exemple, je ne vais créer qu'une seule partition <i>a</i> dans
+laquelle je placerai un système de fichiers FFS :
+
+<blockquote><pre>
+# <b>newfs sd0a</b>
+Warning: inode blocks/cyl group (125) >= data blocks (62) in last
+    cylinder group. This implies 1984 sector(s) cannot be allocated.
+/dev/rsd0a:     249856 sectors in 122 cylinders of 64 tracks, 32 sectors
+        122.0MB in 1 cyl groups (122 c/g, 122.00MB/g, 15488 i/g)
+super-block backups (for fsck -b #) at:
+ 32,
+</pre></blockquote>
+
+Montons le système de fichiers créé dans la partition <i>a</i> sur
+<tt>/mnt/flashmem</tt>. Si le point de montage n'existe pas, créez-le.
+
+<blockquote><pre>
+# <b>mkdir /mnt/flashmem</b>
+# <b>mount /dev/sd0a /mnt/flashmem</b>
+</pre></blockquote>
+
+<h3>Vous avez reçu le périphérique de quelqu'un avec qui vous souhaitez
+échanger des données.</h3>
+
+<p>
+Il y a une grande chance que la personne en question n'utilise pas
+OpenBSD, ce qui signifie qu'un système de fichiers étranger doit être
+présent sur le périphérique. Nous allons donc devoir découvrir quelles
+partitions sont présentes, comme décrit dans la section précédente :
+<a href="#foreignfs">Est-il possible d'accéder aux données présentes sur
+des systèmes de fichiers autres que FFS ?</a>.
+
+<blockquote><pre>
+# <b>disklabel sd0</b>
+
+# /dev/rsd0c:
+type: SCSI
+disk: SCSI disk
+label: DIGITAL FILM    
+flags:
+bytes/sector: 512
+sectors/track: 32
+tracks/cylinder: 64
+sectors/cylinder: 2048
+cylinders: 123
+total sectors: 251904
+rpm: 3600
+interleave: 1
+trackskew: 0
+cylinderskew: 0
+headswitch: 0           # microseconds
+track-to-track seek: 0  # microseconds
+drivedata: 0 
+
+16 partitions:
+#             size        offset  fstype [fsize bsize  cpg]
+  c:        251904             0  unused      0     0      # Cyl     0 -   122 
+  i:        250592            32   MSDOS                   # Cyl     0*-   122*
+</pre></blockquote>
+
+Le 'disklabel' nous apprend qu'il n'y a qu'une seule partition <i>i</i>,
+contenant un système de fichiers FAT créé sur une machine Windows.
+Comme d'habitude, la partition <i>c</i> représente l'ensemble du disque.
+
+<p>
+A présent, nous allons monter le système de fichiers présent dans la
+partition <i>i</i> vers <tt>/mnt/flashmem</tt>.
+
+<blockquote><pre>
+# <b>mount -t msdos /dev/sd0i /mnt/flashmem</b>
+</pre></blockquote>
+
+Vous pouvez désormais l'utiliser comme n'importe quel autre disque.
+
+<p>
+<b>ATTENTION :</b>
+Vous devriez toujours <b>démonter</b> le système de fichiers <b>avant de
+débrancher</b> le périphérique de masse. Si vous ne le faites, le
+système de fichiers pourrait être laissé dans un état inconsistant
+pouvant emmener de la corruption dans vos données.
+
+<p>
+Après avoir débranché le périphérique de votre machine, vous verrez à
+nouveau des messages du noyau sur la console :
+
+<blockquote><pre>
+umass0: at uhub1 port 1 (addr 2) disconnected
+sd0 detached
+scsibus2 detached
+umass0 detached
+</pre></blockquote>
+
 <p>
 <font color= "#0000e0">
 <a href= "index.html">[Index de la FAQ]</a>
@@ -1788,10 +2086,10 @@ jusqu'au prochain redémarrage.
 <br>
 <small>
 <!--
-Originally [OpenBSD: faq14.html,v 1.127 ]<br>
-$Translation: faq14.html,v 1.22 2005/05/30 06:39:35 ajacoutot Exp $<br>
+Originally [OpenBSD: faq14.html,v 1.131 ]<br>
+$Translation: faq14.html,v 1.25 2005/06/01 10:39:03 ajacoutot Exp $<br>
 -->
-$OpenBSD: faq14.html,v 1.15 2005/05/30 13:52:07 saad Exp $
+$OpenBSD: faq14.html,v 1.16 2005/06/04 08:43:13 saad Exp $
 </small>
 
 </body>

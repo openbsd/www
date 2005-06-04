@@ -50,6 +50,10 @@
     meer dan 100% van mijn schijf in gebruik heb?</a>
 <li><a href="#OhBugger"   >14.15 - Partities herstellen na het verwijderen
     van het disklabel</a>
+<li><a href="#foreignfs"  >14.16 - Kan ik gegevens benaderen op andere
+    bestandssystemen dan FFS?</a>
+<li><a href="#flashmem"   >14.17 - Kan ik een flash geheugentoestel gebruiken
+    met OpenBSD?
 </ul>
 <hr>
 
@@ -1599,6 +1603,23 @@ kan op de volgende plaatsen gevonden worden:
 De root partitie kan direct
 door OpenBSD gemirrored worden met de "Autoconfiguration" optie van RAIDframe.
 
+<p>
+OpenBSD 3.7-stable en later bevat ook mirroring als een functionaliteit van de
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ccd&amp;sektion=4">ccd(4)</a>
+driver.
+Het wordt niet aangeraden dat men hiervoor 3.7-release gebruikt, er was een bug
+die hersteld werd in 3.7-stable.
+Dit systeem is ingebouwd in de GENERIC kernel en zit in de bsd.rd kernel,
+dus het kan veel gemakkelijker te gebruiken zijn, hoewel het enkele beperkingen
+heeft wat betreft het herbouwen van de array.
+Zie:
+<ul>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ccd&amp;sektion=4">ccd(4)
+man pagina</a>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ccdconfig&amp;sektion=8">ccdconfig(8)
+man pagina</a>
+</ul>
+
 <h3>Hardware Opties</h3>
 <p>
 Veel OpenBSD <a href="../../nl/plat.html">platformen</a> bevatten ondersteuning voor
@@ -1716,6 +1737,286 @@ onleesbaar is, het kunnen
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mount;sektion=8">mount(8)</a>en
 tot de volgende reboot.
 
+
+<a name="foreignfs"></a>
+<h2>14.16 - Kan ik gegevens benaderen op andere bestandssystemen dan FFS?</h2>
+<!-- This article written by Steven Mestdagh,
+steven.mestdagh@esat.kuleuven.be, and released under the BSD license -->
+
+Ja. Andere ondersteunde bestandssystemen zijn: ext2 (Linux), ISO9660 (CD-ROM,
+DVD media), FAT (MS-DOS en Windows), NFS, NTFS (Windows), AmigaDOS.
+Sommige ervan hebben beperkte, bijvoorbeeld read-only, ondersteuning.
+
+<p>
+We zullen een algemeen overzicht geven van het gebruik van één van deze
+bestandssystemen onder OpenBSD.
+Om een bestandssysteem te kunnen gebruiken, moet het gemount worden.
+Raadpleeg voor details en mountopties alstublieft de
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mount&amp;sektion=8">mount(8)</a>
+manual pagina, en die van het mount commando voor het bestandssysteem dat u
+zal mounten, bv. mount_msdos, mount_ext2fs, ...
+
+<p>
+Eerst moet u weten op welk device uw bestandssysteem zich bevindt. Dit kan
+gewoon uw eerste harde schijf, <tt>wd0</tt> of <tt>sd0</tt>, zijn maar het
+kan ook minder voor de hand liggend zijn.
+Alle herkende en geconfigureerde devices op uw systeem worden vermeld in
+de uitvoer van het
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dmesg&amp;sektion=1">dmesg(1)</a>
+commando: een devicenaam, gevolgd door een beschrijving op één lijn van het
+device.
+Mijn eerste CD-ROM lezer wordt bijvoorbeeld als volgt herkend:
+
+<blockquote><pre>
+cd0 at scsibus0 targ 0 lun 0: &lt;COMPAQ, DVD-ROM LTD163, GQH3&gt; SCSI0 5/cdrom removable
+</pre></blockquote>
+
+<p>
+Op dit punt is het tijd om te weten te komen welke partities er op het device
+zijn, en in welke partitie het gewenste bestandssysteem zit.
+Daarvoor onderzoeken we het device met
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=disklabel&amp;sektion=8">disklabel(8)</a>.
+De disklabel bevat een lijst van partities, met een maximum aantal van 16.
+Partitie c duidt altijd het volledige device aan.
+Partities a-b en d-p worden gebruikt door OpenBSD.
+Partities i-p kunnen automatisch toegewezen worden aan bestandssystemen van
+andere besturingssystemen.
+In dit geval zal ik de disklabel van mijn harde schijf bekijken, die een
+aantal verschillende bestandssystemen bevat.
+
+<blockquote><pre>
+# <b>disklabel wd0</b>
+
+# using MBR partition 2: type A6 off 20338290 (0x1365672) size 29318625 (0x1bf5de1)
+# /dev/rwd0c:
+type: ESDI
+disk: ESDI/IDE disk
+label: ST340016A       
+flags:
+bytes/sector: 512
+sectors/track: 63
+tracks/cylinder: 16
+sectors/cylinder: 1008
+cylinders: 16383
+total sectors: 78165360
+rpm: 3600
+interleave: 1
+trackskew: 0
+cylinderskew: 0
+headswitch: 0           # microseconds
+track-to-track seek: 0  # microseconds
+drivedata: 0 
+
+16 partitions:
+#             size        offset  fstype [fsize bsize  cpg]
+  a:        408366      20338290  4.2BSD   2048 16384   16 # Cyl 20176*- 20581 
+  b:       1638000      20746656    swap                   # Cyl 20582 - 22206 
+  c:      78165360             0  unused      0     0      # Cyl     0 - 77544 
+  d:       4194288      22384656  4.2BSD   2048 16384   16 # Cyl 22207 - 26367 
+  e:        409248      26578944  4.2BSD   2048 16384   16 # Cyl 26368 - 26773 
+  f:      10486224      26988192  4.2BSD   2048 16384   16 # Cyl 26774 - 37176 
+  g:      12182499      37474416  4.2BSD   2048 16384   16 # Cyl 37177 - 49262*
+  i:         64197            63 unknown                   # Cyl     0*-    63*
+  j:      20274030         64260 unknown                   # Cyl    63*- 20176*
+  k:       1975932      49656978   MSDOS                   # Cyl 49262*- 51223*
+  l:       3919797      51632973 unknown                   # Cyl 51223*- 55111*
+  m:       2939832      55552833  ext2fs                   # Cyl 55111*- 58028*
+  n:       5879727      58492728  ext2fs                   # Cyl 58028*- 63861*
+  o:      13783707      64372518  ext2fs                   # Cyl 63861*- 77535*
+
+</pre></blockquote>
+
+<p>
+Zoals gezien kan worden in de bovenstaande uitvoer, worden eerst de OpenBSD
+partities opgesomd.
+Daarbuiten zijn er een aantal ext2 partities en één MSDOS partitie, en ook
+enkele 'onbekende' partities. Op i386 en amd64 systemen kan u daarover
+gewoonlijk meer te weten komen met de
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fdisk&amp;sektion=8&amp;arch=i386">fdisk(8)</a>
+utility.
+Voor de nieuwsgierige lezer: partitie i is een onderhoudspartitie aangemaakt
+door de verkoper, partitie j is een NTFS partitie en partitie l is een Linux
+swappartitie.
+
+<p>
+Zodra u bepaald hebt welke partitie het is die u wil gebruiken, kan u
+overgaan tot de laatste stap: het bestandssysteem dat er in zit mounten.
+De meeste bestandssystemen worden ondersteund in de GENERIC kernel: kijk
+maar eens naar het kernelconfiguratiebestand, te vinden in de
+<tt>/usr/src/sys/arch/&lt;<i>arch</i>&gt;/conf</tt> directory.
+Sommige zijn echter niet ondersteund, bv. de NTFS ondersteuning is
+experimenteel en daarom niet opgenomen in GENERIC.
+Als u één van de bestandssystemen wil gebruiken die niet ondersteund zijn
+in GENERIC, zal u <a href="faq5.html#Options">een aangepaste kernel moeten
+bouwen</a>.
+
+<p>
+Wanneer u de benodigde informatie hebt verzameld zoals hierboven vermeld,
+is het tijd om het bestandssysteem te mounten.
+Laten we aannemen dat een directory <tt>/mnt/anderfs</tt> bestaat, die we
+zullen gebruiken als mountpunt waar we het gewenste bestandssysteem zullen
+mounten.
+In dit voorbeeld zullen we het ext2 bestandssysteem in partitie m mounten:
+
+<blockquote><pre>
+# <b>mount -t ext2fs /dev/wd0m /mnt/anderfs</b>
+</pre></blockquote>
+
+<p>
+Als u van plan bent dit bestandssysteem regelmatig te gebruiken, kan u
+uzelf wat tijd besparen door er een lijn voor in <tt>/etc/fstab</tt> te
+plaatsen, bijvoorbeeld iets als:
+
+<blockquote><pre>
+/dev/wd0m /mnt/anderfs ext2fs rw,noauto,nodev,nosuid 0 0
+</pre></blockquote>
+
+Bemerk de 0 waarden in het vijfde en zesde veld.
+Dit betekent dat we niet vereisen dat het bestandssysteem gedumpt moet
+worden, en gecontroleerd met fsck.
+In het algemeen zijn dat dingen die u wil laten afhandelen door het
+moeder-besturingssyssteem geassocieerd met het bestandssysteem.
+
+
+<a name="flashmem"></a>
+<h2>14.17 - Kan ik een flash geheugentoestel gebruiken met OpenBSD?</h2>
+<!-- This article written by Steven Mestdagh,
+steven.mestdagh@esat.kuleuven.be, and released under the BSD license -->
+
+Normaal moet het geheugentoestel herkend worden wanneer u het in een poort
+van uw machine steekt.
+Kort na het insteken worden door de kernel een aantal boodschappen naar de
+console geschreven.
+Wanneer ik bijvoorbeeld mijn USB flash geheugentoestel insteek, zie ik het
+volgende op mijn console:
+
+<blockquote><pre>
+umass0 at uhub1 port 1 configuration 1 interface 0
+umass0: LEXR PLUG DRIVE LEXR PLUG DRIVE, rev 1.10/0.01, addr 2
+umass0: using SCSI over Bulk-Only
+scsibus2 at umass0: 2 targets
+sd0 at scsibus2 targ 1 lun 0: &lt;LEXAR, DIGITAL FILM, /W1.&gt; SCSI2 0/direct removable
+sd0: 123MB, 123 cyl, 64 head, 32 sec, 512 bytes/sec, 251904 sec total
+</pre></blockquote>
+
+Deze lijnen geven aan dat de
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=umass&amp;sektion=4">umass(4)</a>
+(USB mass storage) driver vastgehangen werd aan het geheugentoestel, en dat
+hij het SCSI systeem gebruikt.
+De laatste twee lijnen zijn de belangrijkste: ze zeggen op welke device node
+het geheugentoestel vastgemaakt werd, en wat de totale hoeveelheid
+opslagruimte is.
+Als u op één of andere manier deze lijnen gemist hebt, kan u ze nadien nog
+steeds zien met het
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dmesg&amp;sektion=1">dmesg(1)</a>
+commando.
+De gerapporteerde CHS geometrie is eerder fictief, aangezien het flash
+geheugen behandeld wordt als gelijk welke gewone SCSI schijf.
+
+<p>
+We zullen hieronder twee scenario's bespreken.
+
+<h3>Het toestel is nieuw/leeg en u wil het alleen met OpenBSD gebruiken</h3>
+
+U zal een disklabel op het toestel moeten initialiseren, en ten minste
+één partitie aanmaken.
+Lees alstublieft <a href="#disklabel">OpenBSD's disklabel gebruiken</a> en de 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=disklabel&amp;sektion=8">disklabel(8)</a>
+manual pagina voor details hierover.
+
+<p>
+In dit voorbeeld maakte ik gewoon één partitie <i>a</i> waarin ik een FFS
+bestandssysteem zal plaatsen:
+
+<blockquote><pre>
+# <b>newfs sd0a</b>
+Warning: inode blocks/cyl group (125) >= data blocks (62) in last
+    cylinder group. This implies 1984 sector(s) cannot be allocated.
+/dev/rsd0a:     249856 sectors in 122 cylinders of 64 tracks, 32 sectors
+        122.0MB in 1 cyl groups (122 c/g, 122.00MB/g, 15488 i/g)
+super-block backups (for fsck -b #) at:
+ 32,
+</pre></blockquote>
+
+Laten we het bestandssysteem dat we in de <i>a</i> partitie aanmaakten,
+mounten op <tt>/mnt/flashmem</tt>.
+Maak het mountpunt eerst aan als het niet bestaat.
+
+<blockquote><pre>
+# <b>mkdir /mnt/flashmem</b>
+# <b>mount /dev/sd0a /mnt/flashmem</b>
+</pre></blockquote>
+
+<h3>U kreeg het geheugentoestel van iemand met wie u gegevens wil uitwisselen</h3>
+
+<p>
+Er is een aanzienlijke kans dat de andere persoon niet OpenBSD gebruikt,
+dus er kan een vreemd bestandssysteem op het geheugentoestel staan.
+Daarom zullen we eerst moeten te weten komen welke partities er op het toestel
+staan, zoals beschreven in
+<a href="#foreignfs">FAQ 14 - Vreemde Bestandssystemen</a>.
+
+<blockquote><pre>
+# <b>disklabel sd0</b>
+
+# /dev/rsd0c:
+type: SCSI
+disk: SCSI disk
+label: DIGITAL FILM    
+flags:
+bytes/sector: 512
+sectors/track: 32
+tracks/cylinder: 64
+sectors/cylinder: 2048
+cylinders: 123
+total sectors: 251904
+rpm: 3600
+interleave: 1
+trackskew: 0
+cylinderskew: 0
+headswitch: 0           # microseconds
+track-to-track seek: 0  # microseconds
+drivedata: 0 
+
+16 partitions:
+#             size        offset  fstype [fsize bsize  cpg]
+  c:        251904             0  unused      0     0      # Cyl     0 -   122 
+  i:        250592            32   MSDOS                   # Cyl     0*-   122*
+</pre></blockquote>
+
+Zoals kan gezien worden in de disklabel uitvoer hierboven, is er slechts
+één partitie <i>i</i>, die een FAT bestandssysteem bevat, aangemaakt op een
+Windows machine.
+Zoals gewoonlijk geeft de <i>c</i> partitie de volledige device weer.
+
+<p>
+Laten we nu het bestandssysteem in de <i>i</i> partitie mounten op
+<tt>/mnt/flashmem</tt>.
+
+<blockquote><pre>
+# <b>mount -t msdos /dev/sd0i /mnt/flashmem</b>
+</pre></blockquote>
+
+Nu kan u het beginnen gebruiken net zoals gelijk welke andere schijf.
+
+<p>
+<b>WAARSCHUWING:</b>
+U moet het bestandssysteem <b>altijd unmounten</b> <b>voor het uittrekken</b>
+van het geheugentoestel.
+Als u dit niet doet, kan het bestandssysteem in een inconsistente toestand
+achterblijven, wat kan leiden tot corrupte gegevens.
+
+<p>
+Bij het uittrekken van het geheugentoestel uit uw machine zal u opnieuw
+zien dat de kernel hierover boodschappen naar de console schrijft:
+
+<blockquote><pre>
+umass0: at uhub1 port 1 (addr 2) disconnected
+sd0 detached
+scsibus2 detached
+umass0 detached
+</pre></blockquote>
+
 <p>
 <font color= "#0000e0">
 <a href= "index.html">[FAQ Index]</a>
@@ -1729,10 +2030,10 @@ tot de volgende reboot.
 <br>
 <small>
 <!--
-Originally [OpenBSD: faq14.html,v 1.127 ]<br>
-$Translation: faq14.html,v 1.10 2005/05/30 09:29:04 smestdag Exp $<br>
+Originally [OpenBSD: faq14.html,v 1.131 ]<br>
+$Translation: faq14.html,v 1.12 2005/06/01 04:05:38 smestdag Exp $<br>
 -->
-$OpenBSD: faq14.html,v 1.9 2005/05/30 13:52:07 saad Exp $
+$OpenBSD: faq14.html,v 1.10 2005/06/04 08:43:13 saad Exp $
 </small>
 
 </body>
