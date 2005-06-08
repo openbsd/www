@@ -350,7 +350,7 @@ encontradas em <a href="config.html#activate">Come&ccedil;ando</a>.
 
 <p>
 Filas s&atilde;o configuradas no arquivo <tt>
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+3.6">pf.conf</a></tt>. Existem dois tipos de diretivas utilizadas 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+3.7">pf.conf</a></tt>. Existem dois tipos de diretivas utilizadas 
 para configura&ccedil;&atilde;o de filas:
 <ul>
 <li><tt>altq on</tt> - habilita enfileiramento na interface, define qual 
@@ -422,6 +422,7 @@ Pode ser especificado como um valor absoluto ou usando sufixos <tt>b</tt>,
 megabits, e gigabits por segundo, respectivamente ou um valor em porcentagem da 
 fila principal.
 Este par&acirc;metro s&oacute; &eacute; aplic&aacute;vel quando usar o organizador <tt>cbq</tt>.
+Se n&atilde;o for especificado, o padr&atilde;o &eacute; 100% da banda da fila pai.
 <li><tt><i>pri</i></tt> - a prioridade da fila. Para o <tt>cbq</tt> a 
 faixa de prioridade varia de 0 a 7 e para <tt>priq</tt> a faixa vai de 0 a 15.
 Prioridade 0 &eacute; a mais baixa. Quando n&atilde;o especificada, o valor padr&atilde;o de 1 
@@ -456,9 +457,9 @@ Continuando o exemplo acima:
 <blockquote>
 <tt>
 queue std bandwidth 50% cbq(default)<br>
-queue ssh { ssh_login, ssh_bulk }<br>
-&nbsp;&nbsp;queue ssh_login  priority 4 cbq(ecn)<br>
-&nbsp;&nbsp;queue ssh_bulk   cbq(ecn)<br>
+queue ssh bandwidth 25% { ssh_login, ssh_bulk }<br>
+&nbsp;&nbsp;queue ssh_login bandwidth 25% priority 4 cbq(ecn)<br>
+&nbsp;&nbsp;queue ssh_bulk  bandwidth 75% cbq(ecn)<br>
 queue ftp bandwidth 500Kb priority 3 cbq(borrow red)<br>
 </tt>
 </blockquote>
@@ -466,12 +467,22 @@ queue ftp bandwidth 500Kb priority 3 cbq(borrow red)<br>
 <p>
 Aqui os par&acirc;metros das subfilas previamente definidas s&atilde;o configurados. 
 A fila <tt>std</tt> possui largura de banda de 50% da fila raiz (ou 1Mbps) 
-e est&aacute; configurada como a fila padr&atilde;o. A fila <tt>ssh</tt> define duas 
-subfilas, <tt>ssh_login</tt> e <tt>ssh_bulk</tt>. A fila <tt>ssh_login</tt> 
+e est&aacute; configurada como a fila padr&atilde;o. A fila <tt>ssh</tt> 
+possui 25% da banda da fila raiz (500kb) e tamb&eacute;m 
+cont&eacute;m duas filas <tt>ssh_login</tt> 
+e <tt>ssh_bulk</tt>. A fila <tt>ssh_login</tt> 
 tem prioridade maior que <tt>ssh_bulk</tt> e ambas tem ECN habilitado. 
 A banda atribu&iacute;da &agrave; fila <tt>ftp</tt> &eacute; de 500Kbps com prioridade 3. Ela 
 tamb&eacute;m pode tomar banda emprestada quando estiver dispon&iacute;vel e tamb&eacute;m tem 
 RED habilitado.
+
+<p>
+<b>NOTA:</b> Cada defini&ccedil;&atilde;o de fila tem sua banda especificada.
+Sem especificar a banda, o PF dar&aacute; a fila 100% da banda da fila pai.
+Nesta situa&ccedil;&atilde;o, que causar&aacute; um erro quando as regras
+s&atilde;o carregadas uma vez que existe uma fila com 100% da banda, nenhuma
+outra fila pode ser definida neste n&iacute;vel uma vez que n&atilde;o
+existe banda livre para alocar. 
 
 <a name="assign"></a>
 <h3>Atribuindo Tr&aacute;fego a uma Fila</h3>
@@ -501,7 +512,7 @@ da definida na diretiva <tt>altq on</tt>:
 <blockquote>
 <tt> 
 altq on fxp0 cbq bandwidth 2Mb queue { std, ftp }<br>
-queue std cbq(default)<br>
+queue std bandwidth 500Kb cbq(default)<br>
 queue ftp bandwidth 1.5Mb<br>
 <br>
 pass in on dc0 from any to any port 21 queue ftp<br>
@@ -648,9 +659,9 @@ altq on dc0 cbq bandwidth 2Mb queue { std_in, ssh_im_in, dns_in, bob_in }
 # bob_in      - banda reservada para a esta&ccedil;&atilde;o de trabalho de Bob. 
 #		permitir a ele emprestar banda dos outros.
 
-queue std_in    cbq(default)
-queue ssh_im_in priority 4
-queue dns_in    priority 5
+queue std_in    bandwidth 1.6Mb cbq(default)
+queue ssh_im_in bandwidth 200Kb priority 4
+queue dns_in    bandwidth 120Kb priority 5
 queue bob_in    bandwidth 80Kb cbq(borrow)
 
 
@@ -723,12 +734,19 @@ rede utilizam Fast Ethernet (100Mbps).
 <p>
 O administrador de rede decidiu pela seguinte pol&iacute;tica:
 <ul>
-<li>Limitar o tr&aacute;fego entre o servidor WWW e a internet para 500Kbps 
-em ambas as dire&ccedil;&otilde;es.
-<li>Nenhuma limita&ccedil;&atilde;o de banda no tr&aacute;fego entre o servidor WWW e 
-a rede interna.
-<li>Dar prioridade maior ao tr&aacute;fego HTTP entre o servidor WWW e 
-a Internet do que qualquer outro tr&aacute;fego (como transfer&ecirc;ncias FTP).
+<li>Limitar todo o tr&aacute;fego entre o servidor WWW e a internet 
+para 500Kbps em ambas as dire&ccedil;&otilde;es.
+       <ul>
+       <li>Distribuir 250Kbps para tr&aacute;fego HTTP.
+       <li>Distribuir 250Kbps para "outro" tr&aacute;fego (ex., 
+	tr&aacute;fego n&atilde;o-HTTP)
+       <li>Permitir qualquer fila emprestar totalmente os 500Kbps.
+       <li>Dar alta prioridade ao tr&aacute;fego entre o servidor WWW 
+	e a Internet do que outro tr&aacute;fego entre o servidor WWW
+	e a Internet (como uploads FTP).
+       </ul>
+<li>O tr&aacute;fego entre o servidor WWW e a rede interna pode usar 
+totalmente os 100Mbps que a rede oferece.
 <li>Reservar 500Kbps para o Departamento de TI para que eles 
 possam baixar as &uacute;ltimas vers&otilde;es de software em tempo h&aacute;bil. Eles 
 devem ser capazes de utilizar mais do que 500Kbps caso haja
@@ -757,15 +775,16 @@ altq on fxp0 cbq bandwidth 1.5Mb queue { std_ext, www_ext, boss_ext }
 # define os par&acirc;metros para as subfilas.
 # std_ext        - a fila padr&atilde;o. tamb&eacute;m para tr&aacute;fego saindo via fxp0.
 # www_ext        - fila para tr&aacute;fego WWW do servidor. limitada a 500Kbps.
-#   www_ext_http - tr&aacute;fego http do servidor WWW
-#   www_ext_misc - todo tr&aacute;fego difetente de http do servidor WWW
-# boss_ext       - tr&aacute;fego vindo do computador do chefe
+#   www_ext_http - fila para tr&aacute;fego WWW do servidor; alta prioridade.
+#   www_ext_misc - todo tr&aacute;fego difetente de http do servidor WWW.
+# boss_ext       - tr&aacute;fego vindo do computador do chefe.
 
-queue std_ext        cbq(default)
+
+queue std_ext        bandwidth 500Kb cbq(default borrow)
 queue www_ext        bandwidth 500Kb { www_ext_http, www_ext_misc }
-  queue www_ext_http priority 3 cbq(red)
-  queue www_ext_misc priority 1
-queue boss_ext       priority 3
+  queue www_ext_http bandwidth 50% priority 3 cbq(red borrow)
+  queue www_ext_misc bandwidth 50% priority 1 cbq(borrow)
+queue boss_ext       bandwidth 500Kb priority 3 cbq(borrow)
 
 # habilita enfileiramento na interface interna para controlar tr&aacute;fego
 # vindo da internet para DMZ. usa cbq para controlar a banda em cada
@@ -780,15 +799,15 @@ altq on dc0 cbq bandwidth 100% queue { net_int, www_int }
 # net_int    - fila para tr&aacute;fego vindo da Internet. banda de 1.0Mbps.
 #   std_int  - a fila padr&atilde;o. padr&atilde;o tamb&eacute;m para tr&aacute;fego 
 #	       saindo via dc0. 
-#   it_int   - tr&aacute;fego para a rede do TI.
-#   boss_int - tr&aacute;fego para o PC do chefe.
-# www_int    - tr&aacute;fego do servidor WWW na DMZ.
+#   it_int   - tr&aacute;fego para a rede do TI; reservar 500Kbps.
+#   boss_int - tr&aacute;fego para o PC do chefe, designar alta prioridade.
+# www_int    - tr&aacute;fego do servidor WWW na DMZ; velocicade m&aacute;xima.
 
 queue net_int    bandwidth 1.0Mb { std_int, it_int, boss_int }
-  queue std_int  cbq(default)
+  queue std_int  bandwidth 250Kb cbq(default borrow)
   queue it_int   bandwidth 500Kb cbq(borrow)
-  queue boss_int priority 3
-queue www_int    cbq(red)
+  queue boss_int bandwidth 250Kb priority 3 cbq(borrow)
+queue www_int    bandwidth 99Mb cbq(red borrow)
 
 # habilitar enfileiramento na interface da DMZ para controlar tr&aacute;fego
 # destinado ao servidor WWW. cbq &eacute; utilizado nesta interface j&aacute; que 
@@ -802,14 +821,14 @@ altq on fxp1 cbq bandwidth 100% queue { internal_dmz, net_dmz }
 # define os par&acirc;metros para as subfilas.
 # internal_dmz   - tr&aacute;fego da rede interna.
 # net_dmz        - tr&aacute;fego da Internet.
-#   net_dmz_http - tr&aacute;fego http.
+#   net_dmz_http - tr&aacute;fego http; alta prioridade.
 #   net_dmz_misc - todo tr&aacute;fego n&atilde;o-http. esta tamb&eacute;m &eacute; a fila
 #	           padr&atilde;o.
 
-queue internal_dmz      # nenhuma configura&ccedil;&atilde;o especial necess&aacute;ria
+queue internal_dmz   bandwidth 99Mb cbq(borrow)
 queue net_dmz        bandwidth 500Kb { net_dmz_http, net_dmz_misc }
-  queue net_dmz_http priority 3 cbq(red)
-  queue net_dmz_misc priority 1 cbq(default)
+  queue net_dmz_http bandwidth 50% priority 3 cbq(red borrow)
+  queue net_dmz_misc bandwidth 50% priority 1 cbq(default borrow)
 
 
 # ... na se&ccedil;&atilde;o de filtragem do of pf.conf ...
@@ -871,9 +890,9 @@ pass out on fxp1 proto tcp from $int_nets to $wwwserv port { 80, \
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
 <small>
-Originally [OpenBSD: queueing.html,v 1.25 ]<br>                                                  
-$Translation: queueing.html,v 1.2 2005/02/11 16:00:21 dsantos Exp $<br>                 
-$OpenBSD: queueing.html,v 1.2 2005/02/12 11:03:21 jufi Exp $ 
+Originally [OpenBSD: queueing.html,v 1.27 ]<br>
+$Translation: queueing.html,v 1.3 2005/06/06 13:06:29 dsantos Exp $<br>
+$OpenBSD: queueing.html,v 1.3 2005/06/08 17:38:20 saad Exp $ 
 </small>
 
 </body>
