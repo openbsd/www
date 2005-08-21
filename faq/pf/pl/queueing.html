@@ -10,7 +10,7 @@
 <meta name="distribution"  content="global">
 </head>
 <!--
-Copyright (c) 2003, 2004 Joel Knight <enabled@myrealbox.com>
+Copyright (c) 2003-2005 Joel Knight <enabled@myrealbox.com>
 
 Permission to use, copy, modify, and distribute this documentation for
 any purpose with or without fee is hereby granted, provided that the
@@ -30,9 +30,11 @@ PERFORMANCE OF THIS DOCUMENTATION
 <!-- Passes validator.w3.org, please keep it this way;
 please, use a max of 72 chars per line -->
 
-<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
+<a href="../../index.html">
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif" border="0">
+</a>
 <p>
-[<a href="anchors.html">Wstecz: Zakotwiczenia i nazwane zestawy (pod)regu³</a>]
+[<a href="anchors.html">Wstecz: Zakotwiczenia</a>]
 [<a href="index.html">Spis tre¶ci</a>]
 [<a href="pools.html">Dalej: Pule adresów i kierowanie ruchem</a>]
 
@@ -350,7 +352,7 @@ w sekcji <a href="config.html#activate">Aktywacja</a>.
 
 <p>
 Kolejkowanie jest konfigurowane w pliku <tt>
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+3.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+3.7"
 >pf.conf</a></tt>. Istniej± dwa typy dyrektyw, które s³u¿±
 do konfigurowania kolejkowania:
 <ul>
@@ -428,6 +430,7 @@ przy pomocy przyrostków <tt>b</tt>, <tt>Kb</tt>, <tt>Mb</tt> i <tt>Gb</tt>,
 aby okre¶liæ odpowiednio ilo¶æ bitów, kilobitów, megabitów i gigabitów 
 na sekundê, lub jako warto¶æ procentowa przepustowo¶ci kolejki-korzenia.
 Parametr ten w³a¶ciwy jedynie dla algorytmu szeregowania <tt>cbq</tt>.
+Je¿eli nie jest okre¶lony, domy¶lnie jest 100% przepustowo¶ci rodzica.
 <li><tt><i>pri</i></tt> - priorytet kolejki. Dla <tt>cbq</tt> zakres
 priorytetów wynosi od 0 do 7, a dla <tt>priq</tt> od 0 do 15.
 Priorytet 0 jest najni¿szy. Domy¶lnym priorytetem jest 1.
@@ -460,9 +463,9 @@ Kontynuuj±c wcze¶niejszy przyk³ad:
 <blockquote>
 <tt>
 queue std bandwidth 50% cbq(default)<br>
-queue ssh { ssh_login, ssh_bulk }<br>
-&nbsp;&nbsp;queue ssh_login  priority 4 cbq(ecn)<br>
-&nbsp;&nbsp;queue ssh_bulk   cbq(ecn)<br>
+queue ssh bandwidth 25% { ssh_login, ssh_bulk }<br>
+&nbsp;&nbsp;queue ssh_login bandwidth 25% priority 4 cbq(ecn)<br>
+&nbsp;&nbsp;queue ssh_bulk  bandwidth 75% cbq(ecn)<br>
 queue ftp bandwidth 500Kb priority 3 cbq(borrow red)<br>
 </tt>
 </blockquote>
@@ -470,12 +473,22 @@ queue ftp bandwidth 500Kb priority 3 cbq(borrow red)<br>
 <p>
 Powy¿ej zdefiniowane s± wcze¶niej zadeklarowane kolejki-dzieci.
 Kolejka <tt>std</tt> ma przydzielone 50% przepustowo¶ci kolejki korzenia
-(czyli 1Mbps) i jest zaznaczona jako kolejka domy¶lna. Kolejka <tt>ssh</tt>
-deklaruje dwie kolejki-dzieci: <tt>ssh_login</tt> i <tt>ssh_bulk</tt>. <tt>Ssh_login</tT>
+(czyli 1Mbps) i jest zaznaczona jako kolejka domy¶lna. Kolejce <tt>ssh</tt>
+przypisano 25% przepustowo¶ci kolejki korzenia (500kb) oraz zawiera dwie
+kolejki-dzieci <tt>ssh_login</tt> i <tt>ssh_bulk</tt>. <tt>Ssh_login</tT>
 ma wiêkszy priorytet ni¿ <tt>ssh_bulk</tt>, a obie maj± uaktywnione ECN.
 Kolejka FTP ma przypisan± przepustowo¶æ 500Kbps i nadany priorytet 3.
 Mo¿e ona tak¿e po¿yczaæ pasmo, je¶li s± ku temu warunki,
 oraz ma uaktywnione RED.
+
+<p>
+<b>Zauwa¿my:</b> Ka¿da definicja potomnej kolejki posiada okreslon± przepustowo¶æ.
+Bez okre¶lania przepustowo¶ci, PF przydzieli kolejce 100% przepustowo¶ci 
+kolejki rodzica.
+W takiej sytuacji spowoduje to b³±d podczas ³adowania regu³, poniewa¿ je¿eli 
+istnieje kolejka ze 100% przepustowo¶ci, ¿adna inna kolejka nie mo¿e
+byæ zdefiniowana na tym poziomie, nie istnieje bowiem wolna przepustowo¶æ
+do przydzielenia. 
 
 <a name="assign"></a>
 <h3>Przypisywanie ruchu do kolejki</h3>
@@ -506,7 +519,7 @@ innym interfejsie ni¿ zadeklarowano w dyrektywie <tt>altq on</tt>:
 <blockquote>
 <tt> 
 altq on fxp0 cbq bandwidth 2Mb queue { std, ftp }<br>
-queue std cbq(default)<br>
+queue std bandwidth 500Kb cbq(default)<br>
 queue ftp bandwidth 1.5Mb<br>
 <br>
 pass in on dc0 from any to any port 21 queue ftp<br>
@@ -657,9 +670,9 @@ altq on dc0 cbq bandwidth 2Mb queue { std_in, ssh_im_in, dns_in, bob_in }
 # bob_in      - pasmo zarezerwowane dla stacji roboczej Boba. zezwalamy
 #               mu na po¿yczanie wolnego pasma.
 
-queue std_in    cbq(default)
-queue ssh_im_in priority 4
-queue dns_in    priority 5
+queue std_in    bandwidth 1.6Mb cbq(default)
+queue ssh_im_in bandwidth 200Kb priority 4
+queue dns_in    bandwidth 120Kb priority 5
 queue bob_in    bandwidth 80Kb cbq(borrow)
 
 
@@ -733,19 +746,18 @@ Fast Ethernet (100Mbps).
 <p>
 Administrator sieci zdecydowa³ o nastêpuj±cej polityce kolejkowania:
 <ul>
-<li>Ograniczyæ ruch pomiêdzy serwerem WWW, a Internetem do 500Kbps w
+<li>Ograniczyæ ca³y ruch pomiêdzy serwerem WWW, a Internetem do 500Kbps w
 obu kierunkach.
-<li>Brak ograniczeñ ruchu pomiêdzy serwerem WWW, a sieci± wewnêtrzn±.
-<li>Nadaj ruchowi HTTP pomiêdzy serwerem WWW, a Internetem wiêkszy
-priorytet ni¿ innemu ruchowi pomiêdzy serwerem WWW, a Internetem
-(jak np. pobieraniu przez FTP).
-<li>Zarezerwowanie 500Kbps dla dzia³u IT, aby mogli pobieraæ najnowsze
-uaktualnienia oprogramowania w wygodny i szybki sposób. Powinni byæ w stanie
-korzystaæ z wiêkszego pasma ni¿ 500Kbps je¶li przepustowo¶æ nie jest
-w pe³ni wykorzystywana.
-<li>Nadaæ ruchowi pomiêdzy komputerem szefa i Internetem wiêkszy
-priorytet ni¿ innemu ruchowi do/z Internetu.
-</ul>
+    <ul>
+    <li>Przydzieliæ 250Kbps na ruch HTTP.
+    <li>Przydzieliæ 250Kbps na "pozosta³y" ruch (tzn. ruch nie-HTTP) 
+    <li>Zezwoliæ ka¿dej z kolejek na na po¿yczke do pe³nych 500Kbps.
+    <li>Nadaæ ruchowi HTTP pomiêdzy serwerem WWW a Internetem wy¿szy
+    priorytet ni¿ pozosta³y ruch pomiêdzy serwerem WWW a Internetem
+    (tak jak np. pobieranie FTP)
+    </ul>
+<li>Ruch pomiêdzy serwerem WWW a sieci± wewnêtrzn± mo¿e korzystaæ wpe³ni
+z 100Mbps jakie oferuje sieæ.
 
 <p>
 Poni¿ej znajduje siê zestaw regu³, który spe³nia te za³o¿enia.
@@ -770,15 +782,15 @@ altq on fxp0 cbq bandwidth 1.5Mb queue { std_ext, www_ext, boss_ext }
 #                  wychodz±cego ruchu na fxp0.
 # www_ext        - kolejka zbiorcza dla kolejek serwera WWW. limit
 #                  500Kbps.
-#   www_ext_http - ruch http z serwera WWW
-#   www_ext_misc - ca³y ruch nie-http z serwera WWW
-# boss_ext       - ruch z komputera szefa
+#   www_ext_http - ruch http z serwera WWW; wy¿szy priorytet.
+#   www_ext_misc - ca³y ruch nie-http z serwera WWW.
+# boss_ext       - ruch z komputera szefa.
 
-queue std_ext        cbq(default)
+queue std_ext        bandwidth 500Kb cbq(default borrow)
 queue www_ext        bandwidth 500Kb { www_ext_http, www_ext_misc }
-  queue www_ext_http priority 3 cbq(red)
-  queue www_ext_misc priority 1
-queue boss_ext       priority 3
+  queue www_ext_http bandwidth 50% priority 3 cbq(red borrow)
+  queue www_ext_misc bandwidth 50% priority 1 cbq(borrow)
+queue boss_ext       bandwidth 500Kb priority 3 cbq(borrow) 
 
 # uaktywnienie kolejkowania na wewnêtrznym interfejsie, tak aby kontrolowaæ
 # ruch nadchodz±cy z Internetu lub DMZ. wykorzystanie algorytmu
@@ -795,15 +807,15 @@ altq on dc0 cbq bandwidth 100% queue { net_int, www_int }
 #              wynosi 1.0Mbps.
 #   std_int  - standardowa kolejka. tak¿e domy¶lna kolejka dla
 #              wychodz±cego ruchu na dc0.
-#   it_int   - ruch do sieci dzia³u IT.
-#   boss_int - ruch do komputera szefa.
-# www_int    - ruch z serwera WWW w strefie DMZ.
+#   it_int   - ruch do sieci dzia³u IT, zarezerwowano dla nich 500Kbps.
+#   boss_int - ruch do komputera szefa; przypisano wy¿szy priorytet.
+# www_int    - ruch z serwera WWW w strefie DMZ; z pe³n± szybko¶ci±.
 
 queue net_int    bandwidth 1.0Mb { std_int, it_int, boss_int }
-  queue std_int  cbq(default)
+  queue std_int  bandwidth 250Kb cbq(default borrow)
   queue it_int   bandwidth 500Kb cbq(borrow)
-  queue boss_int priority 3
-queue www_int    cbq(red)
+  queue boss_int bandwidth 250Kb priority 3 cbq(borrow)
+queue www_int    bandwidth 99Mb cbq(red borrow)
 
 # uaktywninie kolejkowania na interfejsie DMZ, aby kontrolowaæ ruch
 # skierowany do serwera WWW. cbq jest zastosowane dla tego
@@ -818,8 +830,14 @@ altq on fxp1 cbq bandwidth 100% queue { internal_dmz, net_dmz }
 # zdefiniowanie parametrów dla kolejek-dzieci.
 # internal_dmz   - ruch z sieci wewnêtrznej.
 # net_dmz        - zbiorcza kolejka dla ruchu z Internetu.
-#   net_dmz_http - ruch http.
+#   net_dmz_http - ruch http; wy¿szy priorytet.
 #   net_dmz_misc - ca³y ruch nie-http. jest to tak¿e domy¶lna kolejka.
+
+queue internal_dmz   bandwidth 99Mb cbq(borrow)
+queue net_dmz        bandwidth 500Kb { net_dmz_http, net_dmz_misc }
+  queue net_dmz_http bandwidth 50% priority 3 cbq(red borrow)
+  queue net_dmz_misc bandwidth 50% priority 1 cbq(default borrow)
+
 
 queue internal_dmz      # nie s± potrzebne ¿adne dodatkowe ustawienia
 queue net_dmz        bandwidth 500Kb { net_dmz_http, net_dmz_misc }
@@ -876,7 +894,7 @@ pass out on fxp1 proto tcp from $int_nets to $wwwserv port { 80, \
 </table>
 
 <p>
-[<a href="anchors.html">Wstecz: Zakotwiczenia i nazwane zestawy (pod)regu³</a>]
+[<a href="anchors.html">Wstecz: Zakotwiczenia</a>]
 [<a href="index.html">Spis tre¶ci</a>]
 [<a href="pools.html">Dalej: Pule adresów i kierowanie ruchem</a>]
 
@@ -886,9 +904,9 @@ pass out on fxp1 proto tcp from $int_nets to $wwwserv port { 80, \
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
 <small>
-Originally [OpenBSD: queueing.html,v 1.23 ]<br>
-$Translation: queueing.html,v 1.4 2004/11/12 13:51:20 pl-team Exp $<br>
-$OpenBSD: queueing.html,v 1.4 2004/11/12 16:16:53 jufi Exp $
+Originally [OpenBSD: queueing.html,v 1.27 ]<br>
+$Translation: queueing.html,v 1.5 2005/08/20 15:10:35 pl-team Exp $<br>
+$OpenBSD: queueing.html,v 1.5 2005/08/21 22:37:28 saad Exp $
 </small>
 </body>
 </html>

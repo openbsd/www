@@ -11,7 +11,7 @@
 </head>
 
 <!--
-Copyright (c) 2003, 2004 Joel Knight <enabled@myrealbox.com>
+Copyright (c) 2003-2005 Joel Knight <enabled@myrealbox.com>
 
 Permission to use, copy, modify, and distribute this documentation for
 any purpose with or without fee is hereby granted, provided that the
@@ -30,12 +30,13 @@ PERFORMANCE OF THIS DOCUMENTATION
 <body bgcolor="#ffffff" text="#000000">
 <!-- Passes validator.w3.org, please keep it this way;
 please, use a max of 72 chars per line -->
-
-<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif">
+<a href="../../../index.html">
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif" border="0">
+</a>
 <p>
 [<a href="ftp.html">Wstecz: Problemy z FTP</a>]
 [<a href="index.html">Spis tre¶ci</a>]
-[<a href="example1.html">Dalej: Firewall dla sieci domowej lub ma³ego biura</a>]
+[<a href="carp.html">Dalej: Redundantny firewall z CARP i pfsync</a>]
 
 <h1><font color="#e00000">PF: Authpf: pow³oka dla bramek
 uwierzytelniaj±cych</font></h1>
@@ -47,13 +48,15 @@ uwierzytelniaj±cych</font></h1>
 <li><a href="#intro">Wstêp</a>
 <li><a href="#config">Konfiguracja</a>
 	<ul>
+	<li><a href="#enable">W³±czanie Authpf</a>
 	<li><a href="#linkmain">W³±czanie authpf do g³ównego zestawu regu³</a>
 	<li><a href="#loadrules">Konfigurowanie ³adowanych regu³</a>
 	<li><a href="#acl">Listy kontroli dostêpu</a>
+	<li><a href="#message">Wy¶wietlanie wiadomo¶ci przy logowaniu</a>
 	<li><a href="#shell">Ustawianie authpf jako pow³okê u¿ytkownika</a>
 	</ul>
+<li><a href="#loginclass">Tworzenie klas logowania w authpf</a>
 <li><a href="#wholog">Przegl±danie, kto jest zalogowany</a>
-<li><a href="#moreinfo">Wiêcej informacji</a>
 <li><a href="#example">Przyk³ad</a>
 </ul>
 
@@ -61,19 +64,19 @@ uwierzytelniaj±cych</font></h1>
 
 <a name="intro"></a>
 <h2>Wstêp</h2>
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=authpf&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=authpf&amp;sektion=8&amp;manpath=OpenBSD+3.7"
 >Authpf(8)</a> jest pow³ok± u¿ytkownika s³u¿±c± do uwierzytelniania
 w bramkach sieciowych. Bramka uwierzytelniaj±ca nie ró¿ni siê od zwyk³ej
 bramki sieciowej (aka router) z tym wyj±tkiem, ¿e u¿ytkownicy musz±
 potwierdziæ swoj± to¿samo¶æ na bramce, zanim ich ruch bêdzie móg³
 zostaæ przepuszczony przez ni±. Gdy domy¶ln± pow³ok± u¿ytkownika jest
 <tt>/usr/sbin/authpf</tt> (np zamiast normalnie stosowanych pow³ok:
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ksh&amp;sektion=1&amp;manpath=OpenBSD+3.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ksh&amp;sektion=1&amp;manpath=OpenBSD+3.7"
 >ksh(1)</a>,
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=csh&amp;sektion=1&amp;manpath=OpenBSD+3.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=csh&amp;sektion=1&amp;manpath=OpenBSD+3.7"
 >csh(1)</a>, itp), a u¿ytkownik zaloguje siê przez SSH, authpf zajmie siê
 wykonaniem odpowiednich operacji, aby aktywowaæ zestaw regu³
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+3.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+3.7"
 >pf(4)</a> i spowodowaæ, ¿e dzia³a obs³uga ruchu zwi±zanego z danym
 u¿ytkownikiem jak np regu³y filtruj±ce i/lub translacje NAT czy
 przekierowania. Gdy u¿ytkownik wylogowuje siê lub nastêpuje
@@ -83,18 +86,23 @@ stanowe. Dziêki temu, u¿ytkownik mo¿e przesy³aæ pakiety przez bramkê
 jedynie w czasie, gdy utrzymuje otwart± sesjê SSH.
 
 <p>
-Authpf wp³ywa na zestaw regu³
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+3.6"
->pf(4)</a> poprzez dodawanie regu³ do
-<a href="anchors.html#named">nazwanych zestawów regu³</a> dowi±zanych 
-w <a href="anchors.html">punktach zakotwiczenia</a>. Za ka¿dym razem,
-gdy u¿ytkownik pomy¶lnie potwierdza swoj± to¿samo¶æ,
-authpf tworzy nowy nazwany zestaw regu³ i ³aduje do niego wcze¶niej
-przygotowane regu³y 
-<a href="filter.html">filtruj±ce</a>, <a href="nat.html"><tt>nat</tt></a>,
-<a href="nat.html#binat"><tt>binat</tt></a> i 
-<a href="rdr.html"><tt>rdr</tt></a>. Regu³y, które ³aduje authpf
-mog± byæ przygotowane globalnie lub dla poszczególnych u¿ytkowników.
+Authpf ³aduje regu³y filtra/NAT w unikany
+<a href="anchors.html">punkt zakotwiczenia (anchor)</a>.
+Nazwa tego zakotwiczenia jest kombinacj± uniksowej nazwy u¿ytkownika 
+oraz numeru procesu authpf w formacie "<tt>username(PID)</tt>".
+Ka¿de zakotwiczenie dla u¿ytkownika przechowywane jest wewn±trz 
+zakotwiczenia <tt>authpf</tt> ktore jest zakotwiczone w jednym kroku 
+w g³ównym zestawie regu³.
+Zatem "fully qualified anchor path" staje siê:
+
+<blockquote>
+<tt>
+<i>main_ruleset</i>/authpf/<i>username</i>(<i>PID</i>)
+</tt>
+</blockquote>
+	         
+<p>
+Regu³y które ³aduje authpf mog± byæ konfigurowane per-u¿ytkownik lub globalnie. 
 
 <p>
 Przyk³adowe zastosowania authpf to:
@@ -120,7 +128,7 @@ do zapewnienia zarejestrowanym u¿ytkownikom pe³nego dostêpu.
 Authpf zapewnia logi z nazwami u¿ytkowników i ich adresami IP dla ka¿dego
 u¿ytkownika, który pomy¶lnie przechodzi uwierzytelnianie, podobnie dzieje
 siê z dok³adnym czasem rozpoczêcia i zakoñczenia sesji odnotowywanymi przez 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=syslogd&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=syslogd&amp;sektion=8&amp;manpath=OpenBSD+3.7"
 >syslogd(8)</a>. Wykorzystuj±c te informacje, administrator mo¿e okre¶liæ
 kto i kiedy by³ zalogowany oraz czyni u¿ytkowników odpowiedzialnymi za
 swój ruch sieciowy.
@@ -129,8 +137,28 @@ swój ruch sieciowy.
 <h2>Konfiguracja</h2>
 Podstawowe kroki, niezbêdne do konfiguracji authpf s± wymienione poni¿ej.
 Bardziej szczegó³owe informacje o konfiguracji mo¿na znale¼æ na
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=authpf&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=authpf&amp;sektion=8&amp;manpath=OpenBSD+3.7"
 >stronie podrêcznika man authpf</a>.
+
+<a name="enable"></a>
+<h3>W³±czanie Authpf</h3>
+
+<p>
+Authpf nie uruchomi siê je¿eli plik konfiguracyjny <tt>/etc/authpf/authpf.conf</tt>
+nie istnieje.
+Nawet je¿eli ten plik jest pusty (o zerowym rozmiarze), musi wci±¿ byæ dostêpny
+w przeciwnym wypadku authpf wy³±czy siê natychmiast po pomy¶lnym zalogowaniu
+u¿ytkownika.
+
+<p>
+Poni¿sze parametry konfiguracyjne mog± zostaæ umieszczone w pliku 
+<tt>authpf.conf</tt>:
+<ul>
+<li><tt>anchor=<i>nazwa</i></tt> - U¿ywa tej nazwy
+<a href="anchors.html">zakotwiczenia</a> zamiast "authpf".
+<li><tt>table=<i>nazwa</i></tt> - U¿ywa tej nazwy
+<a href="tables.html">tabeli</a> zamiast "authpf_users".
+</ul>
 
 <a name="linkmain"></a>
 <h3>W³±czanie authpf do g³ównego zestawu regu³</h3>
@@ -187,6 +215,24 @@ Jest zalecan± praktyk±, aby wykorzystywaæ makro <tt>$user_ip</tt>
 jedynie do zezwalania na ruch pakietów z komputera u¿ytkownika,
 który potwierdzi³ swoj± to¿samo¶æ.
 
+<p>
+Dodatkowo do makra <tt>$user_ip</tt>, authpf authpf skorzysta z tabeli
+<tt>authpf_users</tt> (je¿eli istnieje) by przechowywaæ adresy IP dla
+ka¿dego z zautoryzowanych u¿ytkowników.
+Upewnij siê ¿e j± zdefiniowa³e¶ zanim jej u¿yjesz:
+
+<blockquote>
+<tt>
+table &lt;authpf_users&gt; persist<br>
+pass in on $ext_if proto tcp from &lt;authpf_users&gt; \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;to port  smtp flags S/SA keep state
+</tt>
+</blockquote>
+
+<p>
+Tabela ta powinna byæ u¿ywana tylko w regu³ach przeznaczonych zastosowania
+dla wszystkich zautoryzowanych u¿ytkowników.
+
 <a name="acl"></a>
 <h3>Listy kontroli dostêpu</h3>
 Mo¿na uniemo¿liwiæ dostêp u¿ytkownika przez authpf poprzez utworzenie
@@ -211,12 +257,28 @@ dostêpu, czy nie, wówczas wy¶wietla krótk± wiadomo¶æ i roz³±cza
 u¿ytkownika. Wpis w <tt>/etc/authpf/banned/</tt> zawsze
 nadpisuje wpis w <tt>/etc/authpf/authpf.allow</tt>.
 
+
+<a name="message"></a>
+<h3>Wy¶wietlanie wiadomo¶ci przy logowaniu</h3>
+<p>
+Za ka¿dym razem gdy u¿ytkownik pomy¶lnie siê zautoryzuje do authpf,
+zostanie otrzyma powitanie informuj±ce ¿e zosta³ zautoryzoowany. 
+<blockquote>
+<tt>
+Hello charlie. You are authenticated from host "64.59.56.140"
+</tt>
+</blockquote>
+<p>
+Wiadomo¶æ t± mo¿na uzupe³niæ poprzez umieszczenie zwyczajowej informacji
+w <tt>/etc/authpf/authpf.message</tt>.
+Zawarto¶æ tego pliku zostanie wy¶wietlona po domy¶lnym powitaniu.
+
 <a name="shell"></a>
 <h3>Ustawianie authpf jako pow³okê u¿ytkownika</h3>
 Aby authpf dzia³a³o, musi byæ ustawione jako pow³oka domy¶lna
 u¿ytkownika. Gdy u¿ytkownik pomy¶lnie potwierdza swoj± to¿samo¶æ
 wobec
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sshd&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sshd&amp;sektion=8&amp;manpath=OpenBSD+3.7"
 >sshd(8)</a>, authpf bêdzie uruchomione, jako pow³oka u¿ytkownika.
 Nast±pi wówczas sprawdzenie, czy u¿ytkownik ma prawo dostêpu
 do authpf, za³adowanie regu³ z odpowiedniego pliku itd.
@@ -225,20 +287,64 @@ do authpf, za³adowanie regu³ z odpowiedniego pliku itd.
 Jest kilka sposobów na ustawienie authpf jako pow³okê u¿ytkownika:
 <ol>
 <li>Rêcznie dla ka¿dego u¿ytkownika, przy pomocy
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=chsh&amp;sektion=1&amp;manpath=OpenBSD+3.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=chsh&amp;sektion=1&amp;manpath=OpenBSD+3.7"
 >chsh(1)</a>, 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vipw&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vipw&amp;sektion=8&amp;manpath=OpenBSD+3.7"
 >vipw(8)</a>,
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=useradd&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=useradd&amp;sektion=8&amp;manpath=OpenBSD+3.7"
 >useradd(8)</a>,
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=usermod&amp;sektion=8&amp;manpath=OpenBSD+3.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=usermod&amp;sektion=8&amp;manpath=OpenBSD+3.7"
 >usermod(8)</a>, itd.
 <li>Poprzez ustawienie opcji 
 <tt>shell</tt> w klasie zdefiniowanej w pliku
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=login.conf&amp;sektion=5&amp;manpath=OpenBSD+3.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=login.conf&amp;sektion=5&amp;manpath=OpenBSD+3.7"
 ><tt>/etc/login.conf</tt></a>, do której nale¿y u¿ytkownik lub te¿
 do której go przydzielimy.
 </ol>
+
+<a name="loginclass"></a>
+<h2>Tworzenie klas logowania w authpf.</h2>
+W przypadku gdy wykorzystujemy authpf w systemie który posiada normalne
+konta u¿ytkowników oraz konta dla u¿ytkowników authpf, mo¿e byæ korzystne
+utworzenie odzielnej klasy logowania dla u¿ytkowników authpf.
+Pozwala to na dokonywanie pewnych zmian dla tych kont w globalnej podstawie
+oraz na ró¿ne regu³y dotycz±ce normalnych kont i kont z authpf.  
+Przyk³ady regu³ jakie mo¿na ustawiæ:
+
+<ul>
+<li><b>shell</b> - Ustala pow³okê dla u¿ytkownika.
+Opcja ta mo¿e byæ wykorzystana do przeforsowania pow³oki u¿ytkownika na <tt>authpf</tt>
+nie zwa¿aj±c na wpis w 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=passwd&amp;sektion=5"
+>passwd(5)</a>.
+<li><b>welcome</b> - Ustala który plik
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=motd&amp;sektion=5"
+>motd(5)</a> wy¶wietliæ gdy u¿ytkownik siê zaloguje.
+U¿yteczne dla wy¶wietlania wiadomo¶ci które s± stosowne tylko dla 
+u¿ytkowników authpf.
+</ul>
+
+<p>
+Klasy logowania tworzone s± w pliku
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=login.conf&amp;sektion=5"
+>login.conf(5)</a>
+Przyk³ad klasy logowania dla u¿ytkowników authpf:
+
+<blockquote>
+<tt>
+authpf:\<br>
+&nbsp;&nbsp;&nbsp;&nbsp;:welcome=/etc/motd.authpf:\<br>
+&nbsp;&nbsp;&nbsp;&nbsp;:shell=/usr/sbin/authpf:\<br>
+&nbsp;&nbsp;&nbsp;&nbsp;:tc=default:
+</tt>
+</blockquote>
+
+<p>
+U¿ytkownicy s± przypisywani do klas logowania poprzez edycjê pola <tt>class</tt>
+w pliku passwd(5) dla danego u¿ytkownika.
+Jedn± z mo¿liwo¶ci zrobienia tego jest u¿ycie polecenia
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=chsh&amp;sektion=1"
+>chsh(1)</a>.
 
 <a name="wholog"></a>
 <h2>Przegl±danie, kto jest zalogowany</h2>
@@ -260,12 +366,6 @@ utworzone przez u¿ytkownika.
     # kill -TERM 23664
 </pre>
 
-<a name="moreinfo"></a>
-<h2>Wiêcej informacji</h2>
-Pe³en opis dzia³ania authpf znajdziesz na stronie podrêcznika 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=authpf&amp;sektion=8&amp;manpath=OpenBSD+3.6"
->man authpf</a>.
-
 <a name="example"></a>
 <h2>Przyk³ad</h2>
 Authpf jest wykorzystywane w bramce sieciowej OpenBSD do uwierzytelniania
@@ -284,10 +384,6 @@ Plik <tt>/etc/authpf/authpf.rules</tt> zawiera nastêpuj±ce regu³y:<br>
 <tr><td nowrap bgcolor="#EEEEEE">
 <pre>
 wifi_if = "wi0"
-dns_servers = "{ 10.0.1.56, 10.0.2.56 }"
-
-pass in quick on $wifi_if proto udp from $user_ip to $dns_servers \
-   port domain keep state
 pass in quick on $wifi_if proto tcp from $user_ip to port { ssh, http, \
    https } flags S/SA keep state
 </pre>
@@ -307,10 +403,6 @@ i korzystania z SSH. Nastêpuj±ce regu³y s± ustawione w
 wifi_if = "wi0"
 smtp_server = "10.0.1.50"
 pop3_server = "10.0.1.51"
-dns_servers = "{ 10.0.1.56, 10.0.2.56 }"
-
-pass in quick on $wifi_if proto udp from $user_ip to $dns_servers \
-   port domain keep state
 pass in quick on $wifi_if proto tcp from $user_ip to $smtp_server \
    port smtp flags S/SA keep state
 pass in quick on $wifi_if proto tcp from $user_ip to $pop3_server \
@@ -333,18 +425,25 @@ skonfigurowany w nastêpuj±cy sposób:<br>
 wifi_if = "wi0"
 ext_if  = "fxp0"
 
+dns_servers = "{ 10.0.1.56, 10.0.2.56 }"
+     
+table &lt;authpf_users&gt; persist
+
 scrub in all
 
 # regu³y filtruj±ce
 block drop all
 
-pass out quick on $ext_if proto tcp from $wifi_if:network flags S/SA \
-   modulate state
-pass out quick on $ext_if proto { udp, icmp } from $wifi_if:network \
-   keep state
 
-pass in quick on $wifi_if proto tcp from $wifi_if:network to $wifi_if \
+pass out quick on $ext_if inet proto tcp from \
+  { $wifi_if:network, $ext_if } flags S/SA modulate state
+pass out quick on $ext_if inet proto { udp, icmp } from \
+   { $wifi_if:network, $ext_if } keep state
+pass in quick on $wifi_if inet proto tcp from $wifi_if:network to $wifi_if \
    port ssh flags S/SA keep state
+   
+pass in quick on $wifi_if inet proto { tcp, udp } from &lt;authpf_users&gt; \
+   to $dns_servers port domain keep state
 
 anchor "authpf/*" in on $wifi_if
 </pre>
@@ -356,10 +455,12 @@ Zestaw regu³ jest bardzo prosty, oto jak dzia³a:
 <ul>
 <li>Blokuje wszystko (domy¶lna polityka blokowania).
 <li>Przepuszcza wychodz±cy ruch TCP, UDP i ICMP na zewnêtrznym
-interfejsie pochodz±cy z sieci bezprzewodowej.
+interfejsie pochodz±cy z sieci bezprzewodowej oraz z samej bramki.
 <li>Przepuszcza nadchodz±cy ruch SSH z sieci bezprzewodowej skierowany
 do samej bramki. Regu³a ta jest niezbêdna, aby umo¿liwiæ u¿ytkownikom
 logowanie siê.
+<li>Przepuszcza przychodzace zapytania DNS dla wszystkich zautoryzowanych
+u¿ytkowników authpf do kampusowych serwerów DNS.
 <li>Tworzy punk zakotwiczenia (ang. anchor point) "authpf" dla
 nadchodz±cego ruchu na interfejsie sieci bezprzewodowej.
 </ul>
@@ -380,8 +481,7 @@ gdy nowe po³±czenie przechodzi przez bramkê.
 <p>
 [<a href="ftp.html">Wstecz: Problemy z FTP</a>]
 [<a href="index.html">Spis tre¶ci</a>]
-[<a href="example1.html">Dalej: Firewall dla sieci domowej lub ma³ego
-biura</a>]
+[<a href="carp.html">Dalej: Redundantny firewall z CARP i pfsync</a>]
 
 <p>
 <hr>
@@ -389,9 +489,9 @@ biura</a>]
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
 <small>
-Originally [OpenBSD: authpf.html,v 1.9 ]<br>
-$Translation: authpf.html,v 1.9 2004/11/12 13:45:51 pl-team Exp $<br>
-$OpenBSD: authpf.html,v 1.9 2004/11/12 16:16:53 jufi Exp $
+Originally [OpenBSD: authpf.html,v 1.16 ]<br>
+$Translation: authpf.html,v 1.10 2005/08/12 07:53:08 pl-team Exp $<br>
+$OpenBSD: authpf.html,v 1.10 2005/08/21 22:37:27 saad Exp $
 </small>
 
 </body>
