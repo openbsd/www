@@ -1,0 +1,618 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Redundantny firewall z CARP i pfsync</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-2">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf,carp,pfsync">
+<meta name="distribution"  content="global">
+</head>
+
+<!--
+Copyright (c) 2005 Joel Knight <enabled@myrealbox.com>
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<a href="../../index.html">
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif" border="0">
+</a>
+<p>
+[<a href="authpf.html">[Wstecz: Authpf: powłoka dla bramek uwierzytelniających</a>]
+[<a href="index.html">Spis treści</a>]
+[<a href="example1.html">Dalej: Zapora ogniowa dla domu i małego biura</a>]
+
+<p>
+<h1><font color="#e00000">PF: Redundantny firewall z CARP i pfsync</font></h1>
+
+<hr>
+
+<h3>Spis treści</h3>
+<ul>
+<li><a href="#carpintro">Wprowadzenie do CARP</a>
+<li><a href="#carpop">Działanie CARP</a>
+<li><a href="#carpconfig">Konfiguracja CARP</a>
+<li><a href="#carpex">Przykład z CARP</a>
+<li><a href="#pfsyncintro">Wprowadzenie do pfsync</a>
+<li><a href="#pfsyncop">Działanie pfsync</a>
+<li><a href="#pfsyncconfig">Konfiguracja pfsync</a>
+
+<li><a href="#pfsyncex">Przykład z pfsync</a>
+<li><a href="#failover">Połączenie CARP i pfsync ("failover" oraz
+redundancja)</a>
+<li><a href="#ops">Zagadnienia związane z działaniem CARP/pfsync</a>
+    <ul>
+    <li><a href="#bootconfig">Konfiguracja CARP i pfsync podczas startu</a>
+    <li><a href="#forcefail">Wymuszenie przekazania na głównej maszynie</a>
+    </ul>
+<li><a href="#ref">Pozostałe źródła</a>
+</ul>
+		
+<hr>
+
+<a name="carpintro"></a>
+<h2>Wprowadzenie do CARP</h2>
+CARP to Common Address Redundancy Protocol.
+Jego podstawowym zadaniem jest dopuszczenie by wiele hostów w tym
+samym segmencie sieci mogło dzielić jeden adress IP.
+CARP jest bezpieczną i wolną alternatywą dla 
+<a href="http://www.ietf.org/rfc/rfc3768.txt">Virtual Router Redundancy
+Protocol</a> oraz
+<a href="http://www.ietf.org/rfc/rfc2281.txt">Hot Standby Router
+Protocol</a>.
+
+<p>
+CARP pracuje pozwalając grupie hostów, w tym samym segmencie sieci, na
+dzielenie adresu IP.
+Taka grupa hostów nazywana jest "redundancy group".
+Taka nadmiarowa grupa posiada przypisany adres IP, który jest dzielony
+pomiędzy członkami grupy.
+Wewnątrz grupy jeden host jest przeznaczany jako "główny" (ang. master) 
+natomiast pozostałe jako "zapasowe" (ang. backups).
+Host główny jest tym który bierząco "trzyma" dzielony adres IP; odpowiada
+na każdy ruch i zapytania ARP nadchodzące na ten adres.
+Każdy host może należeć jednocześnie do więcej niż jednej grupy nadmiarowej.
+
+<p>
+Jednym z powszechnych zastosowań CARP jest tworzenie grupy nadmiarowych
+zapór ogniowych. Wirtualny adres IP dedykowany takiej grupie jest ustawiony
+na maszynach klienckich jako brama domyślna.
+W przypadku gdy główny firewall ulednie awarii lub zostanie wyłączona,
+adres IP zostanie przeniesiony na jedną z zapasowych zapór i obsługa
+będzie kontynuowana niezauważalnie. 
+
+<p>
+CARP wspiera zarówno IPv4 jak i IPv6.
+
+<a name="carpop"></a>
+<h2>Działanie CARP</h2>
+Główny host w grupie regularnie wysyła rozgłoszenia do lokalnej sieci,
+tak że hosty zapasowe wiedzą, że jest wciąż "żywy".
+Jeżeli hosty zapasowe przestaną otrzymywać rozgłoszenia z hosta głównego
+w ustalonym okresie czasu, jeden z nich przejmuje obowiązki hosta głównego
+(jakikolwiek z najniższą skonfigurowaną wartością parametrów 
+<tt>advbase</tt> i <tt>advskew</tt>).
+
+<p>
+Istnieje możliwość by istniało wiele grup CARP w tym samym segmencie
+sieci.
+Rozgłoszenia CARP zawierają Virtual Host ID, które pozwala członkom
+grup określić do jakiej grupy nadmiarowej dane rozgłoszenie należy.
+
+<p>
+Aby uniemożliwić złośliwemu użytkownikowi w segmencie sieci podszywanie
+się pod rozgłoszenia CARP, każda grupa może być skonfigugorana z hasłem.
+Każdy pakiet CARP wysyłany do grupy jest wtedy chroniony przy użyciu
+SHA1 HMAC.
+
+<p>
+Odkąd CARP jest osobnym protokołem powinien mieć sprecyzowaną regułę
+przepuszczającą w filtrze:
+
+<blockquote>
+<tt>
+pass out on $carp_dev proto carp keep state
+</tt>
+</blockquote>
+
+<p>
+<tt>$carp_dev</tt> powinien być fizycznym interfejsem przez
+który komunikuje się CARP.
+
+
+<a name="carpconfig"></a>
+<h2>konfiguracja CARP</h2>
+Każda redundantna grupa jest reprezentowana przez wirtualny interfejs
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=carp&amp;sektion=4&amp;manpath=OpenBSD+3.7"
+>carp(4)</a>. Jak dotąd CARP jest konfigurowany korzystając z 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8&amp;manpath=OpenBSD+3.7"
+>ifconfig(8)</a>.
+
+<blockquote>
+<tt>
+ifconfig <i>carpN</i> create<br>
+<br>
+ifconfig <i>carpN</i> vhid <i>vhid</i> [pass <i>password</i>]
+[carpdev <i>carpdev</i>] \<br>
+
+&nbsp;&nbsp;&nbsp;[advbase <i>advbase</i>] [advskew <i>advskew</i>]
+[state <i>state</i>] <i>ipaddress</i>
+<i>mask</i>
+</tt>
+</blockquote>
+
+<dl>
+<dt><tt><i>carpN</i></tt>
+
+<dd>Nazwa wirtualnego interfejsu cart(4), gdzie <i>N</i> jest
+liczbą całkowitą reprezentującą numer interfejsu (np. carp10).
+
+<dt><tt><i>vhid</i></tt>
+<dd>Virtual Host ID. Jest to unikalny numer służący do
+identyfikacji grupy redundantnej od innych węzłów w sieci.
+Dopuszczalnymi wartościami są liczby od 1 do 255.
+
+<dt><tt><i>password</i></tt>
+<dd>Hasło autoryzacyjne wykorzystywane do komunikacji
+z pozostałymi hostami CARP w danej grupie.
+
+<dt><tt><i>carpdev</i></tt>
+<dd>Opcjonalny parametr określający fizyczny interfejs który
+należy do danej grupy.
+Domyślnie CARP stara się określić jaki interfejs wykorzystać
+sprawdzając który fizyczny interfejs znajduje się w tej samej
+podsieci co podane w carp(4) parametry <i>ipaddress</i> i <i>mask</i>
+
+<dt><tt><i>advbase</i></tt>
+<dd>Jest to opcjonalny parametr okreslający jak często (w sekundach),
+rozgłaszać że należymy do grupy.
+Wartością domyślną jest 1 sekunda.
+Dopuszczalnymi wartościami są liczby od 1 do 255.
+
+<dt><tt><i>advskew</i></tt>
+<dd>Opcjonalny parametr określający jak bardzo zniekształcić
+<tt><i>advbase</i></tt>  przy wysyłaniu rozgłoszenia CARP.
+Poprzez manipulację parametrem <tt><i>advbase</i></tt> 
+możemy wybierać główny host CARP.
+Im wyższa jest jego wartość, tym <i>mniej</i> będzie dany host
+preferowany przy wyborze następnego hosta głównego.
+Wartość domyślna to 0.
+Dopuszczalne wartości: od 1 do 254.
+
+<dt><tt><i>state</i></tt>
+<dd>Wymysza określony stan na interfejsie cart(4). Poprawne stany
+to <tt>init</tt>, <tt>backup</tt>, i <tt>master</tt>.
+
+<dt><tt><i>ipaddress</i></tt>
+<dd>Jest to współdzielony adres IP przeznaczony dla grupy redundantnej.
+Adres ten nie może należeć do tej samej podsieci co adres IP na
+fizycznym interfejsie (jeżeli jest podany)
+
+<dt><tt><i>mask</i></tt>
+<dd>Netmaska podsieci współdzielonego IP.
+</dl>
+
+<p>
+Poniższe zachowania CARP są ustawiane przez 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=8&amp;manpath=OpenBSD+3.7"
+>sysctl(8)</a>.
+
+
+<dl>
+<dt><tt>net.inet.carp.allow</tt>
+<dd>Akceptuj lub nie nadchodzące pakiety CARP. Domyślnie jest 1 (tak).
+
+<dt><tt>net.inet.carp.preempt</tt>
+<dd>Zezwala hostom wewnątrz grupy by posiadały lepsze <tt>advbase</tt>
+oraz <tt>advskew</tt> by przyśpieszyć wybór hosta głównego.
+Dodatkowo opcja ta włącza automatyczne awaryjne przełączenie dla wszystkich 
+interfejsów na wypadek awarii jednego z nich.
+Jeżeli fizyczny interfejs na którym włączony jest CARP padnie, CARP
+zmieni <tt>advskew</tt> na 240 na wszystkich pozostałych interfejsach,
+w istocie, sam siebie przełącza awaryjnie.
+Opcja ta domyślnie ustawiona jest na 0 (wyłączona).
+
+<dt><tt>net.inet.carp.log</tt>
+
+<dd>Loguje złe pakiety CARP. Domyślnie jest 0 (wyłączone).
+
+<dt><tt>net.inet.carp.arpbalance</tt>
+<dd>Rozkłada obciązenie ruchu poprzez wiele hostów w grupie.
+Domyślnie jest 0 (wyłączone).
+
+Więcej informacji znajdziesz w
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=carp&amp;sektion=4&amp;manpath=OpenBSD+3.7"
+>carp(4)</a>.
+</dl>
+
+
+<a name="carpex"></a>
+<h2>Przykład CARP</h2>
+Przykład konfiguracji CARP.
+
+<blockquote>
+<tt>
+# sysctl -w net.inet.carp.allow=1<br>
+
+# ifconfig carp1 create<br>
+# ifconfig carp1 vhid 1 pass mekmitasdigoat carpdev em0 \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;advskew 100 10.0.0.1 255.255.255.0<br>
+</tt>
+</blockquote>
+
+<p>
+Ustawienia te powodują:
+<ul>
+<li>Włączenie obsługi pakietów CARP (jest to domyślne ustawienie).
+<li>Utworzenie interfejsu carp(4), <tt>carp1</tt>.
+<li>Skonfigurowanie <tt>carp1</tt> dla wirtualnego hosta #1, włączenie
+hasła, ustawienie <tt>em0</tt> jako fizycznego interfejsu należącego
+do grupy oraz ustawienie tego hosta jako zapasowego poprzez ustawienie
+<yy>advskew</tt> na 100 (zakładając oczywiście, że host główny jest
+ustawiony z <tt>advskew</tt> mniejszą niż 100).
+Współdzielone IP przypisane do tej grupy to 10.0.0.1/255.255.255.0.
+</ul>
+
+<p>
+Uruchomienie <tt>ifconfig</tt> dla <tt>carp1</tt> pokaże status
+tego inferfejsu.
+
+<blockquote>
+<tt>
+# ifconfig carp1<br>
+carp1: flags=8802&lt;UP,BROADCAST,SIMPLEX,MULTICAST&gt; mtu 1500<br>
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;carp: BACKUP carpdev em0 vhid 1 advbase 1
+advskew 100<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;inet 10.0.0.1 netmask 0xffffff00 broadcast
+10.0.0.255
+</tt>
+</blockquote>
+
+
+<a name="pfsyncintro"></a>
+<h2>Wprowadzenie do pfsync</h2>
+
+Interfejs sieciowy 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfsync&amp;sektion=4&amp;manpath=OpenBSD+3.7"
+>pfsync(4)</a> ujawnia pewne zmiany wykonane w tabeli stanów
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+3.7"
+>pd(4)</a>.
+Monitorując to urządzenie przy pomocy
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tcpdump&amp;sektion=8&amp;manpath=OpenBSD+3.7"
+>tcpdump(8)</a>, możemy w czasie rzeczywistym obserwować zmiany w tabeli stanów.
+Ponadto interfejs pfsync(4) pozwala wysyłać wiadomości ze zmiany stanów,
+w ten sposób pozostałe stacje z pracującym PF mogą włączać te zmiany
+do własnych tablic stanów.
+Podobnie pfsync(4) może nasłuchiwać w sieci na nadchodzące wiadomości.
+
+<a name="pfsyncop"></a>
+<h2>Działanie pfsync</h2>
+Domyślnie pfsync(4) nie wysyła i nie odbiera z sieci uaktualnień
+tablicy stanów; jednakże, uaktualnienia mogą być wciąż monitorowane
+przy pomocy tcpdump(8) lub innego narzędzia uruchomionego na lokalnej
+maszynie.
+
+<p>
+Gdy pfsunc(4) jest ustawiony na wysyłanie i odbieranie uaktualnień,
+domyślnym zachowaniem jest wysyłanie mutlicastowe ualtualnień.
+Wszystkie uaktualnienia wysyłane są bez uwierzytelniania.
+Najlepszymi powszechnymi praktykami są:
+
+<ol>
+<li>Połączenie dwóch stacji tak by wymieniały aktualizacje back-to-back
+korzystając z kabla krosowanego i wykorzystanie tego interfejsu jako
+<tt>syncdev</tt> (zobacz <a href="#pfsyncconfig">poniżej</a>).
+<li>Wykorzystanie opcji <tt>syncpeer</tt> w ifconfig(8)
+tak że aktualizacje są kierowane bezpośrednio do peera, następnie
+skonfigurowanie
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ipsec&amp;sektion=4&amp;manpath=OpenBSD+3.7" 
+>ipsec(4)</a>
+pomiędzy hostami do zabezpieczenia ruchu z pfsync(4).
+</ol>
+
+<p>
+Kiedy altualizacje są wysyłane i odbierane, pakiety pfsync
+powinny być przepuszczanę przez reguły filtra:
+
+<blockquote>
+<tt>
+pass on $sync_if proto pfsync
+</tt>
+</blockquote>
+
+<p>
+<tt>$sync_if</tt> powinien być fizycznym interfejscem przez
+który komunikuje się pfsync(4).
+
+
+<a name="pfsyncconfig"></a>
+<h2>Konfiguracja pfsync</h2>
+Ponieważ pfsync(4) jest interfejsem wirtualnym, jest konfigurowany przy
+pomocy polecenia
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8&amp;manpath=OpenBSD+3.7"
+>ifconfig(8)</a>. 
+
+<blockquote>
+<tt>
+ifconfig <i>pfsyncN</i> syncdev <i>syncdev</i> [syncpeer
+<i>syncpeer</i>]
+
+</tt>
+</blockquote>
+
+<dl>
+<dt><tt><i>pfsyncN</i></tt>
+<dd>Nazwa interfejsu pfsync(4). Interfejs <tt>pfsync0</tt> jest
+dostępny domyślnie w jądrze standardowym GENERIC.
+
+<dt><tt><i>syncdev</i></tt>
+<dd>Nazwa fizycznego interfejsu wykorzystywanego do wysyłania
+uaktualnień pfsync.
+
+<dt><tt><i>syncpeer</i></tt>
+<dd>Dodatkowy parametr określający adres IP hosta z którym
+wyniemiane są uaktualnienia pfsync.
+Domyślnie aktualizacje pfsync wysyłane są multicastem do sieci
+lokalnej.
+Opcja ta nadpisuje domyślne zachowanie w zamian wysyłając
+uaktualnienia do określonego hosta: <tt>syncpeer</tt>.
+</dl>
+
+<a name="pfsyncex"></a>
+<h2>Przykład pfsync</h2>
+Przykładowa konfiguracja pfsync.
+
+<blockquote>
+<tt>
+# ifconfig pfsync0 syncdev em1<br>
+</tt>
+</blockquote>
+
+Następuje włączenie pfsync na interfejsie <tt>em1</tt>.
+Wychodzące uaktualnienia będą wysyłane mutlicastem do sieci
+zezwalając by każdy host mógł je odebrać.
+
+
+<a name="failover"></a>
+<h2>Połączenie CARP i pfsync (failover oraz redundancja)</h2>
+Łącząc właściwości CARP i pfsync, oraz grupę dwóch lub więcej
+zapór ogniowych, można stworzyć wysoce niezawodny, wpełni redundantny
+klaster zapór ogniowych.
+
+<dl>
+<dt>CARP:
+<dd>Utrzymuję automatyczne failover z jednej zapory na inną.
+
+<dt>pfsync:
+<dd>Synchronizuje tablice stanów pomiędzy wszystkimi zaporami.
+W przypadku konieczności automatycznego przełączenia na inną maszynę,
+ruch będzie mogł następować nieprzerwanie przez nową główną zaporę. 
+</dl>
+
+<p>
+Przykładowy scenariusz.
+Dwie zapory, <tt>fw1</tt> i <tt>fw2</tt>.
+
+
+<pre>
+	     +----| WAN/Internet |----+ 
+	     |                        |
+	  em2|                        |em2   
+	  +-----+                  +-----+
+	  | fw1 |-em1----------em1-| fw2 |
+	  +-----+                  +-----+
+	  em0|                        |em0
+	     |                        | 
+          ---+-------Shared LAN-------+---
+</pre>
+
+<p>
+
+
+<p>
+Zapory połączone są back-to-back kablem krosowany, na interfejsach
+<tt>em1</tt>
+
+Oba połączone są do sieci LAN poprzez interfejsy <tt>em0</tt> oraz
+z siecią WAN/Internet poprzez interfejsy <tt>em1</tt>.
+
+Poniżej znajdują się wykorzystywane adresy IP:
+
+<ul>
+<li>fw1 em0: 172.16.0.1
+<li>fw1 em1: 10.10.10.1
+
+<li>fw1 em2: 192.0.2.1
+<li>fw2 em0: 172.16.0.2
+<li>fw2 em1: 10.10.10.2
+<li>fw2 em2: 192.0.2.2
+<li>LAN współdzielony IP: 172.16.0.100
+<li>WAN/Internet współdzielony IP: 192.0.2.100
+</ul>
+
+<p>
+Polityka sieci zakłada że <tt>fw1</tt> będzie preferowaną zaporą główną.
+
+<p>
+Konfigurujemy fw1:
+
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+
+<pre>
+! enable preemption and group interface failover
+# sysctl -w net.inet.carp.preempt=1
+
+! configure pfsync
+# ifconfig em1 10.10.10.1 netmask 255.255.255.0
+# ifconfig pfsync0 syncdev em1
+# ifconfig pfsync0 up
+
+! configure CARP on the LAN side
+# ifconfig carp1 create
+# ifconfig carp1 vhid 1 carpdev em0 password lanpasswd \
+    172.16.0.100 255.255.255.0
+     
+! configure CARP on the WAN/Internet side
+# ifconfig carp2 create
+# ifconfig carp2 vhid 2 carpdev em2 password netpasswd \
+    192.0.2.100 255.255.255.0
+</pre>
+</td></tr>
+</table>
+
+<p>
+Konfigurujemy fw2:
+
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+! enable preemption and group interface failover
+# sysctl -w net.inet.carp.preempt=1
+
+! configure pfsync
+# ifconfig em1 10.10.10.2 netmask 255.255.255.0
+# ifconfig pfsync0 syncdev em1
+# ifconfig pfsync0 up
+
+! configure CARP on the LAN side
+# ifconfig carp1 create
+# ifconfig carp1 vhid 1 carpdev em0 password lanpasswd \
+    advskew 128 172.16.0.100 255.255.255.0
+
+! configure CARP on the WAN/Internet side
+# ifconfig carp2 create
+# ifconfig carp2 vhid 2 carpdev em2 password netpasswd \
+    advskew 128 192.0.2.100 255.255.255.0
+</pre>
+</td></tr>
+</table>
+		  
+		  
+<a name="ops"></a>
+<h2>Zagadnienia związane z działaniem CARP/pfsync</h2>
+Niektóre napotkane zagadnienia związane z działaniem CARP/pfsync.
+
+<a name="bootconfig"></a>
+<h3>Konfiguracja CARP oraz pfsync podczas startu</h3>
+Ponieważ carp(4) oraz pfsync(4) są typami interfejsów sieciowych, mogą
+być konfigurowane podczas startu poprzez utworzenie właściwych plików
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hostname.if&amp;sektion=5&amp;manpath=OpenBSD+3.7"
+>hostname.if(5)</a>.
+Skrypt startowy 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=netstart&amp;sektion=8&amp;manpath=OpenBSD+3.7"
+>netstart</a> zadba o utworzenie interfejsu oraz jego skonfigurowanie.
+
+<p>
+Przykład:
+
+<dl>
+
+<dt>/etc/hostname.carp1</dt>
+<dd>
+inet 172.16.0.100 255.255.255.0 172.16.0.255 vhid 1 carpdev em0 \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;password lanpasswd
+</dd>
+<br>
+<dt>/etc/hostname.pfsync0</dt>
+<dd>
+up syncdev em1
+</dd>
+</dl>
+
+<a name="forcefail"></a>
+<h3>Wymuszenie przekazania na głównej maszynie.</h3>
+
+Mogą wystąpić sytuacje w których konieczne będzie wyłączenie lub 
+zdegradowanie hosta głównego w jakimś celu.
+Przykład poniżej rozpatruje konieczność wyłączenia głównej zapory
+ze względu na konserwację lub wykrycie problemu.
+Przedmiotem tutaj jest wdzięczne przekazanie ruchu na jeden z zapasowych
+hostów tak by nie miało to wpływu na użytkowników.
+
+<p>
+By przekazać ruch, wyłącz interfejs carp(4) na głównej zaporze ogniowej.
+Spowoduje to wysłanie z niej rozgłoszenia z "nieskonczonymi" wartościami
+<tt>advbase</tt> oraz <tt>advskew</tt>
+Host(y) zapasowe zauważą taką informację i natychmiast przejmą zadania
+głównego.
+
+<blockquote>
+<tt>
+# ifconfig carp1 down
+</tt>
+</blockquote>
+
+
+<a name="ref"></a>
+<h2>Pozostałe źródła</h2>
+
+Prosimy zapoznaj się z innymi źródłami po więcej informacji:
+
+<ul>
+<li>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=carp&amp;sektion=4&amp;manpath=OpenBSD+3.7"
+>carp(4)</a>
+<li>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfsync&amp;sektion=4&amp;manpath=OpenBSD+3.7"
+>pfsync(4)</a>
+<li>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8&amp;manpath=OpenBSD+3.7"
+>ifconfig(8)</a>
+<li>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hostname.if&amp;sektion=5&amp;manpath=OpenBSD+3.7"
+>hostname.if(5)</a>
+<li>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+3.7"
+>pf.conf(5)</a>
+
+</ul>
+
+
+<p>
+[<a href="authpf.html">Wstecz: Authpf: powłoka dla bramek uwierzytelniających</a>]
+[<a href="index.html">Spis treści</a>]
+[<a href="example1.html">Dalej: Zapora ogniowa dla domu lub małego biura</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[back]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+
+<small>
+<!--
+Originally [OpenBSD: carp.html,v 1.5 ]<br>
+$OpenBSD: carp.html,v 1.1 2005/09/06 14:32:11 saad Exp $
+-->
+$OpenBSD: carp.html,v 1.1 2005/09/06 14:32:11 saad Exp $
+</small>
+
+</body>
+</html>
+									 
+
+
+
+
+
+
+
