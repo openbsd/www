@@ -1,0 +1,365 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>PF: Ottimizzazione delle regole di configurazione</TITLE>
+<LINK rev=made href="mailto:www@openbsd.org">
+<META http-equiv=Content-Type content="text/html; charset=ISO-8859-1">
+<META content=document name=resource-type>
+<META content="the OpenBSD FAQ page" name=description>
+<META content="openbsd,faq,pf" name=keywords>
+<META content=global name=distribution><!--
+Copyright (c) 2003, 2004 Joel Knight <enabled@myrealbox.com>
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+<META content="MSHTML 6.00.2600.0" name=GENERATOR></HEAD>
+<BODY text="#000000" bgColor="#ffffff">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+<A href="../../../it/index.html"><IMG height=30 alt="[OpenBSD]" 
+src="../../../images/smalltitle.gif" width=141 border=0> 
+</A>
+
+<P>
+[<A href="rdr.html">Precedente: Reindirizzamento (Port Forwarding)</A>] 
+[<A href="index.html">Indice</A>] 
+[<A href="options.html">Successivo: Opzioni Runtime</A>] 
+
+<P>
+<H1><FONT color="#e00000">PF: Ottimizzazione delle regole di 
+configurazione</FONT> </H1>
+<HR>
+<H3>Indice</H3>
+<UL>
+  <LI><A href="#intro">Introduzione</A> 
+  <LI><A href="#macros">Utilizzare le Macro</A> 
+  <LI><A href="#lists">Uso di Liste</A> 
+  <LI><A href="#grammar">Grammatica di PF</A> 
+  <UL>
+    <LI><A href="#elim">Eliminazione delle Keyword</A> 
+    <LI><A href="#return"><TT>Semplificazione Return</TT></A> 
+    <LI><A href="#order">Ordinare le Keyword</A> 
+</LI></UL></LI></UL>
+<HR>
+<A name=intro></A>
+<H2>Introduzione</H2>
+PF offre molte opportunità per semplificare le regole di 
+configurazione. Qualche esempio è dato dall'uso di 
+<A href="macros.html#macros">macro</A> e 
+<A href="macros.html#lists">liste</A>. Inoltre, il linguaggio e 
+la grammatica delle regole di configurazione offrono qualche 
+possibilità per semplificarle ulteriormente. 
+Come premessa generale, tanto più semplice è la regola e tanto più 
+facile è capirla e aggiornarla.
+<A name=macros></A>
+<H2>Utilizzare le Macro</H2>
+Le Macro sono utili perchè forniscono nelle regole di configurazione 
+un'alternativa all'hard-coding di indirizzi, numeri di porte, nomi di 
+interfaccie ecc. E' cambiato un indirizzo IP di un server? 
+Nessun problema, c'è da aggiornare solo la marco; non c'è bisogno di 
+far confusione tra le regole di configurazione per le quali si è speso 
+tempo ed energia nell'adattarle ai propri bisogni.
+
+<P>
+Una convenzione comune nelle regole di configurazione di PF è di 
+definire una macro per ogni interfaccia di rete. Se una scheda di 
+rete dovesse essere sostituita con un driver differente, per 
+esempio lo scambio tra una 3Com e una Intel, la macro può essere 
+aggiornata e le regole del filtro funzioneranno come prima. 
+Un altro beneficio si ha quando si installano le stesse regole di 
+configurazione su diversi computer. Alcuni pc possono avere schede 
+di rete differenti e usare le macro per definire le interfaccie di 
+rete consente alle regole di configurazione di essere installate 
+con minimi cambiamenti. Usare macro nelle regole di configurazione 
+per definire informazioni soggette a cambiamento come numero di porta, 
+indirizzo IP e nome dell'interfaccia è una pratica raccomandata.
+
+<BLOCKQUOTE>
+<TT># definizione delle macro per ogni interfaccia di rete<BR>
+IntIF =   "dc0"<BR>ExtIF = "fxp0"<BR>DmzIF = "fxp1" 
+</TT>
+</BLOCKQUOTE>
+
+<P>
+Un'altra convenzione comune è usare macro per definire indirizzi IP e 
+subnet. Questo riduce in modo drastico il tempo di aggiornamento 
+delle regole di configurazione quando cambiano gli indirizzi IP.
+
+<BLOCKQUOTE>
+<TT># definizione delle network<BR>
+IntNet = "192.168.0.0/24"<BR>
+ExtAdd = 
+  "24.65.13.4"<BR>
+DmzNet = "10.0.0.0/24" 
+</TT>
+</BLOCKQUOTE>
+
+<P>
+Se la rete locale dovesse espandersi o fosse divisa in differenti 
+blocchi IP, la macro potrebbe essere aggiornata:
+<BLOCKQUOTE>
+<TT>
+IntNet = "{ 192.168.0.0/24, 192.168.1.0/24 }" 
+</TT>
+</BLOCKQUOTE>
+
+<P>
+Una volta che le regole di configurazione saranno caricate ogni cosa 
+funzionerà come prima.
+<A name=lists></A>
+<H2>Usare le Liste</H2>
+Diamo un'occhiata a un buon set di regole per gestire nelle vostre 
+regole di configurazione gli indirizzi dell'
+<A href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</A> che per 
+evitare problemi non dovrebbero mai circolare in Internet:
+ 
+<BLOCKQUOTE>
+<TT>
+block in &nbsp;quick on tl0 inet from 127.0.0.0/8 to 
+  any<BR>block in &nbsp;quick on tl0 inet from 192.168.0.0/16 to 
+any<BR>block in &nbsp;quick on tl0 inet from 172.16.0.0/12 to any<BR>
+block in &nbsp;quick on tl0 inet from 10.0.0.0/8 to any<BR>block out 
+quick on tl0 inet from any to 127.0.0.0/8<BR>block out quick on tl0 
+inet from any to 192.168.0.0/16<BR>block out quick on tl0 inet from 
+any to 172.16.0.0/12<BR>block out quick on tl0 inet from any to 
+10.0.0.0/8 
+</TT>
+</BLOCKQUOTE>
+
+<P>
+Diamo un'occhiata alla seguente semplificazione:
+
+<BLOCKQUOTE>
+<TT>
+block in &nbsp;quick on tl0 inet from { 127.0.0.0/8, 
+  192.168.0.0/16, \<BR>&nbsp;&nbsp;&nbsp;172.16.0.0/12, 10.0.0.0/8 } to 
+  any<BR>block out quick on tl0 inet from any to { 127.0.0.0/8, 
+  \<BR>&nbsp;&nbsp;&nbsp;192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 } 
+</TT>
+</BLOCKQUOTE>
+
+<P>
+Le regole di configurazione sono state ridotte da otto a due. 
+Un'ulteriore miglioramento si ha quando le macro vengono usate 
+insieme alle liste:
+
+<BLOCKQUOTE>
+<TT>
+NoRouteIPs = "{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 
+  \<BR>&nbsp;&nbsp;&nbsp;10.0.0.0/8 }" <BR>ExtIF = "tl0"<BR>block in 
+&nbsp;quick 
+  on $ExtIF from $NoRouteIPs to any<BR>block out quick on $ExtIF 
+from any to 
+  $NoRouteIPs 
+</TT>
+</BLOCKQUOTE>
+
+<P>
+Da notare che le macro e le liste semplificano il file 
+<TT>pf.conf</TT> ma attualmente le regole vengono comunque espanse da 
+<A href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;
+sektion=8&amp;manpath=OpenBSD+3.7">pfctl(8)</A> in regole multiple. 
+Così l'esempio precedente si espande nelle seguenti regole:
+
+<BLOCKQUOTE>
+<TT>
+block in &nbsp;quick on tl0 inet from 127.0.0.0/8 to 
+  any<BR>block in &nbsp;quick on tl0 inet from 192.168.0.0/16 to any
+<BR>block in 
+  &nbsp;quick on tl0 inet from 172.16.0.0/12 to any<BR>block in 
+&nbsp;quick on 
+  tl0 inet from 10.0.0.0/8 to any<BR>block out quick on tl0 inet 
+from any to 
+  10.0.0.0/8<BR>block out quick on tl0 inet from any to 172.16.0.0/12
+<BR>block 
+  out quick on tl0 inet from any to 192.168.0.0/16<BR>block out quick 
+on tl0 
+  inet from any to 127.0.0.0/8 
+</TT>
+</BLOCKQUOTE>
+
+<P>
+Come si può vedere, l'espansione di PF è molto utile per chi scrive e 
+aggiorna le regole del file <TT>pf.conf</TT> ma non è una 
+semplificazione delle regole processate da 
+<A href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;
+sektion=4&amp;manpath=OpenBSD+3.7">pf(4)</A>. 
+
+<P>
+Le macro possono essere usate per definire più che semplici indirizzi e 
+porte; possono essere usate ovunque nelle regole di PF:
+ 
+<BLOCKQUOTE>
+<TT>
+pre = "pass in quick on ep0 inet proto tcp from "<BR>post = 
+  "to any port { 80, 6667 } keep state"<BR>
+<BR>
+# La classe di David<BR>
+$pre 21.14.24.80 $post<BR><BR>
+# Casa di Nick<BR>
+$pre 24.2.74.79 $post<BR>$pre 
+  24.2.74.178 $post 
+</TT>
+</BLOCKQUOTE>
+
+<P>
+Si espandono in: 
+<BLOCKQUOTE>
+<TT>
+pass in quick on ep0 inet proto tcp from 21.14.24.80 to any 
+  \<BR>&nbsp;&nbsp;&nbsp;port = 80 keep state<BR>pass in quick on 
+ep0 inet proto 
+  tcp from 21.14.24.80 to any \<BR>&nbsp;&nbsp;&nbsp;port = 6667 
+keep 
+  state<BR>pass in quick on ep0 inet proto tcp from 24.2.74.79 to 
+any 
+  \<BR>&nbsp;&nbsp;&nbsp;port = 80 keep state<BR>pass in quick on 
+ep0 inet proto 
+  tcp from 24.2.74.79 to any \<BR>&nbsp;&nbsp;&nbsp;port = 6667 
+keep 
+  state<BR>pass in quick on ep0 inet proto tcp from 24.2.74.178 
+to any 
+  \<BR>&nbsp;&nbsp;&nbsp;port = 80 keep state<BR>pass in quick 
+on ep0 inet proto 
+  tcp from 24.2.74.178 to any \<BR>&nbsp;&nbsp;&nbsp;port = 6667 
+keep state 
+</TT>
+</BLOCKQUOTE>
+<A name=grammar></A>
+<H2>Grammatica PF</H2>
+La grammatica di Packet Filter è abbastanza flessibile da consentire 
+grande elasticità nelle regole di configurazione. PF è in grado di 
+desumere determinate keyword così da evitare necessariamente di 
+esplicitarle, e anche l'ordine delle keyword non è vincolante evitando 
+di dover memorizzare una rigida sintassi.
+
+<A name=elim></A>
+<H3>Eliminazione di Keyword</H3>
+
+<P>
+Per definire una policy "default deny" si usano due regole: 
+<BLOCKQUOTE>
+<TT>
+block in &nbsp;all<BR>block out all 
+</TT>
+</BLOCKQUOTE>
+
+<P>
+Queste possono essere ridotte a:
+
+<BLOCKQUOTE>
+<TT>block all </TT>
+</BLOCKQUOTE>
+
+<P>
+Quando non è specificata alcuna direzione, PF assume che le regole 
+siano applicate ai pacchetti che transitano in entrambe le direzioni.
+
+<P>
+In modo simile sia "<TT>from any to any</TT>" che "<TT>all</TT>" 
+possono essere tralasciate da una regola, per esempio: 
+ 
+<BLOCKQUOTE>
+<TT>
+block in on rl0 all<BR>pass &nbsp;in quick log on rl0 proto 
+  tcp from any to any port 22 keep state 
+</TT>
+</BLOCKQUOTE>
+
+<P>
+possono semplificarsi in:
+
+<BLOCKQUOTE>
+<TT>
+block in on rl0<BR>pass &nbsp;in quick log on rl0 proto tcp to 
+  port 22 keep state
+</TT> 
+</BLOCKQUOTE>
+
+<P>
+La prima regola blocca tutti i pacchetti provenienti da ovunque a 
+ovunque attraverso l'interfaccia r10, e la seconda regola consente il 
+traffico TCP attraverso la porta 22 sull'interfaccia r10.
+
+<A name=return></A>
+<H3>Semplificazione <TT>Return</TT></H3>
+
+<P>
+Una regola di configurazione usata per bloccare pacchetti e risposte 
+TCP RST o ICMP Unreachable appare così:
+
+<BLOCKQUOTE>
+<TT>block in all<BR>block return-rst in proto tcp all<BR>block 
+  return-icmp in proto udp all<BR>block out all<BR>block return-rst out 
+proto 
+  tcp all<BR>block return-icmp out proto udp all 
+</TT>
+</BLOCKQUOTE>
+
+<P>
+Queste possono essere semplificate con:
+
+<BLOCKQUOTE>
+<TT>block return </TT>
+</BLOCKQUOTE>
+
+<P>
+Quando PF vede la keyword <TT>return</TT>, è in grado di capire se  
+inviare la risposta appropriata o non rispondere affatto in 
+funzione del protocollo bloccato.
+
+<A name=order></A>
+<H3>Ordinare le Keyword</H3>
+
+<P>
+In molti casi l'ordine con il quale le keyword vengono specificate è 
+flessibile. Per esempio, una regola scritta come:
+
+<BLOCKQUOTE>
+<TT>
+pass in log quick on rl0 proto tcp to port 22 
+  \<BR>&nbsp;&nbsp;&nbsp;flags S/SA keep state queue ssh label ssh 
+</TT>
+</BLOCKQUOTE>
+
+<P>
+Può anche essere scritta come:
+
+<BLOCKQUOTE>
+<TT>
+pass in quick log on rl0 proto tcp to port 22 
+  \<BR>&nbsp;&nbsp;&nbsp;queue ssh keep state label ssh flags S/SA 
+</TT>
+</BLOCKQUOTE>
+
+<P>
+Possono funzionare anche altre simili variazioni.
+
+<P>
+[<A href="rdr.html">Precedente: Reindirizzamento (Port Forwarding)</A>] 
+[<A href="index.html">Indice</A>] 
+[<A href="options.html">Next: Opzioni Runtime</A>] 
+<P>
+<HR>
+<A href="../../it/index.html"><IMG height=24 alt="[back]"
+src="../../../images/back.gif" width=24 border=0></A> <A 
+href="mailto:www@openbsd.org">www@openbsd.org</A> 
+<BR>
+<SMALL>
+<!--
+Originally [OpenBSD: shortcuts.html,v 1.15 ]<br>
+$Translation: shortcuts.html,v 1.1 2005/09/26 21:02:27 danix Exp $<br>
+-->
+$OpenBSD: shortcuts.html,v 1.1 2005/09/28 19:46:33 saad Exp $
+</SMALL> 
+</BODY>
+</HTML>

@@ -1,0 +1,486 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>PF: Network Address Translation (NAT)</TITLE>
+<LINK rev=made href="mailto:www@openbsd.org">
+<META http-equiv=Content-Type content="text/html; charset=ISO-8859-1">
+<META content=document name=resource-type>
+<META content="the OpenBSD FAQ page" name=description>
+<META content="openbsd,faq,pf" name=keywords>
+<META content=global name=distribution><!--
+Copyright (c) 2003, Nick Holland <nick@openbsd.org>
+Copyright (c) 2003, 2004, Joel Knight <enabled@myrealbox.com>
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, 
+ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+
+<META content="MSHTML 6.00.2600.0" name=GENERATOR></HEAD>
+<BODY text="#000000" bgColor="#ffffff">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+<A href="../../../it/index.html">
+<IMG height=30 alt="[OpenBSD]" src="../../../images/smalltitle.gif" 
+width=141 border=0> </A>
+
+<P>
+[<A href="filter.html">Precedente: Packet Filtering</A>] 
+[<A href="index.html">Indice</A>] 
+[<A href="rdr.html">Successivo: Reindirizzamento (Port Forwarding)</A>] 
+
+<P>
+<H1><FONT color="#e00000">PF: NAT</FONT></H1>
+<HR>
+
+<H3>Table of Contents</H3>
+<UL>
+  <LI><A href="#intro">Introduzione</A> 
+  <LI><A href="#works">Come funziona la NAT</A> 
+  <LI><A href="#filter">NAT e Packet Filtering</A> 
+  <LI><A href="#ipfwd">IP Forwarding</A> 
+  <LI><A href="#config">Configurare la NAT</A> 
+  <LI><A href="#binat">Mappa bidirezionale (1:1 mapping)</A> 
+  <LI><A href="#except">Eccezioni alle regole di traslazione</A> 
+  <LI><A href="#status">Controllo dello stato della NAT</A> 
+</LI>
+</UL>
+<HR>
+<A name=intro></A>
+<H2>Introduzione</H2>
+La Network Address Translation (NAT) è il modo di mappare un'intera 
+rete (o più di una) con un singolo indirizzo IP. La NAT è necessaria 
+quando il numero di indirizzi IP assegnati dall'Internet Service 
+Provider è inferiore al numero totale di computer che si vorrebbe 
+avessero accesso a Internet. La NAT è descritta nella 
+<A href="http://www.geektools.com/rfc/rfc1631.txt">RFC 1631</A>. 
+
+<P>
+La NAT sfrutta il blocco di indirizzi riservati descritti nella 
+<A href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</A>. Di 
+solito la rete locale viene creata utilizzando uno o più dei seguenti 
+blocchi di network. Essi sono:
+<PRE>	10.0.0.0/8       (10.0.0.0 - 10.255.255.255)
+	172.16.0.0/12    (172.16.0.0 - 172.31.255.255)
+	192.168.0.0/16   (192.168.0.0 - 192.168.255.255)
+</PRE>
+
+<P>
+Un sistema OpenBSD che esegue la NAT avrà almeno due interfaccie di 
+rete, una per Internet e l'altra per la rete locale. La NAT trasla 
+le richieste provenienti dalla rete locale così da apparire come se 
+venissero tutte dal sistema OpenBSD. 
+<A name=works></A>
+<H2>Come funziona la NAT</H2>
+
+<P>
+Quando un client di una rete locale contatta un host su Internet, 
+invia pacchetti destinati a quell'host. Questi pacchetti contengono 
+tutte le informazioni di indirizzamento necessari per raggiungere la 
+loro destinazione. NAT interagisce con queste informazioni:
+<UL>
+  <LI>Indirizzo IP sorgente (per esempio, 192.168.1.35) 
+  <LI>Porta TCP o UDP sorgente (per esempio, 2132) </LI>
+</UL>
+
+<P>
+Quando i pacchetti attraversano il gateway NAT, questi saranno 
+modificati così da apparire come se venissero direttamente dal 
+gateway NAT. Il gateway NAT registrerà i cambiamenti effettuati nella 
+sua tabella di stato così può a) eseguire le operazioni inverse sui 
+pacchetti di ritorno e b) assicurarsi che i pacchetti di ritorno siano 
+passati attraverso il firewall e non siano bloccati. Per esempio 
+possono essere fatti i seguenti cambiamenti:
+<UL>
+  <LI>Indirizzo IP sorgente: sostituito con l'indirizzo esterno del 
+gateway (per esempio, 24.5.0.5) 
+  <LI>La porta sorgente: sostituita con una porta non usata del gateway 
+scelta a caso (per esempio, 53136) 
+</LI>
+</UL>
+
+<P>
+Sia l'host locale che quello di Internet non si accorgono di questi 
+cambiamenti. Per il computer della rete locale, il sistema NAT è 
+semplicemente il gateway per Internet. L'host di Internet è 
+completamente ignaro dell'esistenza della workstation locale e il 
+pacchetto apparirà come se venisse direttamente dal sistema NAT.
+
+<P>
+Quando l'host di Internet risponde ai pacchetti ricevuti dalla 
+workstation locale, lo fa indirizzando i pacchetti all'IP del gateway 
+NAT (24.5.0.5) e alla porta traslata (53136). Il gateway NAT cercherà 
+nella tabella di stato una corrispondenza tra i pacchetti in arrivo 
+e una connessione già stabilita. Verrà trovata un'unica corrispondenza 
+basata sulla combinazione IP/porta che consente a PF di capire che il 
+pacchetto appartiene a una connessione esistente iniziata dall'host 
+locale 192.168.1.35. PF farà quindi gli opposti necessari cambiamenti 
+e invierà i pacchetti di risposta alla workstation interna.
+ 
+<P>
+La traslazione dei pacchetti ICMP avviene allo stesso modo ma senza 
+modificare la porta sorgente.
+
+<A name=filter></A>
+<H2>NAT e Packet Filtering</H2>
+
+<P>
+<FONT color="#ff0000">NOTA:</FONT> I pacchetti traslati devono ancora 
+passare attraverso il firewall e saranno bloccati o passeranno in base 
+alle regole che sono state definite. Una <I>sola</I> eccezione a 
+questa regola si ha quando la keyword <TT>pass</TT> viene usata con la 
+regola di <TT>nat</TT>. Questo permette ai pacchetti traslati di 
+oltrepassare le regole del firewall. 
+
+<P>
+Dato che la traslazione avviene <I>prima</I> del filtraggio occorre 
+prestare attenzione al fatto che il firewall vedrà i pacchetti 
+<I>traslati</I> con IP e porta ottenuti in <A href="nat.html#works">
+Come funziona la NAT</A>. 
+<!-- legacy anchor; can eventually be removed -->
+<A name=enable></A>
+<A name=ipfwd></A>
+<H2>IP Forwarding</H2>
+
+<P>
+Dato che la NAT è quasi sempre usata su routers e network gateway, 
+probabilmente su una macchina OpenBSD sarà necessario abilitare l'IP 
+forwarding per consentire ai pacchetti di viaggiare tra diverse 
+interfaccie di rete. L'IP forwarding è abilitato usando il meccanismo 
+<A href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;
+sektion=3&amp;manpath=OpenBSD+3.7">sysctl(3)</A>: 
+<BLOCKQUOTE>
+<TT># sysctl net.inet.ip.forwarding=1<BR>
+# sysctl 
+  net.inet6.ip6.forwarding=1 <I>(if using IPv6)</I> 
+</TT>
+</BLOCKQUOTE>
+
+<P>
+Per rendere questi cambiamenti permanenti occorre aggiungere le 
+seguenti linee al file 
+<A href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl.conf&amp;
+sektion=5&amp;manpath=OpenBSD+3.7"><TT>/etc/sysctl.conf</TT></A>: 
+
+<BLOCKQUOTE>
+<TT>
+net.inet.ip.forwarding=1<BR>
+net.inet6.ip6.forwarding=1 
+</TT>
+</BLOCKQUOTE>
+
+<P>
+Nell'installazione di default queste linee sono presenti ma commentate 
+(con il prefisso <TT>#</TT>). Rimuovere i # e salvare il file. 
+L'IP forwarding sarà abilitato al riavvio del computer.
+
+<A name=config></A>
+<H2>Configurare la NAT</H2>
+La regola di NAT in <TT>pf.conf</TT> ha una sintassi del tipo:
+<BLOCKQUOTE>
+<TT>nat [pass] on <I>interface</I> [<I>af</I>] from 
+  <I>src_addr</I> [port <I>src_port</I>] to 
+  \<BR>
+&nbsp;&nbsp;&nbsp;<I>dst_addr</I> [port <I>dst_port</I>] -&gt; 
+  <I>ext_addr</I> [<I>pool_type</I>] [static-port] 
+</TT>
+</BLOCKQUOTE>
+<DL>
+  <DT><TT>nat</TT> 
+  <DD>La keyword presente all'inizio di una regola di NAT.
+  <DT><TT>pass</TT> 
+  <DD>Consente ai pacchetti traslati di oltrepassare le regole del 
+firewall. 
+  <DT><TT><I>interface</I></TT> 
+  <DD>Il nome dell'interfaccia di rete sulla quale effettuare la 
+traslazione dei pacchetti. 
+  <DT><TT><I>af</I></TT> 
+  <DD>La famiglia di indirizzi <TT>inet</TT> per IPv4 o <TT>inet6</TT> 
+per IPv6. Di solito PF è in grado di determinare questi parametri 
+sulla base degli indirizzi sorgente/destinazione.
+  <DT><TT><I>src_addr</I></TT> 
+  <DD>L'indirizzo sorgente (interno) dei pacchetti che saranno 
+traslati. L'indirizzo sorgente può essere specificato come: 
+  <UL>
+    <LI>Un singolo indirizzo IPv4 o IPv6. 
+    <LI>Un blocco di network 
+<A href="http://public.pacbell.net/dedicated/cidr.html">CIDR</A>. 
+    <LI>Un nome di dominio assegnato che sarà risolto via DNS quando 
+saranno caricate le regole di configurazione. Nelle regole tutti gli 
+indirizzi IP verranno sostituiti ai nomi di dominio.
+    <LI>Il nome di un'interfaccia di rete. Ogni indirizzo IP assegnato 
+all'interfaccia verrà sostituito al nome nella regola durante il 
+caricamento di queste.
+    <LI>Il nome di un'interfaccia di rete seguito da una 
+<TT>/<I>netmask</I></TT> (per esempio <TT>/24</TT>). Ogni indirizzo IP 
+assegnato all'interfaccia è associato con una netmask per formare un 
+blocco CIDR network sostituito nella regola. 
+    <LI>Il nome di un'interfaccia di rete seguito da uno di queti 
+parametri:
+    <UL>
+      <LI><TT>:network</TT> - sostituisce un blocco di CIDR network 
+(per esempio, 192.168.0.0/24) 
+      <LI><TT>:broadcast</TT> - sostituisce l'indirizzo di broadcast 
+di una network (esempio, 192.168.0.255) 
+      <LI><TT>:peer</TT> - sostituisce l'indirizzo IP peer su un link 
+point-to-point 
+      </LI></UL>
+    <DL>
+      <DD>Inoltre il parametro <TT>:0</TT> può essere aggiunto sia a 
+un nome di interfaccia che ad ognuno dei parametri visti 
+precedentemente per indicare a PF che nella sostituzione non dovrebbero 
+essere inclusi indirizzi IP alias. Questi parametri possono anche 
+essere usati quando l'interfaccia è tra parentesi. Esempio: 
+      <TT>fxp0:network:0</TT> </DD></DL>
+    <LI>Una <A href="tables.html">tabella</A>. 
+    <LI>Ognuno degli indirizzi specificati precedentemente ma negati 
+utilizzando il parametro <TT>!</TT> ("not"). 
+    <LI>Un set di indirizzi usando una 
+<A href="macros.html#lists">lista</A>. 
+    <LI>La keyword <TT>any</TT> con il significato di tutti gli 
+indirizzi </LI></UL>
+  <DT><TT><I>src_port</I></TT> 
+  <DD>La porta sorgente nell'header del layer 4 del pacchetto. Le porte 
+possono essere specificate come:
+  <UL>
+    <LI>Un numero tra 1 e 65535 
+    <LI>Un nome di servizio valido da 
+<A href="http://www.openbsd.org/cgi-bin/man.cgi?query=services&amp;
+sektion=5&amp;manpath=OpenBSD+3.7"><TT>/etc/services</TT></A> 
+    <LI>Un set di porte utilizzando una <A 
+    href="http://www.openbsd.org/faq/pf/macros.html#lists">lista</A> 
+    <LI>Un range: 
+    <UL>
+      <LI><TT>!=</TT> (diverso) 
+      <LI><TT>&lt;</TT> (minore) 
+      <LI><TT>&gt;</TT> (maggiore) 
+      <LI><TT>&lt;=</TT> (minore uguale) 
+      <LI><TT>&gt;=</TT> (maggiore uguale) 
+      <LI><TT>&gt;&lt;</TT> (range) 
+      <LI><TT>&lt;&gt;</TT> (range inverso) 
+      <DL>
+        <DD>Gli ultimi due operatori sono binari (prendono due 
+argomenti) che non includono gli argomenti nel range. </DD></DL>
+      <LI><TT>:</TT> (range inclusivo) 
+      <DL>
+        <DD>Anche il range inclusivo è un operatore binario e include 
+gli argomenti nel range.
+        </DD></DL></LI></UL></LI>
+</UL>
+Solitamente l'opzione <TT>port</TT> non è utilizzata nelle regole di 
+<TT>nat</TT> perchè l'obiettivo è di effettuare la NAT per tutto il 
+traffico indipendentemente dalle porte utilizzate.
+  <DT><TT><I>dst_addr</I></TT> 
+  <DD>L'indirizzo di destinazione dei pacchetti da traslare. 
+L'indirizzo destinazione è specificato allo stesso modo dell'indirizzo 
+sorgente.
+  <DT><TT><I>dst_port</I></TT> 
+  <DD>La porta destinazione nell'header del layer 4 del pacchetto. 
+Questa porta è specificata nello stesso modo della src_port. 
+  <DT><TT><I>ext_addr</I></TT> 
+  <DD>L'indirizzo pubblico del gateway NAT utilizzato per la 
+traslazione dei pacchetti. L'indirizzo esterno sarà specificato come:  
+  <UL>
+    <LI>Unsingolo indirizzo IPv4 o IPv6.
+    <LI>Un blocco 
+<A href="http://public.pacbell.net/dedicated/cidr.html">
+CIDR</A> network. 
+    <LI>Un nome di dominio assegnato che verrà risolto via DNS quando 
+saranno caricate le regole di configurazione.
+    <LI>Il nome di un'interfaccia di rete esterna. Ogni indirizzo IP 
+assegnato all'interfaccia verrà sostituito al nome nella regola 
+durante il caricamento di queste.
+    <LI>Il nome di un'interfaccia di rete esterna tra parentesi 
+<TT>( )</TT>. Questo suggerisce a PF di eseguire l'update delle regole 
+se dovesse cambiare l'indirizzo IP assegnato all'interfaccia. Questo è 
+molto utile quando l'interfaccia esterna ottiene il suo indirizzo IP 
+via DHCP o dial-up così da evitare di ricaricare le regole di 
+configurazione ad ogni cambiamento di indirizzo. 
+    <LI>Il nome di un'interfaccia di rete seguita da ognuno di questi 
+parametri:
+    <UL>
+      <LI><TT>:network</TT> - sostituisce un blocco CIDR network (per 
+esempio 192.168.0.0/24) 
+      <LI><TT>:peer</TT> - sostituisce l'indirizzo IP peer su un link 
+point-to-point</LI></UL>
+    <DL>
+      <DD>Inoltre il parametro <TT>:0</TT> può essere aggiunto sia a un 
+nome di interfaccia che ad ognuno dei parametri visti precedentemente 
+ad indicare a PF che nella sostituzione non dovrebbero essere inclusi 
+indirizzi IP alias. Questi parametri possono anche essere usati quando 
+l'interfaccia è tra parentesi. Per esempio:
+      <TT>fxp0:network:0</TT> </DD></DL>
+    <LI>Un set di indirizzi usando una 
+<A href="http://www.openbsd.org/faq/pf/macros.html#lists">lista</A>. 
+</LI></UL>
+  <DT><TT><I>pool_type</I></TT> 
+  <DD>Specifica il tipo di <A href="pools.html">pool di indirizzi</A> 
+da usare nella traslazione. 
+  <DT><TT>static-port</TT> 
+  <DD>Dice a PF di non traslare la porta sorgente nei pacchetti TCP 
+e UDP.</DD></DL>
+
+<P>
+Questo ci porterebbe alla seguente semplice regola:
+<BLOCKQUOTE>
+<TT>
+nat on tl0 from 192.168.1.0/24 to any -&gt; 24.5.0.5 
+</TT>
+</BLOCKQUOTE>
+
+<P>
+Questa regola dice di effettuare la NAT sull'interfaccia <TT>tl0</TT> 
+per ogni pacchetto che giunge da 192.168.1.0/24 sostituendo l'indirizzo 
+sorgente con 24.5.0.5. 
+
+<P>
+Anche se la regola precedente è corretta, si tratta di una forma 
+sconsigliata. Il mantenimento potrebbe essere difficoltoso, ogni cambio 
+di network esterno o interno richiederebbe la modifica della linea. 
+Confrontate con la seguente regola facile da aggiornare (<TT>tl0</TT> 
+è l'interfaccia esterna mentre <TT>dc0</TT> è interna): 
+<BLOCKQUOTE>
+<TT>
+nat on tl0 from dc0:network to any -&gt; tl0 
+</TT>
+</BLOCKQUOTE>
+
+<P>
+Il vantaggio dovrebbe essere chiaro, si possono cambiare gli indirizzi 
+IP su entrambe le interfaccie di rete senza cambiare la regola.
+
+<P>
+Quando si specifica il nome di un'interfaccia per la traslazione degli 
+indirizzi come nell'esempio appena visto, l'indirizzo IP è determinato 
+nell'istante di <I>caricamento</I> di pf.conf e non in tempo reale. 
+Quindi l'uso di un DHCP per configurare l'interfaccia esterna può 
+essere un problema. Se l'indirizzo IP assegnato dovesse cambiare, 
+la NAT continuerà ad effettuare la traslazione dei pacchetti usando 
+il vecchio indirizzo IP. Questo bloccherà le connessioni. 
+Per risolvere questo problema si può dire a PF di aggiornare 
+automaticamente la traslazione di indirizzo racchiudendo tra parentesi 
+il nome dell'interfaccia:
+<BLOCKQUOTE>
+<TT>
+nat on tl0 from dc0:network to any -&gt; (tl0) 
+</TT>
+</BLOCKQUOTE>
+
+<P>
+Questo metodo funziona per traslazioni di indirizzi IPv4 e IPv6.
+<A name=binat></A>
+<H2>Mappa bidirezionale (1:1 mapping)</H2>
+Una mappatura bidirezionale può essere ottenuta usando la regola 
+<TT>binat</TT>. La regola <TT>binat</TT> stabilisce una mappatura uno a 
+uno tra un indirizzo IP locale e un indirizzo esterno. Per esempio 
+questo è utile per realizzare un web server sulla rete locale con un 
+suo corrispondente indirizzo IP. Connessioni da Internet all'indirizzo 
+esterno saranno traslate all'indirizzo interno e connessioni dal web 
+server (come richieste DNS) saranno traslate all'indirizzo esterno. 
+A differenza di come avviene con le regole di <TT>nat</TT>, con le 
+regole di <TT>binat</TT> le porte TCP e UDP non saranno mai modoficate.
+
+<P>
+Esempio: 
+<BLOCKQUOTE>
+<TT>web_serv_int = "192.168.1.100"<BR>web_serv_ext = 
+  "24.5.0.6"<BR><BR>binat on tl0 from $web_serv_int to any -&gt; 
+  $web_serv_ext<BR></TT>
+</BLOCKQUOTE>
+<A name=except></A>
+<H2>Eccezioni alla regola di traslazione</H2>
+Eccezioni alla regola di traslazione si ottengono con la keyword 
+<TT>no</TT>. Per esempio, se si modificasse la riga precedente: 
+<BLOCKQUOTE>
+<TT>no nat on tl0 from 192.168.1.208 to any<BR>nat on tl0 from 
+  192.168.1.0/24 to any -&gt; 24.2.74.79 
+</TT>
+</BLOCKQUOTE>
+
+<P>
+L'intera network 192.168.1.0/24 avrebbe i suoi pacchetti traslati 
+all'indirizzo esterno 24.2.74.79 fatta eccezione dell'indirizzo 
+192.168.1.208.
+
+<P>
+C'è da notare che viene rispettata la prima regola che ha una 
+corrispondenza, se è una regola negata il pacchetto non è traslato. 
+La keyword <TT>no</TT> può anche essere usata con le regole 
+<TT>binat</TT> e 
+<A href="http://www.openbsd.org/faq/pf/rdr.html"><TT>rdr</TT></A>. 
+<A name=status></A>
+<H2>Controllo dello stato della NAT</H2>
+Per vedere le traslazioni NAT attive si usa  
+<A href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;
+sektion=8&amp;manpath=OpenBSD+3.7">pfctl(8)</A> 
+con l'opzione <TT>-s state</TT>. Questa opzione elencherà tutte le 
+sessioni NAT attive:
+<PRE>   # pfctl -s state
+   fxp0 TCP 192.168.1.35:2132 -&gt; 24.5.0.5:53136 -&gt;
+ 65.42.33.245:22 TIME_WAIT:TIME_WAIT
+   fxp0 UDP 192.168.1.35:2491 -&gt; 24.5.0.5:60527 -&gt; 
+24.2.68.33:53   MULTIPLE:SINGLE
+</PRE>
+
+<P>
+Spiegazione (solo per la prima riga): 
+<DL>
+  <DT>fxp0 
+  <DD>Indica l'interfaccia che è nello stato di bound to. Apparirà la 
+parola <TT>self</TT> se lo stato è 
+<A href="http://www.openbsd.org/faq/pf/options.html#state-policy">
+<TT>floating</TT></A>. 
+  </DD></DL>
+<DL>
+  <DT>TCP 
+  <DD>Il protocollo utilizzato nella connessione. </DD></DL>
+<DL>
+  <DT>192.168.1.35:2132 
+  <DD>L'indirizzo IP (192.168.1.35) della workstation sulla rete 
+locale. Dopo l'indirizzo viene mostrata la porta sorgente (2132). 
+Questo è anche l'indirizzo sorgente che è sostituito nell'header IP. 
+</DD></DL>
+<DL>
+  <DT>24.5.0.5:53136 
+  <DD>L'indirizzo IP (24.5.0.5) e la porta (53136) utilizzati dalla 
+NAT nella traslazione.
+  </DD></DL>
+<DL>
+  <DT>65.42.33.245:22 
+  <DD>L'indirizzo IP (65.42.33.245) e la porta (22) dell'host su 
+Internet con il quale è connessa la workstation. 
+  </DD></DL>
+<DL>
+  <DT>TIME_WAIT:TIME_WAIT 
+  <DD>Indica lo stato con il quale PF considera la connessione TCP in 
+corso. 
+</DD></DL>
+
+<P>
+[<A href="filter.html">Prcedente: Packet Filtering</A>] 
+[<A href="index.html">Indice</A>] 
+[<A href="rdr.html">Successivo: Reindirizzamento (Port Forwarding)</A>] 
+
+<P>
+<HR>
+<A href="../../it/index.html"><IMG height=24 alt="[back]" 
+src="../../../images/back.gif" width=24 border=0></A> 
+<A href="mailto:www@openbsd.org">www@openbsd.org</A> <BR>
+<SMALL>
+<!--
+Originally [OpenBSD: nat.html,v 1.20 ]<br>
+$Translation: nat.html,v 1.1 2005/09/26 21:02:27 danix Exp $<br>
+-->
+$OpenBSD: nat.html,v 1.1 2005/09/28 19:46:33 saad Exp $
+</SMALL> 
+</BODY>
+</HTML>

@@ -1,0 +1,190 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>PF: Liste e Macro</TITLE>
+<LINK rev=made href="mailto:www@openbsd.org">
+<META http-equiv=Content-Type content="text/html; charset=ISO-8859-1">
+<META content=document name=resource-type>
+<META content="the OpenBSD FAQ page" name=description>
+<META content="openbsd,faq,pf" name=keywords>
+<META content=global name=distribution>
+<!--
+Copyright (c) 2003, Nick Holland <nick@openbsd.org>
+Copyright (c) 2003, 2004, Joel Knight <enabled@myrealbox.com>
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+<META content="MSHTML 6.00.2600.0" name=GENERATOR>
+</HEAD>
+
+<BODY text="#000000" bgColor="#ffffff">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<A href="../../../it/index.html">
+<IMG height=30 alt="[OpenBSD]" src="../../../images/smalltitle.gif" 
+width=141 border=0> 
+</A>
+<P>
+[<A href="config.html">Precedente: Introduzione</A>] 
+[<A href="index.html">Indice</A>] 
+[<A href="tables.html">Successivo: Tabelle</A>] 
+
+<H1><FONT color="#e00000">PF: Liste e Macro</FONT></H1>
+<HR>
+
+<H3>Indice</H3>
+<UL>
+  <LI><A href="#lists">Liste</A> 
+  <LI><A href="#macros">Macro</A> 
+</LI>
+</UL>
+<HR>
+<A name=lists></A>
+<H2>Liste
+</H2>
+Una lista consente di applicare un'unica regola a diversi parametri. 
+Per esempio molteplici protocolli, numeri di porte, indirizzi, ecc. 
+Così, invece di scrivere una regola di firewall per ogni indirizzo IP 
+da bloccare, può essere scritta un'unica regola indicando gli 
+indirizzi IP in una lista. Le liste sono definite specificando i 
+parametri tra parentesi graffe <TT>{ }</TT>.
+ 
+<P>
+Quando 
+<A href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;
+sektion=8&amp;manpath=OpenBSD+3.7">pfctl(8)</A> trova una lista 
+durante il caricamento dei parametri di configurazione, crea più 
+regole, una per ogni parametro della lista. Per esempio:
+<BLOCKQUOTE>
+<TT>
+block out on fxp0 from { 192.168.0.1, 10.5.32.6 } to any 
+</TT>
+</BLOCKQUOTE>
+
+<P>
+viene espansa a: 
+<BLOCKQUOTE>
+<TT>
+block out on fxp0 from 192.168.0.1 to any<BR>
+block out on fxp0 from 10.5.32.6 to any 
+</TT>
+</BLOCKQUOTE>
+
+<P>
+In una singola regola possono essere definite diverse liste non 
+necessariamente limitate alle sole regole di filtraggio:
+
+<BLOCKQUOTE>
+<TT>
+rdr on fxp0 proto tcp from any to any port { 22 80 } -&gt; \<BR>
+&nbsp;&nbsp;&nbsp;192.168.0.6<BR>
+block out on fxp0 proto { tcp udp } from { 192.168.0.1, \<BR>
+&nbsp;&nbsp;&nbsp;10.5.32.6 } to any port { ssh telnet } 
+</TT>
+</BLOCKQUOTE>
+
+<P>
+Da notare che le virgole tra i diversi parametri sono opzionali.
+
+<P>
+Fare attenzione alle liste chiamate "liste negate", le quali, formulate 
+come nell'esempio seguente, sono un errore comune:
+
+<BLOCKQUOTE>
+<TT>
+pass in on fxp0 from { 10.0.0.0/8, !10.1.2.3 } 
+</TT>
+</BLOCKQUOTE>
+
+<P>
+Mentre l'intenzione è quella di considerare ogni "indirizzo della 
+network 10.0.0.0/8 con l'eccezione dell'indirizzo 10.1.2.3, la regola 
+si espande in:
+
+<BLOCKQUOTE>
+<TT>
+pass in on fxp0 from 10.0.0.0/8<BR>
+pass in on fxp0 from !10.1.2.3 
+</TT>
+</BLOCKQUOTE>
+<P>
+che consente di far passare tutti i pacchetti della network compresi 
+quelli provenienti dall'indirizzo 10.1.2.3. Per risolvere questo 
+problema si sarebbe dovuto usare una <A href="tables.html">table</A>. 
+
+<A name=macros></A>
+<H2>Macro</H2>
+Le macro sono variabili definite dall'utente che possono contenere 
+indirizzi IP, numeri di porte, nomi di interfaccie, ecc. Le macro 
+possono ridurre la complessità nella definizione e nel mantenimento 
+delle regole di configurazione di PF.
+
+<P>
+I nomi delle macro devono iniziare con una lettera e possono contenere 
+lettere, digit, e underscores. Per i nomi delle macro non è possibile 
+utilizzare parole riservate come <TT>pass</TT>, <TT>out</TT>, o 
+<TT>queue</TT>. 
+<BLOCKQUOTE>
+<TT>
+ext_if = "fxp0"<BR>
+<BR>
+block in on $ext_if from any to any<BR>
+</TT>
+</BLOCKQUOTE>
+<P>
+Questo crea una macro chiamata <TT>ext_if</TT>. Quando ci si riferisce 
+a una macro dopo che è stata creata, il suo nome è preceduto dal 
+carattere <TT>$</TT>. 
+
+<P>
+Le macro possono essere espanse a liste come: 
+<BLOCKQUOTE>
+<TT>
+friends = "{ 192.168.1.1, 10.0.2.5, 192.168.43.53 }" 
+</TT>
+</BLOCKQUOTE>
+
+<P>
+Le macro, non essendo espanse con le virgolette, possono essere 
+definite anche ricorrendo alla seguente sintassi:
+<BLOCKQUOTE>
+<TT>
+host1 = "192.168.1.1"<BR>
+host2 = "192.168.1.2"<BR>
+all_hosts = "{" $host1 $host2 "}"<BR>
+</TT>
+</BLOCKQUOTE>
+
+<P>
+La macro <TT>$all_hosts</TT> si espande a 192.168.1.1, 192.168.1.2. 
+
+<P>
+[<A href="config.html">Precedente: Introduzione</A>] 
+[<A href="index.html">Indice</A>] 
+[<A href="tables.html">Prossimo: Tabelle</A>] 
+
+<P>
+<HR>
+<A href="../../it/index.html"><IMG height=24 alt="[back]" 
+src="../../../images/back.gif" width=24 border=0></A> <A 
+href="mailto:www@openbsd.org">www@openbsd.org</A> 
+<BR>
+<SMALL>
+<!--
+Originally [OpenBSD: macros.html,v 1.16 ]<br>
+$Translation: macros.html,v 1.1 2005/09/26 21:02:27 danix Exp $<br>
+-->
+$OpenBSD: macros.html,v 1.1 2005/09/28 19:46:33 saad Exp $
+</SMALL> 
+</BODY>
+</HTML>
