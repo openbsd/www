@@ -1,0 +1,869 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>PF: Packet Queueing e Prioritization</TITLE><LINK rev=made 
+href="mailto:www@openbsd.org">
+<META http-equiv=Content-Type content="text/html; charset=ISO-8859-1">
+<META content=document name=resource-type>
+<META content="the OpenBSD FAQ page" name=description>
+<META content="openbsd,faq,pf" name=keywords>
+<META content=global name=distribution><!--
+Copyright (c) 2003-2005 Joel Knight <enabled@myrealbox.com>
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+<META content="MSHTML 6.00.2600.0" name=GENERATOR></HEAD>
+<BODY text="#000000" bgColor="#ffffff"><!-- Passes validator.w3.org, 
+please keep it this way; please, use a max of 72 chars per line -->
+<A href="../../../it/index.html"><IMG height=30 alt="[OpenBSD]" 
+src="../../../images/smalltitle.gif" width=141 border=0> </A>
+
+<P>
+[<A href="anchors.html">Precedente: Ancore</A>] 
+[<A href="index.html">Indice</A>] 
+[<A href="pools.html">Successivo: Address Pools e Load Balancing</A>] 
+<P>
+<H1><FONT color="#e00000">PF: Packet Queueing e Prioritization</FONT>
+</H1>
+<HR>
+
+<H3>Indice</H3>
+<UL>
+  <LI><A href="queueing.html#queueing">Queueing</A> 
+  <LI><A href="queueing.html#sched">Schedulers</A> 
+
+  <UL>
+    <LI><A href="queueing.html#cbq">Class Based Queueing</A> 
+    <LI><A href="queueing.html#priq">Priority Queueing</A> 
+    <LI><A href="queueing.html#red">Random Early Detection</A> 
+    <LI><A href="queueing.html#ecn">
+Notifica di congestione esplicita</A> </LI></UL>
+  <LI><A href="queueing.html#altq">Configurare il Queueing</A> 
+  <LI><A href="queueing.html#assign">Assegnare traffico a una coda</A> 
+  <LI><A href="queueing.html#example1">
+Esempio #1: Piccola rete domestica</A> 
+  <LI><A href="queueing.html#example2">
+Esempio #2: Rete aziendale</A> </LI></UL>
+<HR>
+<A name=queueing></A>
+<H2>Queueing</H2>
+<P>
+Si accoda qualcosa per conservarlo affinchè possa essere processato 
+successivamente. In una rete di computer, quando alcuni pacchetti di 
+dati sono inviati da un host, vengono inseriti in una coda dove 
+attendono di essere processati dal sistema operativo. Il sistema 
+operativo quindi decide quale coda e quale pacchetto o serie di 
+pacchetti appartenenti a quella coda dovrebbero essere processati. 
+L'ordine con il quale il sistema operativo seleziona i pacchetti da 
+processare può avere effetto sulle performance della rete. Per esempio, 
+supponiamo che un utente stia eseguendo due applicazioni di rete: 
+SSH e FTP. Idealmente, i pacchetti SSH dovrebbero essere processati 
+prima dei pacchetti FTP a causa della natura time-sensitive di SSH; 
+quando un tasto viene premuto nel client SSH, si ci aspetta una 
+risposta immediata mentre un eventuale ritardo di pochi secondi in un 
+trasferimento FTP non viene notato. Ma cosa succede se il router deve 
+gestire un grosso quantitativo di pacchetti da una connessione FTP 
+prima di riuscire a processare la connessione SSH? I pacchetti della 
+connessione SSH resteranno accodati (o verranno addirittura gettati via 
+dal router se la memoria non dovesse essere sufficientemente ampia da 
+contenere tutti i pacchetti) e la connessione SSH potrebbe apparire 
+rallentata. Utilizzando una strategia per le code, la banda 
+della rete può essere condivisa in modo opportuno tra le diverse 
+applicazioni, utenti e computer.
+ 
+<P>
+C'è da notare che il queueing è utile solo per i pacchetti in 
+<I>uscita</I>. Una volta che i pacchetti arrivano a un interfaccia 
+nella direzione d'ingresso è ormai troppo tardi per il queue. Quando i 
+pacchetti arrivano all'interfaccia è stata già consumata banda. 
+L'unica soluzione è di abilitare il queueing sul router 
+adiacente o, se l'host che ha ricevuto il pacchetto agisce come router, 
+abilitare il queueing sull'interfaccia interna dove i pacchetti escono 
+dal router.
+
+<A name=sched></A>
+<H2>Schedulers</H2>
+Lo scheduler è il dispositivo che decide la coda da processare e il 
+rispettivo ordine. Di default, OpenBSD usa uno scheduler (FIFO), il 
+primo dato in ingresso è anche il primo che esce e viene processato. 
+Una coda FIFO funziona come una linea di controllo al supermarket. 
+Il primo oggetto della fila è il primo che viene processato. Eventuali 
+nuovi pacchetti in arrivo vengono aggiunti al termine della coda. Se la 
+coda si dovesse riempire, e qui l'analogia con il supermarket termina, 
+i nuovi pacchetti in arrivo vengono gettati via. Questo è conosciuto 
+come taglio della coda.
+
+<P>
+OpenBSD supparta due altri scheduler: 
+<UL>
+  <LI>Class Based Queueing 
+  <LI>Priority Queueing </LI>
+</UL>
+<A name=cbq></A>
+<H3>Class Based Queueing</H3>
+Class Based Queueing (CBQ), cioè coda basata sulla classe, è un 
+algoritmo di queueing che divide la banda di una connessione di rete 
+tra code multiple o classi. Quindi ad ogni coda viene assegnato del 
+traffico in base all'indirizzo sorgente o destinazione, numero di 
+porta, protocollo, ecc. In opzione una coda può prendere in prestito 
+banda inutilizzata dalla coda madre. Si può assegnare una priorità alle 
+code con pacchetti che contengono traffico interattivo, come SSH, i 
+pacchetti relativi saranno processati prima di altre code che 
+contengono elevato traffico come FTP.
+
+<P>
+Le code CBQ sono ordinate in maniera gerarchica. Al di sopra della 
+gerarchia vi è la coda root, la quale definisce il totale ammontare di 
+banda disponibile. Le code figlie sono create a partire dalla coda root, 
+ad ognuna delle quali può essere assegnata una porzione della banda 
+della coda root. Per esempio alcune code potrebbero essere definite 
+come di seguito:
+<DL>
+  <DD>Root Queue (2Mbps) 
+  <DL>
+    <DD>Queue A (1Mbps) 
+    <DD>Queue B (500Kbps) 
+    <DD>Queue C (500Kbps) </DD></DL></DD></DL>
+
+<P>
+In questo caso, la banda totale disponibile è di 2 megabit 
+al secondo (Mbps). Questa banda è suddivisa tra tre code figlie. 
+ 
+<P>
+La gerarchia può essere ulteriormente espansa definendo code 
+all'interno di altre code. Per suddividere la banda in modo corretto 
+tra differenti utenti e classificare il loro traffico così da 
+evitare che alcuni protocolli non limitino la banda ad altri, può 
+essere definita una struttura come la seguente:
+
+<DL>
+  <DD>Root Queue (2Mbps) 
+  <DL>
+    <DD>UserA (1Mbps) 
+    <DL>
+      <DD>ssh (50Kbps) 
+      <DD>bulk (950Kbps) </DD></DL>
+    <DD>UserB (1Mbps) 
+    <DL>
+      <DD>audio (250Kbps) 
+      <DD>bulk (750Kbps) 
+      <DL>
+        <DD>http (100Kbps) 
+        <DD>other (650Kbps) </DD></DL></DD></DL></DD></DL></DD></DL>
+
+<P>
+Da notare che ad ogni livello la somma delle bande assegnate ad ognuna 
+delle code non è mai superiore alla banda assegnata alla coda madre.
+
+<P>
+Una coda può essere configurata per prendere in prestito banda dalla 
+sua coda madre se questa momentaneamente ha un eccesso di banda 
+disponibile non utililizzata da altre code figlie. Consideriamo 
+una configurazione come la seguente:
+<DL>
+  <DD>Root Queue (2Mbps) 
+  <DL>
+    <DD>UserA (1Mbps) 
+    <DL>
+      <DD>ssh (100Kbps) 
+      <DD>ftp (900Kbps, borrow) </DD></DL>
+    <DD>UserB (1Mbps) </DD></DL></DD></DL>
+
+<P>
+Se il traffico nella coda <TT>ftp</TT> dovesse eccedere i 900Kbps e il 
+traffico nella coda <TT>UserA</TT> è inferiore a 1Mbps (perchè la coda 
+<TT>ssh</TT> sta utilizzando meno banda di quella assegnata, 100Kbps), 
+la coda <TT>ftp</TT> prenderà in prestito l'eccesso di banda da 
+<TT>UserA</TT>. In questo modo la coda <TT>ftp</TT> è in grado di 
+utilizzare più della banda ad essa assegnata quando viene richiesto un 
+incremento del carico di dati. Se la coda <TT>ssh</TT> dovesse 
+incrementare il suo carico, la banda prestata sarà restituita. 
+ 
+<P>
+CBQ assegna ad ogni coda un livello di priorità. Durante una congestione 
+del traffico, le code con una più elevata priorità sono da preferire 
+rispetto a code con una bassa priorità anche se entrambe le code sono 
+figlie di una stessa coda genitrice (in altre parole appartenenti allo 
+stesso ramo gerarchico). Code con la stessa priorità sono processate 
+in maniera round-robin. Per esempio: 
+<DL>
+  <DD>Root Queue (2Mbps) 
+  <DL>
+    <DD>UserA (1Mbps, priority 1) 
+    <DL>
+      <DD>ssh (100Kbps, priority 5) 
+      <DD>ftp (900Kbps, priority 3) </DD></DL>
+    <DD>UserB (1Mbps, priority 1) </DD></DL></DD></DL>
+
+<P>
+CBQ processerà le code <TT>UserA</TT> e <TT>UserB</TT> seguendo uno stile 
+round-robin -- cioè nessuna coda verrà preferita all'altra. Nel tempo 
+dedicato a processare la coda <TT>UserA</TT>, CBQ processerà anche le sue 
+code figlie. In questo caso la coda <TT>ssh</TT> avrà una priorità 
+superiore e avrà un trattamento privilegiato rispetto alla coda 
+<TT>ftp</TT> se la rete dovesse essere congestionata. C'è da notare che 
+le priorità delle code <TT>ssh</TT> e <TT>ftp</TT> non vengono confrontate 
+con quelle delle code <TT>UserA</TT> e <TT>UserB</TT> perchè non 
+appartengono a uno stesso ramo gerarchico.
+
+<P>
+Per maggiori dettagli riferirsi alla teoria CBQ,
+<A href="http://www.icir.org/floyd/cbq.html">Riferimenti su CBQ</A>. 
+<A name=priq></A>
+<H3>Priority Queueing</H3>
+Priority Queueing (PRIQ), cioè code a priorità, assegna molteplici code 
+all'interfaccia di rete e ogni ad ogni coda è assegnato un unico 
+livello di priorità. Una coda con elevato livello di priorità è 
+<I>sempre</I> processato prima di una coda con priorià inferiore.
+
+<P>
+La struttura delle code in PRIQ è piatta -- non è possibile definire 
+code all'interno di altre code. Viene definita la coda root, la quale 
+configura il totale ammontare di banda disponibile, e le sotto-code 
+vengono definite al di sotto della root. Consideriamo il seguente 
+esempio:
+<DL>
+  <DD>Root Queue (2Mbps) 
+  <DL>
+    <DD>Queue A (priority 1) 
+    <DD>Queue B (priority 2) 
+    <DD>Queue C (priority 3) </DD></DL></DD></DL>
+
+<P>
+La coda root è definita con una disponibilità di banda per se stessa e 
+per le tre sub-code pari a 2Mbps. La coda con più alta priorità (il più 
+alto numero di priorità) è servita per prima. Una volta che tutti i 
+pacchetti di quella coda sono processati, o la coda è vuota, PRIQ 
+sposta il suo interesse per la coda successiva con valore di priorità 
+più elevato. All'interno di una data coda i pacchetti sono processati 
+secondo un modello First In First Out (FIFO).
+
+<P>
+E' importante notare che quando si usa PRIQ occorre pianificare le code 
+con estrema attenzione. Perchè PRIQ processa <I>sempre</I> la coda a 
+più alta priorità prima di una a bassa priorità, è quindi possibile che 
+una coda ad alta priorità ricevendo un flusso continuo di pacchetti 
+possa ritardare o addirittura causare l'eliminazione di pacchetti 
+appartenenti a una coda a più bassa priorità. 
+
+<A name=red></A>
+<H3>Random Early Detection</H3>
+Random Early Detection (RED) è un algoritmo utilizzato per evitare 
+congestioni. Il suo lavoro è di evitare le congestioni di rete 
+assicurando che le code non si riempiano. Questo viene ottenuto 
+calcolando continuamente la lunghezza media (dimensione) della coda e 
+confrontandola con due valori di soglia, una soglia minima e una massima. 
+Se la dimensione della media della coda è al di sotto del valore di 
+minima soglia, nessun pacchetto viene gettato via. Se la media è al di 
+sopra del valore di soglia massimo, <I>tutti</I> i nuovi pacchetti in 
+arrivo saranno gettati via. Se la media è tra i valori di soglia i 
+pacchetti vengono gettati in base a una probabilità calcolata a partire 
+da una dimensione media della coda. In altre parole, più la dimensione 
+media della coda si avvicina al valore massimo di soglia e maggiore è 
+il numero di pacchetti gettati via. Quando i pacchetti vengono gettati, 
+RED sceglie in modo casuale da quale connessione gettare via i pacchetti. 
+Connessioni che utilizzano un elevato ammontare di banda hanno una 
+probabilità superiore di avere i propri pacchetti gettati via. 
+
+<P>
+RED è utile perchè evita una situazione conosciuta come sincronizzazione 
+globale ed è in grado di gestire burst di traffico. La sincronizzazione 
+globale si riferisce alla totale perdita di traffico a causa della 
+contemporanea perdita di pacchetti da diverse connessioni. Per esempio, 
+se la congestione avviene in un router che trasporta traffico relativo 
+a 10 connessioni FTP e i pacchetti da tutte (o la maggior parte) queste 
+connessioni sono gettati via (come nel caso del queueing FIFO), tutto il 
+traffico ne risentirà. Questa non è una situazione ideale perchè 
+comporta che tutte le connessioni FTP debbano ridurre il loro traffico e 
+significa anche che la rete non può più essere utilizzata al suo massimo 
+potenziale. RED evita tutto questo scegliendo casualmente da quale 
+connessione gettare via i pacchetti invece di scegliere tutte le 
+connessioni simultaneamente. In questo modo, connessioni con elevata banda 
+avranno maggiore probabilità di avere i loro pacchetti gettati. In questo modo, 
+connessioni ad elevata banda saranno rallentate, la congestione evitata 
+e la rapida perdita di tutto il traffico non avverrà. Inoltre, RED è in 
+grado di gestire i burst di traffico perchè inizia a gettare via 
+pacchetti <I>prima</I> che le code si possano riempire. Quando un burst 
+di traffico giunge c'è sufficiente spazio nella coda per ospitare i nuovi 
+pacchetti.
+
+<P>
+RED dovrebbe essere usato solo quando il protocollo di trasporto è in 
+grado di rispondere agli indicatori di congestione della network. Nella 
+maggior parte dei casi questo significa che RED dovrebbe essere usato per 
+code di traffico TCP e non per traffico UDP o ICMP.
+ 
+<P>
+Permaggiori dettagli relativi alla teoria RED, 
+<A href="http://www.icir.org/floyd/red.html">Riferimenti su RED</A>. 
+<A name=ecn></A>
+<H3>Notifica di congestione esplicita</H3>
+La notifica di congestione esplicita (Explicit Congestion Notification 
+- ECN) funziona con RED per avvertire due host che comunicano sulla 
+rete di ogni eventuale congestione presente sul percorso di comunicazione. 
+Questo si ottiene facendo in modo che RED abiliti un flag nell'header del 
+pacchetto invece di gettarlo via. Assumendo che l'host trasmittente 
+supporti l'ECN, esso può leggere questo flag e di conseguenza rallentare 
+il suo traffico.
+ 
+<P>
+Per maggiori informazioni su l'ECN riferirsi a 
+<A href="http://www.rfc-editor.org/rfc/rfc3168.txt">RFC 3168</A>. 
+<A name=altq></A>
+<H2>Configurare il Queueing</H2>
+A partire da OpenBSD 3.0 l'implementazione di
+<A href="http://www.csl.sony.co.jp/person/kjc/kjc/software.html#ALTQ">
+Alternate Queueing (ALTQ)</A> fa parte del sistema di base. Con OpenBSD 
+3.3 ALTQ è stato integrato in PF.L'implementazione ALTQ di OpenBSD 
+supporta il Class Based Queueing (CBQ) e il Priority Queueing 
+(PRIQ). Inoltre è supportato anche il Random Early Detection (RED) e 
+l'Explicit Congestion Notification (ECN). 
+
+<P>
+Siccome ALTQ è stato integrato con PF, affinchè il queueing funzioni 
+occorre attivare PF. Istruzioni su come abilitare PF si trovano in 
+<A href="http://www.openbsd.org/faq/pf/config.html#activate">
+Getting Started</A>.
+ 
+<P>
+Il Queueing è configurato in <TT>
+<A href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;
+sektion=5&amp;manpath=OpenBSD+3.7">pf.conf</A></TT>. 
+Ci sono due tipi di direttive che possono essere utilizzate per 
+configurare il queueing:
+<UL>
+  <LI><TT>altq on</TT> - abilita il queueing su un'interfaccia, 
+definisce quale scheduler utilizzare, e crea la coda root. 
+  <LI><TT>queue</TT> - definisce le proprietà della coda figlia </LI></UL>
+
+<P>
+La sintassi per la direttiva <TT>altq on</TT> è:
+<BLOCKQUOTE><TT>altq on <I>interface scheduler</I> bandwidth <I>bw</I> 
+qlimit 
+  <I>qlim</I> \<BR>&nbsp;&nbsp;&nbsp;tbrsize <I>size</I> queue { 
+  <I>queue_list</I> } </TT></BLOCKQUOTE>
+<UL>
+  <LI><TT><I>interface</I></TT> - l'interfaccia di rete sulla quale 
+attivare il queueing. 
+
+  <LI><TT><I>scheduler</I></TT> - lo scheduler queueing da utilizzare. 
+E' possibile scegliere tra <TT>cbq</TT> e <TT>priq</TT>. Si può attivare 
+un solo scheduler alla volta. 
+  <LI><TT><I>bw</I></TT> - l'ammontare totale di banda disponibile allo 
+scheduler. Questo può essere specificato come un valore assoluto 
+utilizzando i suffissi <TT>b</TT>, <TT>Kb</TT>, <TT>Mb</TT>, e 
+<TT>Gb</TT> che rappresentano rispettivamente bit, kilobit, megabit, 
+e gigabit al secondo, o come una percentuale della banda dell'
+<TT><I>interface</I></TT>. 
+  <LI><TT><I>qlim</I></TT> - il massimo numero di pacchetti da 
+conservare nella coda. Questo parametro è opzionale. Il valore di 
+default è 50.
+  <LI><TT><I>size</I></TT> - ampiezza del regolatore in byte. 
+Se non specificato, l'ampiezza è definita in base alla banda 
+dell'<TT><I>interface</I></TT>.
+  <LI><TT><I>queue_list</I></TT> - una lista di code figlie da creare 
+al di sotto della coda root.
+  </LI></UL>
+
+<P>
+Per esempio: 
+<BLOCKQUOTE><TT>altq on fxp0 cbq bandwidth 2Mb queue { std, ssh, ftp } 
+</TT></BLOCKQUOTE>
+Viene abilitata CBQ sull'interfaccia <TT>fxp0</TT>. La banda totale 
+disponibile è configurata a 2Mbps. sono definite tre code figlie: 
+<TT>std</TT>, <TT>ssh</TT>, e <TT>ftp</TT>. 
+ 
+<P>
+La sintassi per la direttiva <TT>queue</TT> è la seguente: 
+<BLOCKQUOTE>
+<TT>queue <I>name</I> [on <I>interface</I>] bandwidth <I>bw</I> 
+  [priority <I>pri</I>] [qlimit <I>qlim</I>] 
+  \<BR>&nbsp;&nbsp;&nbsp;<I>scheduler</I> ( <I>sched_options</I> ) { 
+  <I>queue_list</I> } </TT></BLOCKQUOTE>
+<UL>
+  <LI><TT><I>name</I></TT> - il nome della coda. Questo deve 
+corrispondere a uno dei nomi delle code definite nella direttiva 
+<TT>altq on</TT> di <TT><I>queue_list</I></TT>. Per <TT>cbq</TT> può anche 
+corrispondere al nome di una coda in una precedente coda della direttiva 
+<TT><I>queue_list</I></TT>. Il nome della coda non può essere più grande 
+di 15 caratteri.
+  <LI><TT><I>interface</I></TT> - l'interfaccia di rete sulla quale c'è 
+una coda valida. Questo valore è opzionale, e se non specificato, la coda 
+sarà valida su tutte le interfaccie.
+  <LI><TT><I>bw</I></TT> - l'ammontare totale di banda disponibile sulla 
+coda. Questo può essere specificato come un valore assoluto usando un 
+suffisso <TT>b</TT>, <TT>Kb</TT>, <TT>Mb</TT>, e <TT>Gb</TT> per 
+rappresentare bit, kilobit, megabit, e gigabit al secondo, oppure 
+come una   percentuale della banda della coda madre. Questo parametro è 
+applicabile solo quando si utilizza lo scheduler <TT>cbq</TT>. 
+Se non viene specificato, il valore di default è 100% della banda della 
+  coda madre.
+  <LI><TT><I>pri</I></TT> - la priorità della coda. Per <TT>cbq</TT> il 
+range di priorità può variare tra 0 e 7 e per <TT>priq</TT> il range è 
+tra 0 e 15. Il valore 0 di priorità è il minore. Quando non 
+specificato, viene usato il valore di dafult 1. 
+  <LI><TT><I>qlim</I></TT> - è il massimo numero di pacchetti da 
+conservare nella coda. Quando non specificato viene utilizzato il valore 
+di default pari a 50. 
+  <LI><TT><I>scheduler</I></TT> - lo scheduler utilizzato, <TT>cbq</TT> 
+o <TT>priq</TT>. Deve essere lo stesso della coda root. 
+  <LI><TT><I>sched_options</I></TT> - ulteriori opzioni possono essere 
+passate allo scheduler per controllare il suo comportamento: 
+  <UL>
+    <LI><TT>default</TT> - definisce una coda di default per tutti quei 
+pacchetti che non hanno una corrispondenza con le altre code. Viene 
+richiesta esattamente una coda di default. 
+    <LI><TT>red</TT> - abilita il Random Early Detection (RED) su 
+questa coda. 
+    <LI><TT>rio</TT> - abilita RED con IN/OUT. In questo modo, RED 
+conserverà molteplici valori di media per la lunghezza delle code e per 
+i valori di soglia, uno per ogni livello di Quality of Service IP. 
+    <LI><TT>ecn</TT> - abilita Explicit Congestion Notification (ECN) 
+su questa coda. <TT>Ecn</TT> implica <TT>red</TT>. 
+    <LI><TT>borrow</TT> - la coda può prendere in prestito banda dalla 
+sua coda madre. Questo si può specificare solo quando si utilizza lo 
+scheduler <TT>cbq</TT>. </LI></UL>
+  <LI><TT><I>queue_list</I></TT> - una lista di code figlie da creare 
+al di sotto di questa coda. Una <TT><I>queue_list</I></TT> può essere 
+definita solo quando si usa lo scheduler <TT>cbq</TT>.
+  </LI></UL>
+
+<P>
+Continuiamo con l'esempio visto precedentemente:
+<BLOCKQUOTE><TT>queue std bandwidth 50% cbq(default)<BR>queue ssh 
+bandwidth 
+  25% { ssh_login, ssh_bulk }<BR>&nbsp;&nbsp;queue ssh_login 
+bandwidth 25% 
+  priority 4 cbq(ecn)<BR>&nbsp;&nbsp;queue ssh_bulk bandwidth 75% 
+  cbq(ecn)<BR>queue ftp bandwidth 500Kb priority 3 cbq(borrow 
+red)<BR></TT></BLOCKQUOTE>
+
+<P>
+Qui vengono definiti i parametri delle code figlie definite precedentemente. 
+Alla coda <TT>std</TT> viene assegnata una banda pari al 50%  della 
+banda della coda root (1Mbps) e viene settata anche come coda di 
+default. Alla coda <TT>ssh</TT> viene assegnato il 25% della banda 
+della coda root (500kb) e inoltre contiene due code figlie, 
+<TT>ssh_login</TT> e <TT>ssh_bulk</TT>. Alla coda <TT>ssh_login</TT> 
+viene assegnata una più elevata priorità rispetto a <TT>ssh_bulk</TT> ed 
+entrambe hanno l'ECN abilitato. Alla coda <TT>ftp</TT> viene assegnato 
+una banda di 500kbps e data una priorità di 3. Può anche prendere in 
+prestito banda extra quando questa è disponibile e RED abilitato.
+
+<P>
+<B>NOTA:</B> Ogni definizione di coda figlia ha la sua banda 
+specificata. Senza specificare la banda, PF darà alla coda il 100% di 
+banda della coda madre. In questa situazione, quando vengono caricate le 
+regole di configurazione si avrebbe un errore perchè con con una coda 
+con il 100% di banda nessun altra coda potrà essere definita a quel 
+livello per mancanza di banda disponibile. 
+<A name=assign></A>
+<H3>Assegnare traffico a una coda</H3>
+<P>
+Per assegnare traffico a una coda, la keyword <TT>queue</TT> viene usata 
+insieme alle <A href="http://www.openbsd.org/faq/pf/filter.html">
+regole di filtraggio</A> di PF. Per esempio, consideriamo un set di 
+regole di filtraggio contenente una riga come la seguente:
+<BLOCKQUOTE><TT>pass out on fxp0 from any to any port 22</TT> </BLOCKQUOTE>
+
+<P>
+I pacchetti che hanno corrispondenza con questa regola possono essere 
+assegnati a una specifica coda usando la keyword <TT>queue</TT>: 
+<BLOCKQUOTE><TT>pass out on fxp0 from any to any port 22 queue ssh</TT> 
+</BLOCKQUOTE>
+
+<P>
+Quando si usa la keyword <TT>queue</TT> con la direttiva <TT>block</TT>, 
+ogni pacchetto che risulta TCP RST o ICMP Unreachable packet viene 
+assegnato a una specifica coda. 
+
+<P>
+Notare che la designazione di una coda può avvenire su un interfaccia 
+oltre che su quella definita 
+nella direttiva <TT>altq on</TT>: 
+<BLOCKQUOTE><TT>altq on fxp0 cbq bandwidth 2Mb queue { std, ftp }<BR>
+queue std bandwidth 500Kb cbq(default)<BR>queue ftp bandwidth 1.5Mb<BR>
+<BR>pass in on dc0 from any to any port 21 queue ftp<BR></TT></BLOCKQUOTE>
+
+<P>
+Il Queueing è abilitato su <TT>fxp0</TT> ma la designazione avviene su 
+<TT>dc0</TT>. Se i pacchetti hanno corrispondenza con la regola 
+<TT>pass</TT> in uscita dall'interfaccia <TT>fxp0</TT>, saranno inseriti 
+nella coda <TT>ftp</TT>. Questo tipo di queueing può essere molto utile 
+sui routers. 
+
+<P>
+Normalmente con la keyword <TT>queue</TT> si definisce un solo nome di 
+coda, se viene specificato un secondo nome quella coda 
+sarà usata per pacchetti con un 
+<A href="http://www.rfc-editor.org/rfc/rfc791.txt">Type of Service 
+(ToS)</A> a ritardo inferiore e per pacchetti con TCP ACK senza payload. 
+Un ottimo esempio di questo si ha quando si utilizza SSH. La sessione di 
+login di SSH sarà configurata con il ToS a low-delay mentre non lo 
+saranno le sessioni SCP e SFTP. PF può usare queste informazioni per 
+accodare pacchetti appartenenti a un login di una connessione in una 
+coda differente che non sia la connessione di login. Questo è utile 
+per dare priorità a pacchetti appartenenti a login di connessioni nel 
+trasferimento di file.
+
+<BLOCKQUOTE><TT>pass out on fxp0 from any to any port 22 queue(ssh_bulk, 
+  ssh_login)</TT> </BLOCKQUOTE>
+
+<P>
+Questo assegna i pacchetti appartenenti a login di connessioni SSH alla 
+coda <TT>ssh_login</TT> e i pacchetti appartenenti alle connessioni SCP 
+e SFTP alla coda <TT>ssh_bulk</TT>. Le connessioni di login SSH avranno 
+quindi i loro pacchetti processati in testa alle connessioni SCP e SFTP 
+perchè la coda <TT>ssh_login</TT> ha una priorità più elevata rispetto a
+<TT>ssh_bulk</TT>.
+ 
+<P>
+Assegnare i pacchetti TCP ACK ad una coda a più elevata priorità è utile 
+nelle connessioni asimmetriche, cioè connessioni a differenti bande in 
+upload e download come per le linee ADSL. Con una linea ADSL, quando 
+l'upload è al massimo e parte il download, questo avrà delle difficoltà 
+perchè i pacchetti TCP ACK avranno bisogno di essere inviati nel canale 
+congestionato di upload. Alcuni test hanno mostrato che per ottenere i 
+migliori risultati, la banda nella coda di upload dovrebbe essere 
+configurata a un valore inferiore al valore massimo consentito. 
+Per esempio, se una linea ADSL ha un valore massimo di upload di 640kbps 
+i migliori risultati si otterrano configurando la <TT>banda</TT> della 
+coda root a un valore ad esempio di 600kbps. Prove ed errori porteranno 
+alla configurazione ottimale.
+
+<P>
+Quando si usa la keyword <TT>queue</TT> con le regole 
+<TT>keep state</TT>:
+<BLOCKQUOTE>
+<TT>pass in on fxp0 proto tcp from any to any port 22 flags S/SA 
+  \<BR>&nbsp;&nbsp;&nbsp;keep state queue ssh </TT></BLOCKQUOTE>
+
+<P>
+PF registrerà la coda nella tabella di stato così i pacchetti che 
+viaggiano indietro al di fuori di <TT>fxp0</TT> che avranno 
+corrispondenza con la connessione finiranno nella coda <TT>ssh</TT>.
+Nota che sebbene la keyword <TT>queue</TT> è usata su una regola di 
+filtraggio nel traffico entrante, l'obiettivo è di specificare una coda 
+per il corrispondente traffico uscente; la regola precedente non accoda 
+pacchetti in ingresso. 
+<A name=example1></A>
+<H2>Esempio #1: Piccola rete domestica</H2><PRE>  
+    [ Alice ]    [ Charlie ]
+        |             |                              ADSL
+     ---+-----+-------+------ dc0 [ OpenBSD ] fxp0 -------- ( Internet )
+              |
+           [ Bob ]
+
+</PRE>
+
+<P>
+In questo esempio, OpenBSD è stato usato su un gateway per Internet per 
+una piccola rete domestica con tre workstation. Il gateway si occupa del 
+filtraggio dei pacchetti e della NAT. La connessione Internet avviene su 
+una linea ADSL a 2Mbps in downloading e 640kbps in uploading.
+
+<P>
+La policy di queueing per questa network:
+<UL>
+  <LI>Riserviamo 80kbps per il downloading di Bob così può giocare i suoi 
+giochi online senza essere rallentato dai download di Alice e Charlie. 
+Permettere a Bob di usare più di 80kbps quando disponibile. 
+  <LI>Traffico SSH interattivo e messaggi istantanei avranno priorità 
+superiore rispetto al traffico regolare.
+  <LI>Le richieste DNS e le risposte avranno la seconda priorità.
+  <LI>I pacchetti in uscita TCP ACK avranno una priorità più alta 
+rispetto al resto del traffico in uscita. </LI></UL>
+
+<P>
+Di seguito sono riportate le regole che soddisfano questa policy. 
+Da notare che sono presenti solo la direttive <TT>pf.conf</TT> 
+applicate direttamente alle policy precedenti;
+
+<A href="http://www.openbsd.org/faq/pf/nat.html"><TT>nat</TT></A>, <A 
+href="http://www.openbsd.org/faq/pf/rdr.html"><TT>rdr</TT></A>, <A 
+href="http://www.openbsd.org/faq/pf/options.html">options</A>, ecc., 
+non sono mostrate. 
+
+<P>
+<TABLE width=650 border=0>
+  <TBODY>
+  <TR>
+    <TD noWrap bgColor="#eeeeee"><PRE>
+# abilita il queueing su un interfaccia esterna per controllare il traffico che va verso
+# Internet. Utilizza lo scheduler priq per controllare solo la priorità. Configura la
+# banda a 610kbps per ottenere la migliore performance per i pacchetti in uscita TCP ACK.
+
+altq on fxp0 priq bandwidth 610Kb queue 
+{ std_out, ssh_im_out, dns_out, \
+	tcp_ack_out }
+
+# definisce i parametri per le code figlie.
+# std_out      - la coda standard. ogni regola di filtraggio di seguito che non appartiene
+#                esplicitamente a una coda avrà il suo traffico aggiunto a questa coda.
+# ssh_im_out   - traffico di SSH interattivo e vari messaggi istantanei.
+# dns_out      - interrogazioni DNS.
+# tcp_ack_out  - pacchetti TCP ACK senza data payload.
+
+queue std_out     priq(default)
+queue ssh_im_out  priorità 4 priq(red)
+queue dns_out     priorità 5
+queue tcp_ack_out priorità 6
+
+# abilita il queueing sull'interfaccia interna per controllare il traffico in
+# ingresso da Internet. utilizza lo scheduler cbq per controllare la banda. Il
+# valore massimo di banda è 2Mbps.
+
+altq on dc0 cbq bandwidth 2Mb queue 
+{ std_in, ssh_im_in, dns_in, bob_in }
+
+# definizione dei parametri per le code figlie.
+# std_in      - la coda standard. Ogni regola di filtraggio seguente che non 
+#               appartiene esplicitamente a una coda avrà il suo traffico 
+#               su questa coda.
+# ssh_im_in   - traffico SSH interrattivo e vari messaggi istantanei.
+# dns_in      - risposte DNS.
+# bob_in      - banda riservata per la workstation di Bob. consentire a lui di
+#               prendere in prestito banda.
+
+queue std_in    bandwidth 1.6Mb cbq(default)
+queue ssh_im_in bandwidth 200Kb priority 4
+queue dns_in    bandwidth 120Kb priority 5
+queue bob_in    bandwidth 80Kb cbq(borrow)
+
+
+# ... nella sezione di filtraggio di pf.conf ...
+
+alice         = "192.168.0.2"
+bob           = "192.168.0.3"
+charlie       = "192.168.0.4"
+local_net     = "192.168.0.0/24"
+ssh_ports     = "{ 22 2022 }"
+im_ports      = "{ 1863 5190 5222 }"
+
+# regole di filtraggio per traffico in ingresso a fxp0
+block in on fxp0 all
+
+# regole di filtraggio per il traffico in uscita da fxp0
+block out on fxp0 all
+pass  out on fxp0 inet proto tcp from (fxp0) to any flags S/SA \
+	keep state queue(std_out, tcp_ack_out)
+pass  out on fxp0 inet proto { udp icmp } from (fxp0) to any keep state
+pass  out on fxp0 inet proto { tcp udp } from (fxp0) to any port 
+domain \
+	keep state queue dns_out
+pass  out on fxp0 inet proto tcp from (fxp0) to any port $ssh_ports \
+	flags S/SA keep state queue(std_out, ssh_im_out)
+pass  out on fxp0 inet proto tcp from (fxp0) to any port $im_ports \
+	flags S/SA keep state queue(ssh_im_out, tcp_ack_out)
+
+# regole di filtraggio per l'ingresso su dc0
+block in on dc0 all
+pass  in on dc0 from $local_net
+
+# regole di filtraggio per il traffico in uscita da dc0
+block out on dc0 all
+pass  out on dc0 from any to $local_net
+pass  out on dc0 proto { tcp udp } from any port domain to $local_net \
+	queue dns_in
+pass  out on dc0 proto tcp from any port $ssh_ports to $local_net \
+	queue(std_in, ssh_im_in)
+pass  out on dc0 proto tcp from any port $im_ports to $local_net \
+	queue ssh_im_in
+pass  out on dc0 from any to $bob queue bob_in
+</PRE></TD></TR></TBODY></TABLE><A name=example2></A>
+<H2>Esempio #2: Rete aziendale</H2><PRE>
+  ( IT Dept )  [ Boss's PC ]
+       |          |                                   T1
+     --+----+-----+---------- dc0 [ OpenBSD ] fxp0 -------- ( Internet )
+            |                         fxp1
+         [ COMP1 ]    [ WWW ]         /
+                         |           / 
+                       --+----------' 
+
+</PRE>
+
+<P>
+In questo esempio l'host OpenBSD si comporta da firewall per una rete 
+aziendale. L'azienda ha un server WWW nella porzione DMZ della loro rete 
+dove i clienti eseguono l'upload dei loro siti web via FTP. Il 
+dipartimento IT ha la loro subnet connessa alla network principale, 
+e il boss ha un PC sulla sua scrivania che utilizza per l'email e per 
+navigare sul web. La connessione a Internet avviene mediante una linea 
+T1 a 1.5Mbps in entrambe le direzioni. Tutti gli altri segmenti 
+di rete stanno usando una Fast Ethernet (100Mbps). 
+
+<P>
+L'amministratore di rete ha deciso le seguenti policy:
+<UL>
+  <LI>Limitare tutto il traffico tra il server WWW e Internet a 
+500kbps in entrambe le direzioni.
+  <UL>
+    <LI>Assegnare 250Kbps al traffico HTTP. 
+    <LI>Assegnare 250Kbps al "resto" del traffico (per esempio, 
+traffico non HTTP) 
+    <LI>Permettere alla coda di prendere in prestito fino a 500Kbps. 
+    <LI>Dare al traffico HTTP tra il server WWW e Internet una più 
+elevata priorità rispetto al resto del traffico tra il server WWW e 
+Internet (come ad esempio gli upload FTP). </LI></UL>
+  <LI>Il traffico tra il server WWW e la rete interna può arrivare 
+fino a  100Mbps a seconda di quanto la rete consente. 
+  <LI>Riserva 500Kbps per il dipartimento IT così è possibile 
+effettuare velocemente il download dell'update del software. Il 
+dipartimento dovrebbe essere in grado di usare più di 500Kbps quando è 
+disponibile banda extra. 
+  <LI>Dare al traffico del PC del boss per Internet la più elevata 
+priorità rispetto al resto del traffico da e per Internet. </LI></UL>
+
+<P>
+Di seguito sono riportate le regole che soddisfano la policy della 
+network. Notare che sono presenti solo le direttive <TT>pf.conf</TT> 
+applicate direttamente alle policy precedenti;
+<A href="http://www.openbsd.org/faq/pf/nat.html"><TT>nat</TT></A>, <A 
+href="http://www.openbsd.org/faq/pf/rdr.html"><TT>rdr</TT></A>, <A 
+href="http://www.openbsd.org/faq/pf/options.html">options</A>, ecc., 
+non vengono mostrate. 
+
+<P>
+<TABLE width=650 border=0>
+  <TBODY>
+  <TR>
+    <TD noWrap bgColor="#eeeeee"><PRE>
+# abilita il queueing sull'interfaccia esterna per accodare i pacchetti 
+# in uscita verso Internet. Utilizza lo scheduler cbq così da controllare
+# la banda utilizzata da ogni coda. il massimo valore della banda è pari a 1.5Mbps.
+
+altq on fxp0 cbq bandwidth 1.5Mb queue { std_ext, www_ext, boss_ext }
+
+# definisce i parametri per le code figlie.
+# std_ext        - la coda standard. inoltre la coda di default per il traffico
+#                  in uscita sulla fxp0.
+# www_ext        - coda che ospita per le code WWW server. limitata a
+#                  500Kbps.
+#   www_ext_http - traffico http traffic dal server WWW; la più elevata priorità.
+#   www_ext_misc - tutto il traffico non-http dal server WWW.
+# boss_ext       - traffico in arrivo dal computer del boss.
+
+queue std_ext        bandwidth 500Kb cbq(default borrow)
+queue www_ext        bandwidth 500Kb { www_ext_http, www_ext_misc }
+  queue www_ext_http bandwidth 50% priority 3 cbq(red borrow)
+  queue www_ext_misc bandwidth 50% priority 1 cbq(borrow)
+queue boss_ext       bandwidth 500Kb priority 3 cbq(borrow)
+
+# abilita il queueing sull'interfaccia interna per controllare il traffico in arrivo
+# da Internet o dalla DMZ. Utilizza lo scheduler cbq per controllare la banda 
+# di ogni coda. La banda su questa interfaccia è configurata al massimo.
+# il traffico proveniente dalla DMZ sarà in grado di usare tutta questa banda
+# mentre il traffico proveniente da Internet sarà limitato a 1.0Mbps 
+# (perchè 0.5Mbps (500kbps) è stata allocata per la fxp1).
+
+
+altq on dc0 cbq bandwidth 100% queue { net_int, www_int }
+
+# definizione dei parametri per le code figlie.
+# net_int    - coda per il traffico proveniente da Internet. la banda
+#              è 1.0Mbps.
+#   std_int  - la coda standard. inoltre coda di default per il traffico
+#              in uscita su dc0.
+#   it_int   - traffico verso la rete IT Dept; riserva loro 500Kbps.
+#   boss_int - traffico verso il PC del the boss; assegnazione della più alta priorità.
+# www_int    - traffico dal server WWW nella DMZ; massima velocità.
+
+queue net_int    bandwidth 1.0Mb { std_int, it_int, boss_int }
+  queue std_int  bandwidth 250Kb cbq(default borrow)
+  queue it_int   bandwidth 500Kb cbq(borrow)
+  queue boss_int bandwidth 250Kb priority 3 cbq(borrow)
+queue www_int    bandwidth 99Mb cbq(red borrow)
+
+# abilita il queueing sull'interfaccia DMZ per controllare il traffico destinato al
+# server WWW. sarà usato il cbq su questa interfaccia per il necessario controllo 
+# della banda. la banda su questa interfaccia è configurata al valore massimo. 
+# il traffico dalla rete interna potrà utilizzare tutta la banda disponibile mentre
+# il traffico da Internet sarà limitato a 500Kbps.
+
+altq on fxp1 cbq bandwidth 100% queue { internal_dmz, net_dmz }
+
+# definizione dei parametri delle code figlie.
+# internal_dmz   - traffico dalla rete interna.
+# net_dmz        - coda per il traffico da Internet.
+#   net_dmz_http - traffico http; elevata priorità.
+#   net_dmz_misc - tutto il traffico non-http. questa è anche la coda di default.
+
+queue internal_dmz   bandwidth 99Mb cbq(borrow)
+queue net_dmz        bandwidth 500Kb { net_dmz_http, net_dmz_misc }
+  queue net_dmz_http bandwidth 50% priority 3 cbq(red borrow)
+  queue net_dmz_misc bandwidth 50% priority 1 cbq(default borrow)
+
+# ... nella sezione di filtraggio di pf.conf ...
+
+main_net  = "192.168.0.0/24"
+it_net    = "192.168.1.0/24"
+int_nets  = "{ 192.168.0.0/24, 192.168.1.0/24 }"
+dmz_net   = "10.0.0.0/24"
+
+boss      = "192.168.0.200"
+wwwserv   = "10.0.0.100"
+
+# default deny
+block on { fxp0, fxp1, dc0 } all
+
+# regole di filtraggio per il traffico in ingresso a fxp0
+pass in on fxp0 proto tcp from any to $wwwserv port { 21, \
+	&gt; 49151 } flags S/SA keep state queue www_ext_misc
+pass in on fxp0 proto tcp from any to $wwwserv port 80 \
+	flags S/SA keep state queue www_ext_http
+
+# regole di filtraggio per il traffico in uscita a fxp0
+pass out on fxp0 from $int_nets to any keep state
+pass out on fxp0 from $boss to any keep state queue boss_ext
+
+# regole di filtraggio per il traffico in ingresso a dc0
+pass in on dc0 from $int_nets to any keep state
+pass in on dc0 from $it_net to any queue it_int
+pass in on dc0 from $boss to any queue boss_int
+pass in on dc0 proto tcp from $int_nets to $wwwserv port { 21, 80, \
+	&gt; 49151 } flags S/SA keep state queue www_int
+
+# regole di filtraggio per il traffico in uscita a dc0
+pass out on dc0 from dc0 to $int_nets
+
+# regole di filtraggio per il traffico in ingresso a fxp1
+pass in on fxp1 proto { tcp, udp } from $wwwserv to any port 53 \
+	keep state
+
+# regole di filtraggio per il traffico in uscita a fxp1
+pass out on fxp1 proto tcp from any to $wwwserv port { 21, \
+	&gt; 49151 } flags S/SA keep state queue net_dmz_misc
+pass out on fxp1 proto tcp from any to $wwwserv port 80 \
+	flags S/SA keep state queue net_dmz_http
+pass out on fxp1 proto tcp from $int_nets to $wwwserv port { 80, \
+	21, &gt; 49151 } flags S/SA keep state queue internal_dmz
+</PRE></TD></TR></TBODY></TABLE>
+
+<P>
+[<A href="anchors.html">Precedente: Ancore</A>] 
+[<A href="index.html">Indice</A>] 
+[<A href="pools.html">Successivo: Address Pools e Load Balancing</A>] 
+
+<P>
+<HR>
+<A href="../../it/index.html"><IMG height=24 alt="[back]" 
+src="../../../images/back.gif" width=24 border=0></A> 
+<A href="mailto:www@openbsd.org">www@openbsd.org</A> <BR>
+<SMALL>
+<!--
+Originally [OpenBSD: queueing.html,v 1.27 ]<br>
+$Translation: queueing.html,v 1.1 2005/09/29 21:05:09 danix Exp $<br>
+-->
+$OpenBSD: queueing.html,v 1.1 2005/10/02 20:39:57 saad Exp $
+</SMALL> 
+</BODY>
+</HTML>
