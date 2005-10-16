@@ -1,0 +1,417 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<HTML>
+<HEAD>
+<TITLE>PF: Esempio: Firewall domestico o per un piccolo ufficio</TITLE>
+<LINK rev=made href="mailto:www@openbsd.org">
+<META http-equiv=Content-Type content="text/html; charset=ISO-8859-1">
+<META content=document name=resource-type>
+<META content="the OpenBSD FAQ page" name=description>
+<META content="openbsd,faq,pf" name=keywords>
+<META content=global name=distribution><!--
+Copyright (c) 2003, 2004 Joel Knight <enabled@myrealbox.com>
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+<META content="MSHTML 6.00.2600.0" name=GENERATOR></HEAD>
+<BODY text="#000000" bgColor="#ffffff">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+<A href="../../../it/index.html"><IMG height=30 alt="[OpenBSD]" 
+src="../../../images/smalltitle.gif" width=141 
+border=0> </A>
+
+<P>
+[<A href="carp.html">
+Precedente: Firewall Redundancy with CARP and pfsync</A>] 
+[<A href="index.html">Indice</A>] 
+
+<P>
+<H1><FONT color="#e00000">PF: Esempio: Firewall domestico o per un piccolo 
+ufficio</FONT></H1>
+<HR>
+<H3>Indice</H3>
+<UL>
+  <LI><A href="#scenario">Lo scenario</A> 
+  <UL>
+    <LI><A href="#network">La rete</A> 
+    <LI><A href="#objective">L'obiettivo</A> 
+    <LI><A 
+    href="#prep">Preparazione</A> 
+  </LI></UL>
+  <LI><A href="#ruleset">Le regole di configurazione</A> 
+  <UL>
+    <LI><A href="#macros">Macro</A> 
+    <LI><A 
+    href="#options">Opzioni</A> 
+    <LI><A href="#scrub">Scrub</A> 
+    <LI><A href="#nat">Network 
+    Address Translation</A> 
+    <LI><A 
+    href="#rdr">Reindirizzamento</A> 
+    <LI><A href="#filter">Regole di filtraggio</A> </LI></UL>
+  <LI><A href="#allrules">Le regole di configurazione complete</A> 
+</LI></UL>
+<HR>
+<A name=scenario></A>
+<H2>Lo scenario</H2>
+
+In questo esempio, PF funziona su una macchina OpenBSD come firewall e 
+gateway NAT per una piccola rete domestica o per un ufficio. 
+L'obiettivo principale e' di fornire alla rete locale accesso ad 
+Internet e limitare l'accesso da Internet al firewall.
+Tutto questo si puo' ottenere con il seguente esempio di regole di 
+configurazione.
+<A name=network></A>
+<H3>La rete</H3>La rete e' cosi' schematizzata:  <PRE>    
+  [ COMP1 ]    [ COMP3 ]
+      |            |                               ADSL
+   ---+------+-----+------- fxp0 [ OpenBSD ] ep0 -------- ( Internet )
+             |
+         [ COMP2 ]
+
+</PRE>
+<P>
+
+La rete locale e' costituita da un certo numero di computer, lo schema 
+ne mostra tre, ma il numero e' irrilevante. Questi computer sono 
+workstation utilizzate per navigare su web, email, chat, ecc., con 
+l'eccezione di COMP3 sul quale e' in funzione un piccolo web server.
+La rete interna utilizza la subnet 192.168.0.0 / 255.255.255.0.  
+
+<P>
+
+Il router OpenBSD e' un Pentium 100 con due interfaccie di rete : una 
+3com 3c509B (<TT>ep0</TT>) e una Intel EtherExpress Pro/100 
+(<TT>fxp0</TT>). Il router ha una connessione ADSL a Internet e 
+utilizza la NAT per condividere questa connessione con la rete interna. 
+L'indirizzo IP sull'interfaccia esterna viens assegnato dinamicamente 
+dal Server Provider Internet.
+
+<A name=objective></A>
+<H3>L'Obiettivo</H3>Gli obiettivi sono: 
+<UL>
+  <LI>Fornire libero accesso ad Internet ad ogni computer interno. 
+  <LI>Usare regole di configurazione di filtraggio "default deny".  
+  <LI>Consentire il passaggio del traffico da Internet al firewall  
+proveniente da: 
+  <UL>
+    <LI>SSH (TCP port 22): utilizzato per la manutenzione del firewall.
+    <LI>Auth/Ident (TCP port 113): usata da alcuni servizi SMTP e IRC. 
+    <LI>ICMP Echo Requests: il pacchetto ICMP usato da <A 
+    href="http://www.openbsd.org/cgi-bin/man.cgi?query=ping&amp;
+sektion=8&amp;manpath=OpenBSD+3.7">ping(8)</A>. 
+    </LI></UL>
+  <LI>Reindirizzamento della porta TCP 80 (tentativi di accesso al web 
+server) al computer COMP3. Inoltre, consentire il traffico TCP sulla 
+porta 80 destinato al COMP3 attraverso il firewall. 
+  <LI>Effettuare le statistiche del filtro di log sull'interfaccia esterna. 
+  <LI>Di default, rispondere con un TCP RST o ICMP Unreachable a 
+pacchetti bloccati.
+  <LI>Fare delle regole di configurazioni il piu' possibile semplici e 
+facili da aggiornare. 
+</LI></UL><A 
+name=prep></A>
+<H3>Preparazione</H3>
+Si presuppone che l'host OpenBSD sia stato configurato in modo 
+appropriato per agire da router, siano stati verificati il setup di rete,
+la connettivita' con Internet, e il settaggio 
+<TT>net.inet.ip.forwarding</TT> a "<TT>1</TT>". 
+<A name=ruleset></A>
+<H2>Le regole di configurazione</H2>
+La seguente eseguira' passo dopo 
+Di seguito, passo dopo passo, vi sono le regole di configurazione che 
+soddisfano tutti gli obiettivi. <A name=macros></A>
+<H3>Macro</H3>
+Le seguenti macro sono definite per per una semplice lettura e un 
+facile aggiornamento delle regole: 
+<BLOCKQUOTE><TT>int_if = "fxp0"<BR>ext_if = "ep0"<BR>
+<BR>tcp_services = "{ 22, 
+  113 }"<BR>icmp_types = "echoreq"<BR><BR>
+priv_nets = "{ 127.0.0.0/8, 
+  192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }" <BR><BR>
+comp3 = "192.168.0.3" 
+  </TT></BLOCKQUOTE>
+
+<P>
+Le prime due righe definiscono le interfaccie di rete sulle quali avviene 
+il filtraggio. La terza e la quarta linea elencano i numeri di porte TCP 
+dei servizi che saranno resi accessibili da Internet (SSH e ident/auth) e 
+i pacchetti ICMP ai quali e' concesso di raggiungere il firewall. La quinta 
+riga definisce l'indirizzo di loopback e gli indirizzi della 
+<A href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</A> bloccati.
+Infine, l'ultima linea definisce l'indirizzo IP di COMP3. 
+<P><B>Nota</B>: Se la connessione Internet ADSL 
+richiede <A href="http://www.openbsd.org/cgi-bin/man.cgi?query=pppoe&amp;
+sektion=8&amp;manpath=OpenBSD+3.7">PPPoE</A>, il filtraggio e la NAT devono 
+aver luogo sull'intersaccia <TT>tun0</TT> e <I>non</I> sulla <TT>ep0</TT>. 
+<A name=options></A>
+<H3>Opzione</H3>
+Le seguenti due opzioni configurano la risposta di default per le regole 
+di filtraggio <TT>block</TT> e attivano le statistiche di logging per 
+l'interfaccia esterna: 
+<BLOCKQUOTE><TT>set block-policy return<BR>set loginterface $ext_if 
+</TT></BLOCKQUOTE><A name=scrub></A>
+<H3>Scrub</H3>
+Non c'e' ragione per non usare lo scrubbing di tutto il traffico in arrivo, 
+questo si ottiene con una semplice linea: 
+<BLOCKQUOTE><TT>scrub in all </TT></BLOCKQUOTE><A name=nat></A>
+<H3>Network Address Translation</H3>
+Per ottenere la NAT per tutta la rete locale si usa la seguente regola 
+<TT>nat</TT>: 
+<BLOCKQUOTE><TT>nat on $ext_if from $int_if:network to any -&gt; ($ext_if) 
+  </TT></BLOCKQUOTE>
+
+<P>
+Dato che l'indirizzo IP sull'interfaccia esterna viene assegnata 
+dinamicamente, le parentesi tra l'interfaccia traslata consentono a PF di 
+adattarsi al cambiamento.
+<A name=rdr></A>
+<H3>Redirection</H3>
+La prima regola di reindirizzamento necessaria e' per l'
+<A href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;
+sektion=8&amp;manpath=OpenBSD+3.7">ftp-proxy(8)</A> per consentire ai 
+client FTP sulla rete locale di connettersi ai server FTP su 
+Internet. 
+<BLOCKQUOTE><TT>rdr on $int_if proto tcp from any to any port 21 -&gt; 
+  127.0.0.1 port 8021 </TT></BLOCKQUOTE>
+
+<P>
+Da notare che questa regola riguarda solo la connessione FTP con la 
+porta 21. Se gli utenti si collegano ai server FTP su altre porte sara' 
+necessaria una lista per specificare la porta di destinazione, per esempio: 
+<TT>from any to any port { 21, 2121 }</TT>. 
+
+<P>
+La seconda regola di reindirizzamento si occupa delle connessioni da 
+Internet alla porta 80 TCP del firewall. Si tratta di utenti che provano ad 
+accedere al web server della rete. Questi tentativi di connessione vengono 
+reindirizzati a COMP3: 
+<BLOCKQUOTE>
+<TT>rdr on $ext_if proto tcp from any to any port 80 -&gt; $comp3 
+  </TT></BLOCKQUOTE><A name=filter></A>
+<H3>Regole di filtraggio</H3>
+Ora le regole di filtraggio. Partiamo con la regola di default deny: 
+<BLOCKQUOTE><TT>block all<BR></TT></BLOCKQUOTE>
+
+<P>
+
+A questo punto nulla passera' attraverso il firewall, persino dalla rete 
+interna. Le regole seguenti apriranno le porte del firewall solo al traffico 
+desiderato e alle eventuali interfaccie virtuali.
+
+<P>
+Ogni sistema Unix ha un'interfaccia di "loopback". E' un'interfaccia di rete 
+virtuale usata dalle applicazioni per comunicare tra loro nel sistema.
+In generale, tutto il traffico dovrebbe essere passato attraverso 
+l'interfaccia di loopback. Su OpenBSD l'interfaccia di loopback e' 
+<A href="http://www.openbsd.org/cgi-bin/man.cgi?query=lo&amp;
+sektion=4&amp;manpath=OpenBSD+3.7">lo(4)</A>. 
+<BLOCKQUOTE><TT>pass quick on lo0 all </TT></BLOCKQUOTE>
+
+<P>
+Successivamente, gli indirizzi della 
+<A href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</A> saranno 
+bloccati all'ingresso o all'uscita delle interfaccie esterne. Questi 
+indirizzi non dovrebbero mai apparire pubblicamente su Internet, se filtrati 
+il router non li inviera' al di fuori della rete locale e blocchera' inoltre 
+ogni pacchetto in arrivo con indirizzo sorgente in una di queste network. 
+<BLOCKQUOTE><TT>block drop in &nbsp;quick on $ext_if from $priv_nets to 
+  any<BR>block drop out quick on $ext_if from any to $priv_nets </TT>
+</BLOCKQUOTE>
+
+<P>
+Da notare che <TT>block drop</TT> e' usato per istruire PF a non rispondere 
+con un TCP RST o ICMP Unreachable packet. Dal momento che gli indirizzi 
+RFC 1918 non esistono su Internet, non ha senso indirizzare i pacchetti 
+a questi indirizzi. L'opzione <TT>quick</TT> e' usata per suggerire a PF, 
+in caso di una corrispondenza, di non continuare con la verifica del resto 
+delle regole di filtraggio; pacchetti indirizzati o in arrivo dalle network 
+<TT>$priv_nets</TT> saranno gettate immediatamente. 
+
+<P> 
+Ora apriamo le porte utilizzate dai servizi resi disponibili: 
+<BLOCKQUOTE><TT>pass in on $ext_if inet proto tcp from any to ($ext_if) 
+  \<BR>&nbsp;&nbsp;&nbsp;port $tcp_services flags S/SA keep state 
+</TT></BLOCKQUOTE>
+
+<P>
+Specificare le porte nella macro <TT>$tcp_services</TT> semplifica l'apertura 
+di ulteriori, eventuali, servizi a Internet semplicemente aggiornando 
+la macro e ricaricando le regole di configurazione. Per i servizi UDP 
+si puo' creare una macro <TT>$udp_services</TT> e aggiungere una regola di 
+filtraggio, simile a quella precedente, specificando <TT>proto udp</TT>. 
+
+<P>
+Inoltre il traffico che attraverso una regola <TT>rdr</TT> viene trasferito 
+al web  server COMP3 deve passare attraverso il firewall: 
+<BLOCKQUOTE><TT>pass in on $ext_if proto tcp from any to $comp3 port 80 
+  \<BR>&nbsp;&nbsp;&nbsp;&nbsp;flags S/SA synproxy state </TT>
+</BLOCKQUOTE>
+
+<P>
+Per essere un po' piu' sicuri, faremo uso del 
+<A href="http://www.openbsd.com/faq/pf/filter.html#synproxy">
+TCP SYN Proxy</A> per proteggere ulteriormente il web server. 
+
+<P>
+Per consentire un corretto funzionamento all'interno della LAN delle 
+connessioni FTP in modalita' attiva e' necessaria la regola seguente che 
+permette il passaggio delle  connessioni ftp-data iniziate dall'FTP server 
+verso il client.
+Dato che le connessioni FTP sono state proxate da ftp-proxy, questo accettera' 
+la connessione ftp-data e inviera'  i dati al client sulla LAN. 
+<BLOCKQUOTE>
+<TT>pass in on $ext_if inet proto tcp from port 20 to ($ext_if) 
+  \<BR>&nbsp;&nbsp;&nbsp;&nbsp;user proxy flags S/SA keep state </TT>
+</BLOCKQUOTE>
+
+<P>
+Per far passare il traffico ICMP: 
+<BLOCKQUOTE>
+<TT>pass in inet proto icmp all icmp-type $icmp_types keep state 
+  </TT></BLOCKQUOTE>
+
+<P>
+
+Come per la macro <TT>$tcp_services</TT> ,anche la macro <TT>$icmp_types</TT> 
+puo' essere modificata per scegliere i pacchetti ICMP ai quali viene permesso 
+il passaggio attraverso il firewall. Da notare che questa regola si applica 
+a tutte le interfaccie di rete. 
+
+<P>
+
+Con queste regole il traffico consentito raggiungera' la rete interna.
+Si presume che gli utenti sulla rete locale sappiano cosa stanno facendo e 
+non siano fonte di guai. Questa non e' una certezza assoluta e per questi 
+sistemi sarebbero desiderabili delle regole di configurazione piu' 
+restrittive.
+
+<BLOCKQUOTE>
+<TT>pass in on $int_if from $int_if:network to any keep state 
+</TT></BLOCKQUOTE>
+
+<P>
+La regola precedente permette a ogni host interno di inviare pacchetti 
+attraverso il firewall; ma al firewall <I>non</I> sara' permesso di iniziare 
+alcuna connessione con una macchina interna. E' una buona idea? 
+Dipende dai dettagli della configurazione di rete. Se il firewall dovesse 
+essere anche un server DHCP, prima di assegnare un'indirizzo ci può essere 
+la necessità di effettuare un "ping" per verificare la disponibilita'. 
+Permettere al firewall di connettersi alla rete interna consente anche a 
+qualcuno di accedere agli host della rete interna. 
+<I>Non</I> consentire al firewall di comunicare direttamente con la rete 
+non e' un grande beneficio per la sicurezza; se qualcuno ottiene 
+accesso al firewall puo', in ogni caso, alterare le regole di filtraggio.
+Aggiungendo la seguente regola di filtraggio, il firewall 
+sara' in grado di effettuare connessioni con la rete interna: 
+<BLOCKQUOTE>
+<TT>pass out on $int_if from any to $int_if:network keep state 
+  </TT></BLOCKQUOTE>
+
+<P>
+Da notare che se ci sono entambe queste righe, l'opzione <TT>keep state</TT> 
+non e' necessaria; tutti i pacchetti saranno in grado di passare 
+attraverso l'interfaccia interna perche' c'e' una regola che consente 
+di far passare pacchetti in entrambe le direzioni. 
+Comunque, se la linea <TT>pass out</TT> <I>non</I> e' inclusa, la riga 
+<TT>pass in</TT> <I>deve</I> includere <TT>keep state</TT>. 
+C'è anche qualche  beneficio nel keeping state: le tabelle di stato sono 
+controllate prima di verificare le regole; se viene trovata una 
+corrispondenza di stato, il pacchetto viene fatto passare attraverso il 
+firewall senza verificare le regole di configurazione. 
+Questo offre un beneficio sulle performance di un firewall a elevato caricato.
+
+<P>
+Infine, il passaggio del traffico fuori dall'interfaccia esterna: 
+<BLOCKQUOTE><TT>pass out on $ext_if proto tcp all modulate state flags 
+  S/SA<BR>pass out on $ext_if proto { udp, icmp } all keep state 
+</TT></BLOCKQUOTE>
+
+<P>
+Al traffico TCP, UDP, e ICMP e' permesso di uscire dal firewall verso 
+Internet. Le informazioni di stato sono conservate cosi' da consentire ai 
+pacchetti di ritorno di passare attraverso il firewall. <A name=allrules></A>
+
+<H2>Le regole di configurazione complete</H2>
+<TABLE width=650 border=0>
+  <TBODY>
+  <TR>
+    <TD noWrap bgColor="#eeeeee"><PRE># macros
+int_if = "fxp0"
+ext_if = "ep0"
+
+tcp_services = "{ 22, 113 }"
+icmp_types = "echoreq"
+
+priv_nets = "{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"
+comp3 = "192.168.0.3"
+
+# opzioni
+set block-policy return
+set loginterface $ext_if
+
+# scrub
+scrub in all
+
+# nat/rdr
+nat on $ext_if from $int_if:network to any -&gt; ($ext_if)
+rdr on $int_if proto tcp from any to any port 21 -&gt; 127.0.0.1 \
+   port 8021
+rdr on $ext_if proto tcp from any to any port 80 -&gt; $comp3
+
+# regole di filtraggio
+block all
+
+pass quick on lo0 all
+
+block drop in  quick on $ext_if from $priv_nets to any
+block drop out quick on $ext_if from any to 
+
+$priv_nets
+
+pass in on $ext_if inet proto tcp from any to ($ext_if) \
+   port $tcp_services flags S/SA keep state
+
+pass in on $ext_if proto tcp from any to $comp3 port 80 \
+   flags S/SA synproxy state
+
+pass in on $ext_if inet proto tcp from port 20 to ($ext_if) \
+   user proxy flags S/SA keep state
+
+pass in inet proto icmp all icmp-type $icmp_types keep state
+
+pass in  on $int_if from $int_if:network to any keep state
+pass out on $int_if from any to $int_if:network keep state
+
+pass out on $ext_if proto tcp all modulate state flags S/SA
+pass out on $ext_if proto { udp, icmp } all keep state
+</PRE></TD></TR></TBODY></TABLE>
+<P>
+[<A href="carp.html">
+Precedente: Firewall Redundancy with CARP and pfsync</A>] 
+[<A href="index.html">Indice</A>] 
+<P>
+<HR>
+<A href="../../it/index.html"><IMG height=24 alt="[back]" 
+src="../../../images/back.gif" width=24 border=0></A> 
+<A href="mailto:www@openbsd.org">www@openbsd.org</A> 
+<BR>
+<SMALL>
+<!--
+Originally [OpenBSD: example1.html,v 1.20 ]<br> 
+$Translation: example1.html,v 1.1 2005/10/16 09:21:24 danix Exp $<br>
+-->
+$OpenBSD: example1.html,v 1.1 2005/10/16 10:14:28 saad Exp $
+</SMALL> 
+</BODY></HTML>
