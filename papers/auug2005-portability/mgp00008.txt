@@ -1,0 +1,78 @@
+Bad preprocessor: ntpd 4.2.0a-20050303
+
+ntpd/main.c
+451| #   ifdef HAVE_DAEMON
+452|    daemon(0, 0);
+453| #   else /* not HAVE_DAEMON */
+454|    if (fork())    /* HMS: What about a -1? */
+455|       exit(0);
+456|
+457|    {
+458| #if !defined(F_CLOSEM)
+459|       u_long s;
+460|       int max_fd;
+461| #endif /* not F_CLOSEM */
+462|
+463| #if defined(F_CLOSEM)
+464|       /*
+465|        * From 'Writing Reliable AIX Daemons,' SG24-4946-00,
+466|        * by Eric Agar (saves us from doing 32767 system
+467|        * calls)
+468|        */
+469|       if (fcntl(0, F_CLOSEM, 0) == -1)
+470|         msyslog(LOG_ERR, "ntpd: failed to close open files(): %m");
+471| #else  /* not F_CLOSEM */
+472|
+473| # if defined(HAVE_SYSCONF) && defined(_SC_OPEN_MAX)
+474|       max_fd = sysconf(_SC_OPEN_MAX);
+475| # else /* HAVE_SYSCONF && _SC_OPEN_MAX */
+476|       max_fd = getdtablesize();
+477| # endif /* HAVE_SYSCONF && _SC_OPEN_MAX */
+478|       for (s = 0; s < max_fd; s++)
+479|          (void) close((int)s);
+480| #endif /* not F_CLOSEM */
+481|       (void) open("/", 0);
+482|       (void) dup2(0, 1);
+483|       (void) dup2(0, 2);
+484| #ifdef SYS_DOMAINOS
+485|       {
+486|          uid_$t puid;
+487|          status_$t st;
+
+489|          proc2_$who_am_i(&puid);
+490|          proc2_$make_server(&puid, &st);
+491|       }
+492| #endif /* SYS_DOMAINOS */
+493| #if defined(HAVE_SETPGID) || defined(HAVE_SETSID)
+494| # ifdef HAVE_SETSID
+495|       if (setsid() == (pid_t)-1)
+496|          msyslog(LOG_ERR, "ntpd: setsid(): %m");
+497| # else
+498|       if (setpgid(0, 0) == -1)
+499|          msyslog(LOG_ERR, "ntpd: setpgid(): %m");
+500| # endif
+501| #else /* HAVE_SETPGID || HAVE_SETSID */
+502|       {
+503| # if defined(TIOCNOTTY)
+504|          int fid;
+505|
+506|          fid = open("/dev/tty", 2);
+507|          if (fid >= 0)
+508|          {
+509|             (void) ioctl(fid, (u_long) TIOCNOTTY, (char *) 0);
+510|             (void) close(fid);
+511|          }
+512| # endif /* defined(TIOCNOTTY) */
+513| # ifdef HAVE_SETPGRP_0
+514|          (void) setpgrp();
+515| # else /* HAVE_SETPGRP_0 */
+516|          (void) setpgrp(0, getpid());
+517| # endif /* HAVE_SETPGRP_0 */
+518|       }
+519| #endif /* HAVE_SETPGID || HAVE_SETSID */
+520| #ifdef _AIX
+521|       /* Don't get killed by low-on-memory signal. */
+522|       sa.sa_handler = catch_danger;
+523|       sigemptyset(&sa.sa_mask);
+524|       sa.sa_flags = SA_RESTART;
+...
