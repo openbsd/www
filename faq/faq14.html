@@ -1705,8 +1705,8 @@ it until the next reboot.
 <!-- This article written by Steven Mestdagh,
 steven.mestdagh@esat.kuleuven.be, and released under the BSD license -->
 
-Yes. Other supported filesystems include: ext2 (Linux), ISO9660 (CD-ROM,
-DVD media), FAT (MS-DOS and Windows), NFS, NTFS (Windows), AmigaDOS.
+Yes. Other supported filesystems include: ext2 (Linux), ISO9660 and UDF
+(CD-ROM, DVD media), FAT (MS-DOS and Windows), NFS, NTFS (Windows), AmigaDOS.
 Some of them have limited, for instance read-only, support.
 
 <p>
@@ -1758,6 +1758,15 @@ Partitions i-p may be automatically allocated to file systems of other
 operating systems.
 In this case, I'll be viewing the disklabel of my hard disk, which contains
 a number of different filesystems.
+
+<p>
+<b>NOTE: OpenBSD was installed after the other operating systems</b>
+on this system, and during the install a disklabel containing the native as
+well as the foreign filesystems was installed on the disk.
+However, if you install foreign filesystems after the OpenBSD disklabel
+was already installed on the disk, you need to add or modify them manually
+afterwards. This will be explained in <a href="#foreignfsafter">this
+subsection</a>.
 
 <blockquote><pre>
 # <b>disklabel wd0</b>
@@ -1848,6 +1857,80 @@ This means we do not require the filesystem to be dumped, and checked using
 fsck.
 Generally, those are things you want to have handled by the native
 operating system associated with the filesystem.
+
+<a name="foreignfsafter"></a>
+<h3>14.16.1 - The partitions are not in my disklabel! What should I do?</h3>
+
+If you install foreign filesystems on your system (often the result of
+adding a new operating system) after you have already installed OpenBSD,
+a disklabel will already be present, and it will not be updated
+automatically to contain the new foreign filesystem partitions.
+If you wish to use them, you need to add or modify these partitions
+manually using
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=disklabel&amp;sektion=8">disklabel(8)</a>.
+
+<p>
+As an example, I have modified one of my existing ext2 partitions: using
+Linux's fdisk program, I've reduced the size of the 'o' partition (see
+disklabel output above) to 1G.
+We will be able to recognize it easily by its starting position
+(offset: 64372518) and size (13783707).
+Note that these values are sector numbers, and that using sector numbers
+(not megabytes or any other measure) is the most exact and safest way of
+reading this information.
+
+<p>
+Before the change, the partition looked like this using OpenBSD's
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fdisk&amp;sektion=8&amp;arch=i386">fdisk(8)</a>
+utility (leaving only relevant output):
+
+<blockquote><pre>
+# fdisk wd0
+. . .
+Offset: 64372455        Signature: 0xAA55
+         Starting       Ending       LBA Info:
+ #: id    C   H  S -    C   H  S [       start:      size   ]
+------------------------------------------------------------------------
+ 0: 83 4007   1  1 - 4864 254 63 [    64372518:    13783707 ] Linux files*
+. . .
+</pre></blockquote>
+
+As you can see, the starting position and size are exactly those reported
+by disklabel(8) earlier.
+(Dont' be confused by the value indicated by "Offset": it is referring to
+the starting position of the extended partition in which the ext2 partition
+is contained.)
+
+<p>
+After changing the partition's size from Linux, it looks like this:
+
+<blockquote><pre>
+# fdisk wd0
+. . .
+Offset: 64372455        Signature: 0xAA55
+         Starting       Ending       LBA Info:
+ #: id    C   H  S -    C   H  S [       start:      size   ]
+------------------------------------------------------------------------
+ 0: 83 4007   1  1 - 4137 254 63 [    64372518:     2104452 ] Linux files*
+. . .
+</pre></blockquote>
+
+Now this needs to be changed using disklabel(8).
+For instance, you can issue <tt>disklabel -e wd0</tt>, which will invoke
+an editor specified by the EDITOR environment variable (default is vi).
+Within the editor, change the last line of the disklabel to match the new
+size:
+
+<blockquote><pre>
+  o:       2104452      64372518  ext2fs
+</pre></blockquote>
+
+Save the disklabel to disk when finished.
+Now that the disklabel is up to date again, you should be able to mount
+your partitions as described above.
+
+<p>
+You can follow a very similar procedure to add new partitions.
 
 
 <a name="flashmem"></a>
@@ -1998,7 +2081,7 @@ umass0 detached
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq14.html,v 1.136 2005/11/02 02:23:27 nick Exp $</small>
+<small>$OpenBSD: faq14.html,v 1.137 2005/11/03 03:07:40 nick Exp $</small>
 
 </body>
 </html>
