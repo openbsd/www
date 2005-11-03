@@ -915,7 +915,7 @@ Copyright (c) 1982, 1986, 1989, 1991, 1993       <b><i>&lt;- Noyau</i></b>
         The Regents of the University of California.  All rights reserved.
 Copyright (c) 1995-2005 OpenBSD.  All rights reserved.  http://www.OpenBSD.org
 
-OpenBSD 3.8-current (GENERIC) #209: Tue Oct 25 17:42:53 MDT 2005
+OpenBSD 3.8 (GENERIC) #138: Sat Sep 10 15:41:37 MDT 2005
    ...
 </pre></blockquote>
 
@@ -1792,10 +1792,10 @@ systèmes de fichiers autres que FFS ?</h2>
 <!-- This article written by Steven Mestdagh,
 steven.mestdagh@esat.kuleuven.be, and released under the BSD license -->
 
-Oui. Les systèmes de fichiers supportés sont : ext2 (Linux), ISO9660
-(CD-ROM, DVD), FAT (MS-DOS et Windows), NFS, NTFS (Windows), AmigaDOS.
-Certains n'ont qu'un support limité, comme par exemple l'accès en
-lecture uniquement.
+Oui. Les systèmes de fichiers supportés sont : ext2 (Linux), ISO9660 et
+UDF (CD-ROM, DVD), FAT (MS-DOS et Windows), NFS, NTFS (Windows),
+AmigaDOS. Certains n'ont qu'un support limité, comme par exemple l'accès
+en lecture uniquement.
 
 <p>
 Nous allons donner un aperçu sur la façon d'utiliser un de ces systèmes
@@ -1849,6 +1849,15 @@ partitions i-p peuvent être allouées automatiquement aux systèmes de
 fichiers d'autres systèmes d'exploitation. Dans notre cas, j'analyserai
 le 'disklabel' de mon disque dur qui contient un certain nombre de
 systèmes de fichiers.
+
+<p>
+<b>REMARQUE : OpenBSD a été installé après les autres systèmes
+d'exploitation</b> sur cette machine et pendant l'installation, le
+disklalbel contenant les systèmes de fichiers natifs et étrangers a été
+installé. Cependant, si vous ajoutez des systèmes de fichiers étrangers
+après l'installation du disklabel d'OpenBSD vous devrez probablement les
+ajouter ou les modifier ultérieurement. Cette procédure est expliquée
+<a href="#foreignfsafter">ici</a>.
 
 <blockquote><pre>
 # <b>disklabel wd0</b>
@@ -1939,8 +1948,84 @@ Notez les valeurs 0 dans les cinquièmes et sixièmes champs. Cela indique
 que nous ne souhaitons pas que le système de fichiers soit sauvegardé
 (avec dump) ni vérifié avec fsck. Généralement, il est préférable de
 laisser le système d'exploitation associé à ces systèmes de fichiers
-s'occuper de ces choses.
+s'occuper de cela.
 
+<a name="foreignfsafter"></a>
+<h3>14.16.1 - Les partitions n'apparaissent pas dans mon disklabel ! Que
+dois-je faire ?</h3>
+
+Si vous installez des systèmes de fichiers étrangers sur votre machine
+(souvent suite à l'ajout d'un système d'exploitation) après
+l'installation d'OpenBSD, un disklabel sera présent mais ne sera pas mis
+à jour automatiquement pour prendre en compte les nouveaux systèmes de
+fichiers. Si vous souhaitez pouvoir y accéder, vous aurez besoin
+d'ajouter ou de modifier ces partitions manuellement en utilisant
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=disklabel&amp;sektion=8">disklabel(8)</a>.
+
+<p>
+Pour prendre un exemple, j'ai modifié une de mes partitions ext2
+existantes : en utilisant le program fdisk de Linux, j'ai réduit la
+taille de la partition 'o' (voir la sortie de disklabel plus haut) à 1G.
+Il sera facile de la reconnaître grâce à sa position de départ
+(offset: 64372518) et sa taille (13783707) sur le disque. Notez que ces
+valeurs sont exprimées en numéros de secteurs (et pas en megabytes ou
+autre mesure) et qu'utiliser de tels nombres reste le moyen le plus sûr
+et le plus précis d'obtenir ces informations.
+
+<p>
+Avant notre changement, la partition ressemblait à ceci (en utilisant le
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fdisk&amp;sektion=8&amp;arch=i386">fdisk(8)</a>
+d'OpenBSD et en ne gardant que ce qui nous intéresse) :
+
+<blockquote><pre>
+# fdisk wd0
+. . .
+Offset: 64372455        Signature: 0xAA55
+         Starting       Ending       LBA Info:
+ #: id    C   H  S -    C   H  S [       start:      size   ]
+------------------------------------------------------------------------
+ 0: 83 4007   1  1 - 4864 254 63 [    64372518:    13783707 ] Linux files*
+. . .
+</pre></blockquote>
+
+Comme vous pouvez le voir, la position de départ et la taille sont
+exactement les mêmes que celles rapportées précédemment par
+disklabel(8) (ne vous méprenez pas sur par la valeur indiquée par
+"Offset" : il s'agit de la position de départ de la partition étendue à
+laquelle la partition ext2 fait partie).
+
+<p>
+Après avoir changé la taille de la partition sous Linux, elle ressemble
+à ceci :
+
+<blockquote><pre>
+# fdisk wd0
+. . .
+Offset: 64372455        Signature: 0xAA55
+         Starting       Ending       LBA Info:
+ #: id    C   H  S -    C   H  S [       start:      size   ]
+------------------------------------------------------------------------
+ 0: 83 4007   1  1 - 4137 254 63 [    64372518:     2104452 ] Linux files*
+. . .
+</pre></blockquote>
+
+Ceci doit être changé par disklabel(8). Vous pouvez, par exemple,
+utiliser <tt>disklabel -e wd0</tt> qui lancera l'éditeur correspondant à
+la variable d'environnement EDITOR (par défault il s'agit de vi). Une
+fois dans l'éditeur, changez la dernière ligne du disklabel afin qu'elle
+corresponde à la nouvelle taille :
+
+<blockquote><pre>
+  o:       2104452      64372518  ext2fs
+</pre></blockquote>
+
+Pour terminer, enregistrez le disklabel sur le disque. A présent que le
+disklabel est à jour, vous devriez pouvoir monter vos partitions comme
+indiqué précédemment.
+
+<p>
+Vous pouvez suivre une procédure similaire afin d'ajouter de nouvelles
+partitions.
 
 <a name="flashmem"></a>
 <h2>14.17 - Est-il possible d'utiliser un périphérique de masse ('flash
@@ -2094,10 +2179,10 @@ umass0 detached
 <br>
 <small>
 <!--
-Originally [OpenBSD: faq14.html,v 1.135 ]<br>
-$Translation: faq14.html,v 1.31 2005/11/01 12:54:03 ajacoutot Exp $<br>
+Originally [OpenBSD: faq14.html,v 1.137 ]<br>
+$Translation: faq14.html,v 1.33 2005/11/03 07:57:36 ajacoutot Exp $<br>
 -->
-$OpenBSD: faq14.html,v 1.22 2005/11/01 19:05:39 jufi Exp $
+$OpenBSD: faq14.html,v 1.23 2005/11/03 11:30:52 saad Exp $
 </small>
 
 </body>
