@@ -66,6 +66,10 @@ Je¶li chcesz pomóc w aktualizacji tego pliku, zajrzyj na
 <li><a href="#OhBugger"   >14.15 - Przywracanie partycji po skasowaniu etykiety dysku</a>
 <li><a href="#foreignfs"  >14.16 - Czy mogê dostaæ siê do danych na systemach plików
 			    innych ni¿ FFS?</a>
+<ul>
+<li><a href="#foreignfsafter">14.16.1 - Partycje nie istniej± w moim disklabel! 
+			    Co powinienem zrobiæ?</a>
+</ul>
 <li><a href="#flashmem"   >14.17 - Czy mogê u¿ywaæ pamiêci flash w OpenBSD?</a>
 
 </ul>
@@ -1735,8 +1739,8 @@ innych ni¿ FFS?</h2>
 <!-- Artyku³ ten zosta³ napisany przez Stevena Mestdagh 
 steven.mestdagh@esat.kuleuven.be, i udostêpniony na licencji BSD -->
 
-Tak. Pozosta³e wspierane systemy plików zawieraj±: ext2 (Linux), ISO9660
-(CD-ROM,DVD media), FAT (MS-DOS oraz Windows), NFS, NTFS (Windows), AmigaDOS.
+Tak. Pozosta³e wspierane systemy plików zawieraj±: ext2 (Linux), ISO9660 i UDF
+(CD-ROM,DVD), FAT (MS-DOS oraz Windows), NFS, NTFS (Windows), AmigaDOS.
 Niektóre z nich maj± ograniczone wsparcie, np. tylko-odczyt.
 
 <p>
@@ -1791,6 +1795,14 @@ Partycje i-p mog± byæ automatycznie przeznaczone na systemy plików
 innych systemów operacyjnych.
 W tym przypadku, bêdziemy ogl±daæ etykiety (disklabel) mojego dysku twardego,
 zawieraj±cego kilka ró¿nych systemów plików.
+
+<p>
+<b>Uwaga: OpenBSD zosta³ zainstalowany po zainstalowaniu wcze¶niej innych systemów</b>,
+i podczas instalacji disklabel zawiera³ natywny system plików jak i inne systemy plików
+innych systemów operacyjnych.
+Jednak¿e, je¿eli instalujesz inne systemy plików po tym jak zosta³ zainstalowany
+disklabel OpenBSD, bêdziesz potrzebowa³ pó¼niej dodaæ lub zmodyfikowaæ je rêcznie.
+Zosta³o to opisane w <a href="#foreignfsafter">tej sekcji</a>.
 
 <blockquote><pre>
 # <b>disklabel wd0</b>
@@ -1887,6 +1899,80 @@ sprawdzany przy u¿yciu fsck.
 Zazwyczaj te rzeczy chcemy by by³y wykonywane przez natywny system
 operacyjny wspó³pracuj±cy z danym systemem plików.
 
+
+<a name="foreignfsafter"></a>
+<h3>14.16.1 - Partycje nie istniej± w moim disklabel! Co powinienem zrobiæ?</h3>
+
+Je¿eli instalujesz inny system plików w twoim systemie (w rezulatacie dodawania
+nowego systemu operacyjnego), po tym jak zainstalowa³e¶ OpenBSD,
+etykiety dysków, zachowana zostanie aktualna zawarto¶æ disklabel, i nie bêdzie 
+ona aktualizowana automatycznie by zawiera³a nowe partycje z tymi systemami plików.
+Je¿eli chcesz z nich korzystaæ, konieczna bêdzie rêczna modyfikacja lub dodanie
+tych partycji przy pomocy narzêdzia 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=disklabel&amp;sektion=8">disklabel(8)</a>.
+
+<p>
+Jako przyk³ad, zmodyfikowa³em jedn± z moich partycji ext2: korzystaj±c z linuksowego
+programu fdisk, zmniejszy³em rozmiar partycji "o" (zobacz wynik disklabel powy¿ej)
+do 1G.
+Bêdziemy mogli to ³atwo rozpoznaæ dziêki pozycji startowej (offset: 64372518)
+oraz rozmiarze (13783707).
+Zauwa¿my, ¿e te warto¶ci to numery sektorów, i takie wykorzystanie numerów sektorów
+(nie megabajtów lub innych miar) jest najbardziej w³a¶ciw± i bezpieczn± metod± 
+do czytania tych informacji.
+
+<p>
+Zanim przyst±pimy do zmian, partycja ogl±dana przy pomocy dostêpnego w OpenBSD programu
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fdisk&amp;sektion=8&amp;arch=i386">fdisk(8)</a>
+wygl±da tak (pozostawi³em tylko istotn± informacjê):
+
+<blockquote><pre>
+# fdisk wd0
+. . .
+Offset: 64372455        Signature: 0xAA55
+        Starting       Ending       LBA Info:
+#: id    C   H  S -    C   H  S [       start:      size   ]
+------------------------------------------------------------------------
+0: 83 4007   1  1 - 4864 254 63 [    64372518:    13783707 ] Linux files*
+. . .
+</pre></blockquote>
+
+Jak mo¿esz siê przekonaæ, pozycja pocz±tkowa partycji oraz rozmiar dok³adnie
+odpowiada warto¶ciom podanym wcze¶niej przez program disklabel(8).
+(Nie b±d¼ zmieszany warto¶ci± wskazywan± przez "Offset": jest to odniesienie
+do pozycji startowej partycji rozszerzonej na której znajduje siê omawiana
+partycja ext2).
+
+
+<p>
+Po zmianie partycji w linuksowym programie fdisk, wygl±da to tak:
+
+<blockquote><pre>
+# fdisk wd0
+. . .
+Offset: 64372455        Signature: 0xAA55
+         Starting       Ending       LBA Info:
+#: id    C   H  S -    C   H  S [       start:      size   ]
+------------------------------------------------------------------------
+0: 83 4007   1  1 - 4137 254 63 [    64372518:     2104452 ] Linux files*
+. . .
+</pre></blockquote>
+
+Teraz musi zostaæ to zmienione przy pomocy disklabel(8).
+Przyk³adowo, mo¿esz wydaæ polecenie <tt>disklabel -e wd0</tt>, które wywo³a edytor
+okre¶lony w zmiennej ¶rodowiskowej EDITOR (domy¶lnie jest vi).
+W tym edytorze zmieñ ostatni± liniê disklabel by pasowa³a do nowego rozmiaru:
+
+<blockquote><pre>
+o:       2104452      64372518  ext2fs
+</pre></blockquote>
+
+Zapisz disklabel na dysk gdy skoñczysz.
+Teraz gdy disklabel jest aktualny, powinieneæ móc podmontowaæ twoj± partycjê jak 
+opisano wcze¶niej.
+
+<p>
+Mo¿esz podobn± procedur± dodawaæ nowe partycje.
 
 
 <a name="flashmem"></a>
@@ -2043,10 +2129,10 @@ umass0 detached
 <br>
 <small>
 <!--
-Originally [OpenBSD: faq14.html,v 1.136 ]<br>
-$Translation: faq14.html,v 1.21 2005/11/03 03:33:03 tkniaz Exp $<br>
+Originally [OpenBSD: faq14.html,v 1.138 ]<br>
+$Translation: faq14.html,v 1.22 2005/11/03 21:31:21 tkniaz Exp $<br>
 -->
-$OpenBSD: faq14.html,v 1.18 2005/11/03 11:30:53 saad Exp $
+$OpenBSD: faq14.html,v 1.19 2005/11/04 20:24:24 jufi Exp $
 </small>
 
 </body>
