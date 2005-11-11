@@ -3,7 +3,7 @@
 STABLE_VERSION=	3.8
 PREV_VERSION=	3.7
 
-all: ../groups.html ../support.html ../pkg-stable.html \\
+all: ../groups.html ../support.html ../pkg-stable.html \
 	../pkg-stable${PREV_VERSION:S/.//}.html
 
 # Build the user groups page.
