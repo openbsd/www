@@ -1,0 +1,332 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"
+	"http://www.w3.org/TR/html4/loose.dtd">
+<html>
+ <head>
+  <meta http-equiv="Content-Type"
+	content="text/html; charset=iso-8859-1">
+  <meta http-equiv="Content-Language"
+	content="de">
+  <meta name="resource-type"
+	content="document">
+  <meta name="description"
+	content="Wie man einen OpenBSD-Port erstellt; Audio">
+  <meta name="keywords"
+	content="openbsd,ports,audio">
+  <meta name="distribution"
+	content="global">
+  <meta name="copyright"
+	content="Dieses Dokument unterliegt dem Copyright von OpenBSD 1998 - 2002.">
+  <title>Portierung von Audio-Applikationen nach OpenBSD</title>
+  <link rev="made" href="mailto:www@openbsd.org">
+ </head>
+ <body text="#000000" bgcolor="#FFFFFF" link="#23238E">
+<a href="index.html"><img alt="[OpenBSD]" height="30" width="141" src="../images/smalltitle.gif" border="0"></a>
+
+  <h1>Portierung von Audio-Applikationen nach OpenBSD</h1>
+
+<p>
+  Dieses Dokument behandelt gegenwärtig nur die Fragen rund um das
+  Gebiet der gesampelten Sounds. Jedoch sind Beiträge zum Thema
+  Synthesizer und Waveforms jederzeit willkommen.
+
+</p>
+<p>
+  Audioapplikationen sind tendenziell schwer zu portieren, da diese sich
+  in einem nicht standardisierten Bereich befinden. Thematische
+  Annäherungen variieren allerdings nicht erheblich zwischen den
+  verschiedenen Betriebssystemen.
+</p>
+
+  <h2><font color="#e00000">Einsatz von <code>ossaudio</code></font></h2>
+
+  Die <code>ossaudio</code>-Emulation ist zwar möglicherweise die
+  einfachste Wahl, doch nicht immer machbar und für gewöhnlich auch
+  nicht die beste Wahl.
+  <ul>
+  	<li>Sie definiert <code>ioctl</code> neu.
+	Soll ein <code>ioctl</code>-Aufruf im Portierungscode über
+	den reinen Audiobereich hinausgehen, dann
+	muss ein <code>#undefioctl</code>-Befehl gesetzt werden
+	und die reine Form <code>_ossioctl</code> Anwendung finden.
+
+	<li>Einige Linux-Soundfunktionen werden nicht emuliert.
+
+	<li>Applikationen mit fehlerfreier
+	Linux-Soundunterstützung, die jedoch nicht intelspezifisch ist,
+	neigen dazu, diese Merkmale zu benutzen.
+
+  </ul>
+
+  <h2><font color="#e00000">Einsatz von NetBSD- und
+  FreeBSD-basiertem Code</font></h2>
+  Da wir Teile der Audiogerätedateien (Interfaces) gemeinsam mit NetBSD
+  und FreeBSD benutzen, ist es einleuchtend, mit einem NetBSD-Port als
+  Grundlage zu beginnen. Man sollte sich jedoch im Klaren darüber sein,
+  dass sich einige Pfade in der Verzeichnisstruktur geändert haben, an
+  denen bestimmte Dateien zu finden waren; mancher Eintrag in
+  <code>sys/audioio.h</code> ist bereits überholt ist. Des Weiteren
+  tendieren viele Ports dazu, falsch codiert zu sein, und lassen sich
+  daher nur auf einen Maschinentyp anwenden. Einige Änderungen sind von
+  daher unumgänglich; siehe dazu den nächsten Abschnitt.
+
+  <h2><font color="#e00000">Das Schreiben von OpenBSD-Code</font></h2>
+	  <h3><font color="#0000e0">Hardwareunabhängigkeit</font></h3>
+
+   <p>
+	<strong>DU SOLLST KEINE VERMUTUNG DARÜBER ANSTELLEN,
+	WELCHE AUDIOHARDWARE BENUTZT WIRD.
+	</strong><br>
+	Falscher Code ist Code, der lediglich das
+	<code>a_info.play.precision</code>-Feld auf 8 oder 16 Bits hin
+	überprüft, und Samples unter der Annahme einer
+	Soundblasterumgebung als signed oder unsigned interpretiert.
+	Der Sampletypus sollte ausdrücklich geprüft werden, und
+	demgemäß auch der Code selbst. Ein einfaches Beispiel:
+    </p>
+	<pre>
+    AUDIO_INIT_INFO(&amp;a_info);
+    a_info.play.encoding = AUDIO_ENCODING_SLINEAR;
+    a_info.play.precision = 16;
+    a_info.play.sample_rate = 22050;
+    error = ioctl(audio, AUDIO_SETINFO, &amp;a_info);
+    if (error)
+	/* deal with it */
+    error = ioctl(audio, AUDIO_GETINFO, &amp;a_info);
+    switch(a_info.play.encoding)
+	{
+    case AUDIO_ENCODING_ULINEAR_LE:
+    case AUDIO_ENCODING_ULINEAR_BE:
+	if (a_info.play.precision == 8)
+	    /* ... */
+	else 
+	    /* ... */
+	break;
+    case ...
+
+    default:
+	/* don't forget to deal with what you don't know !!! For instance, */
+	fprintf(stderr, 
+		"Unsupported audio format (%d), ask ports@ about that\n",
+		a_info.play.encoding);
+
+	}
+    /* now don't forget to check what sampling frequency you actually got */
+	</pre>
+  
+  <p>
+  Dieses kleinst mögliche Codefragment umfasst den größten Teil
+  aller möglichen Fälle
+
+  	<h3><font color="#0000e0">16-Bit-Formate und Endianess</font></h3>
+	Normalerweise wird nur nach einem Kodierungstyp gefragt (also
+	zum Beispiel <code>AUDIO_ENCODING_SLINEAR</code>), und man
+	findet eine Kodierung mit Endianess wieder (z.&nbsp;B.
+	<code>AUDIO_ENCODING_SLINEAR_LE</code>). Unter Berücksichtigung
+	der Tatsache, dass eine Soundkarte nicht dieselbe Endianess
+	benutzen muss wie die Plattform, auf der sie läuft, sollte man
+	gerade auf diesen Umstand vorbereitet sein. Der einfachste Weg
+	wäre gewiss die Einrichtung eines vollen Audiopuffers sowie die
+	Verwendung von <code>swab(3)</code>, falls ein Endianesswechsel
+	erforderlich ist. Der Umgang mit externen Samples läuft meistens
+	auf Folgendes hinaus:
+	<ol>
+		<li>Analyse des Sampleformats,
+		<li>Übernahme des Samples,
+		<li>Endianess-Wechsel, wenn es nicht deinem
+		Ursprungsformat entspricht,
+		<li>Den gewünschten Output in den Puffer rechnen,
+		<li>Endianess-Wechsel, wenn die Soundkarte nicht
+		deinem Ursprungsformat entspricht,
+		<li>Den Puffer abspielen.
+	</ol>
+	Natürlich kann man die Schritte 3 und 5 weglassen, wenn man
+	einen Soundsample im Ursprungsformat der Soundkarte spielt.
+
+	<h3><font color="#0000e0">Audioqualität</font></h3>
+	<p>
+	Die Hardware kann einige eigenartige Begrenzungen aufweisen, so
+	dass sie zwar nicht fähig ist, über 22050 Hz im Stereobereich
+	hinaus zugehen, wohl aber im Monobereich die 44100-Grenze
+	überschreiten kann. In solchen Fällen sollte man dem Benutzer
+	die Chance geben, seine Präferenzen selbst anzugeben, um dann
+	die best mögliche Performance umzusetzen. So ist es zum Beispiel
+	einfach nur unsinnig, den Bereich auf 22050 Hz zu limitieren,
+	nur weil man Stereoausgabe erzielen will. Was ist, wenn der
+	Benutzer kein Stereosoundsystem an seine Soundkarte
+	angeschlossen hat?
+	</p>
+
+	<p>
+	Ebenso unsinnig ist es, soundblasterähnliche Begrenzungen in
+	deinem Programm zu hardcoden. Man sollte sich darüber im Klaren
+	sein und trotzdem versuchen, die 22050-Hz/Stereo-Barriere zu
+	überwinden und die Ergebnisse anschließend zu überprüfen.
+	</p>
+
+	<h4>Samplingfrequenz</h4>
+	Man sollte unbedingt die von der Karte zurückgegebene
+	Samplingfrequenz überprüfen. Eine Diskrepanz von 5&nbsp;% mündet
+	in eine Verschiebung um einen Halbton: einige Menschen haben im
+	Gegensatz zu den meisten, denen dieser Umstand gar nicht
+	auffällt, ein zu feines Gehör und bemerken diese Verschiebung.
+	Deine Applikation sollte im Stande sein, während der Übertragung
+	zu resampeln - möglichst unmittelbar oder zumindest doch
+	mittelbar durch Applikation, die auf Shannons Resamplingformeln
+	basieren.
+
+	<h4>Der dynamische Bereich</h4>
+	<p>
+	Samples schöpfen nicht immer den ihnen zukommenden Wertebereich
+	komplett aus. Zunächst einmal sind Samples mit geringer
+	Aufnahmeverstärkung auf der Maschine nicht besonders laut, so
+	dass der Benutzer sich genötigt sieht, die Lautstärke zu erhöhen.
+	Des Weiteren bedeutet eine leise Soundausgabee auf Maschinen mit
+	schlecht isolierter Audiohardware, dass man eher den
+	»Herzschlag« der Maschine hört als den erwarteten Sound.
+	Letztendlich kann es passieren, dass man nach unbedarfter
+	Umwandlung von 16 auf 8 Bit nur noch mit 4 Bits brauchbarer
+	Soundausgabe dasteht, was eine wirklich miese Qualität bedeutet.
+	</p>
+	<p>
+	Die bestmögliche Lösung wäre es, den kompletten Stream, welchen
+	man abspielen möchte, frühst möglich zu scannen und
+	zu skalieren, so dass er den ganzen zur Verfügung stehenden
+	dynamischen Bereich ausfüllen kann. Sollte das nicht
+	funktionieren, dafür aber ein Teil von dem, was du abspielen
+	willst, einsehbar ist, kannst du die Klangverstärkung »on the
+	fly« vornehmen - du musst lediglich klarstellen, dass der
+	Verstärkungsfaktor auf einer niedrigeren Frequenz im Vergleich
+	zum Sound bleibt, der gespielt werden soll. Vermeide jede Art
+	von <em>Überläufen</em> - sie klingen immer viel schlechter als
+	die ursprünglich von dir angestrebte Verbesserung.<br>
+	Da die Schallpegelwahrnehmung logarithmisch ist, genügt der
+	arithmetische Shiftgebrauch. Sind die Daten signed, dann sollte
+	der Shift ausdrücklich als Division gecodet werden, da der
+	C-Operator <code>&gt;&gt;</code> nicht auf Daten portiert
+	werden kann, die signed sind.
+	</p>
+	<p>
+	Sollte dies alles nicht greifen, muss dem Benutzer wenigstens
+	die Option der Lautstärkeregelung an die Hand gegeben werden.
+	</p>
+
+	<h3><font color="#0000e0">Audioperformance</font></h3>
+	<p>
+	Hinsichtlich der Lowend-Applikationen gibt es nicht viel, um das
+	man sich Gedanken machen müsste. Man sollte aber darauf achten,
+	dass einige von uns OpenBSD auf einem Lowend-Level von 68030
+	verwenden - und dass eine Soundapplikation auf diesem Level
+	laufen sollte, wenn sie es kann.
+	</p>
+
+	<p>
+	Vergiss das Benchmarking nicht. Theoretische Optimierungen sind
+	nichts weiter als das: nämlich theoretisch. Es sollten schon
+	genügend nüchterne Daten ermittelt werden, um entscheiden zu
+	können, was eine wirkliche Verbesserung ist und was nicht.
+	</p>
+
+	<p>
+	Hinsichtlich der Highperformance-Audioapplikationen (wie
+	z.&nbsp;B. mpegI-layer3) kommen folgende Punkte in Betracht:
+	</p>
+	<ul>
+	    <li>Das Audiointerface unterstützt die natürliche
+	    Hardwareblockgröße. Der Gebrauch des Mehrfachen davon für
+	    den Ausgabepuffer ist also essentiell. Beachte, dass
+	    <code>write</code> als Systemaufruf im Vergleich zur
+	    internen Audioverarbeitung hohe Kosten nach sich zieht.
+
+	    <li>Die Bandbreite ist ein entscheidender Faktor im
+	    Umgang mit dem Audiobereich. Ein Schritt in die richtige
+	    Richtung zur Optimierung eines Audioplayers ist es, ihn als
+	    Dekomprimierer zu interpretieren. Es ist besser, die Daten
+	    so lange wie möglich im Stadium der Komprimierung zu
+	    belassen. Schlecht hingegen ist die Verwendung von sehr
+	    kurzen Schleifen mit kurzer Verarbeitungszeit. Der
+	    Königsweg besteht darin, möglichst alle
+	    Verarbeitungseinheiten in einer Schleife zu kombinieren.
+
+	    <li>Einige Formate benötigen mehr Aufwand als andere. Der
+	    <code>AUDIO_GETENC</code>-<code>ioctl</code> sollte benutzt
+	    werden, um alle Formate, welche das Audiodevice bietet,
+	    wieder zu gewinnen. Insbesondere sollte man auf die Option
+	    <code>AUDIO_ENCODINGFLAG_EMULATED</code> achten. Sollte
+	    deine Applikation bereits in der Lage sein, jedes noch so
+	    verworrene Format ausgeben zu können - und eben dafür auch
+	    optimiert zu sein -, dann versuche jedoch um jeden Preis ein
+	    ursprüngliches Format zu benutzen. Andererseits scheint der
+	    Emulationscode im Audiodevice bereits optimal - ersetze ihn
+	    nicht durch irgendeinen aus dem Hut gezauberten Code.
+	</ul>
+
+	<p>Modellcharakter für optimale Ergebnisse hat die
+	Vorgehensweise, dass eingangs ein kleines Testprogramm
+	kompiliert wird, welches zunächst eine spezifische Audiohardware
+	abfragt, um dann dein Programm weiter so auszukonfigurieren,
+	dass es mit der entsprechenden Hardware best möglich harmoniert.
+	Es sollte dir schon klar sein, dass Leute, die eine gute
+	Audioperformance erzielen möchten, deinen Port rekompilieren
+	werden, um ihn auf andere Hardwaresysteme auszuweiten - insofern
+	macht es einen Unterschied.
+	</p>
+
+	<h3><font color="#0000e0">Echtzeit oder synchronisiert</font></h3>
+	<p>
+	Trotz des Umstandes, dass OpenBSD kein Echtzeitbetriebssystem
+	ist, möchtest du vermutlich eine Audioapplikation programmieren,
+	die größtenteils im Echtzeitmodus läuft (z.&nbsp;B. für Spiele).
+	In einem solchen Fall solltest du die Blockgröße verkleinern, so
+	dass die erzielten Soundeffekte sich nicht asynchron zum
+	laufenden Spiel verhalten. Problematisch wird es aber dann, wenn
+	das Audiodevice verhungert: dies führt zu einem abscheulichen
+	Resultat.
+	</p>
+	<p>
+	Sollte hingegen lediglich die Synchronisation auf der Ebene der
+	Audio/Grafik-Ausgabe erzielt werden und das Programmverhalten
+	vorhersehbar ist, dann ist die Synchronisation leichter zu
+	erzielen. Man spielt die Audiosamples einfach ab, befragt dann
+	das Audiodevice mit <code>AUDIO_GETOOFFS</code>, was gerade
+	gespielt wird, und benutzt schließlich diese Information zur
+	grafischen Postsynchronisation. So wird auf diesem Wege eine
+	sehr gute Synchronisation erzielt - vorausgesetzt, dass man
+	häufig genug fragt (sagen wir mal jede zehnte Sekunde) und über
+	genügend Rechenleistung verfügt, um die Anwendung laufen zu
+	lassen. Eventuell müssen die Werte durch ein konstantes Offset
+	optimiert werden, da es eine Differenz zwischen dem gibt, was
+	audiotechnisch im Augenblick gespielt wird, und der
+	verstrichenen Zeit, bis etwas im XWindow ausgegeben wird.
+	</p>
+  <h2><font color="#e00000">Dem Projekt Quelltexte beisteuern</font></h2>
+   <p>Im Falle der Audioapplikationen ist die Zusammenarbeit mit
+	dem jeweiligen Programmurheber enorm wichtig. Sollte der Code
+	z.&nbsp;B. in seiner Anwendung auf Soundblasterkarten begrenzt
+	sein, so wird er aller Voraussicht nach auch auf andere
+	Technologien übertragen.
+	</p>
+
+	<p>
+	<strong>Deine Arbeit ist wertlos, wenn du deine Kommentare nicht
+	dem Programmierer zukommen lässt</strong>.</p>
+	<p>
+	Es kann ja auch sein, dass der Autor die Probleme, mit denen du
+	dich im Augenblick beschäftigst, bereits selbst erkannt hat und
+	diese längst im Development-Tree adressiert hat. Kooperation ist
+	ebenfalls eine hervorragende Idee, wenn die Patches, die du
+	schreibst, sich über mehr als nur ein paar Zeilen erstrecken.
+	</p>
+
+  <hr>
+  <a href="porting.html"><img height=24 width=24 src=../back.gif border=0 alt=Portierung></a> 
+  <a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+<!--
+Originally [OpenBSD: audio-port.html,v 1.9 ]
+$Translation: audio-port.html,v 1.1 2005/12/09 16:28:37 paldium Exp $
+-->
+$OpenBSD: audio-port.html,v 1.1 2005/12/10 12:51:38 jufi Exp $
+</small>
+ </body>
+</html>
