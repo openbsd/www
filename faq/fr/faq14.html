@@ -323,28 +323,40 @@ jour. Vous devrez l'éditer vous-même si vous souhaitez que OpenBSD puisse
 y accéder. Plus d'informations sont disponibles
 <a href="faq14.html#foreignfsafter">plus bas</a>.
 
+<li><b>"q" ou "x":</b>
+Pour des raisons historiques, en mode de commandes, "q" enregistre les
+changements et quitte le programme alors que "x" quitte sans sauvegarder. C'est
+l'opposé de ce que beaucoup de gens peuvent voir sous d'autres environnements.
+disklabel(8) demandera confirmation avant d'enregistrer les changements mais
+n'affichera aucune alerte si "x" est utilisée.
+
 </ul>
 
 <a name="fdisk"></a>
 <h2>14.2 - Utilisation de fdisk(8) sous OpenBSD</h2>
 
-Avant de commencer, soyez sûr d'avoir lu le manuel de <a
-href="http://www.openbsd.org/cgi-bin/man.cgi?query=fdisk&amp;sektion=8&amp;arch=i386">fdisk(8)</a>.
+Avant de commencer, lisez le manuel de
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fdisk&amp;sektion=8&amp;arch=i386">fdisk(8)</a>.
 
 <p>
-Fdisk est un programme d'aide à la maintenance de vos partitions. Ce
-programme est utilisé à l'installation afin de mettre en place vos
-partitions OpenBSD (cette partition peut contenir <u>plusieurs</u>
-labels, chacun avec un système de fichiers, partition d'échange (swap),
-etc). Il permet de diviser l'espace de vos disques et d'activer une
-partition. Ce programme pourra éventuellement être utilisé en mode
-"Single User" (boot -s). Fdisk permet également d'inscrire le MBR
-("Master boot record") sur vos différents disques.
+fdisk(8) est utilisé sur certaines plateformes (i386, amd64, macppc, zaurus et
+cats) pour créer une partition reconnue par la ROM de démarrage du système dans
+laquelle les partitions disklabel d'OpenBSD peuvent être inscrites. Les autres
+platerformes n'ont pas besoin d'utiliser fdisk(8).
+fdisk(8) peut également être utilisé pour la manipulation du MBR ("Master boot
+record") pouvant avoir un impact sur tous les systèmes présents sur la machine.
+A l'inverse de certains programmes dont les fonctionnalités sont proches de
+celles de fidsk, sous OpenBSD cette commande assume que vous savez ce que vous
+voulez faire et en règle générale n'interviendra pas dans vos décisions, ce qui
+en fait un outil très puissant. Il vous laissera également faire des choses que
+vous n'aviez pas forcément prévues et doit donc être utilisé avec précaution.
 
 <p>
-Pour les besoins de l'installation, vous ne nécessiterez, la plupart du
-temps, que d'<b>UNE</b> partition OpenBSD dans laquelle vous ajouterez
-le swap et les systèmes de fichiers à l'aide de disklabel.
+Normalement, seule une partition fdisk OpenBSD sera inscrite sur le disque.
+Cette partition sera divisée par <a href="#disklabel">disklabel</a> en
+différentes partitions systèmes de fichiers OpenBSD.
+
+<p>
 
 <p>
 Pour simplement voir votre table de partition avec fdisk, utilisez :
@@ -392,6 +404,7 @@ fdisk: 1&gt; <b>help</b>
         flag            Flag given table entry as bootable
         update          Update machine code in loaded MBR
         select          Select extended partition table entry MBR
+        swap            Swap two partition entries
         print           Print loaded MBR partition table
         write           Write loaded MBR to disk
         exit            Exit edit of current MBR, without saving changes
@@ -401,9 +414,6 @@ fdisk: 1&gt;
 </pre>
 
 <p> 
-Il est parfaitement sans danger d'explorer les diverses commande sous
-fdisk, à condition de répondre <b>N</b> à la sauvegarde des changements
-et de ne *PAS* utiliser la commande <b>write</b>.
 
 <p>
 Voici un aperçu des commandes disponibles lorsque vous utilisez l'option
@@ -413,7 +423,9 @@ Voici un aperçu des commandes disponibles lorsque vous utilisez l'option
 <li><b>help</b> Affiche la liste des commandes utilisables par fdisk en
     mode d'édition intéractif.
 <li><b>reinit</b> Initialise la copie en mémoire du bloc de démarrage
-    actuellement sélectionné.
+    actuellement sélectionné. Pratique pour initialiser une parition OpenBSD
+    sur tout le disque, mettre à jour le code de démarrage et, de manière
+    générale, préparer le système pour OpenBSD (et OpenBSD seulement).
 <li><b>disk</b> Affiche la géométrie actuelle du disque détectée par
     fdisk. Vous pouvez l'éditer selon vos désirs.
 <li><b>setpid</b> Change l'identifiant de partition de l'entrée
@@ -430,6 +442,7 @@ Voici un aperçu des commandes disponibles lorsque vous utilisez l'option
 <li><b>select</b> Sélectionne et charge en mémoire le bloc de démarrage
     désigné par la table de partition étendue dans le bloc de démarrage
     actuel.
+<li><b>swap</b> Echange deux entrées MBR afin que vous puissier le réordonner.
 <li><b>print</b> Affiche la copie en mémoire actuelle du bloc de
     démarrage et de son MBR sur le terminal.
 <li><b>write</b> Ecrit la copie en mémoire actuelle du bloc de démarrage
@@ -442,6 +455,33 @@ Voici un aperçu des commandes disponibles lorsque vous utilisez l'option
     copie n'existe pas. A l'inverse d'"exit", le bloc de démarrage
     modifié est inscrit sur le disque.
 <li><b>abort</b> Quitte le programme sans sauvegarder les changements.
+</ul>
+
+<h3>trucs et astuces fdisk</h3>
+<ul>
+<!-- <li>On OpenBSD platforms which use fdisk, you should leave the first
+track free.
+This leaves room for the Master Boot Record, which is where the fdisk
+partition table resides.  -- not sure if this is true -->
+<li>fdisk(8) permet d'éditer les partitions soit en mode secteurs purs, soit en
+utilisant les Cylindres/Têtes/Secteurs. Ces deux options sont disponibles pour
+une raison ; certaines tâches sont plus simples à effectuer d'une façon ou d'une
+autre. Ne vous limitez pas à l'utilisation d'une seule de ces deux options.
+<li>Un disque vièrge aura besoin qu'on y inscrive le code de démarrage dans le
+MBR avant qu'il ne puisse booter. Pour ce faire, vous pouvez utiliser les
+options "reinit" ou "update". Si vous ne le faites pas, vous écrirez une table
+de partitions valide avec fdisk mais vous ne pourrez pas démarrer. Si vous ne
+savez pas d'où vient de code de démarrage présent sur votre disque, il est
+possible que vous souhaitiez le mettre à jour de toutes façons.
+<li>Si votre système possède une partition de "maintenance" ou de
+"diagnostique", il est recommandé de la laisser en place ou de l'inscrire avant
+d'installer OpenBSD.
+<li>Pour des raisons historiques, "q" enregistre les changements et quitte le
+programme alors que "x" quitte sans sauvegarder. C'est l'opposé de ce que
+beaucoup de gens peuvent voir sous d'autres environnements. disk(8) ne demandera
+aucune confirmation avant d'enregistrer les changements alors utilisez cette
+commande avec précaution
+
 </ul>
 
 <a name="NewDisk"></a>
@@ -733,7 +773,6 @@ Total           131056        8   131048     0%
 <a name="SoftUpdates"></a>
 <h2>14.5 - Soft Updates</h2>
 
-
 <p>
 Les "Soft Updates" sont basés sur une idée de <a
 href="http://www.ece.cmu.edu/~ganger/papers/CSE-TR-254-95/">Greg Ganger et Yale
@@ -745,22 +784,13 @@ synchrones des entrées. Une augmentation des performances est ainsi
 réalisée lors des écritures sur disque.
 
 <p>
-Pour utiliser les Soft Updates, votre noyau doit avoir
-
-<p>
-<b>option FFS_SOFTUPDATES</b>
-<p>
-compilé, ce qui est le cas du noyau GENERIC.
-
-<p>
 L'activation des Soft Updates est effectuée par une option de montage. Lors du
-montage d'une partition avec l'utilitaire <a
-href="http://www.openbsd.org/cgi-bin/man.cgi?query=mount&amp;sektion=8">mount(8)
-</a>, vous pouvez activer les Soft Updates sur celle-ci. Voici l'exemple
-d'une entrée dans le fichier <i><a
-href="http://www.openbsd.org/cgi-bin/man.cgi?query=fstab&amp;sektion=5">
-/etc/fstab(5)</a></i> permettant de monter la partition <i>sd0a</i> avec
-les Soft Updates activés.
+montage d'une partition avec l'utilitaire
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mount&amp;sektion=8">mount(8)</a>,
+vous pouvez activer les Soft Updates sur celle-ci. Voici l'exemple d'une entrée
+dans le fichier
+<i><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fstab&amp;sektion=5">/etc/fstab(5)</a></i>
+permettant de monter la partition <i>sd0a</i> avec les Soft Updates activés.
 
 <pre>
 /dev/sd0a / ffs rw,softdep 1 1
@@ -2201,10 +2231,10 @@ umass0 detached
 <br>
 <small>
 <!--
-Originally [OpenBSD: faq14.html,v 1.147 ]<br>
-$Translation: faq14.html,v 1.44 2005/12/22 09:47:36 ajacoutot Exp $<br>
+Originally [OpenBSD: faq14.html,v 1.150 ]<br>
+$Translation: faq14.html,v 1.46 2005/12/29 13:39:35 ajacoutot Exp $<br>
 -->
-$OpenBSD: faq14.html,v 1.32 2005/12/24 10:04:35 saad Exp $
+$OpenBSD: faq14.html,v 1.33 2005/12/30 11:33:43 jufi Exp $
 </small>
 
 </body>
