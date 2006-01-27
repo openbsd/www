@@ -4,7 +4,8 @@ STABLE_VERSION=	3.8
 PREV_VERSION=	3.7
 
 all: ../groups.html ../support.html ../pkg-stable.html \
-	../pkg-stable${PREV_VERSION:S/.//}.html
+	../pkg-stable${PREV_VERSION:S/.//}.html \
+	../ftp.html
 
 # Build the user groups page.
 ../groups.html:	groups.dat groups.awk groups.skel Makefile mkcountries
@@ -32,6 +33,10 @@ all: ../groups.html ../support.html ../pkg-stable.html \
 		cat pkg-stable.prev.html.head > $@
 		perl pkgstable.pl ${PREV_VERSION} >> $@
 		cat pkg-stable.html.tail >> $@
+
+# Build the FTP/HTTP/RSYNC mirrors page.
+../ftp.html: mirrors.pl mirrors.dat mirrors/ftp.html.{end,head,mid1,mid2}
+	perl mirrors.pl
 
 clean:
 		rm -f *.countries
