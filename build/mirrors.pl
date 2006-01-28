@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.2 2006/01/28 14:01:29 steven Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.3 2006/01/28 14:14:53 steven Exp $';
 
 my $sources = {
 	'mirrors.dat'	=> 'mirrors.dat',
@@ -107,7 +107,7 @@ sub _paste_mirrorlist($$$$) {
 
 	print $fh ' ' x 4;		# indent for first <td> to come
 	for my $lv (1, 2, 3) {
-	foreach my $mirror (@$mirrorref) {
+	foreach my $mirror (sort _by_country @$mirrorref) {
 		next if (($lv <= 2) && (! defined $mirror->{'LF'}));
 		next if ((defined $mirror->{'LF'}) && ($mirror->{'LF'} != $lv));
 		next unless ($mirror->{$type});
@@ -164,7 +164,7 @@ sub write_ftphtml($$) {
 
 # helper function to sort entries by country
 sub _by_country {
-        $a->{'GC'} cmp $b->{'GC'}
+	$a->{'GC'} cmp $b->{'GC'}
 }
 
 # main()
