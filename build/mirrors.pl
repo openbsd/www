@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.1 2006/01/27 17:42:19 grunk Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.2 2006/01/28 14:01:29 steven Exp $';
 
 my $sources = {
 	'mirrors.dat'	=> 'mirrors.dat',
@@ -64,7 +64,7 @@ sub write_ftplist($$) {
 
 	for my $lv (1, 2, 3) {
 	for my $type ('UF', 'UH') {
-		foreach my $mirror (@$mirrorref) {
+		foreach my $mirror (sort _by_country @$mirrorref) {
 			next if (($lv <= 2) &&
 			    (! defined $mirror->{'LF'}));
 			next if ((defined $mirror->{'LF'})
@@ -161,6 +161,11 @@ sub write_ftphtml($$) {
 	close($fh) or die "close $filename: $!";
 }
 
+
+# helper function to sort entries by country
+sub _by_country {
+        $a->{'GC'} cmp $b->{'GC'}
+}
 
 # main()
 my @mirrors = read_mirrors($sources->{'mirrors.dat'});
