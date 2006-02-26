@@ -8,7 +8,7 @@
 <meta name= "description"   content= "the OpenBSD FAQ page">
 <meta name= "keywords"      content= "openbsd,faq">
 <meta name= "distribution"  content= "global">
-<meta name= "copyright"     content= "This document copyright 1998-2005 by OpenBSD.">
+<meta name= "copyright"     content= "This document copyright 1998-2006 by OpenBSD.">
 </head>
 
 <body bgcolor= "#ffffff" text= "#000000">
@@ -29,7 +29,6 @@
 <p>
 <h3>Table of Contents</h3>
 <ul>
-<li><a href="#Disk"   >11.1 - Disk I/O</a>
 <li><a href="#HW"     >11.2 - Hardware Choices</a>
 <li><a href="#Async"  >11.3 - Why aren't we using async mounts?</a>
 <li><a href="#XF86"   >11.4 - Tuning your monitor resolution under
@@ -37,174 +36,6 @@ X</a>
 </ul>
 
 <hr>
-
-
-<p>
-<a name= "Disk"></a>
-<h2>11.1 - Disk I/O</h2>
-
-<p>
-Disk I/O speed is a significant factor in the overall speed of your
-computer.  It becomes increasingly important when your computer
-is hosting a multi-user environment (users of all kinds, from those
-who log-in interactively to those who see you as a file-server or a web-server.)
-Data storage constantly needs attention, especially when your partitions run
-out of space or when your disks fail.  OpenBSD has several options
-to increase the speed of your disk operations and provide fault tolerance.
-
-<p>
-Table Of Contents
-<ul>
-<li><a href="#ccd">CCD</a> - Concatenated Disk Driver.
-<li><a href="#raid">RAID</a>
-<li><a href="#softu">Soft Updates</a>
-<li><a href="#maxvnodes">Size of the namei() cache</a>
-</ul>
-
-<p>
-<a name="ccd"></a>
-<h3>11.1.1 - CCD</h3>
-
-<blockquote>
-The first option is the use of <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ccd&amp;sektion=4">ccd(4)</a>, the Concatenated Disk Driver.
-This allows you to join several partitions into one virtual disk (and thus,
-you can make several disks look like one disk).  This concept is
-similar to that of LVM (logical volume management), which is found in many commercial Unix flavors.
-
-<p>
-If you are running GENERIC, ccd is already enabled (in
-<tt>/usr/src/sys/conf/GENERIC</tt>).  If you have customized
-your kernel, you may need to return it to your kernel configuration.
-Either way, a line such as this should be in your configuration file:
-
-<pre>
-     <strong>pseudo-device   ccd     4       # concatenated disk devices</strong>
-</pre>
-
-<p>
-The above example gives you up to 4 ccd devices (virtual disks).
-Now you need to figure out which partitions on your real disks you want
-to dedicate to ccd.  Use disklabel to mark these partitions as type 'ccd'.
-On some architectures, disklabel may not allow you to do this.  In this case,
-mark them as 'ffs'.
-
-<p>
-If you are using ccd to gain performance by striping, note that you will
-not get optimum performance unless you use the same model of disks with
-the same disklabel settings.
-
-<p>
-Edit /etc/ccd.conf to look something like this:
-(for more information on configuring ccd, look at
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ccdconfig&amp;sektion=8">ccdconfig(8)</a>)
-
-<blockquote><pre>
-# Configuration file for concatenated disk devices
-#
-# ccd   ileave  flags   component devices
-ccd0   16      none    /dev/sd2e /dev/sd3e
-</pre></blockquote>
-
-<p>
-To make your changes take effect, run
-
-<blockquote><pre>
-# ccdconfig -C
-</pre></blockquote>
-
-<p>
-As long as /etc/ccd.conf exists, ccd will automatically configure itself
-upon boot.
-Now, you have a new disk, ccd0, a combination of /dev/sd2e and /dev/sd3e.
-Just use disklabel on it like you normally would to make the partition 
-or partitions you want to use.  Again, don't use the 'c' partition as
-an actual partition that you put stuff on.
-Make sure your usable partitions are at least one cylinder off from the beginning
-of the disk.
-</blockquote>
-
-<p>
-<a name="raid"></a>
-<h3>11.1.2 - RAID</h3>
-
-<blockquote>
-Another solution is <a href= "http://www.openbsd.org/cgi-bin/man.cgi?query=raid&amp;sektion=4">raid(4)</a>,
-which will have you use <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=raidctl&amp;sektion=8">raidctl(8)</a>
-to control your raid devices.  OpenBSD's RAID is based upon
-Greg Oster's <a href="http://www.cs.usask.ca/staff/oster/raid.html">NetBSD port</a>
-of the CMU
-<a href="http://www.pdl.cmu.edu/RAIDframe/">RAIDframe</a> software.
-OpenBSD has support for RAID levels
-of 0, 1, 4, and 5.<p> With raid, as with ccd, support must be in the KERNEL.
-Unlike ccd, support for RAID is not found in GENERIC, so it must be compiled 
-into your kernel (RAID support adds some 500K to the size of an i386 kernel).
-
-<blockquote><pre>
-<strong>pseudo-device   raid   4       # RAIDframe disk device</strong>
-</pre></blockquote>
-
-<p>
-Setting up RAID on some operating systems is confusing and
-painful to say the least.  Not so with RAIDframe.
-Read the <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=raid&amp;sektion=4">raid(4)</a> and
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=raidctl&amp;sektion=8">raidctl(8)</a>
-man pages to get full details. There are many
-options and possible configurations available, and a detailed explanation is beyond the scope of this document.
-</blockquote>
-
-<p>
-<a name="softu"></a>
-<h3>11.1.3 - Soft updates</h3>
-
-<blockquote>
-Another tool that can be used to speed up your system is softupdates.  One of the 
-slowest operations in the traditional BSD file system is updating metainfo
-(which happens, among other times, when you create or delete files and
-directories.) Softupdates
-attempts to update metainfo in RAM instead of writing
-to the hard disk each and every single metainfo update.  Another 
-effect of this is that the metainfo on disk should always be complete,
-although not always up to date.  So, a system crash should not require
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fsck&amp;sektion=8">fsck(8)</a>
-upon boot up, but simply a background version of fsck that makes
-changes to the metainfo in RAM (a la softupdates).
-This means rebooting a server is much faster, as you don't
-have to wait for fsck!  (OpenBSD does not have this feature yet.) You can read
-more about softupdates in the <a href="faq14.html#SoftUpdates">Softupdates FAQ</a> entry.
-</blockquote>
-
-<p>
-<a name="maxvnodes"></a>
-<h3>11.1.4 - Size of the namei() cache</h3>
-
-<dl>
-<dd>
-Note: previously, the 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=options&amp;sektion=4">options(4)</a>
-manual page recommended to set the <tt>NVNODE=integer</tt> kernel option. This
-is no longer recommended; you should now use the
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=8">sysctl(8)</a>
-command instead. 
-<p>
-The name-to-inode translation (a.k.a., <!-- need to write the manual
-page first... <a href="">namei(3)</a> --> namei()) cache controls
-the speed of pathname to 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=inode&amp;sektion=5">inode(5)</a>
-translation.
-A reasonable way to derive a value for the cache, should a large number of namei()
-cache misses be noticed with a tool such as 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=systat&amp;sektion=1">systat(1)</a>,
-is to examine the system's current computed value with 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=8">sysctl(8)</a>,
-(which calls this parameter "<tt>kern.maxvnodes</tt>") and to increase this 
-value until either the namei() cache hit rate improves or it is determined that 
-the system does not benefit substantially from an increase in the size of the 
-namei() cache. After the value has been determined, you can  
-set it at system startup time with 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl.conf&amp;sektion=5">sysctl.conf(5)</a>.
-</dd>
-</dl>
-
 
 <p>
 <a name= "HW"></a>
@@ -534,6 +365,6 @@ and fix the existing ModeLines accordingly.
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq11.html,v 1.57 2005/07/09 02:16:08 nick Exp $</small>
+<small>$OpenBSD: faq11.html,v 1.58 2006/02/26 21:09:19 nick Exp $</small>
 </body>
 </html>
