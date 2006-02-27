@@ -7,7 +7,7 @@
 <meta name= "description"   content= "the OpenBSD FAQ page">
 <meta name= "keywords"      content= "openbsd,faq">
 <meta name= "distribution"  content= "global">
-<meta name= "copyright"     content= "This document copyright 1998-2005 by OpenBSD.">
+<meta name= "copyright"     content= "This document copyright 1998-2006 by OpenBSD.">
 <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
 <style type="text/css">
   <!--
@@ -75,6 +75,9 @@ pas dans mon disklabel ! Que dois-je faire ?</a>
 </ul>
 <li><a href="#flashmem"   >14.17 - Est-il possible d'utiliser un
 périphérique de masse ('flash memory device') sous OpenBSD ?</a>
+<li><a href="#DiskOpt">14.18 - Optimiser les performances des disques durs</a>
+<li><a href="#Async">14.19 - Pourquoi nous n'utilisons pas de Montage
+Asynchrone ?</a>
 
 </ul>
 <hr>
@@ -100,7 +103,7 @@ ensuite divisée en partitions OpenBSD avec disklabel(8).
 
 <p>
 Toutes les autres plateformes utilisent disklabel(8) pour la gestion
-complête des partitions OpenBSD. Les plateformes qui utilisent aussi
+complète des partitions OpenBSD. Les plateformes qui utilisent aussi
 fdisk(8) placent toutes les partitions disklabel(8) dans une tranche
 fdisk.
 
@@ -1685,7 +1688,7 @@ OpenBSD inclu RAIDframe, une solution logicielle de RAID. La documentation est
 disponible ici :
 
 <ul>
-<li><a href="faq11.html#raid">FAQ 11, RAID</a>
+<li><a href="#Optraid">Optimisation des disques, RAID</a>
 <li><a href="http://www.pdl.cmu.edu/RAIDframe/">Page d'accueil de RAIDframe</a>
 <li><a
 href="http://www.openbsd.org/cgi-bin/man.cgi?query=raidctl&amp;sektion=8">manuel
@@ -2218,6 +2221,220 @@ umass0 detached
 </pre></blockquote>
 
 <p>
+<a name= "DiskOpt"></a>
+<h2>14.18 - Optimiser les performances des disques durs</h2>
+
+<p>
+La performance des disques est un facteur significatif de la
+vitesse globale de votre machine. Ce facteur devient de plus en plus
+important quand votre machine héberge un environnement multi utilisateur
+(des utilisateurs de toutes les catégories tels que les utilisateurs qui
+se connectent de manière interactive et les utilisateurs qui voient
+votre machine comme un serveur de fichiers ou un serveur Web). Le
+stockage de données demande une attention constante et particulièrement
+quand vos partitions ne contiennent plus d'espace libre ou quand vos
+disques ne fonctionnent plus. OpenBSD possède plusieurs options pour
+augmenter la vitesse des opérations sur disque. De plus il fournit des
+fonctionnalités de tolérance aux pannes.
+
+<p>
+<ul>
+<li><a href="#Optccd">CCD</a> - Pilote de Disques Concaténés.
+<li><a href="#Optraid">RAID</a>
+<li><a href="#Optsoftu">Soft Updates</a>
+<li><a href="#Optmaxvnodes">Taille du cache namei()</a>
+</ul>
+
+<p>
+<a name="Optccd"></a>
+<h3>14.18.1 - CCD</h3>
+
+La première option consiste à utiliser 
+<a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=ccd&amp;sektion=4">ccd(4)</a>
+, le Pilote de Disques Concaténés. Il vous permet de
+grouper plusieurs partitions en un seul disque virtuel (ainsi vous
+pouvez rendre plusieurs disques visibles comme un seul disque). Ce
+concept est similaire au concept de LVM (gestion de volumes logiques) se
+trouvant dans plusieurs versions Unix commerciales.
+
+<p>
+Si vous utilisez le noyau GENERIC, ccd est déjà activé (dans
+<tt>/usr/src/sys/conf/GENERIC</tt>). Si vous avez personnalisé votre
+noyau, vous aurez éventuellement besoin de refaire la configuration de
+votre noyau. Dans tous les cas, la ligne suivante devra figurer dans
+votre fichier de configuration noyau :
+
+<blockquote><pre>
+<strong>pseudo-device   ccd     4       # concatenated disk devices</strong>
+</pre></blockquote>
+
+<p>
+La ligne précédente vous permet de configurer jusqu'à 4 périphériques
+ccd (disques virtuels). L'étape suivante consiste à choisir les
+partitions sur vos disques physiques que vous voulez consacrer à ccd.
+Utilisez disklabel pour marquer ces partitions en type 'ccd'. Sous
+certaines architectures, disklabel ne vous autorisera pas à effectuer
+cette opération. Dans ce cas, marquez les en 'ffs'.
+
+<p>
+Si vous utilisez ccd pour améliorer les performances à travers la
+technique du striping, il est à noter que vous n'aurez pas de
+performance optimale à moins que vous n'utilisiez le même modèle de
+disques avec le même paramétrage disklabel.
+
+<p>
+Editez le fichier /etc/ccd.conf afin qu'il ressemble à ce qui suit :
+(pour plus d'informations sur la configuration ccd, veuillez consulter
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ccdconfig&amp;sektion=8">ccdconfig(8)</a>)
+
+<blockquote><pre>
+# Configuration file for concatenated disk devices
+#
+# ccd   ileave  flags   component devices
+ccd0   16      none    /dev/sd2e /dev/sd3e
+</pre></blockquote>
+
+<p>
+Pour que vos modifications prennent effet, exécutez :
+
+<blockquote><pre>
+# ccdconfig -C
+</pre></blockquote>
+
+<p>
+Aussi longtemps que /etc/cdd.conf existera, ccd se configurera
+automatiquement lors du démarrage de la machine. A ce point, vous avez
+un nouveau disque dénommé ccd0; combinaison de /dev/sd2e et /dev/sd3e.
+Pour le partitionner, utilisez disklabel normalement. Nous vous
+rappelons qu'il ne faut pas utiliser la partition 'c' comme une
+partition réelle sur laquelle vous pouvez stocker des données. Assurez-
+vous que vos partitions soient au moins décalées d'un cylindre par
+rapport au début du disque.
+
+<p>
+<a name="Optraid"></a>
+<h3>14.18.2 - RAID</h3>
+
+<a href= "http://www.openbsd.org/cgi-bin/man.cgi?query=raid&amp;sektion=4">raid(4)</a>
+est une autre solution. Elle nécessitera l'utilisation de la commande 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=raidctl&amp;sektion=8">raidctl(8)</a>
+pour contrôler vos périphériques raid. le RAID OpenBSD est basé sur le
+<a href="http://www.cs.usask.ca/staff/oster/raid.html">port NetBSD</a>
+du logiciel CMU 
+<a href="http://www.pdl.cmu.edu/RAIDframe/">RAIDframe</a> par Greg
+Oster. OpenBSD supporte les niveaux RAID 0, 1, 4 et 5.
+
+<p>
+Comme pour ccd, le support raid doit être configuré dans le NOYAU. Mais
+contrairement à ccd, le support RAID n'est pas configuré par défaut dans
+GENERIC. Il doit compilé au niveau du noyau (le support RAID ajoute 500k
+à la taille d'un noyau i386) :
+
+<blockquote><pre>
+<strong>pseudo-device   raid   4       # RAIDframe disk device</strong>
+</pre></blockquote>
+
+<p>
+Consultez les pages de manuel
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=raid&amp;sektion=4">raid(4)</a>
+et
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=raidctl&amp;sektion=8">raidctl(8)</a>
+Pour des informations complètes. Il y a plusieurs options et
+configurations possibles. Une explication détaillée est au-delà du
+périmètre du présent document.
+
+<p>
+<a name="Optsoftu"></a>
+<h3>14.18.3 - Soft Updates</h3>
+
+Un autre outil qui peut être utilisé pour accélerer la vitesse de votre
+système est softupdates. La mise à jour des informations meta ou
+metainfo (qui a lieu quand vous créez ou supprimez des fichiers et des
+répertoires entre autres) est une des opérations les plus lentes du
+système de fichiers BSD traditionnel. Softupdates tente de mettre à jour
+les metainfo dans la RAM au lieu d'écrire chaque mise à jour de metainfo
+sur le disque. Une autre conséquence est que les metainfo sur le disque
+devraient être toujours complètes, mais pas forcément à jour. Un crash
+système ne devrait donc pas nécessiter une opération fsck lors du
+démarrage de la machine, mais seulement une version d'arrière-plan de
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fsck&amp;sektion=8">fsck(8)</a>
+qui effectue des modifications aux metainfo en RAM (comme softupdates).
+Ce qui veut dire que le redémarrage d'un serveur est beaucoup plus
+rapide puisque vous n'avez pas besoin d'attendre que fsck finisse !
+(OpenBSD ne possède pas cette fonctionnalité encore). Pour en savoir
+plus, consultez <a href="#SoftUpdates">La FAQ Softupdates
+</a>.
+
+<p>
+<a name="Optmaxvnodes"></a>
+<h3>14.18.4 - Taille du cache namei()</h3>
+
+Le cache de traduction nom-vers-inode (alias name-to-inode ou <!-- need to
+write the manual
+page first... <a href="">namei(3)</a> -->namei()) contrôle 
+la vitesse de la traduction chemin vers 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=inode&amp;sektion=5">inode(5)</a>.
+Une valeur raisonnable de fixer une valeur pour le cache, si on venait
+à remarquer à l'aide d'un outil comme
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=systat&amp;sektion=1">systat(1)</a>
+, des erreurs d'allocation au niveau du cache, est d'examiner la valeur
+courante générée avec
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=8">sysctl(8)</a>
+, (qui appelle ce paramètre "<tt>kern.maxvnodes</tt>") et d'augmenter
+cette valeur soit jusqu'à ce que les le taux de réponse à partir du
+cache namei s'améliore soit jusqu'à ce qu'on détermine que le système ne
+bénéficie plus substantiellement de l'augmentation de la taille du cache
+namei. Une fois que la valeur est déterminée, vous pouvez la fixer au
+démarrage du système à l'aide de
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl.conf&amp;sektion=5">sysctl.conf(5)</a>.
+
+<p>
+<a name= "Async"></a>
+<h2>11.3 - Pourquoi nous n'utilisons pas de montage asynchrone ("async
+       mount") ?</h2>
+
+<p>
+Question : &quot;Je fais simplement &quot;mount -u -o async /&quot; ce
+qui rend un package dont j'ai besoin (qui touche à une centaine
+de chose de temps à autre) utilisable. Pourquoi le montage
+asynchrone n'est pas vu d'un bon &#156;il et n'est pas activé par
+défaut (comme c'est le cas sur d'autres versions d'Unix) ? C'est
+un mécanismesûrement plus simple et plus sûr
+d'améliorer les performances de certaines applications.&quot;
+
+<p>
+Réponse : &quot; les montages asynchrones sont en effet plus rapides que
+des montages synchrones, mais ils sont aussi moins sûrs. Qu'arrive-t-il
+dans le cas d'une panne de courant ? Ou un problème matériel ? la quête
+de la vitesse ne doit pas sacrifier la fiabilité et la stabilité du
+système. Reportez-vous à la page du manuel de
+<a href= "http://www.openbsd.org/cgi-bin/man.cgi?query=mount&amp;sektion=8">mount(8)</a>."
+
+<pre>
+             async   All I/O to the file system should be done asynchronously.
+                     This is a dangerous flag to set since it does not guaran-
+                     tee to keep a consistent file system structure on the
+                     disk.  You should not use this flag unless you are pre-
+                     pared to recreate the file system should your system
+                     crash.  The most common use of this flag is to speed up
+                     restore(8) where it can give a factor of two speed in-
+                     crease.
+</pre>
+
+<p>
+D'un autre côté, quand vous travaillez avec des données temporaires que
+vous pouvez recréer après un plantage, vous pouvez gagnez en vitesse en
+utilisant une partition à part montée en asynchrone, utilisée uniquement
+pour ce type de données. Encore une fois, n'effectuez cette opération
+<i>que si</i> vous ne voyez pas d'inconvénient à perdre toutes les
+données de cette partition si quelque chose va mal. Pour cette raison,
+les partitions
+<a href= "http://www.openbsd.org/cgi-bin/man.cgi?query=mfs&amp;sektion=8">mfs(8)</a>
+sont montées en mode asynchrone vu que de toute façon, elles vont être
+écrasées et recréées après un redémarrage.
+
+<p>
 <font color= "#0000e0">
 <a href= "index.html">[Index de la FAQ]</a>
 <a href= "faq13.html">[Section 13 - Multimédia]</a>
@@ -2231,10 +2448,10 @@ umass0 detached
 <br>
 <small>
 <!--
-Originally [OpenBSD: faq14.html,v 1.150 ]<br>
-$Translation: faq14.html,v 1.46 2005/12/29 13:39:35 ajacoutot Exp $<br>
+Originally [OpenBSD: faq14.html,v 1.153 ]<br>
+$Translation: faq14.html,v 1.47 2006/02/27 09:04:42 ajacoutot Exp $<br>
 -->
-$OpenBSD: faq14.html,v 1.33 2005/12/30 11:33:43 jufi Exp $
+$OpenBSD: faq14.html,v 1.34 2006/02/27 21:23:27 saad Exp $
 </small>
 
 </body>
