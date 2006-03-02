@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.4 2006/01/31 21:53:37 steven Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.5 2006/03/02 19:11:50 steven Exp $';
 
 my $sources = {
 	'mirrors.dat'	=> 'mirrors.dat',
@@ -167,7 +167,7 @@ sub _by_country {
 	my ($x, $y) = ($a->{'GC'}, $b->{'GC'});
 	$x =~ s/^the\s+//i;	# ignore leading 'the' as in 'The Netherlands'
 	$y =~ s/^the\s+//i;
-	return $x cmp $y;
+	return lc($x) cmp lc($y);
 }
 
 # main()
