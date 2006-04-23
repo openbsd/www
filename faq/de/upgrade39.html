@@ -1,0 +1,520 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>OpenBSD-Upgradeanleitung</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta http-equiv="Content-Language" content="de">
+<meta name="description"   content="die OpenBSD-FAQ-Seite">
+<meta name="keywords"      content="openbsd,faq">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="Dieses Dokument unterliegt dem Copyright von OpenBSD 2006.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<a href="../../de/index.html">
+<img alt="[OpenBSD]" height=30 width=141 src="../../images/smalltitle.gif" border="0">    
+</a>
+<p>
+<font color="#0000e0">
+<a href="upgrade35.html">[3.4 -> 3.5]</a> |
+<a href="upgrade36.html">[3.5 -> 3.6]</a> |
+<a href="upgrade37.html">[3.6 -> 3.7]</a> |
+<a href="upgrade38.html">[3.7 -> 3.8]</a> |
+<a href="index.html">[FAQ-Index]</a>
+</font>
+
+<h1><font color="#e00000">Upgradeanleitung: 3.8 auf 3.9</font></h1>
+<hr>
+
+<i>Hinweis: Upgrades werden nur von einem Release zum direkt darauf
+folgenden Release unterstützt.
+Überspringe keine Releases.</i>
+
+<p><i>
+Es wird dringend dazu geraten, diesen Prozess zu lesen und voll und
+ganz zu verstehen, bevor du ihn durchführst.
+Wenn du das hier beschriebene auf einer wichtigen oder physikalisch
+entfernten Maschine machst, solltest du diesen Prozess erst auf einer
+identischen lokalen Maschinen versuchen, um sicherzustellen, dass alles
+funktioniert, bevor du dich an die wichtige oder entfernte Maschine
+wagst.
+</i>
+
+<p>
+Upgrading ist ein bequemer Weg, um dein OpenBSD-System auf die
+aktuellste Version zu bringen.
+Jedoch sind die Ergebnisse nicht beabsichtigt, genau so zu sein wie
+eine Installation, bei der alles gelöscht und wieder aufgespielt wird.
+Insbesondere alte Bibliotheksdateien werden beim Upgradeprozess nicht
+deinstalliert, da sie von alten Applikationen, die vielleicht später
+noch aktualisiert werden, noch benötigt werden könnten. Wenn du WIRKLICH
+all diese alten Dateien loswerden möchtest, wärst du mit einer völligen
+Neuinstallation vermutlich besser dran.
+
+<p>
+Inhaltsverzeichnis:
+<ul>
+<li><a href="#before">Vor dem Upgrade</a>
+<li><a href="#upgrade">Der Upgradeprozess</a>
+<li><a href="#final">Letzte Schritte</a>
+</ul>
+
+<hr>
+<p>
+<a name="before"></a>
+<h2>Vor dem Upgrade</h2>
+
+Wenn sich in deiner Maschine eine PCI-Netzwerkkarte befindet, die den
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=le&amp;sektion=4">le(4)</a>-Treiber
+benötigt, wird sie nun sehr wahrscheinlich vom
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pcn&amp;sektion=4">pcn(4)</a>-Treiber
+verwaltet.
+Kopiere VOR dem Upgrade deine <tt>/etc/hostname.le*</tt>-Datei(en) mit
+dem jeweils passenden <tt>/etc/hostname.pcn*</tt>-Namen, da du sonst
+während und nach dem Upgradeprozess kein funktionierendes Netzwerk
+haben wirst.
+
+<p>
+Aufgrund zusätzlicher Debuggingsymbole sind die
+Bibliotheksdateien erheblich größer geworden. Auf der i386-Plattform
+zum Beispiel nahm der benötigte Platz des
+<tt>/usr/lib</tt>-Verzeichnisses von 47,7 MB (3.8) auf 209 MB (3.9)
+zu. Stelle sicher, dass du genügend freien Speicher hast, bevor du
+mit dem Upgrade beginnst.
+
+<p>
+Überprüfe, ob du irgendwelche Modifikationen an deinem Kernel
+vorgenommen hast. Zum Beispiel könntest du dein Netzwerkdevice
+mittels config(8) geändert haben, um eine nicht standardmäßige
+Einstellung verwenden zu können. Schreib die Änderungen auf, so dass du
+sie ebenfalls auf den neuen 3.9-Kernel anwenden kannst.
+
+<p>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfsync&amp;sektion=4">pfsync(4)</a>
+verwendet nun ein neues Format - »keep state« funktioniert zwischen
+3.8- und 3.9-Systemen nicht. Alle Verbindungen von nicht
+zutreffenden Systemen werden beendet, wenn du den Master umstellst,
+da States zwischen den Systemen nicht ausgetauscht werden. Du kannst
+die Auswirkung hiervon minimieren, indem du erst deine Backupsysteme
+upgradest, so dass nur ein einziges Mal aktive States verloren gehen.
+
+<p>
+Benutzer von <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=carp&amp;sektion=4">carp(4)</a>,
+die einem einzelnen carp(4)-Interface mehr als eine Adresse
+zugewiesen haben, werden ein weiteres Problem während dem Upgrade
+feststellen: Interfaces werden nun nach Adresse sortiert, so dass
+es nicht mehr so wichtig wie bisher ist, Aliases in der exakt gleichen
+Reihenfolge zu haben. Das heißt jedoch, dass es eventuell Probleme
+zwischen alten und neuen Systemen geben wird. Du kannst die Aliases
+auf den alten Systemen notfalls manuell sortieren, wenn du dieses
+mögliche Problem auf jeden Fall umgehen willst.
+
+<p>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8">ftp-proxy(8)</a>
+wurde geändert (mehr Details <a href="#final">weiter unten</a>),
+deine
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5">pf.conf(5)</a>-Datei
+muss eventuell aktualisiert werden.
+
+<p>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ancontrol&amp;sektion=8&amp;manpath=OpenBSD+3.8">ancontrol(8)</a>
+wurde mit einer weiteren Funktion in
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8">ifconfig(8)</a>
+ersetzt. Dies könnte Auswirkungen darauf haben, wie du deine
+Drahtlosinterfaces konfigurierst.
+
+<p>
+<hr>
+<a name="upgrade"></a>
+<h2>Der Upgradeprozess</h2>
+
+<h3>Mit Installationsmedium upgraden</h3>
+Der einfachste und sicherste Weg, um von Binärdateien aus upzugraden,
+ist von einem Installationsmedium zu booten und den Upgradeschritten
+zu folgen, welche sich dem <a href="faq4.html">Installationprozess</a>
+sehr ähneln. Schließe danach das Upgrade ab, indem du die
+<a href="#final">letzten Schritte</a> ausführst, die weiter unten
+beschrieben werden.
+
+
+<h3>Ohne Installationsmedium upgraden</h3>
+<i>Diese Vorgehensweise wird NICHT empfohlen. Verwende die
+Installationsmedium-Methode, wenn es irgendwie möglich ist!</i>
+
+<p>
+Manchmal muss man ein Upgrade einer Maschine durchführen, wenn man
+nicht auf einfache Weise den normalen Upgradeprozess durchführen kann.
+Man kann dies normalerweise durchführen, indem man vorsichtig einen
+Prozess befolgt, der einem source-basierten Upgrade sehr ähnlich ist:
+
+<ul>
+<li><b>Lege die Installationsdateien in einem »guten« Verzeichnis
+ab</b>. Stelle sicher, dass du genügend freien Platz hast!
+
+<li><b>Deaktivere das Starten aller »unsicheren« Applikationen beim
+Booten:</b>
+Es wird Momente während der Installation geben, in denen zwar PF nicht
+geladen werden kann, deine Applikationen aber eventuell normal gestartet
+und ausgeführt werden. Jede Applikation, deren Sicherheit von PF
+abhängig ist, sollte daher zuvor deaktiviert werden; sie sollte auch
+erst erneut aktiviert werden, wenn die Funktionsweise von PF nach dem
+Upgrade sichergestellt worden ist.
+Es mag weitere Applikationen geben, die du während dem Upgradeprozess
+nicht ausführen möchtest - beende und deaktiviere sie ebenfalls.
+
+<li><b>Überprüfe den Kernel:</b>
+Obwohl <b>die meisten Leute diesen Schritt überspringen können</b>,
+kann es sein, dass du den 3.8-Kernel angepasst hast. Wenn das der Fall
+ist, dann wirst du sehr wahrscheinlich das gleiche mit dem 3.9-Kernel
+machen müssen. Insbesondere wenn du ein Upgrade mit einem Remotesystem
+durchführst, ist jetzt der richtige Zeitpunkt gekommen, um
+sicherzustellen, dass der neue Kernel geladen werden kann, wenn du das
+System neustartest. Falls irgendwelche Änderungen am Kernel gemacht
+werden müssen, ist es am sichersten, das ganze auf einem lokalen
+3.9-System zu machen. Dabei kann es sich um so einfache Dinge wie
+eine Änderung eines bestimmtes Devices mittels config(8) handeln, doch
+könnte es genausogut bedeuten, dass du den Kernel neuerzeugen musst,
+da sich eine von dir benötigte Option nicht im GENERIC-Kernel befindet.
+Lies bitte <a href="faq5.html">FAQ 5 - Das System aus dem Quelltext
+erzeugen</a>, bevor du in Erwägung ziehst, deinen Kernel neu zu
+erzeugen.
+
+<li><b>Installiere neue(n) Kernel</b>
+<blockquote><pre>
+<b>export RELEASEPATH=<i>/DeinPfad</i></b>
+<b>cd ${RELEASEPATH}</b>
+<b>rm /obsd ; ln /bsd /obsd && cp bsd /nbsd && mv /nbsd /bsd</b>
+<b>cp bsd.rd bsd.mp /</b>
+</pre></blockquote>
+
+Achte auf die zusätzlichen Schritte, um den primären Kernel zu
+kopieren: diese werden durchgeführt, um zu gewährleisten, dass immer
+eine funktionsfähige Kopie des Kernels auf der Platte ist, so dass das
+System booten kann, falls ein Stromausfall oder ein Systemabsturz zu
+sehr ungüstiger Zeit eintreten.
+
+<li><b>Installiere neue <tt>/etc/firmware</tt>-Dateien:</b>
+
+Aus der Tatsache heraus, dass einige hochgeladene »firmware«-Teile
+vom Kernel in Dateien verschoben wurden, die sich im
+<tt>/etc/firmware</tt>-Verzeichnis befinden, könnten einige wenige
+Treiber nicht korrekt geladen werden, wenn keine hochgeladene
+Firmwaredatei zur Verfügung steht, wenn der neue Kernel bootet.
+Dies wird nur Benutzer einiger weniger Geräte betreffen, obwohl alle
+Benutzer diesen Schritt ohne weiterer Beeinträchtigung ausführen können.
+Um die Firmwaredateien aus <tt>base38.tgz</tt> zu entpacken, verwende
+das Folgende als root vor dem nächsten Schritt:
+
+<blockquote><pre>
+<b>cd /</b>
+<b>tar xzpf ${RELEASEPATH}/base39.tgz "*etc/firmware/*"</b>
+</pre></blockquote>
+
+<li><b>Starte mit dem neuen Kernel neu:</b>
+Es mag verführerisch sein, diesen Schritt zu überspringen, aber er
+sollte nun durchgeführt werden, da - wie üblich - der neue Kernel die
+alten Userlandapplikationen ausführen wird (wie zum Beispiel den
+bald wichtigen <tt>reboot</tt>!), ein neues Userland aber häufig
+NICHT mit einem alten Kernel zusammen funktioniert.
+
+<li><b>Installiere neue Userlandapplikationen</b>
+<i>Installiere noch NICHT <tt>etc39.tgz</tt> und
+<tt>xetc39.tgz</tt>, da sie deine aktuellen Konfigurationsdateien
+überschreiben würden!</i>
+
+<blockquote><pre>
+<b>export RELEASEPATH=/<i>yourpath</i></b>
+<b>cd /</b>
+<b>tar xzpf ${RELEASEPATH}/base39.tgz</b>
+<b>tar xzpf ${RELEASEPATH}/comp39.tgz</b>
+<b>tar xzpf ${RELEASEPATH}/game39.tgz</b>
+<b>tar xzpf ${RELEASEPATH}/man39.tgz</b>
+<b>tar xzpf ${RELEASEPATH}/misc39.tgz</b>
+<b>tar xzpf ${RELEASEPATH}/xbase39.tgz</b>
+<b>tar xzpf ${RELEASEPATH}/xfont39.tgz</b>
+<b>tar xzpf ${RELEASEPATH}/xserv39.tgz</b>
+<b>tar xzpf ${RELEASEPATH}/xshare39.tgz</b>
+</pre></blockquote>
+
+Hinweis: nicht alle Dateisets müssen für alle Einsatzgebiete
+installiert werden, wenn du jedoch ein Dateiset ursprünglich installiert
+hast, solltest du es jetzt doch mit einem neuen Dateiset upgraden.
+
+<p>
+Hinweis: Die Dateien in <tt>/etc</tt> werden weiter unten getrennt
+behandelt, so dass <tt>etc39.tgz</tt> und <tt>xetc39.tgz</tt>
+an dieser Stelle NICHT entpackt werden.
+
+<li><b>Upgrade <tt>/dev</tt>.</b>
+Die neue
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=MAKEDEV&amp;sektion=8&amp;arch=i386">MAKEDEV</a>-Datei
+wird durch die Installation von <tt>base39.tgz</tt> nach /dev kopiert,
+so dass du einfach nur Folgendes machen musst:
+<blockquote><pre>
+<b>cd /dev</b>
+<b>./MAKEDEV all</b>
+</pre></blockquote>
+
+<li><b>Upgrade <tt>/etc</tt> wie unten beschrieben</b>.
+
+<li><b>Starte neu</b>
+</ul>
+
+Während diesem Prozess könnte
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sendmail&amp;sektion=8">sendmail(8)</a>
+viele Fehlermeldungen wie diese erzeugen:
+<pre>
+    Nov 1 12:47:05 puffy sm-mta[16733]: filesys_update failed: No such file or dire
+    ctory, fs=., avail=-1, blocksize=380204
+</pre>
+Diese Nachrichten können unbesorgt ignoriert werden, du könntest aber
+auch sendmail(8) während dem Upgradeprozess beenden.
+
+<p>
+
+<hr>
+<a name="final"></a>
+<h2>Letzte Schritte</h2>
+
+<a name="etcUpgrade"></a>
+<h3>1. <tt>/etc</tt> upgraden</h3>
+
+Falls du nun unter Verwendung eines Installationsmediums (und dadurch
+einen formalen Upgradeprozess) oder aber ein Binärupdate im laufenden
+System, gibt es einige Schritte, die manuell durchgeführt
+werden müssen.
+
+<a name="users"></a>
+<h4>1.1. Neue Benutzer und Gruppen</h4>
+<ul>
+<li><i>keine neuen Benutzer oder Gruppen</i>
+</ul>
+
+<a name="apps"></a>
+<h4>1.2. Funktionsänderungen</h4>
+<ul>
+<li><b>ftp-proxy</b> 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8">ftp-proxy(8)</a>
+wurde mit dem zuvor pftpx genannten Proxy ausgetauscht. Der neue
+ftp-proxy läuft als Daemon und wird daher nicht von
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=inetd.conf&amp;sektion=5">inetd.conf(5)</a>
+aus aufgerufen, wie es bisher der Fall war. Du musst sowohl
+<tt>/etc/inetd.conf</tt> anpassen, damit ftp-proxy(8) nicht länger
+aufgerufen wird, als auch <tt>/etc/rc.conf</tt> und
+<tt>/etc/rc</tt>, damit der neue Proxy gestartet wird.
+Ändere <tt>rc.conf</tt> oder <tt>rc.conf.local</tt> zum Beispiel
+wie folgt, um das neue Programm aufzurufen:
+
+<blockquote><pre>
+echo 'ftpproxy_flags=""' >> /etc/rc.conf.local
+</pre></blockquote>
+
+<p>
+Der neue Proxy verwendet
+<a href="../pf/de/anchors.html"><i>Anker</i></a>, um Datenverbindungen
+zuzulassen. Das bedeutet, dass deine bestehende
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5"><i>/etc/pf.conf</i></a>
+dementsprechend angepasst werden muss. In der NAT-Sektion musst
+du Folgendes einfügen:
+
+<blockquote><pre>
+nat-anchor "ftp-proxy/*"
+rdr-anchor "ftp-proxy/*"
+</pre></blockquote>
+
+Diese Einträge sind zwingend, selbst wenn du sonst kein NAT
+verwendest. Die folgende Regel, die vermutlich schon für den alten
+ftp-proxy angelegt wurde, muss bleiben:
+<blockquote><pre>
+rdr pass on $int_if proto tcp from $lan to any port 21 -> \
+    127.0.0.1 port 8021
+</pre></blockquote>
+
+In der Regelsektion wird Folgendes benötigt:
+
+<blockquote><pre>
+anchor "ftp-proxy/*"
+</pre></blockquote>
+
+Regeln, die FTP-Kontrollverbindungen
+(Zielport 21/tcp) für den Proxy durchlassen, müssen bleiben.
+Regeln, die FTP-Datenverbindungen durchlassen, werden nicht länger
+benötigt. Diese Regeln könnten »user proxy« oder »to port > 49151«
+enthalten.
+
+Es wurde darauf geachtet, dass die Kommandozeilenoptionen so ähnlich
+wie möglich blieben, doch einige unterscheiden sich. Wirf einen Blick
+auf die
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8">ftp-proxy(8)</a>-Manualseite.
+<p>
+
+Ein Spezialfall sollte noch erwähnt werden: wenn du alte Clients hast,
+die auf Datenverbindungen im aktiven Modus angewiesen sind (diese
+verwenden 20/tcp als Quellport), musst du die Option »-r« verwenden
+(beim alten Proxy »-u root«).
+
+<p>
+Führe ftp-proxy mit »-d -D7« aus, wenn du Probleme feststellst und
+herausfinden möchtest, wo der Fehler liegt.
+
+</ul>
+
+<a name="etcfiles"></a>
+<h4>1.3. <tt>/etc</tt>-Dateiänderungen</h4>
+Du solltest die <tt>etc39.tgz</tt>-Dateien in ein temporäres
+Verzeichnis entpacken:
+<blockquote><pre>
+<b>cd /tmp</b>
+<b>tar xzpf ${RELEASEPATH}/etc39.tgz</b>
+</pre></blockquote>
+
+
+Dateien, die ordnungsgemäß von <tt>etc39.tgz</tt> »so wie sie sind«
+kopiert werden können:
+
+<blockquote><pre>
+daily
+ipsec.conf
+magic
+monthly
+netstart
+rc
+security
+services
+weekly
+mtree/*
+</pre></blockquote>
+
+Bedenke, dass es möglich IST, all diese Dateien lokal zu modifizieren.
+Solltest du sie also modifiziert haben, musst du sie manuell anpassen.
+Hier sind Copy&amp;Paste-Zeilen, um diese Dateien zu kopieren,
+angenommen, dass du <tt>etc39.tgz</tt> in dem zuvor empfohlenen
+Verzeichnis abgelegt hast:
+
+<blockquote><pre>
+<b>cd /tmp/etc</b>
+<b>cp daily ipsec.conf magic monthly netstart rc security services weekly /etc</b>
+<b>cp mtree/* /etc/mtree/</b>
+</pre></blockquote>
+
+<p>
+Dateien, die per Hand angepasst werden müssen, so dass alle lokalen
+Änderungen beibehalten werden (falls sie vom Original abweichen) -
+ansonsten kannst du sie auch einfach kopieren:
+
+<blockquote><pre>
+changelist
+inetd.conf
+lynx.cfg
+rc.conf
+ssh/ssh_config
+ssh/sshd_config
+sysctl.conf
+</pre></blockquote>
+
+Die Änderungen dieser Dateien befinden sich in
+<a href="../upgrade39.patch">dieser Patchdatei</a>. Du kannst
+versuchen, sie zu verwenden, indem du das Folgende als root ausführst:
+<blockquote><pre>
+<b>cd /</b>
+<b>patch -C -p0 &lt; upgrade39.patch</b>
+</pre></blockquote>
+
+Hiermit wird geprüft, wie gut der Patch sich in DEIN System einbinden
+lässt. Um ihn tatsächlich einzubinden, lass die Option <tt>-C</tt> weg.
+Beachte, dass es sehr wahrscheinlich ist, dass wenn du diese Dateien
+modifiziert, nicht immer auf dem aktuellsten Stand gehalten hast oder
+von einem Snapshot von 3.8 aus upgradest, dieser Patch nicht richtig
+angewandt werden kann.
+In diesen Fällen musst du die Änderungen manuell vornehmen.
+Teste diesen Prozess bitte, bevor du dich darauf verlässt, dass alles
+funktioniert, wenn du ihn an einem schwer zu erreichenden System
+anwendest.
+
+<p>
+Die folgenden Dateien haben Änderungen erfahren, die du dir genauer
+ansehen solltest, da sie sehr wahrscheinlich nicht direkt kopiert oder
+eingepflegt werden können (d.&nbsp;h. wenn du pf.conf verwendest, dann
+solltest du dir die empfohlene Änderung der Sicherheitsrichtlinie
+angucken und für dich selbst entscheiden, ob sie für deine Anwendungen
+eingesetzt werden kann):
+
+<blockquote><pre>
+hostapd.conf
+pf.conf
+spamd.conf
+</pre></blockquote>
+
+
+Verwende schlussendlich
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mtree&amp;sektion=8">mtree(8)</a>,
+um alle neuen Verzeichnisse zu erstellen:
+<blockquote><pre>
+<b>mtree -qdef /etc/mtree/4.4BSD.dist -p / -u</b>
+</pre></blockquote>
+
+<h3>2. Überprüfe den Kernel</h3>
+Hinweis: <b>die meisten Leute können diesen Schritt überspringen!</b>
+<p>
+Wenn du den Anweisungen gefolgt bist, wie man einen Upgradeprozess
+ohne Installationsmedien durchführt, hast du diesen Schritt bereits
+absolviert. Wenn du jedoch Installationsmedien und unter 3.8 einen
+angepassten Kernel verwendet hast, wirst du das gleiche vermutlich
+auch unter 3.9 machen wollen. Dabei kann es sich um so einfache Dinge
+wie eine Änderung eines bestimmtes Devices mittels config(8) handeln,
+doch könnte es genausogut bedeuten, dass du den Kernel neuerzeugen
+musst, da sich eine von dir benötigte Option nicht im GENERIC-Kernel
+befindet.  Lies bitte <a href="faq5.html">FAQ 5 - Das System aus dem
+Quelltext erzeugen</a>, bevor du in Erwägung ziehst, deinen Kernel neu
+zu erzeugen.
+
+<h3>3. Packages upgraden</h3>
+Wenn du irgendwelche Packages auf deinem System installiert hattest,
+solltest du sie aktualisieren, nachdem du das Basissystem erfolgreich
+upgegradet hast. Unter OpenBSD 3.9 können die pkg-Werkzeuge nun
+Packages direkt mittels <tt>pkg_add -u</tt> aktualisieren. Dies wurde
+mit den meisten Packages getestet (insbesondere mit den Packages auf
+der 3.8-CD). Um zum Beispiel alle deine Packages zu aktualisieren,
+stelle sicher, dass <tt>PKG_PATH</tt> auf das Verzeichnis deiner CD
+oder eines FTP-Mirrors zeigt, in dem sich die 3.9-Packages befinden.
+Verwende dann Folgendes:
+ 
+<blockquote><pre>
+<b># pkg_add -ui -F update -F updatedepends</b>
+</pre></blockquote>
+
+Dabei gibt <tt>-u</tt> den Updatemodus an und <tt>-i</tt> den
+interaktiven Modus, so dass pkg_add dich um Rat bittet, sollten
+Probleme auftreten.
+Lies die
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pkg_add&amp;sektion=1&amp;manpath=OpenBSD+3.9">pkg_add(1)</a>-Manualseite
+und das Kapitel <a href="faq15.html#PkgMgmt">Verwaltung der Packages</a>
+der FAQ für weitere Informationen.
+
+
+<p>
+<font color="#0000e0">
+<a href="upgrade35.html">[3.4 -> 3.5]</a> |
+<a href="upgrade36.html">[3.5 -> 3.6]</a> |
+<a href="upgrade37.html">[3.6 -> 3.7]</a> |
+<a href="upgrade38.html">[3.7 -> 3.8]</a> |
+<a href="index.html">[FAQ-Index]</a>
+</font>
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[zurück]"></a>
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+<!--
+Originally [OpenBSD: upgrade39.html,v 1.7 ]
+$Translation: upgrade39.html,v 1.2 2006/04/23 08:58:03 paldium Exp $
+-->
+$OpenBSD: upgrade39.html,v 1.1 2006/04/23 10:48:36 jufi Exp $
+</small>
+
+</body>
+</html>
