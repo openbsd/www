@@ -36,7 +36,10 @@ all: ../groups.html ../support.html ../pkg-stable.html \
 
 # Build the FTP/HTTP/RSYNC mirrors page.
 ../ftp.html: mirrors.pl mirrors.dat mirrors/ftp.html.{end,head,mid1,mid2}
-	perl mirrors.pl
+	perl mirrors.pl ftp
+
+../anoncvs.html: mirrors.pl mirrors.dat mirrors/anoncvs.html.{end,head}
+	perl mirrors.pl anoncvs
 
 clean:
 		rm -f *.countries
