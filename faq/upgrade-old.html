@@ -8,14 +8,14 @@
 
 
 <h1>MINI-FAQ: Upgrading OpenBSD - Old Versions</h1>
-<h2>Versions covered here: 2.3 to 3.6</h2>
+<h2>Versions covered here: 2.3 to 3.8</h2>
 
 <address>
 <p>
 Kjell Wooding 
 &lt;<a href="mailto:kjell@openbsd.com">kjell@openbsd.org</a>&gt; <br />
 Updated:
-$OpenBSD: upgrade-old.html,v 1.13 2005/11/01 11:50:01 nick Exp $
+$OpenBSD: upgrade-old.html,v 1.14 2006/05/01 01:19:28 nick Exp $
 </p>
 </address>
 
@@ -38,6 +38,18 @@ the <a href="current.html">Following <i>-current</i></a> page.
 1.1: Where do I find information on more recent OpenBSD versions?
 </a>
 </p>
+
+<h2>Upgrading from 3.8 to 3.9</h2>
+<ul>
+<li><a href="#20050927">2005/09/27 - build requires new xargs feature</a>
+<li><a href="#20051006">2005/10/06 - Changes to MAKEDEV(8) and ksh(1)</a>
+<li><a href="#20051116">2005/11/16 - New version of ftp-proxy(8)</a>
+<li><a href="#20051216">2005/12/16 - libresolv removed</a>
+<li><a href="#20060104">2006/01/04 - mac68k switch to wscons(4)</a>
+<li><a href="#20060113">2006/01/13 - types changes</a>
+<li><a href="#20060131">2006/01/31 - XKB configuration updates</a>
+<li><a href="#20060221">2006/02/21 - ipsec.conf(5) updates</a>
+</ul>
 
 <h2>Upgrading from 3.7 to 3.8</h2>
 <ul>
@@ -309,6 +321,180 @@ something for the PowerPC.
 <p>
 See the <a href="current.html">Following <i>-current</i></a> page.
 </p>
+
+<a name="3.8"></a>
+<h2>Upgrading from 3.8 to 3.9</h2>
+<p>
+<a name="20050927"></a>
+<h3>2005/09/27 - build requires new xargs feature</h3>
+
+Build and install xargs(1).
+<pre>
+     # cd /usr/src/usr.bin/xargs && make obj && make && make install
+</pre>
+Then run make build.
+
+<p>
+<a name="20051006"></a>
+<h3>2005/10/06 - Changes to MAKEDEV(8)</h3>
+    
+Changes were done to MAKEDEV to greatly increase its speed.
+These changes depend on changes made to ksh earlier.
+Therefore install media built prior to this date can not be used.
+<br>
+
+<p>
+<a name="20051116"></a>
+<h3>2005/11/16 - New version of ftp-proxy(8)</h3>
+    
+ftp-proxy was replaced by what was previously called pftpx.
+The new ftp-proxy runs stand-alone and not from inetd.conf as it used to.
+<p>
+Upgrade instructions are as follows:
+<p>
+Stop the old ftp-proxy by installing a new /etc/inetd.conf or just disable
+its entry in /etc/inetd.conf manually.
+
+<pre>
+cp /usr/src/etc/inetd.conf /etc/inetd.conf
+</pre>
+
+Then send inetd a HUP signal via kill:
+<p>
+<pre>
+kill -HUP `cat /var/run/inetd.pid`
+</pre>
+
+Start the new ftp-proxy by installing new
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rc&amp;sektion=8"><i>/etc/rc</i></a>
+and
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rc.conf&amp;sektion=8"><i>/etc/rc.conf</i></a>
+and setting ftpproxy_flags="" in /etc/rc.conf.local.
+
+<pre>
+cp /usr/src/etc/{rc,rc.conf} /etc
+echo 'ftpproxy_flags=""' >> /etc/rc.conf.local
+</pre>
+
+Alternatively, it can be started by simply calling
+/usr/sbin/ftp-proxy from /etc/rc.local
+<p>
+
+The new proxy uses <a href="pf/anchors.html"><i>anchors</i></a> to allow
+data connections which means that
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5"><i>/etc/pf.conf</i></a>
+must be adapted.  In the NAT section you need:
+<p>
+
+<pre>
+nat-anchor "ftp-proxy/*"
+rdr-anchor "ftp-proxy/*"
+</pre>
+
+They are mandatory, even if you don't use NAT otherwise.
+The following rule, that is probably already there for the old ftp-proxy,
+must stay:
+<pre>
+rdr pass on $int_if proto tcp from $lan to any port 21 -> \
+    127.0.0.1 port 8021
+</pre>
+
+In the rule section this is needed:
+
+<pre>
+anchor "ftp-proxy/*"
+</pre>
+
+Rules that allow the proxy to make FTP control connections
+(destination port 21/tcp) must stay.
+Rules that allow FTP data connections are no longer needed.
+Those rules may contain "user proxy" or "to port > 49151".
+
+Care has been taken to keep the commandline switches similar, but some
+may differ.
+See the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8">ftp-proxy</a>
+man page.
+<p>
+
+One case warrants special mention: if you have old clients that rely on
+active mode data connections which use 20/tcp as a source port, you need the
+'-r' switch.  (for this you had to run the old proxy with "-u root").
+<p>
+Run ftp-proxy with "-d -D7" if you run into trouble and want to diagnose
+what's happening.
+
+<p>
+<a name="20051216"></a>
+<h3>2005/12/16 - libresolv removed</h3>
+
+You need to remove libresolv from your machine as it is no
+longer installed.
+<pre>
+     # rm /usr/lib/libresolv*
+</pre>
+
+<p>
+<a name="20060104"></a>
+<h3>2006/01/04 - mac68k switch to wscons(4)</h3>
+Before rebooting the new kernel, system files have to be updated for
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=wscons&amp;sektion=4">wscons(4)</a>.
+</p>
+
+<pre>
+     # cp /usr/src/etc/etc.mac68k/MAKEDEV /dev
+     # cd /dev &amp;&amp; sh ./MAKEDEV wscons
+</pre>
+
+<p>
+In <tt>/etc/ttys</tt>, change the getty on <em>ttye0</em> to <em>ttyC0</em>
+and reboot into the new kernel.
+</p>
+
+<p>
+<a name="20060113"></a>
+<h3>2006/01/13 - types changes</h3>
+Before doing a "make build", the compiler needs to be built and installed.
+Otherwise, you will be unable to build libstdc++.
+
+<p>
+Follow the instructions in <a href="faq5.html#NewCompiler">FAQ 5 -
+How do I bootstrap a newer version of the compiler</a> for details.
+
+<a name="20060131"></a>
+<h3>2006/01/31 - xkb configuration updates</h3>
+After the X.Org 6.9 merge, XKB configuration has changed,
+requiring changes to /etc/X11/xorg.conf. The most noticeable changes are:
+<ul>
+<li><b>us_intl</b> layout replaced by the <b>alt-intl</b> variant
+of the <b>us</b> layout.
+Update your configuration file to use:
+<pre>
+      Option "XkbLayout" "us"
+      Option "XkbVariant" "alt-intl"
+</pre>
+<li><b>de_CH</b> and <b>fr_CH</b> layouts have been replaced by the
+<b>ch</b> layout with <b>de</b> and <b>fr</b> variants:
+<pre>
+      Option "XkbLayout" "ch"
+      Option "XkbVariant" "de"
+</pre>
+</ul>
+<p>
+
+<a name="20060221"></a>
+<h3>2006/02/21 - ipsec.conf(5) updates</h3>
+When <b>ike rules</b> do not include main mode parameters,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ipsecctl&amp;sektion=8">ipsecctl(8)</a>
+will now choose AES instead of 3DES for main mode encryption.
+To interoperate with peers using stable, add these values to their
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ipsec.conf&amp;sektion=5">ipsec.conf(5)</a>
+files to switch to the new defaults:
+<pre>
+        main auth hmac-sha1 enc aes
+</pre>
+<p>
+
 
 <a name="3.7"></a>
 <h2>Upgrading from 3.7 to 3.8</h2>
@@ -3434,7 +3620,7 @@ Note that /usr/share/man/cat4/powerpc was one of the directories created by this
 </p>
 <address>
 <p>
-$OpenBSD: upgrade-old.html,v 1.13 2005/11/01 11:50:01 nick Exp $
+$OpenBSD: upgrade-old.html,v 1.14 2006/05/01 01:19:28 nick Exp $
 <br />
 Copyright &copy; 1998-2003, Kjell Wooding. 
 <br />
