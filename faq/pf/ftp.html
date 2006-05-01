@@ -89,7 +89,7 @@ won't deliver it to the client.
 
 <p>
 With passive mode FTP (the default mode with OpenBSD's <a
-href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp&amp;sektion=1&amp;manpath=OpenBSD+3.8"
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp&amp;sektion=1&amp;manpath=OpenBSD+3.9"
 >ftp(1)</a> client), the client requests that the server pick a random
 port to listen on for the data connection. The server informs the client
 of the port it has chosen, and the client connects to this port to
@@ -109,78 +109,67 @@ As indicated earlier, FTP does not go through NAT and firewalls very well.
 <p>
 Packet Filter provides a solution for this situation by redirecting FTP
 traffic through an FTP proxy server. This process acts to "guide" your
-FTP traffic through the NAT gateway/firewall.  The FTP proxy used by
-OpenBSD and PF is
+FTP traffic through the NAT gateway/firewall, by actively adding needed
+rules to PF system and removing them when done, by means of the PF
+<a href="anchors.html">anchors</a> system. 
+The FTP proxy used by OpenBSD 3.9 and PF is
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+3.9"
+>ftp-proxy(8)</a>.
+(note: earlier versions of OpenBSD used a different proxy of the same
+name, which is documented in OpenBSD 3.8's
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+3.8"
->ftp-proxy(8)</a>.  To activate it, put something like this in the NAT section
+>ftp-proxy(8)v3.8</a>).
+
+<p>
+To activate it, put something like this in the NAT section
 of <tt>pf.conf</tt>:
 
 <blockquote>
 <tt>
+nat-anchor "ftp-proxy/*"<br>
+rdr-anchor "ftp-proxy/*"<br>
 rdr on $int_if proto tcp from any to any port 21 -&gt; 127.0.0.1 \<br>
 &nbsp;&nbsp;&nbsp;port 8021
 </tt>
 </blockquote>
 
 <p>
-The explanation of this line is: "Traffic on the internal interface is
-redirected to the proxy server running on this machine which is
-listening at port 8021".
+The first two lines are a couple <a href="anchors.html">anchors</a>
+which are used to by ftp-proxy to add rules on-the-fly as needed to
+manage your FTP traffic.
+The last line redirects FTP from your clients to the ftp-proxy(8)
+program, which is listening on your machine to port 8021.
 
 <p>
 Hopefully it is apparent the proxy server has to be started and running on
 the OpenBSD box. This is done by inserting the following line in
-<tt>/etc/inetd.conf</tt>:
+<tt>/etc/rc.conf.local</tt>:
 
 <blockquote>
 <tt>
-127.0.0.1:8021 stream tcp nowait root /usr/libexec/ftp-proxy \<br>
-&nbsp;&nbsp;&nbsp;ftp-proxy -n
+ftpproxy_flags=""
 </tt>
 </blockquote>
 
 <p>
-Note that the <tt>-n</tt> switch is only necessary if the OpenBSD
-machine is performing NAT.
-Now send a 'HUP' signal to
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=inetd&amp;sektion=8&amp;manpath=OpenBSD+3.8"
->inetd(8)</a> to have it reread its configuration file.
-One way to send the 'HUP' signal is with the command:
-
-<blockquote>
-<tt>
-kill -HUP `cat /var/run/inetd.pid`
-</tt>
-</blockquote>
+The ftp-proxy program can be started as root to activate it without a
+reboot.
 
 <p>
-You will note that ftp-proxy is listening on port 8021, the same port
-the above <tt>rdr</tt> statement is sending FTP traffic to.  The choice
-of port 8021 is arbitrary, though 8021 is a good choice as it is not
-defined for any other application.
+ftp-proxy listens on port 8021, the same port the above <tt>rdr</tt>
+statement is sending FTP traffic to.
 
 <p>
-At this point only passive mode FTP connections will function. 
-To enable active mode connections, the ftp-data connection that the FTP
-server initiates must be passed in on the firewall. 
-Unfortunately, the port that this connection comes in on can't be known
-beforehand, only the range that it falls within. 
-What is known, however, is that the connection will be initiated from
-port 20 (ftp-data port) and that ftp-proxy will be accepting the
-connection (and then relaying data to the client). 
-Since ftp-proxy runs as the user <tt>proxy</tt>, the <tt>user</tt>
-keyword can be used in the filter rule.
-
-<blockquote>
-<tt>
-pass in on $ext_if inet proto tcp from port 20 to ($ext_if) \<br>
-&nbsp;&nbsp;&nbsp;&nbsp;user proxy flags S/SA keep state
-</tt>
-</blockquote>
+To enable active mode connections, you need the '-r' switch on
+ftp-proxy(8) (for this you had to run the old proxy with "-u root").
 
 <p>
-Please note that ftp-proxy(8) is to help <b>FTP clients</b> behind a PF filter;
-it is not used to handle an <b>FTP server</b> behind a PF filter.
+
+
+<p>
+Please note that ftp-proxy(8) is to help <b>FTP clients</b> behind a PF
+filter; it is not used to handle an <b>FTP server</b> behind a PF
+filter.
 
 
 <a name="server"></a>
@@ -189,7 +178,7 @@ In this case, PF is running on the FTP server itself rather than a
 dedicated firewall computer.  When servicing a passive FTP connection,
 FTP will use a randomly chosen, high TCP port for incoming data.  By
 default, OpenBSD's native FTP server 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftpd&amp;sektion=8&amp;manpath=OpenBSD+3.8"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftpd&amp;sektion=8&amp;manpath=OpenBSD+3.9"
 >ftpd(8)</a> uses the range 49152 to 65535.
 Obviously, these must be passed through the filter rules, along with
 port 21 (the FTP control port):
@@ -205,9 +194,9 @@ pass in on $ext_if proto tcp from any to any port &gt; 49151 \<br>
 <p>
 Note that if you desire, you can tighten up that range of ports
 considerably. In the case of the OpenBSD 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftpd&amp;sektion=8&amp;manpath=OpenBSD+3.8"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftpd&amp;sektion=8&amp;manpath=OpenBSD+3.9"
 >ftpd(8)</a> program, that is done using the 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=8&amp;manpath=OpenBSD+3.8"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=8&amp;manpath=OpenBSD+3.9"
 >sysctl(8)</a> variables <tt>net.inet.ip.porthifirst</tt> and
 <tt>net.inet.ip.porthilast</tt>.
 
@@ -216,7 +205,7 @@ considerably. In the case of the OpenBSD
 In this case, the firewall must redirect traffic to the FTP server in
 addition to not blocking the required ports.  For the sake of discussion,
 we will assume the FTP server in question is again the standard OpenBSD
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftpd&amp;sektion=8&amp;manpath=OpenBSD+3.8"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftpd&amp;sektion=8&amp;manpath=OpenBSD+3.9"
 >ftpd(8)</a>, using the default range of ports.
 
 <p>
@@ -265,7 +254,7 @@ Gateways</a>]
 <a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a> 
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: ftp.html,v 1.19 2005/11/01 11:35:18 nick Exp $</small>
+<small>$OpenBSD: ftp.html,v 1.20 2006/05/01 00:52:07 nick Exp $</small>
 
 </body>
 </html> 
