@@ -70,7 +70,8 @@ Kantoor</font></h1>
 In dit voorbeeld draait PF op een OpenBSD machine die fungeert als
 firewall en NAT gateway voor een klein netwerk in een huis of kantoor. De
 globale doelstelling is om Internettoegang aan te bieden aan het netwerk
-en beperkte toegang tot de firewall machine vanaf het Internet. Dit
+en beperkte toegang tot de firewall machine vanaf het Internet, en een
+interne webserver aan het externe Internet bloot te stellen. Dit
 document zal een volledige regelset overlopen die precies dat doet.
 
 <a name="network"></a>
@@ -80,8 +81,8 @@ Het netwerk is als volgt opgebouwd:
 <pre>
     
   [ COMP1 ]    [ COMP3 ]
-      |            |                               ADSL
-   ---+------+-----+------- fxp0 [ OpenBSD ] ep0 -------- ( Internet )
+      |            |
+   ---+------+-----+------- xl0 [ OpenBSD ] fxp0 -------- ( Internet )
              |
          [ COMP2 ]
 
@@ -95,9 +96,9 @@ chatten, enz., behalve COMP3 die ook een kleine webserver draait.
 Het interne netwerk gebruikt het 192.168.0.0 / 255.255.255.0 netwerkblok.
 
 <p>
-De OpenBSD router is een Pentium 100 met twee netwerkkaarten: een 3com
-3c509B (<tt>ep0</tt>) en een Intel EtherExpress Pro/100 (<tt>fxp0</tt>).
-De router heeft een ADSL verbinding naar het Internet en gebruikt NAT om
+De OpenBSD firewall is een Celeron 300 met twee netwerkkaarten: een 3com
+3c509B (<tt>xl0</tt>) en een Intel EtherExpress Pro/100 (<tt>fxp0</tt>).
+De firewall heeft een kabelverbinding naar het Internet en gebruikt NAT om
 deze verbinding te delen met het interne netwerk. Het IP adres op de externe
 interface wordt dynamisch toegekend door de Internet Service Provider.
 
@@ -115,7 +116,7 @@ Internet:
 	<li>Auth/Ident (TCP poort 113): gebruikt door bepaalde diensten zoals
 	SMTP en IRC.
 	<li>ICMP Echo Requests: het ICMP pakket-type gebruikt door
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ping&amp;sektion=8&amp;manpath=OpenBSD+3.8"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ping&amp;sektion=8&amp;manpath=OpenBSD+3.9"
 >ping(8)</a>.
 	</ul>
 <li>Leid TCP poort 80 verbindingspogingen (die pogingen zijn om een webserver
@@ -134,6 +135,7 @@ Dit document veronderstelt dat de OpenBSD host netjes geconfigureerd is om
 als router te fungeren, inclusief het verifiëren van de IP netwerksetup,
 Internet-connectiviteit, en het instellen van <tt>net.inet.ip.forwarding</tt>
 op "<tt>1</tt>".
+Waarschijnlijk wil u ook PF activeren in <tt>/etc/rc.conf.local</tt>.
 
 <a name="ruleset"></a>
 <h2>De Regelset</h2>
@@ -146,32 +148,30 @@ De volgende macro's worden gedefinieerd om onderhoud en het lezen van
 de regelset gemakkelijker te maken:
 <blockquote>
 <tt>
-int_if = "fxp0"<br>
-ext_if = "ep0"<br>
+int_if="xl0"<br>
+ext_if="fxp0"<br>
 <br>
-tcp_services = "{ 22, 113 }"<br>
-icmp_types = "echoreq"<br>
+tcp_services="{ 22, 113 }"<br>
+icmp_types="echoreq"<br>
 <br>
-priv_nets = "{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"
-<br>
-<br>
-comp3 = "192.168.0.3"
+comp3="192.168.0.3"
 </tt>
 </blockquote>
 
 <p>
 De eerste twee lijnen definiëren de netwerkinterfaces waarop filtering zal
-gebeuren. De derde en vierde lijnen sommen de TCP poortnummers op van de
+gebeuren.
+Door ze hier te definiëren, kunnen we als we dit systeem moeten verplaatsen
+naar een systeem met andere hardware, alleen die twee lijnen veranderen,
+en zal de rest van de regelset nog steeds bruikbaar zijn.
+De derde en vierde lijnen sommen de TCP poortnummers op van de
 diensten die geopend zullen worden voor het Internet (SSH en ident/auth) en
-de ICMP pakket-types die zullen toegelaten worden de firewall machine te
-bereiken.
-De vijfde lijn definieert de loopback en
-<a href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a> adresblokken.
+de ICMP pakket-types die zullen doorgelaten worden op de firewall machine.
 Tenslotte definieert de laatste lijn het IP adres van COMP3.
 
 <p>
-<b>Opmerking</b>: Als de ADSL Internetverbinding
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pppoe&amp;sektion=8&amp;manpath=OpenBSD+3.8"
+<b>Opmerking</b>: Als de Internetverbinding
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pppoe&amp;sektion=8&amp;manpath=OpenBSD+3.9"
 >PPPoE</a> vereiste, dan zou filtering en NAT moeten plaatsvinden op de
 <tt>tun0</tt> interface en <i>niet</i> op <tt>ep0</tt>.
 
@@ -192,7 +192,7 @@ Elk Unix systeem heeft een "loopback" interface.
 Dit is een virtuele netwerkinterface die door toepassingen gebruikt worden
 om binnen het systeem met elkaar te communiceren.
 Op OpenBSD is de loopback interface
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=lo&amp;sektion=4&amp;manpath=OpenBSD+3.8"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=lo&amp;sektion=4&amp;manpath=OpenBSD+3.9"
 >lo(4)</a>.
 Het wordt als de beste gewoonte beschouwd om al het filteren op loopback
 interfaces uit te schakelen.
@@ -209,7 +209,7 @@ Er is geen reden om het aanbevolen schrobben van alle binnenkomende verkeer
 niet te gebruiken, dus dit is een eenvoudige one-liner:
 <blockquote>
 <tt>
-scrub in all
+scrub in
 </tt>
 </blockquote>
 
@@ -219,23 +219,42 @@ Om NAT uit te voeren voor het volledige interne netwerk wordt de volgende
 <tt>nat</tt> regel gebruikt:
 <blockquote>
 <tt>
-nat on $ext_if from $int_if:network to any -&gt; ($ext_if)
+nat on $ext_if from !($ext_if) to any -&gt; ($ext_if)
 </tt>
 </blockquote>
+
+<p>
+De "<tt>!($ext_if)</tt>" zou in dit geval gemakkelijk kunnen vervangen worden
+door een "<tt>$int_if</tt>", maar als u meerdere interne interfaces toevoegt,
+zou u bijkomende NAT regels moeten toevoegen, terwijl met deze structuur
+NAT zal geregeld worden op alle beschermde interfaces.
 
 <p>
 Aangezien het IP adres op de externe interface dynamisch toegekend wordt,
 worden er haakjes gezet rond de vertalingsinterface zodat PF zal merken
 wanneer het adres verandert.
 
+<p>
+Aangezien we een werkende FTP proxy zullen willen, zullen we het NAT
+<a href="anchor.html">anker</a> er ook inzetten:
+
+<blockquote>
+<tt>
+nat-anchor "ftp-proxy/*"
+</tt>
+</blockquote>
+
+
+
 <a name="rdr"></a>
 <h3>Omleiding ("redirection")</h3>
-De eerste omleidingsregel die nodig is dient voor
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+3.8"
+De eerste omleidingsregels die nodig zijn dienen voor
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+3.9"
 >ftp-proxy(8)</a> zodat FTP clients op het lokale netwerk kunnen verbinden
 naar FTP servers op het Internet.
 <blockquote>
 <tt>
+rdr-anchor "ftp-proxy/*"<br>
 rdr on $int_if proto tcp from any to any port 21 -&gt; 127.0.0.1 port 8021
 </tt>
 </blockquote>
@@ -247,7 +266,7 @@ dan moet er een lijst gebruikt worden om de bestemmingspoort te specificeren,
 bijvoorbeeld: <tt>from any to any port { 21, 2121 }</tt>.
 
 <p>
-De tweede omleidingsregel vangt pogingen op door iemand op het Internet
+De laatste omleidingsregel vangt pogingen op door iemand op het Internet
 om te verbinden naar TCP poort 80 op de firewall.
 Legitieme pogingen om deze poort te benaderen zullen komen van gebruikers
 die proberen de webserver van het netwerk te bereiken.
@@ -264,44 +283,54 @@ rdr on $ext_if proto tcp from any to any port 80 -&gt; $comp3
 Nu de filterregels. Begin met het "standaard weigeren":
 <blockquote>
 <tt>
-block all<br>
+block in<br>
 </tt>
 </blockquote>
 
 <p>
-Op dit ogenblik zal niets doorheen de firewall gaan, zelfs niet vanaf het
-interne netwerk. De volgende regels zullen de firewall openen volgens de
+Op dit ogenblik zal alle verkeer dat op een interface probeert binnen te
+komen, geblokkeerd worden, zelfs dat van het interne netwerk.
+Volgende regels zullen de firewall openen volgens de
 bovenstaande doelstellingen en ook alle benodigde virtuele interfaces
 openen.
 
 <p>
-Vervolgens zullen de
-<a href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a>
-adressen geblokkeerd worden om in of uit de externe interface te gaan.
-Deze adressen mogen nooit voorkomen op het publieke Internet, en het
-filteren ervan zal ervoor zorgen dat de router deze adressen niet vanuit het
-interne netwerk naar buiten "lekt", en ook gelijk welke binnenkomende
-pakketten blokkeert met een bronadres in één van die netwerken.
+Hou in het achterhoofd dat pf verkeer kan blokkeren dat binnenkomt of
+buitengaat op een interface.
+Het kan uw leven vereenvoudigen als u ervoor kiest om verkeer in één
+richting te filteren, veeleer dan te proberen het overeind te houden wanneer
+u bepaalde dingen inwaarts filtert, en andere dingen uitwaarts.
+In ons geval zullen we verkiezen om inwaarts verkeer te filteren, maar
+zodra het verkeer toegelaten wordt in een interface, zullen we niet
+proberen het te blokkeren als het weer naar buiten gaat, dus we zullen
+het volgende doen:
 <blockquote>
 <tt>
-block drop in &nbsp;quick on $ext_if from $priv_nets to any<br>
-block drop out quick on $ext_if from any to $priv_nets
+pass out keep state
 </tt>
 </blockquote>
 
 <p>
-Merk op dat <tt>block drop</tt> gebruikt wordt om PF op te dragen om niet
-te antwoorden met een TCP RST of ICMP Unreachable pakket. Aangezien de
-RFC 1918 adressen niet bestaan op het Internet, zal gelijk welk pakket dat
-naar die adressen verstuurd wordt, er toch nooit geraken. De <tt>quick</tt>
-optie wordt gebruikt om PF op te dragen geen moeite te doen om de rest van
-de filterregels te evalueren als één van de bovenstaande regels overeenstemt;
-pakketten naar en van <tt>$priv_nets</tt> netwerken zullen onmiddellijk
-gedropt worden.
+We hebben een <a href="anchor.html">anker</a> nodig voor ftp-proxy(8):
+<blockquote>
+<tt>
+anchor "ftp-proxy/*"
+</tt>
+</blockquote>
+
+Het is goed om de <a href="filter.html#antispoof">spoofed address
+protection</a> te gebruiken:
+<blockquote>
+<tt>
+antispoof quick for { lo $int_if }
+</tt>
+</blockquote>
+
 
 <p>
 Open nu de poorten gebruikt door die netwerkdiensten die beschikbaar zullen
-zijn voor het Internet:
+zijn voor het Internet.
+Eerst het verkeer dat bestemd is voor de firewall zelf:
 <blockquote>
 <tt>
 pass in on $ext_if inet proto tcp from any to ($ext_if) \<br>
@@ -322,32 +351,18 @@ Bovenop een <tt>rdr</tt> regel te hebben die webserver-verkeer doorgeeft
 naar COMP3, MOETEN we dit verkeer ook doorheen de firewall laten gaan:
 <blockquote>
 <tt>
-pass in on $ext_if proto tcp from any to $comp3 port 80 \<br>
+pass in on $ext_if inet proto tcp from any to $comp3 port 80 \<br>
 &nbsp;&nbsp;&nbsp;&nbsp;flags S/SA synproxy state
 </tt>
 </blockquote>
 
 <p>
 Voor een bijkomend beetje veiligheid, zullen we gebruik maken van de
-<a href="filter.html#synproxy">TCP SYN Proxy</a> om deweb server verder
+<a href="filter.html#synproxy">TCP SYN Proxy</a> om de webserver verder
 te beschermen.
 
 <p>
-Opdat actieve modus FTP verbindingen zouden werken van binnen de LAN,
-moet de volgende regel aanwezig zijn om de ftp-data verbinding, geïnitieerd
-door de FTP server, terug naar de client toe te laten.
-Aangezien FTP verbindingen ge-proxied worden door ftp-proxy, zal het
-eigenlijk de ftp-data verbinding zelf aannemen en vervolgens de gegevens
-omleiden naar de client in de LAN.
-<blockquote>
-<tt>
-pass in on $ext_if inet proto tcp from port 20 to ($ext_if) \<br>
-&nbsp;&nbsp;&nbsp;&nbsp;user proxy flags S/SA keep state
-</tt>
-</blockquote>
-
-<p>
-ICMP verkeer moet nu doorgelaten worden:
+ICMP verkeer moet doorgelaten worden:
 <blockquote>
 <tt>
 pass in inet proto icmp all icmp-type $icmp_types keep state
@@ -365,60 +380,17 @@ Nu moet verkeer naar en vanuit het interne netwerk doorgelaten worden.
 We zullen aannemen dat gebruikers op het interne netwerk weten wat ze
 aan het doen zijn en dat ze geen problemen gaan veroorzaken. Dit is niet
 noodzakelijk een geldige veronderstelling; een veel meer beperkende regelset
-zou voor bepaalde omgevingen gepast zijn.
+zou voor vele omgevingen gepast zijn.
 <blockquote>
 <tt>
-pass in on $int_if from $int_if:network to any keep state
-</tt>
-</blockquote>
-
-<p>
-De bovenstaande regel zal gelijk welke interne machine toelaten om pakketten
-doorheen de firewall te sturen; hij zal echter de firewall <i>niet</i>
-toestaan een verbinding te initiëren naar een interne machine. Is dit een
-goed idee? Dat hangt af van enkele van de fijnere details van de netwerksetup.
-Als de firewall ook een DHCP server is, kan hij een adres moeten "pingen"
-om de beschikbaarheid ervan te verifiëren alvorens het toe te kennen.
-De firewall toelaten te verbinden naar het interne netwerk laat ook toe
-dat iemand die naar de firewall ge-ssh't heeft vanaf het Internet, vervolgens
-machines op het netwerk benadert. Hou in het achterhoofd dat het <i>niet</i>
-toelaten aan de firewall om rechtstreeks met het netwerk te communiceren,
-geen groot beveiligingsvoordeel vormt; als iemand toegang verkrijgt tot de
-firewall, kan hij waarschijnlijk toch de filterregels aanpassen. Door de
-volgende regel toe te voegen, zal de firewall verbindingen naar het interne
-netwerk kunnen initiëren:
-<blockquote>
-<tt>
-pass out on $int_if from any to $int_if:network keep state
-</tt>
-</blockquote>
-
-<p>
-Merk op dat als deze lijnen allebei aanwezig zijn, de <tt>keep state</tt>
-optie niet nodig is; alle pakketten zullen doorheen de interne interface
-kunnen gaan omdat er een regel is om pakketten in beide richtingen door te
-laten. Als de <tt>pass out</tt> lijn er echter <i>niet</i> staat, dan
-<i>moet</i> de <tt>pass in</tt> lijn <tt>keep state</tt> bevatten.
-Er is ook wat prestatievoordeel aan toestand bijhouden:
-Toestandstabellen worden gecontroleerd voordat regels geëvalueerd worden,
-en als een toestandsovereenstemming gevonden wordt, wordt het pakket doorheen
-de firewall gelaten zonder doorheen regelset-evaluatie te gaan. Dit kan een
-prestatievoordeel bieden op een zwaar belaste firewall, hoewel in een
-eenvoudig systeem als dit het onwaarschijnlijk is om voldoende belasting
-te genereren om van belang te zijn.
-
-<p>
-Laat tenslotte verkeer naar buiten op de externe interface:
-<blockquote>
-<tt>
-pass out on $ext_if proto tcp all modulate state flags S/SA<br>
-pass out on $ext_if proto { udp, icmp } all keep state
+pass in quick on $int_if
 </tt>
 </blockquote>
 
 <p>
 TCP, UDP en ICMP verkeer wordt toegestaan om de firewall te verlaten naar het
-Internet. Toestandsinformatie wordt bijgehouden zodat de terugkerende pakketten
+Internet dankzij de "<tt>pass out keep state</tt>" lijn hierboven.
+Toestandsinformatie wordt bijgehouden zodat de terugkerende pakketten
 binnen gelaten zullen worden doorheen de firewall.
 
 <a name="allrules"></a>
@@ -427,52 +399,48 @@ binnen gelaten zullen worden doorheen de firewall.
 <tr><td nowrap bgcolor="#EEEEEE">
 <pre>
 # macro's
-int_if = "fxp0"
-ext_if = "ep0"
+ext_if="fxp0"
+int_if="xl0"
 
-tcp_services = "{ 22, 113 }"
-icmp_types = "echoreq"
+tcp_services="{ 22, 113 }"
+icmp_types="echoreq"
 
-priv_nets = "{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"
-	  
-comp3 = "192.168.0.3"
+comp3="192.168.0.3"
 
 # opties
 set block-policy return
 set loginterface $ext_if
-set skip on lo0
+
+set skip on lo
 
 # scrub
-scrub in all
+scrub in
 
 # nat/rdr
-nat on $ext_if from $int_if:network to any -&gt; ($ext_if)
-rdr on $int_if proto tcp from any to any port 21 -&gt; 127.0.0.1 \
-   port 8021
-rdr on $ext_if proto tcp from any to any port 80 -&gt; $comp3
+nat on $ext_if from !($ext_if) -> ($ext_if:0)
+nat-anchor "ftp-proxy/*"
+rdr-anchor "ftp-proxy/*"
+
+rdr pass on $int_if proto tcp to port ftp -> 127.0.0.1 port 8021
+rdr on $ext_if proto tcp from any to any port 80 -> $comp3
 
 # filterregels
-block all
+block in
 
-block drop in  quick on $ext_if from $priv_nets to any
-block drop out quick on $ext_if from any to $priv_nets
+pass out keep state
+
+anchor "ftp-proxy/*"
+antispoof quick for { lo $int_if }
 
 pass in on $ext_if inet proto tcp from any to ($ext_if) \
    port $tcp_services flags S/SA keep state
 
-pass in on $ext_if proto tcp from any to $comp3 port 80 \
-   flags S/SA synproxy state
-
-pass in on $ext_if inet proto tcp from port 20 to ($ext_if) \
-   user proxy flags S/SA keep state
+pass in on $ext_if inet proto tcp from any to $comp3 port 80 \
+    flags S/SA synproxy state
 
 pass in inet proto icmp all icmp-type $icmp_types keep state
 
-pass in  on $int_if from $int_if:network to any keep state
-pass out on $int_if from any to $int_if:network keep state
-
-pass out on $ext_if proto tcp all modulate state flags S/SA
-pass out on $ext_if proto { udp, icmp } all keep state
+pass quick on $int_if
 </pre>
 </td></tr>
 </table>
@@ -488,10 +456,10 @@ pass out on $ext_if proto { udp, icmp } all keep state
 <br>
 <small>
 <!--
-Originally [OpenBSD: example1.html,v 1.22 ]<br>
-$Translation: example1.html,v 1.7 2006/01/01 10:44:50 smestdag Exp $<br>
+Originally [OpenBSD: example1.html,v 1.24 ]<br>
+$Translation: example1.html,v 1.8 2006/05/01 10:41:10 smestdag Exp $<br>
 -->
-$OpenBSD: example1.html,v 1.5 2006/01/02 06:51:10 saad Exp $
+$OpenBSD: example1.html,v 1.6 2006/05/01 12:19:18 jufi Exp $
 </small>
 
 </body>
