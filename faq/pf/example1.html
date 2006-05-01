@@ -14,7 +14,6 @@
 Copyright (c) 2003, 2004 Joel Knight <enabled@myrealbox.com>
 
 Permission to use, copy, modify, and distribute this documentation for
-any purpose with or without fee is hereby granted, provided that the
 above copyright notice and this permission notice appear in all copies.
 
 THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
@@ -69,8 +68,9 @@ please, use a max of 72 chars per line -->
 In this example, PF is running on an OpenBSD machine acting as a
 firewall and NAT gateway for a small network in a home or office. The
 overall objective is to provide Internet access to the network and to
-allow limited access to the firewall machine from the Internet. This
-document will go through a complete ruleset that does just that.
+allow limited access to the firewall machine from the Internet, and 
+expose an internal web server to the external Internet.  This document
+will go through a complete ruleset that does just that.
 
 <a name="network"></a>
 <h3>The Network</h3>
@@ -79,8 +79,8 @@ The network is setup like this:
 <pre>
     
   [ COMP1 ]    [ COMP3 ]
-      |            |                               ADSL
-   ---+------+-----+------- fxp0 [ OpenBSD ] ep0 -------- ( Internet )
+      |            |                               
+   ---+------+-----+------- xl0 [ OpenBSD ] fxp0 -------- ( Internet )
              |
          [ COMP2 ]
 
@@ -94,10 +94,10 @@ for COMP3 which is also running a small web server.
 The internal network is using the 192.168.0.0 / 255.255.255.0 network block.
 
 <p>
-The OpenBSD router is a Pentium 100 with two network cards: a 3com
-3c509B (<tt>ep0</tt>) and an Intel EtherExpress Pro/100 (<tt>fxp0</tt>).
-The router has
-an ADSL connection to the Internet and is using NAT to share this
+The OpenBSD firewall is a Celeron 300 with two network cards: a 3com
+3c905B (<tt>xl0</tt>) and an Intel EtherExpress Pro/100 (<tt>fxp0</tt>).
+The firewall has
+a cable connection to the Internet and is using NAT to share this
 connection with the internal network. The IP address on the external
 interface is dynamically assigned by the Internet Service Provider.
 
@@ -115,7 +115,7 @@ Internet:
 	<li>Auth/Ident (TCP port 113): used by some services such as SMTP
 	and IRC.
 	<li>ICMP Echo Requests: the ICMP packet type used by
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ping&amp;sektion=8&amp;manpath=OpenBSD+3.8"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ping&amp;sektion=8&amp;manpath=OpenBSD+3.9"
 >ping(8)</a>.
 	</ul>
 <li>Redirect TCP port 80 connection attempts (which are attempts to
@@ -133,6 +133,8 @@ packets.
 This document assumes that the OpenBSD host has been properly configured
 to act as a router, including verifying IP networking setup, Internet
 connectivity, and setting <tt>net.inet.ip.forwarding</tt> to "<tt>1</tt>".
+It is likely you will also want to have activated PF in 
+<tt>/etc/rc.conf.local</tt>.
 
 <a name="ruleset"></a>
 <h2>The Ruleset</h2>
@@ -145,32 +147,30 @@ The following macros are defined to make maintenance and reading of
 the ruleset easier:
 <blockquote>
 <tt>
-int_if = "fxp0"<br>
-ext_if = "ep0"<br>
+ext_if="xl0"<br>
+int_if="fxp0"<br>
 <br>
-tcp_services = "{ 22, 113 }"<br>
-icmp_types = "echoreq"<br>
+tcp_services="{ 22, 113 }"<br>
+icmp_types="echoreq"<br>
 <br>
-priv_nets = "{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"
-<br>
-<br>
-comp3 = "192.168.0.3"
+comp3="192.168.0.3"
 </tt>
 </blockquote>
 
 <p>
 The first two lines define the network interfaces that filtering will
-happen on. The third and fourth lines list the TCP port numbers of the services
+happen on.
+By definining them here, if we have to move this system to another 
+machine with different hardware, we can change only those two lines, and 
+the rest of the rule set will be still usable.
+The third and fourth lines list the TCP port numbers of the services
 that will be opened up to the Internet (SSH and ident/auth) and the ICMP
-packet types that will be permitted to reach the firewall machine. 
-The fifth line defines the loopback and
-<a href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a> address
-blocks. 
+packet types that will be accepted at the firewall machine. 
 Finally, the last line defines the IP address of COMP3.
 
 <p>
-<b>Note</b>: If the ADSL Internet connection required
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pppoe&amp;sektion=8&amp;manpath=OpenBSD+3.8"
+<b>Note</b>: If the Internet connection required
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pppoe&amp;sektion=8&amp;manpath=OpenBSD+3.9"
 >PPPoE</a>, then filtering and NAT would have to take place on the
 <tt>tun0</tt> interface and <i>not</i> on <tt>ep0</tt>.
 
@@ -191,7 +191,7 @@ Every Unix system has a "loopback" interface.
 It's a virtual network interface that is used by applications to talk to
 each other inside the system.
 On OpenBSD, the loopback interface is 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=lo&amp;sektion=4&amp;manpath=OpenBSD+3.8"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=lo&amp;sektion=4&amp;manpath=OpenBSD+3.9"
 >lo(4)</a>.
 It is considered best practice to disable all filtering on loopback
 interfaces.
@@ -208,7 +208,7 @@ There is no reason not to use the recommended scrubbing of all incoming
 traffic, so this is a simple one-liner:
 <blockquote>
 <tt>
-scrub in all
+scrub in
 </tt>
 </blockquote>
 
@@ -218,23 +218,42 @@ To perform NAT for the entire internal network the following
 <tt>nat</tt> rule is used:
 <blockquote>
 <tt>
-nat on $ext_if from $int_if:network to any -&gt; ($ext_if)
+nat on $ext_if from !($ext_if) to any -&gt; ($ext_if)
 </tt>
 </blockquote>
+
+<p>
+The "<tt>!($ext_if)</tt>" could easily be replaced by a
+"<tt>$int_if</tt>" in this case, but if you added multiple internal
+interfaces, you would have to add additional NAT rules, whereas with
+this structure, NAT will be handled on all protected interfaces.
 
 <p>
 Since the IP address on the external interface is assigned dynamically,
 parenthesis are placed around the translation interface so that PF
 will notice when the address changes.
 
+<p>
+As we will want to have the FTP proxy working, we'll put the NAT 
+<a href="anchor.html">anchor</a> in, too:
+
+<blockquote>
+<tt>
+nat-anchor "ftp-proxy/*"
+</tt>
+</blockquote>
+
+
+
 <a name="rdr"></a>
 <h3>Redirection</h3>
-The first redirection rule needed is for 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+3.8"
+The first redirection rules needed are for 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+3.9"
 >ftp-proxy(8)</a> so that FTP clients on the local network can connect
 to FTP servers on the Internet.
 <blockquote>
 <tt>
+rdr-anchor "ftp-proxy/*"<br>
 rdr on $int_if proto tcp from any to any port 21 -&gt; 127.0.0.1 port 8021
 </tt>
 </blockquote>
@@ -246,7 +265,7 @@ used to specify the destination port, for example: <tt>from any to any
 port { 21, 2121 }</tt>.
 
 <p>
-The second redirection rule catches any attempts by someone on the
+The last redirection rule catches any attempts by someone on the
 Internet to connect to TCP port 80 on the firewall. 
 Legitimate attempts to access this port will be from users trying to
 access the network's web server.
@@ -263,43 +282,55 @@ rdr on $ext_if proto tcp from any to any port 80 -&gt; $comp3
 Now the filter rules. Start with the default deny:
 <blockquote>
 <tt>
-block all<br>
+block in<br>
 </tt>
 </blockquote>
 
 <p>
-At this point nothing will go through the firewall, not even from the
-internal network. The following rules will open up the firewall as per
+At this point all traffic attempting to come into an interface will
+be blocked, even that from the internal network.
+Later rules will open up the firewall as per
 the objectives above as well as open up any necessary virtual
 interfaces.
 
 <p>
-Next, the
-<a href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a>
-addresses will be blocked from entering or exiting the external
-interface. These addresses should never appear on the public Internet,
-and filtering them will ensure that the router does not "leak" these
-addresses out from the internal network and also block any incoming
-packets with a source address in one of those networks.
+Keep in mind, pf can block traffic coming into or leaving out of an
+interface.
+It can simplify your life if you chose to filter traffic in one
+direction, rather than trying to keep it straight when filtering some
+things in, and some things out.
+In our case, we'll opt to filter the inbound traffic, but once the
+traffic is permitted into an interface, we won't try to obstruct it
+leaving, so we will do the following:
+
 <blockquote>
 <tt>
-block drop in &nbsp;quick on $ext_if from $priv_nets to any<br>
-block drop out quick on $ext_if from any to $priv_nets
+pass out keep state
 </tt>
 </blockquote>
 
 <p>
-Note that <tt>block drop</tt> is used to tell PF not to respond with a
-TCP RST or ICMP Unreachable packet. Since the RFC 1918 addresses don't
-exist on the Internet, any packets sent to those addresses will never
-make it there anyways. The <tt>quick</tt> option is used to tell PF not
-to bother evaluating the rest of the filter rules if one of the above
-rules matches; packets to or from the <tt>$priv_nets</tt> networks will
-be immediately dropped.
+We need to have an <a href="anchor.html">anchor</a> for ftp-proxy(8):
+<blockquote>
+<tt>
+anchor "ftp-proxy/*"
+</tt>
+</blockquote>
+
+It is good to use the <a href="filter.html#antispoof">spoofed address
+protection</a>:
+<blockquote>
+<tt>
+antispoof quick for { lo $int_if }
+</tt>
+</blockquote>
+
 
 <p>
 Now open the ports used by those network services that will be available
-to the Internet:
+to the Internet.
+First, the traffic that is destined to the firewall itself:
+
 <blockquote>
 <tt>
 pass in on $ext_if inet proto tcp from any to ($ext_if) \<br>
@@ -319,7 +350,7 @@ In addition to having an <tt>rdr</tt> rule which passes the web server
 traffic to COMP3, we MUST also pass this traffic through the firewall:
 <blockquote>
 <tt>
-pass in on $ext_if proto tcp from any to $comp3 port 80 \<br>
+pass in on $ext_if inet proto tcp from any to $comp3 port 80 \<br>
 &nbsp;&nbsp;&nbsp;&nbsp;flags S/SA synproxy state
 </tt>
 </blockquote>
@@ -327,24 +358,10 @@ pass in on $ext_if proto tcp from any to $comp3 port 80 \<br>
 <p>
 For an added bit of safety, we'll make use of the 
 <a href="filter.html#synproxy">TCP SYN Proxy</a> to further protect the
-web server. 
+web server.
 
 <p>
-In order for active mode FTP connections to work from inside the LAN,
-the following rule must be in place to pass the ftp-data connection
-initiated by the FTP server back to the client. 
-Since FTP connections are being proxied by ftp-proxy, it will actually
-accept the ftp-data connection itself and then relay the data to the
-client on the LAN.
-<blockquote>
-<tt>
-pass in on $ext_if inet proto tcp from port 20 to ($ext_if) \<br>
-&nbsp;&nbsp;&nbsp;&nbsp;user proxy flags S/SA keep state
-</tt>
-</blockquote>
-
-<p>
-ICMP traffic must now be passed:
+ICMP traffic needs to be passed:
 <blockquote>
 <tt>
 pass in inet proto icmp all icmp-type $icmp_types keep state
@@ -362,59 +379,18 @@ Now traffic must be passed to and from the internal network.
 We'll assume that the users on the internal network know what
 they are doing and aren't going to be causing trouble.  This is not
 necessarily a valid assumption; a much more restrictive ruleset would
-be appropriate for some environments.
+be appropriate for many environments.
 <blockquote>
 <tt>
-pass in on $int_if from $int_if:network to any keep state
-</tt>
-</blockquote>
-
-<p>
-The above rule will permit any internal machine to send packets through
-the firewall; however, it will <i>not</i> permit the firewall to
-initiate a connection to an internal machine. Is this a good idea? That
-depends on some of the finer details of the network setup. If the
-firewall is also a DHCP server, it may need to "ping" an address to
-verify its availability before assigning it. Permitting the firewall to
-connect to the internal network also allows someone who has ssh'ed into
-the firewall from the Internet to then access machines on the network.
-Keep in mind that <i>not</i> allowing the firewall to communicate
-directly to the network is not a large security benefit; if someone gets
-access to the firewall they can probably alter the filter rules anyways.
-By adding the following rule, the firewall will be able to initiate
-connections to the internal network:
-<blockquote>
-<tt>
-pass out on $int_if from any to $int_if:network keep state
-</tt>
-</blockquote>
-
-<p>
-Note that if both of these lines are in place, the <tt>keep state</tt>
-option is not needed; all packets will be able to pass through the
-internal interface because there is a rule to pass packets in both
-directions.  However, if the <tt>pass out</tt> line is <i>not</i>
-included, the <tt>pass in</tt> line <i>must</i> include <tt>keep
-state</tt>.  There is also some performance benefit to keeping state:
-State tables are checked before rules are evaluated, and if a state
-match is found, the packet is passed through the firewall without going
-through ruleset evaluation. This can offer a performance benefit on a
-heavily loaded firewall, though in a system this simple it is unlikely
-to generate enough load to matter.
-
-<p>
-Finally, pass traffic out on the external interface:
-<blockquote>
-<tt>
-pass out on $ext_if proto tcp all modulate state flags S/SA<br>
-pass out on $ext_if proto { udp, icmp } all keep state
+pass in quick on $int_if
 </tt>
 </blockquote>
 
 <p>
 TCP, UDP, and ICMP traffic is permitted to exit the firewall towards the
-Internet. State information is kept so that the returning packets will
-be passed in through the firewall.
+Internet due to the earlier "<tt>pass out keep state</tt>" line.
+State information is kept so that the returning packets will be passed
+back in through the firewall.
 
 <a name="allrules"></a>
 <h2>The Complete Ruleset</h2>
@@ -422,52 +398,48 @@ be passed in through the firewall.
 <tr><td nowrap bgcolor="#EEEEEE">
 <pre>
 # macros
-int_if = "fxp0"
-ext_if = "ep0"
+ext_if="fxp0"
+int_if="xl0"
 
-tcp_services = "{ 22, 113 }"
-icmp_types = "echoreq"
+tcp_services="{ 22, 113 }"
+icmp_types="echoreq"
 
-priv_nets = "{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"
-	  
-comp3 = "192.168.0.3"
+comp3="192.168.0.3"
 
 # options
 set block-policy return
 set loginterface $ext_if
-set skip on lo0
+
+set skip on lo
 
 # scrub
-scrub in all
+scrub in
 
 # nat/rdr
-nat on $ext_if from $int_if:network to any -&gt; ($ext_if)
-rdr on $int_if proto tcp from any to any port 21 -&gt; 127.0.0.1 \
-   port 8021
-rdr on $ext_if proto tcp from any to any port 80 -&gt; $comp3
+nat on $ext_if from !($ext_if) -> ($ext_if:0)
+nat-anchor "ftp-proxy/*"
+rdr-anchor "ftp-proxy/*"
+
+rdr pass on $int_if proto tcp to port ftp -> 127.0.0.1 port 8021
+rdr on $ext_if proto tcp from any to any port 80 -> $comp3
 
 # filter rules
-block all
+block in
 
-block drop in  quick on $ext_if from $priv_nets to any
-block drop out quick on $ext_if from any to $priv_nets
+pass out keep state
+
+anchor "ftp-proxy/*"
+antispoof quick for { lo $int_if }
 
 pass in on $ext_if inet proto tcp from any to ($ext_if) \
    port $tcp_services flags S/SA keep state
 
-pass in on $ext_if proto tcp from any to $comp3 port 80 \
-   flags S/SA synproxy state
-
-pass in on $ext_if inet proto tcp from port 20 to ($ext_if) \
-   user proxy flags S/SA keep state
+pass in on $ext_if inet proto tcp from any to $comp3 port 80 \
+    flags S/SA synproxy state
 
 pass in inet proto icmp all icmp-type $icmp_types keep state
 
-pass in  on $int_if from $int_if:network to any keep state
-pass out on $int_if from any to $int_if:network keep state
-
-pass out on $ext_if proto tcp all modulate state flags S/SA
-pass out on $ext_if proto { udp, icmp } all keep state
+pass quick on $int_if
 </pre>
 </td></tr>
 </table>
@@ -481,7 +453,7 @@ pass out on $ext_if proto { udp, icmp } all keep state
 <a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a> 
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: example1.html,v 1.22 2006/01/01 03:49:54 joel Exp $</small>
+<small>$OpenBSD: example1.html,v 1.23 2006/05/01 00:51:22 nick Exp $</small>
 
 </body>
 </html> 
