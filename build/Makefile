@@ -1,7 +1,7 @@
 # Makefile for WWW subdirectory.
 
-STABLE_VERSION=	3.8
-PREV_VERSION=	3.7
+STABLE_VERSION=	3.9
+PREV_VERSION=	3.8
 
 all: ../groups.html ../support.html ../pkg-stable.html \
 	../pkg-stable${PREV_VERSION:S/.//}.html \
