@@ -48,7 +48,7 @@ uwierzytelniaj±cych</a>]
 <h3>Spis tre¶ci</h3>
 <ul>
 <li><a href="#modes">Tryby pracy FTP</a>
-<li><a href="#client">Klient FTP za firewallem</a>
+<li><a href="#client">Klient FTP za firewall-em</a>
 <li><a href="#server">"Samozabezpieczenie" PF serwera FTP</a>
 <li><a href="#natserver">Zabezpieczanie serwera FTP poprzez dedykowany
 firewall z NAT</a>
@@ -90,7 +90,7 @@ w swojej tabeli stanów, porzuci pakiet i nie dostarczy go do klienta.
 
 <p>
 W trybie pasywnym (jest to domy¶lne zachowanie programu <a
-href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp&amp;sektion=1&amp;manpath=OpenBSD+3.8"
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp&amp;sektion=1&amp;manpath=OpenBSD+3.9"
 >ftp(1)</a>), dostarczonego wraz z OpenBSD), klient ¿±da aby to
 serwer okre¶li³ losowy port na którym bêdzie oczekiwa³ na po³±czenie
 dla przes³ania danych. Serwer informuje klienta, który port zosta³
@@ -103,97 +103,78 @@ lub wy³±czenie trybu pasywnego komend± "<tt>passive off</tt>" w linii
 poleceñ programu "<tt>ftp&gt;</tt>".
 
 <a name="client"></a>
-<h2>Klient FTP za firewallem</h2>
+<h2>Klient FTP za firewall-em</h2>
 Jak to zosta³o opisane wcze¶niej, protokó³ FTP ma problemy z wspó³prac±
-z NAT i firewallami.
+z NAT i firewall-ami.
 
 <p>
-Packet Filter dostarcza rozwi±zanie tego problemu, którym jest przekierowanie
-ruchu FTP na serwer proxy FTP. proces ten "przeprowadzi" po³±czenia FTP
-poprzez bramkê/firewall z NAT. Serwerem proxy FTP wykorzystywanym przez
-OpenBSD i PF
+Packet Filter dostarcza rozwi±zanie tego problemu, jakim jest przekierowanie
+ruchu FTP na serwer proxy FTP. W procesie tym twój ruch FTP jest "przeprowadzany"
+przez twoj± bramê/firewall NAT, poprzez dynamiczne dodawanie niezbêdnych regu³
+do PF, i usuwanie ich gdy nie s± potrzebne, za pomoc± systemu
+<a href="anchors.html">zakotwiczeñ</a> (ang. anchors).
+FTP proxy wykorzystywanym przez OpenBSD 3.9 i PF jest
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+3.9"
+>ftp-proxy(8)</a>. 
+(uwaga: wcze¶niejsze wersje OpenBSD korzysta³y z innego proxy o tej samej nazwie,
+który zosta³ udokumentowany na stronie manuala OpenBSD 3.8
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+3.8"
->ftp-proxy(8)</a>. Aby go aktywowaæ, w umie¶æ co¶ takiego w sekcji translacji
-pliku <tt>pf.conf</tt>:
+>ftp-proxy(8)v3.8</a>).
+
+<p>
+Aby go aktywowaæ, umie¶æ co¶ takiego w sekcji NAT pliku <tt>pf.conf</tt>:
 
 <blockquote>
 <tt>
+nat-anchor "ftp-proxy/*"<br>
+rdr-anchor "ftp-proxy/*"<br>
 rdr on $int_if proto tcp from any to any port 21 -&gt; 127.0.0.1 \<br>
 &nbsp;&nbsp;&nbsp;port 8021
 </tt>
 </blockquote>
 
 <p>
-Dzia³anie tej linii mo¿na stre¶ciæ nastêpuj±co: "Ruch na wewnêtrznym
-interfejsie sieciowym jest przekierowany do serwera po¶rednicz±cego,
-uruchomionego na tej maszynie i nas³uchuj±cego na porcie 8021".
+Pierwsze dwie linie s± par± <a href="anchors.html">zakotwiczeñ</a>, które
+s± wykorzystywane przez ftp-proxy do dodawania regu³, wymaganych do
+zarz±dzania ruchem FTP, "w locie".
+Ostatnia linia przekierowuje FTP od twoich klientów do programu ftp-proxy(8),
+który nas³uchuje na twojej maszynie na porcie 8021.
 
 <p>
 Oczywi¶cie powy¿sze przekierowanie zak³ada, ¿e serwer proxy jest
-uruchomiony na tym komputerze. Nale¿y sprawdziæ, czy w pliku
-<tt>/etc/inetd.conf</tt>, jest nastêpuj±ca linia:
+uruchomiony na tym komputerze. Mo¿esz go uruchomiæ umieszczaj±c w pliku
+<tt>/etc/rc.local.conf</tt>, jest nastêpuj±c± liniê:
 
 <blockquote>
 <tt>
-127.0.0.1:8021 stream tcp nowait root /usr/libexec/ftp-proxy \<br>
-&nbsp;&nbsp;&nbsp;ftp-proxy -n
+ftpproxy_flags=""
 </tt>
 </blockquote>
 
 <p>
-Flaga <tt>-n</tt> jest niezbêdna tylko gdy maszyna OpenBSD
-realizuje NAT. Nastêpnie wy¶lij sygna³ 'HUP' do demona
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=inetd&amp;sektion=8&amp;manpath=OpenBSD+3.8"
->inetd(8)</a> aby zmusiæ go do ponownego odczytania swojego pliku
-konfiguracyjnego. Sygna³ ten mo¿na wys³aæ do demona inetd w
-nastêpuj±cy sposób:
-
-<blockquote>
-<tt>
-kill -HUP `cat /var/run/inetd.pid`
-</tt>
-</blockquote>
+Program ftp-proxy mo¿e byæ tak¿e uruchomiony jako root bez konieczno¶ci
+restartu komputera.
 
 <p>
-Mo¿na zauwa¿yæ, ¿e ftp-proxy nas³uchuje na porcie 8021, dok³adnie
-tym samym, na który podana dyrektywa <tt>rdr</tt> przekierowuje
-ruch FTP. Wybór numeru portu jest zupe³nie dowolny, jednak port
-8021 jest dobrym wyborem, jako ¿e nie jest on u¿ywany przez
-¿adn± inn± aplikacjê.
+ftp-proxy nas³uchuje na porcie 8021, na ten sam port wysy³a ruch FTP
+podane wy¿ej wyra¿enie <tt>rdr</tt>.
 
 <p>
-W tym momencie nadal jeszcze bêd± funkcjonowa³y jedynie pasywne
-po³±czenia FTP.
-Aby umo¿liwiæ po³±czenia w trybie "aktywnym", po³±czenie zwrotne
-inicjowane z powrotem do klienta przez serwer FTP musi przej¶æ przez
-firewall.
-Niestety, znamy jedynie zakres mo¿liwych portów port na który nadejdzie
-to po³±czenie.
-Wiadomo natomiast, ¿e po³±czenie to bêdzie nadchodzi³o z portu
-20 (ftp-data port) oraz ze ftp-proxy przejmie je i bêdzie
-po¶redniczyæ w komunikacji z w³a¶ciwym klientem.
-Poniewa¿ ftp-proxy uruchamiane jest z prawami u¿ytkownika
-<tt>proxy</tt>, s³owo kluczowe <tt>user</tt> mo¿e byæ
-wykorzystywane w regule filtrowania.
-
-<blockquote>
-<tt>
-pass in on $ext_if inet proto tcp from port 20 to ($ext_if) \<br>
-&nbsp;&nbsp;&nbsp;&nbsp;user proxy flags S/SA keep state
-</tt>
-</blockquote>
+Aby uaktywniæ po³±czenia w trybie aktywnym, musisz podaæ flagê "-r"
+dla ftp-proxy(8) (w poprzedniej wersji proxy musia³e¶ korzystaæ z 
+"-u root").
 
 <p>
-Proszê zauwa¿yæ, ¿e ftp-proxy(8) jest pomoc± dla <b>klientów FTP</b>
-znajduj±cych siê za ¶cian± ogniow±, nie s³u¿y natomiast do uruchomienia
-<b>serwera FTP</b> za firewallem.
+Prosimy zwróæ uwagê, ¿e ftp-proxy(8) jest u¿yteczny dla <b>klientów FTP</b>
+za filtrem FTP; nie jest u¿ywany do obs³ugi <b>serwera FTP</b> za filtrem
+PF.  
 
 <a name="server"></a>
 <h2>"Samozabezpieczenie" PF serwera FTP</h2>
 W tym przypadku, filtr PF jest uruchomiony na tym samym komputerze co serwer
 FTP, a nie na osobnej maszynie. Kiedy serwer obs³uguje pasywne sesje FTP,
 otwiera wysoki port TCP dla danych. Domy¶lnie, natywny serwer OpenBSD
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftpd&amp;sektion=8&amp;manpath=OpenBSD+3.8"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftpd&amp;sektion=8&amp;manpath=OpenBSD+3.9"
 >ftpd(8)</a> u¿ywa w tym celu portów z zakresu od 49152 do 65535.
 Oczywi¶cie ruch na tych portach musi byæ przepuszczany wraz z portem
 21 (który jest portem kontrolnym FTP):
@@ -209,10 +190,10 @@ pass in on $ext_if proto tcp from any to any port &gt; 49151 \<br>
 <p>
 Proszê zauwa¿yæ, ¿e je¶li zaistnieje potrzeba ograniczenia
 zakresu wysokich portów, których bêdzie u¿ywa³ natywny serwer
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftpd&amp;sektion=8&amp;manpath=OpenBSD+3.8"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftpd&amp;sektion=8&amp;manpath=OpenBSD+3.9"
 >ftpd(8)</a> OpenBSD, mo¿na to osi±gn±æ poprzez zmianê
 warto¶ci zmiennych
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=8&amp;manpath=OpenBSD+3.8"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=8&amp;manpath=OpenBSD+3.9"
 >sysctl(8)</a> <tt>net.inet.ip.porthifirst</tt> i
 <tt>net.inet.ip.porthilast</tt>.
 
@@ -221,7 +202,7 @@ warto¶ci zmiennych
 Ta sytuacja zmusza, ¶cianê ogniow± do przekierowania ruchu FTP do serwera FTP,
 dodatkowo nie blokuj±c wymaganych, nowo otwartych portów. W tym przyk³adzie
 za³o¿ono, ¿e serwerem FTP bêdzie znów natywne rozwi±zanie OpenBSD czyli
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftpd&amp;sektion=8&amp;manpath=OpenBSD+3.8"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftpd&amp;sektion=8&amp;manpath=OpenBSD+3.9"
 >ftpd(8)</a>, korzystaj±cy z domy¶lnego zakresu portów.
 
 <p>
@@ -271,10 +252,10 @@ uwierzytelniaj±cych</a>]
 <br>
 <small>
 <!--
-Originally [OpenBSD: ftp.html,v 1.19 ]<br>
-$Translation: ftp.html,v 1.14 2005/11/02 15:08:02 tkniaz Exp $<br>
+Originally [OpenBSD: ftp.html,v 1.20 ]<br>
+$Translation: ftp.html,v 1.15 2006/05/02 00:59:45 tkniaz Exp $<br>
 -->
-$OpenBSD: ftp.html,v 1.14 2005/11/03 11:30:54 saad Exp $
+$OpenBSD: ftp.html,v 1.15 2006/05/02 17:09:33 jufi Exp $
 </small>
 </body>
 </html> 

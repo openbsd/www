@@ -71,8 +71,9 @@ W tym FAQ zostanie omówiony przyk³ad wykorzystania maszyny z OpenBSD i
 dzia³aj±cym PF do zbudowania firewalla i bramki NAT dla niewielkiej sieci w
 domu lub biurze. G³ównym celem jest udostêpnienie po³±czenia z Internetem
 komputerom w sieci wewnêtrznej, a tak¿e umo¿liwienie ograniczonego dostêpu z
-Internetu do maszyny spe³niaj±cej rolê ¶ciany ogniowej. Kompletny przyk³ad
-bêdzie mo¿na znale¼æ na koñcu tego dokumentu.
+Internetu do maszyny spe³niaj±cej rolê ¶ciany ogniowej, oraz udostêpnienie
+wewnêtrznego serwera www dla zewnêtrznego internetu. 
+Kompletny przyk³ad bêdzie mo¿na znale¼æ na koñcu tego dokumentu.
 
 <a name="network"></a>
 <h3>Sieæ</h3>
@@ -81,8 +82,8 @@ Topologia sieci wygl±da nastêpuj±co:
 <pre>
     
   [ KOMP1 ]    [ KOMP3 ]
-      |            |                               ADSL
-   ---+------+-----+------- fxp0 [ OpenBSD ] ep0 -------- ( Internet )
+      |            |                               
+   ---+------+-----+------- xl0 [ OpenBSD ] fxp0 -------- ( Internet )
              |
          [ KOMP2 ]
 
@@ -97,10 +98,10 @@ KOMP3, który s³u¿y równie¿ jako niewielki serwer WWW.  Przestrzeñ adresowa
 sieci wewnêtrznej zawiera siê w bloku 192.168.0.0 / 255.255.255.0.
 
 <p>
-Router zbudowany na bazie OpenBSD to komputer z procesorem Pentium 100
-i dwiema kartami sieciowymi: 3Com 3c509B (<tt>ep0</tt>) i Intel
+Router zbudowany na bazie OpenBSD to komputer z procesorem Celeron 300
+i dwiema kartami sieciowymi: 3Com 3c509B (<tt>xl0</tt>) i Intel
 EtherExpress Pro/100 (<tt>fxp0</tt>). Po³±czony jest on z Internetem
-³±czem ADSL, a do udostêpniania po³±czenia innym komputerom
+ethernetowym, a do udostêpniania po³±czenia innym komputerom
 wykorzystywany jest NAT. Adres IP dla zewnêtrzenego interfejsu uzyskiwany
 jest dynamicznie od Dostawcy Us³ug Internetowych.
 
@@ -113,14 +114,16 @@ wewnêtrznej.
 <li>Zastosowanie regu³ek filtra zapewniaj±cych "domy¶lne blokowanie" ruchu
 przychodz±cego.
 <li>Przepuszczanie ruchu z Internetu skierowanego do nastêpuj±cych portów:
-	<ul>
+	
+    <ul>
 	<li>SSH (TCP port 22): u¿ywany do zdalnej administracji ¶ciany ogniowej.
 	<li>Auth/Ident (TCP port 113): u¿ywany przez niektóre us³ugi, takie jak
 	SMTP czy IRC.
 	<li>ICMP Echo Requests: ten typ pakietów ICMP jest u¿ywany przez
-	program <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ping&amp;sektion=8&amp;manpath=OpenBSD+3.8">
+	program <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ping&amp;sektion=8&amp;manpath=OpenBSD+3.9">
 	ping(8)</a>.
-	</ul>
+    </ul>
+
 <li>Przekierowanie po³±czeñ na porcie 80 protko³u TCP (które s± prób±
 po³±czenia siê z serwerem WWW) do komputera KOMP3. A tak¿e przepuszenie
 przez firewall ruchu na porcie 80 protoko³u TCP przeznaczonego dla COMP3.
@@ -136,6 +139,8 @@ Podczas pisania tego FAQ przyjêto, ¿e OpenBSD zosta³ poprawnie skonfigurowany
 do przysz³ej pracy jako router, w³±czaj±c w to w³a¶ciwe przygotowanie sieci,
 po³±czenia z Internetem, oraz ustawienia zmiennej sysctl
 <tt>net.inet.ip.forwarding</tt> na "<tt>1</tt>".
+Prawdopodobnie bêdziesz tak¿e chcia³ w³±czyæ PF w 
+<tt>/etc/rc.conf.local</tt>.
 
 <a name="ruleset"></a>
 <h2>Budowanie zestawu regu³</h2>
@@ -148,14 +153,11 @@ Poni¿sze makra maj± na celu u³atwienie zrozumienia oraz usprawnienie zarz±dzania
 zestawem regu³:
 <blockquote>
 <tt>
+ext_if = "xl0"<br>
 int_if = "fxp0"<br>
-ext_if = "ep0"<br>
 <br>
 tcp_services = "{ 22, 113 }"<br>
 icmp_types = "echoreq"<br>
-<br>
-priv_nets = "{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"
-<br>
 <br>
 comp3 = "192.168.0.3"
 </tt>
@@ -163,16 +165,18 @@ comp3 = "192.168.0.3"
 
 <p>
 Pierwsze dwie linie okre¶laj± na jakich interfejsach bêdzie odbywaæ siê
-filtrowanie. Trzecia linia zawiera liste portów TCP (SSH i ident/auth), do
+filtrowanie. 
+Dziêki zdefiniowaniu ich w tym miejscu, w sytuacji gdy bêdziemy chcieli przenie¶æ 
+nasz system na inn± maszynê, z innym sprzêtem, bêdziemy mogli zmieniæ tylko 
+te dwie linie, a pozosta³a czê¶æ zestawu regu³ bêdzie wci±¿ u¿yteczna.
+Trzecia linia zawiera liste portów TCP (SSH i ident/auth), do
 których ruch z Internetu ma byæ przepuszczany. W czwartej linii okre¶lone s±
-typy komunikatów ICMP, które nie bêd± blokowane. W pi±tej linii
-wyszczególnione s± adresy pêlti zwrotnej oraz zarezerwowane bloki sieci opisane
-w <a href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a>. Ostatnia
-linia okre¶la adres IP komputera KOMP3.
+typy komunikatów ICMP, które bêd± akceptowane przez nasz "firewall".
+Ostatnia linia okre¶la adres IP komputera KOMP3.
 
 <p>
-<b>Uwaga</b>: Je¶li po³±czenie ADSL odbywa siê poprzez
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pppoe&amp;sektion=8&amp;manpath=OpenBSD+3.8"
+<b>Uwaga</b>: Je¶li po³±czenie internetowe odbywa siê poprzez
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pppoe&amp;sektion=8&amp;manpath=OpenBSD+3.9"
 >PPPoE</a>, wtedy filtrowanie oraz translacja pakietów odbywaæ siê bêdzie na
 interfejsie <tt>tun0</tt> a <i>nie</i> na <tt>ep0</tt>.
 
@@ -194,7 +198,7 @@ Jest to wirtualny interfejs sieciowy u¿ywany przez procesy do komunikacji
 z innymi aplikacjami uruchomionymi w lokalnym systemie. Ca³y ruch na tym 
 interfejsie powinnien byæ przepuszczany bez ¿adnych ograniczeñ. 
 W OpenBSD interfejs "loopback" nazywa siê:
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=lo&amp;sektion=4&amp;manpath=OpenBSD+3.8"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=lo&amp;sektion=4&amp;manpath=OpenBSD+3.9"
 >lo(4)</a>.
 Nalepszym pomys³em jest wy³±czenie jakiegokolwiek filtrowania na tym 
 interfejsie.
@@ -213,7 +217,7 @@ zostaæ poddane normalizacji. W³±czenie normalizowania pakietów odbywa siê przez
 dodanie jednej, prostej linii:
 <blockquote>
 <tt>
-scrub in all
+scrub in
 </tt>
 </blockquote>
 
@@ -223,23 +227,41 @@ W³±czenie translacji adresów (NAT) dla hostów w sieci wewnêtrznej uzyskuje siê
 przez dodanie regu³ki <tt>nat</tt>:
 <blockquote>
 <tt>
-nat on $ext_if from $int_if:network to any -&gt; ($ext_if)
+nat on $ext_if from !($ext_if) to any -&gt; ($ext_if)
 </tt>
 </blockquote>
+
+<p>
+Wyra¿enie "<tt>!($ext_if)</tt>", mo¿e byæ oczywi¶cie ³atwo zast±pione przez
+"<tt>$ext_if</tt>", jednak je¿eli dodasz wiele wewnêtrznych interfejsów, 
+bêdziesz musia³ dodaæ wiele regu³ NAT, tymczasem w takim rozwi±zaniu, NAT
+bêdzie obs³ugiwany na wszystkich zabezpieczonych interfejsach.
 
 <p>
 Jako ¿e adres IP dla zewnêtrznego interfejsu sieciowego jest uzyskiwany
 dynamicznie, nazwa interfejsu na którym odbywa siê mapowanie adresów zosta³a
 wziêty w nawiasy, dziêki temu PF zostanie powiadomione o ka¿dej zmianie adresu.
 
-<a name="rdr"></a>
-<h3>Przekierowanie</h3>
-Pierwsze przekierowanie w tym zestawie regu³ jest dla
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+3.8"
->ftp-proxy(8)</a>, aby klient FTP w sieci lokalnej móg³ bez problemów po³±czyæ
-siê z serwerami FTP w Internecie.
+<p>
+Poniewa¿, chcemy mieæ dzia³aj±ce FTP-proxy, umie¶cimy w naszej konfiguracji
+równie¿ <a href="anchor.html">zakotwiczenie</a> NAT:
+
 <blockquote>
 <tt>
+nat-anchor "ftp-proxy/*"
+</tt>
+</blockquote>
+
+<a name="rdr"></a>
+<h3>Przekierowanie</h3>
+Pierwsze przekierowania w tym zestawie regu³ s± dla
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+3.9"
+>ftp-proxy(8)</a>, aby klient FTP w sieci lokalnej móg³ bez problemów po³±czyæ
+siê z serwerami FTP w Internecie.
+
+<blockquote>
+<tt>
+rdr-anchor "ftp-proxy/*"<br>
 rdr on $int_if proto tcp from any to any port 21 -&gt; 127.0.0.1 port 8021
 </tt>
 </blockquote>
@@ -251,7 +273,7 @@ konieczne bêdzie podanie ich w postaci listy, na przyk³ad:
 <tt>from any to any port { 21, 2121}</tt>
 
 <p>
-Druga regu³ka <tt>rdr</tt> s³u¿y do przekierowania prób po³±czeñ z portem 80 
+Ostatnia regu³a <tt>rdr</tt> s³u¿y do przekierowania prób po³±czeñ z portem 80 
 protoko³u TCP firewalla. Poprawne po³±czenia z tym portem pochodz±
 od u¿ytkowników chc±cych uzyskaæ dostêp do serwra WWW. Po³±czenia te
 powinny zostaæ przekierowane do komputera KOMP3:
@@ -268,45 +290,55 @@ Po ustawieniu NAT i przekierowañ mo¿na przyst±piæ do konfiguracji filtra
 pakietów. Filtr bêdzie pracowa³ zgodnie z zasad± "domy¶lnego blokowania":
 <blockquote>
 <tt>
-block all<br>
+block in<br>
 </tt>
 </blockquote>
 
 <p>
-W tym miescu ¿aden ruch nie jest przepuszczany przez scianê ogniow±, nawet ten
-pochodz±cy z sieci wewnêtrznej. Kolejne regu³ki bêd± umo¿liwia³y przej¶cie
-datagramów zgodnie z wytycznymi podanymi wcze¶niej.
-
-
+W tym miescu ka¿dy ruch usi³uj±cy wej¶æ przez interfejs bêdzie blokowany, 
+nawet ten pochodz±cy z sieci wewnêtrznej. 
+Kolejne regu³ki bêd± umo¿liwia³y przej¶cie datagramów zgodnie z 
+wytycznymi podanymi wcze¶niej.
 
 <p>
-Pakiety posiadaj±ce jako adres docelowy lub ¼ród³owy, jeden z adresów opisanych
-w <a href="http://www.geektools.com/rfc/rfc1918.txt">RFC 1918</a>, przechodz±ce
-w dowolnym kierunku przez interfejs zewnêtrzny zostan± zablokowane - te adresy
-nigdy nie powinny pojawiæ siê w Internecie. Wprowadzenie tych regu³ek daje
-gwarancje, ¿e ¿aden z zarezerwowanych adresów nie przedostanie siê do
-Internetu, a tak¿e zapobiega przyjmowaniu pakietów ze ¶wiata posiadaj±cych jako
-adres ¼ród³owy jeden z adresów z RFC 1918.
+Pamiêtaj, ¿e pf mo¿e zablokowaæ ka¿dy ruch wchodz±cy lub wychodz±cy 
+przez interfejs.
+Mo¿esz sobie znacznie upro¶ciæ ¿ycie, je¿eli zdecydujesz siê na filtrowanie
+ruchu w jednym kierunku, zamiast staraæ siê bezpo¶rednio filtrowaæ pewne 
+rzeczy, przepuszczaj±c inne.
+W naszym przypadku, zdecydowali¶my siê na filtrowanie przychodz±cegu ruchu,
+lecz gdy dany ruch zostanie raz przepuszczony przez interfejs, nie bêdziemy
+starali siê go blokowaæ. Zatem zrobimy co¶ takiego:
 
 <blockquote>
 <tt>
-block drop in &nbsp;quick on $ext_if from $priv_nets to any<br>
-block drop out quick on $ext_if from any to $priv_nets
+pass out keep state
 </tt>
 </blockquote>
 
 <p>
-Nale¿y zwróciæ uwagê, ¿e <tt>block drop</tt> okre¶la, ¿e filtr PF nie ma
-wysy³aæ TCP RST lub ICMP Unreachable w odpowiedzi na zablokowane pakiety.
-Adresy z RFC 1918 nie istniej± w Internecie, ¿aden pakiet wys³any pod ten
-adres nie dotrze do miejsca przeznaczenia. Opcja <tt>quick</tt> mówi, ¿e PF ma
-przerwaæ sprawdzanie dalszej czê¶ci zestawu je¶li pakiet pasowa³ do tej
-regu³ki. Pakiety pochodz±ce lub skierowane do sieci <tt>$priv_nets</tt> bêd±
-natychmiast odrzucone.
+Potrzebyjemy mieæ <a href="anchor.html">zakotwiczenie</a> dla ftp-proxy(8):
+
+<blockquote>
+<tt>
+anchor "ftp-proxy/*"
+</tt>
+</blockquote>
+
+Dobrze jest <a href="filter.html#antispoof">blokowaæ zfa³szowane adresy</a>
+(ang. antispoof):
+
+<blockquote>
+<tt>
+antispoof quick for { lo $int_if }
+</tt>
+</blockquote>
 
 <p>
 Nastêpna regu³ka otwiera porty dla us³ug, które maj± byæ udostêpnione w
-Internecie:
+Internecie.
+Na pocz±tek ruch który jest kierowany do samego firewall-a:
+
 <blockquote>
 <tt>
 pass in on $ext_if inet proto tcp from any to ($ext_if) \<br>
@@ -327,7 +359,7 @@ serwera WWW do komputera KOMP3, konieczne jest przepuszczenie tego ruchu
 przez firewall: 
 <blockquote>
 <tt>
-pass in on $ext_if proto tcp from any to $comp3 port 80 \<br>
+pass in on $ext_if inet proto tcp from any to $comp3 port 80 \<br>
 &nbsp;&nbsp;&nbsp;&nbsp;flags S/SA synproxy state
 </tt>
 </blockquote>
@@ -336,20 +368,6 @@ pass in on $ext_if proto tcp from any to $comp3 port 80 \<br>
 Aby odrobinê poprawiæ bezpieczeñstwo zastosowano  
 <a href="filter.html#synproxy">TCP SYN Proxy</a>, który dodatkowo
 zabezpiecza serwer przed atakami z zewn±trz.
-
-<p>
-Aby "aktywne" po³±czenia FTP dzia³a³y wewn±trz sieci LAN, nastêpuj±ca
-regu³a musi byæ wstawiona by przepuszczaæ po³±czenia sesji ftp
-inicjowane przez serwer FTP z powrotem do klienta.
-Poniewa¿ w aktywnych po³±czeniach FTP po¶redniczy ftp-proxy, to
-w³a¶nie ten program przyjmie po³±czenie z serwera i bêdzie po¶redniczy³
-w komunikacji z klientem w sieci LAN.
-<blockquote>
-<tt>
-pass in on $ext_if inet proto tcp from port 20 to ($ext_if) \<br>
-&nbsp;&nbsp;&nbsp;&nbsp;user proxy flags S/SA keep state
-</tt>
-</blockquote>
 
 <p>
 Przepuszczenie pakietów ICMP:
@@ -369,61 +387,19 @@ wszystkich interfejsów sieciowych.
 Kolejne regu³ki przepuszczaj± ruch z lub do sieci wewnêtrznej. Przyk³ad zak³ada,
 ¿e u¿ytkownicy na wewnêtrznym interfejsie dok³adnie wiedz± co robi± i nie bêd±
 powodowaæ problemów. To niekoniecznie prawid³owe za³o¿enie, mniejsza swoboda
-mo¿e byæ bardziej odpowiednia w niektórych przypadkach.
+mo¿e byæ bardziej odpowiednia w wielu przypadkach.
 
 <blockquote>
 <tt>
-pass in on $int_if from $int_if:network to any keep state
+pass in quick on $int_if
 </tt>
 </blockquote>
 
 <p>
-Powy¿sza regu³ka zezwala hostom z sieci lokalnej na wysy³anie pakietów przez
-scianê ogniow±, <i>nie</i> umo¿liwia natomiast na nawi±zanie po³±czenia
-routera z komputerem z sieci wewnêtrznej. Czy to dobre rozwi±zanie? Odpowied¼
-uzale¿niona jest od kilku elementów konfiguracji sieci. Je¶li firewall jest
-jednocze¶nie serwerem DHCP, przed przydzieleniem adresu konieczne mo¿e byæ
-sprawdzenie czy nie jest on ju¿ przypisany do innego hosta. Je¶li firewall ma
-mo¿liwo¶æ nawi±zania po³±czenia z maszyn± w sieci lokalnej, ka¿dy kto zaloguje
-siê do routera bêdzie mia³ dostêp do komputrów wewn±trz sieci lokalnej.
-Nale¿y jednak pamiêtaæ, ¿e nie jest to w³a¶ciwie ¿adna znacz±ca poprawa
-bezpieczeñstwa - je¶li kto¶ niepowo³any uzyska dostêp do bramki, bêdzie te¿
-najprawdopodobniej móg³ zmieniæ regu³y filtra pakietów. Dodanie nastêpnej
-regu³ki sprawi, ¿e firewall bêdzie móg³ bez przeszkód komunikowaæ siê z
-maszynami w sieci wewnêtrznej:
-
-<blockquote>
-<tt>
-pass out on $int_if from any to $int_if:network keep state
-</tt>
-</blockquote>
-
-<p>
-Wa¿ne jest to, ¿e je¶li obie powy¿sze linie bêd± umieszczone w pliku
-konfiguracyjnym, dyrektywa <tt>keep state</tt> nie jest konieczna - wszystkie
-pakiety bêd± mog³y wyj¶æ poprzez zewnêtrzny interfejs bez konieczno¶ci
-¶ledzenia stanów. Jednak¿e, je¶li linia zaczynaj±ca siê od <tt>pass out</tt> nie
-bêdzie dodana, konieczne jest umieszczenie w linii rozpoczynaj±cej siê od
-<tt>pass in</tt> opcji <tt>keep state</tt>. Dziêki zastosowaniu ¶ledzenia stanów
-mo¿na osi±gn±æ pewn± poprawê wydajno¶ci - tablice stanów s± sprawdzane zanim
-datagram zostanie sprawdzony poprzez regu³y, ale poprawa wydajno¶ci dotyczyæ
-bêdzie w g³ównej mierze bardzo obci±¿onych filtrów, a ¿e ten przyk³adowy
-system jest bardzo prosty, raczej ma³o prawdopodobne aby mo¿na by³o zauwa¿yæ
-ró¿nice.
-
-<p>
-Ostatnie regu³ki zezwalaj± na przepuszczenie ruchu wychodz±cego przez
-zewnêtrzny interfejs sieciowy.
-<blockquote>
-<tt>
-pass out on $ext_if proto tcp all modulate state flags S/SA<br>
-pass out on $ext_if proto { udp, icmp } all keep state
-</tt>
-</blockquote>
-
-<p>
-Ruch na protoko³ach TCP, UDP i ICMP jest przepuszczany do Internetu, a ¶ledzenie
-stanów pozwala przepu¶ciæ pakiety, które s± odpowiedzi± na wys³ane datagramy.
+Ruch TCP, UDP i ICMP jest przepuszczany do Internetu, ze wzglêdu na 
+wcze¶niejsz± regu³ê "<tt>pass out keep state</tt>".  Informacja o stanie
+jest zachowywana, zatem pakiety które s± odpowiedzi±, bêd± przepuszczane
+przez firewall.
 
 <a name="allrules"></a>
 <h2>Kompletny zestaw regu³</h2>
@@ -431,52 +407,48 @@ stanów pozwala przepu¶ciæ pakiety, które s± odpowiedzi± na wys³ane datagramy.
 <tr><td nowrap bgcolor="#EEEEEE">
 <pre>
 # makra
+ext_if = "xl0"
 int_if = "fxp0"
-ext_if = "ep0"
 
 tcp_services = "{ 22, 113 }"
 icmp_types = "echoreq"
 
-priv_nets = "{ 127.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8 }"
-	  
 comp3 = "192.168.0.3"
 
 # opcje
 set block-policy return
 set loginterface $ext_if
+
 set skip on lo0
 
 # normalizacja datagramów 
-scrub in all
+scrub in
 
 # nat/rdr
-nat on $ext_if from $int_if:network to any -&gt; ($ext_if)
-rdr on $int_if proto tcp from any to any port 21 -&gt; 127.0.0.1 \
-   port 8021
-rdr on $ext_if proto tcp from any to any port 80 -&gt; $comp3
+nat on $ext_if from !($ext_if) -> ($ext_if:0)
+nat-anchor "ftp-proxy/*"
+rdr-anchor "ftp-proxy/*"
+
+rdr pass on $int_if proto tcp to port ftp -> 127.0.0.1 port 8021
+rdr on $ext_if proto tcp from any to any port 80 -> $comp3
 
 # regu³ki filtra pakietów
-block all
+block in
 
-block drop in  quick on $ext_if from $priv_nets to any
-block drop out quick on $ext_if from any to $priv_nets
+pass out keep state
+
+anchor "ftp-proxy/*"
+antispoof quick for { lo $int_if }
 
 pass in on $ext_if inet proto tcp from any to ($ext_if) \
-   port $tcp_services flags S/SA keep state
+    port $tcp_services flags S/SA keep state
 
-pass in on $ext_if proto tcp from any to $comp3 port 80 \
-   flags S/SA synproxy state
-
-pass in on $ext_if inet proto tcp from port 20 to ($ext_if) \
-   user proxy flags S/SA keep state
+pass in on $ext_if inet proto tcp from any to $comp3 port 80 \
+    flags S/SA synproxy state
 
 pass in inet proto icmp all icmp-type $icmp_types keep state
 
-pass in  on $int_if from $int_if:network to any keep state
-pass out on $int_if from any to $int_if:network keep state
-
-pass out on $ext_if proto tcp all modulate state flags S/SA
-pass out on $ext_if proto { udp, icmp } all keep state
+pass quick on $int_if
 </pre>
 </td></tr>
 </table>
@@ -492,10 +464,10 @@ pass out on $ext_if proto { udp, icmp } all keep state
 <br>
 <small>
 <!--
-Originally [OpenBSD: example1.html,v 1.22 ]<br>
-$Translation: example1.html,v 1.15 2006/01/18 16:23:03 tkniaz Exp $<br>
+Originally [OpenBSD: example1.html,v 1.24 ]<br>
+$Translation: example1.html,v 1.16 2006/05/02 00:59:45 tkniaz Exp $<br>
 -->
-$OpenBSD: example1.html,v 1.15 2006/01/20 20:05:19 jufi Exp $
+$OpenBSD: example1.html,v 1.16 2006/05/02 17:09:33 jufi Exp $
 </small>
 
 </body>
