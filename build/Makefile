@@ -3,6 +3,10 @@
 STABLE_VERSION=	3.9
 PREV_VERSION=	3.8
 
+OPENBGPD_VERSION=		3.7
+OPENNTPD_VERSION=		3.7
+OPENNTPD_PORTABLE_VERSION=	3.7p1
+
 all: ../groups.html ../support.html ../pkg-stable.html \
 	../pkg-stable${PREV_VERSION:S/.//}.html \
 	../ftp.html
@@ -35,11 +39,16 @@ all: ../groups.html ../support.html ../pkg-stable.html \
 		cat pkg-stable.html.tail >> $@
 
 # Build the FTP/HTTP/RSYNC mirrors page.
-../ftp.html: mirrors.pl mirrors.dat mirrors/ftp.html.{end,head,mid1,mid2}
-	perl mirrors.pl ftp
+ftp: mirrors.pl mirrors.dat mirrors/ftp.html.{end,head,mid1,mid2} \
+     mirrors/openntpd-ftp.html.{end,head,mid2} \
+     mirrors/openntpd-portable.html.head mirrors/openbgpd-ftp.html.{end,head}
+	perl mirrors.pl openbsd-ftp ${STABLE_VERSION}
+	perl mirrors.pl openbgpd-ftp ${OPENBGPD_VERSION}
+	perl mirrors.pl openntpd-ftp ${OPENNTPD_VERSION}
+	perl mirrors.pl openntpd-portable ${OPENNTPD_PORTABLE_VERSION}
 
-../anoncvs.html: mirrors.pl mirrors.dat mirrors/anoncvs.html.{end,head}
-	perl mirrors.pl anoncvs
+anoncvs: mirrors.pl mirrors.dat mirrors/anoncvs.html.{end,head}
+	perl mirrors.pl anoncvs ${STABLE_VERSION}
 
 clean:
 		rm -f *.countries

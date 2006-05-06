@@ -7,21 +7,37 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.6 2006/04/26 06:49:33 steven Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.7 2006/05/06 06:02:59 steven Exp $';
 
+# note: some files are being reused because they would be identical
 my $sources = {
 	'mirrors.dat'	=> 'mirrors.dat',
-	'ftp-head'	=> 'mirrors/ftp.html.head',
-	'ftp-mid1'	=> 'mirrors/ftp.html.mid1',
-	'ftp-mid2'	=> 'mirrors/ftp.html.mid2',
-	'ftp-end'	=> 'mirrors/ftp.html.end',
-	'anoncvs-head'	=> 'mirrors/anoncvs.html.head',
-	'anoncvs-end'	=> 'mirrors/anoncvs.html.end'
+	'openbsd-ftp-head'	=> 'mirrors/ftp.html.head',
+	'openbsd-ftp-mid1'	=> 'mirrors/ftp.html.mid1',
+	'openbsd-ftp-mid2'	=> 'mirrors/ftp.html.mid2',
+	'openbsd-ftp-end'	=> 'mirrors/ftp.html.end',
+	'openbgpd-ftp-head'	=> 'mirrors/openbgpd-ftp.html.head',
+	'openbgpd-ftp-mid1'	=> 'mirrors/ftp.html.mid1',
+	'openbgpd-ftp-mid2'	=> 'mirrors/openntpd-ftp.html.mid2',
+	'openbgpd-ftp-end'	=> 'mirrors/openbgpd-ftp.html.end',
+	'openntpd-ftp-head'	=> 'mirrors/openntpd-ftp.html.head',
+	'openntpd-ftp-mid1'	=> 'mirrors/ftp.html.mid1',
+	'openntpd-ftp-mid2'	=> 'mirrors/openntpd-ftp.html.mid2',
+	'openntpd-ftp-end'	=> 'mirrors/openntpd-ftp.html.end',
+	'openntpd-portable-head'=> 'mirrors/openntpd-portable.html.head',
+	'openntpd-portable-mid1'=> 'mirrors/ftp.html.mid1',
+	'openntpd-portable-mid2'=> 'mirrors/openntpd-ftp.html.mid2',
+	'openntpd-portable-end'	=> 'mirrors/openntpd-ftp.html.end',
+	'anoncvs-head'		=> 'mirrors/anoncvs.html.head',
+	'anoncvs-end'		=> 'mirrors/anoncvs.html.end'
 };
 my $targets = {
-	'ftplist'	=> '../ftplist',
-	'ftp.html'	=> '../ftp.html',
-	'anoncvs.html'	=> '../anoncvs.html'
+	'ftplist'		=> '../ftplist',
+	'openbsd-ftp'		=> '../ftp.html',
+	'openbgpd-ftp'		=> '../openbgpd/ftp.html',
+	'openntpd-ftp'		=> '../openntpd/ftp.html',
+	'openntpd-portable'	=> '../openntpd/portable.html',
+	'anoncvs'		=> '../anoncvs.html'
 };
 
 # read in mirror list from given file into an array of hash references.
@@ -60,8 +76,8 @@ sub read_mirrors ($) {
 
 # writes out the ftplist file to a given filename using the mirrors
 # array referenced by the second argument
-sub write_ftplist($$) {
-	my ($filename, $mirrorref) = @_;
+sub write_ftplist($$$) {
+	my ($filename, $ver, $mirrorref) = @_;
 
 	open(my $fh, '>', $filename) or die "open $filename: $!";
 
@@ -105,8 +121,8 @@ sub _paste_in($$) {
 
 
 # writes out the FTP/HTTP mirrorlist to a given filehandle
-sub _paste_mirrorlist($$$$) {
-	my ($fh, $mirrorref, $type, $links) = @_;
+sub _paste_mirrorlist($$$$$$) {
+	my ($fh, $mirrorref, $type, $proj, $version, $links) = @_;
 
 	print $fh ' ' x 4;		# indent for first <td> to come
 	for my $lv (1, 2, 3) {
@@ -122,10 +138,20 @@ sub _paste_mirrorlist($$$$) {
 		next unless ($mirror->{$type});
 		my $loc = _get_location ($type, $mirror);
 		if ($type eq 'UF' || $type eq 'UH' || $type eq 'UR') {
+			my $url = $mirror->{$type};
+			if ($proj eq 'openbgpd-ftp') {
+				$url .= "OpenBGPD/openbgpd-${version}.tgz";
+			}
+			elsif ($proj eq 'openntpd-ftp') {
+				$url .= "OpenNTPD/openntpd-${version}.tgz";
+			}
+			elsif ($proj eq 'openntpd-portable') {
+				$url .= "OpenNTPD/openntpd-${version}.tar.gz";
+			}
 			print $fh "<tr>\n\t<td>\n\t<strong>$loc</strong>\n";
 			print $fh "\t</td><td>\n";
-			($links) && print $fh "	<a href=\"$mirror->{$type}\">\n";
-			print $fh "\t$mirror->{$type}";
+			($links) && print $fh "	<a href=\"$url\">\n";
+			print $fh "\t$url";
 			($links) && print $fh "</a>";
 			print $fh "\n\t</td>\n    </tr>";
 		}
@@ -175,30 +201,30 @@ sub _paste_mirrorlist($$$$) {
 
 # writes out the ftplist file to a given filename using the mirrors
 # array referenced by the second argument
-sub write_ftphtml($$) {
-	my ($filename, $mirrorref) = @_;
+sub write_ftphtml($$$$) {
+	my ($what, $filename, $ver, $mirrorref) = @_;
 
 	open(my $fh, '>', $filename) or die "open $filename: $!";
-	_paste_in($fh, $sources->{'ftp-head'});
+	_paste_in($fh, $sources->{"${what}-head"});
 	# produce ftp mirror list
-	_paste_mirrorlist($fh, $mirrorref, 'UF', 1);
-	_paste_in($fh, $sources->{'ftp-mid1'});
+	_paste_mirrorlist($fh, $mirrorref, 'UF', $what, $ver, 1);
+	_paste_in($fh, $sources->{"${what}-mid1"});
 	# produce http mirror list
-	_paste_mirrorlist($fh, $mirrorref, 'UH', 1);
-	_paste_in($fh, $sources->{'ftp-mid2'});
+	_paste_mirrorlist($fh, $mirrorref, 'UH', $what, $ver, 1);
+	_paste_in($fh, $sources->{"${what}-mid2"});
 	# produce rsync mirror list
-	_paste_mirrorlist($fh, $mirrorref, 'UR', 0);
-	_paste_in($fh, $sources->{'ftp-end'});
+	_paste_mirrorlist($fh, $mirrorref, 'UR', $what, $ver, 0);
+	_paste_in($fh, $sources->{"${what}-end"});
 	close($fh) or die "close $filename: $!";
 }
 
-sub write_anoncvshtml($$) {
-	my ($filename, $mirrorref) = @_;
+sub write_anoncvshtml($$$) {
+	my ($filename, $ver, $mirrorref) = @_;
 
 	open(my $fh, '>', $filename) or die "open $filename: $!";
 	_paste_in($fh, $sources->{'anoncvs-head'});
 	# produce cvsync mirror list
-	_paste_mirrorlist($fh, $mirrorref, 'AH', 1);
+	_paste_mirrorlist($fh, $mirrorref, 'AH', 'openbsd', $ver, 1);
 	_paste_in($fh, $sources->{'anoncvs-end'});
 	close($fh) or die "close $filename: $!";
 }
@@ -255,15 +281,17 @@ my @mirrors = read_mirrors($sources->{'mirrors.dat'});
 # output, and grunk has to find a proper way of getting ftplist into the
 # FTP distribution.
 
-if (@ARGV == 1) {
+if (@ARGV == 2) {
 	my $cmd = $ARGV[0];
+	my $ver = $ARGV[1];
 
 	if ($cmd eq 'ftplist') {
-		write_ftplist($targets->{'ftplist'}, \@mirrors);
-	} elsif ($cmd eq 'ftp') {
-		write_ftphtml($targets->{'ftp.html'}, \@mirrors);
+		write_ftplist($targets->{'ftplist'}, $ver, \@mirrors);
+	} elsif ($cmd eq 'openbsd-ftp' || $cmd eq 'openbgpd-ftp' ||
+		 $cmd eq 'openntpd-ftp' || $cmd eq 'openntpd-portable') {
+		write_ftphtml($cmd, $targets->{"$cmd"}, $ver, \@mirrors);
 	} elsif ($cmd eq 'anoncvs') {
-		write_anoncvshtml($targets->{'anoncvs.html'}, \@mirrors);
+		write_anoncvshtml($targets->{'anoncvs'}, $ver, \@mirrors);
 	} else {
 		die "Unknown mirror target.\n"
 	}
