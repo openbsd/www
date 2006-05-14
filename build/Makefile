@@ -4,8 +4,8 @@ STABLE_VERSION=	3.9
 PREV_VERSION=	3.8
 
 OPENBGPD_VERSION=		3.9
-OPENNTPD_VERSION=		3.7
-OPENNTPD_PORTABLE_VERSION=	3.7p1
+OPENNTPD_VERSION=		3.9
+OPENNTPD_PORTABLE_VERSION=	3.9p1
 
 all: ../groups.html ../support.html ../pkg-stable.html \
 	../pkg-stable${PREV_VERSION:S/.//}.html \
