@@ -235,49 +235,26 @@ on the wi0 interface.
 <h2>Packet Logging Through Syslog</h2>
 In many situations it is desirable to have the firewall logs available
 in ASCII format and/or to send them to a remote logging server.  All
-this can be accomplished with two small shell scripts, some minor
+this can be accomplished with a small shell script, some minor
 changes of the OpenBSD configuration files, and 
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=syslogd&amp;sektion=8&amp;manpath=OpenBSD+3.9"
 >syslogd(8)</a>, the logging daemon. Syslogd logs in ASCII and
 is also able to log to a remote logging server.
 
 <p>
-First we have to create a user, <tt>pflogger</tt>, with a
-<tt>/sbin/nologin</tt> shell. The easiest way to create this user is with
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=adduser&amp;sektion=8&amp;manpath=OpenBSD+3.9"
->adduser(8)</a>.
-
-<p>
-After creating the user <tt>pflogger</tt>, create the following two
-scripts:
+First we create the following script:
 
 <p>
 <tt>/etc/pflogrotate</tt>
 <pre>
 	#!/bin/sh
-	FILE=/home/pflogger/pflog5min.$(date "+%Y%m%d%H%M")
+	FILE=/var/log/pflog5min.$(date "+%Y%m%d%H%M")
 	kill -ALRM $(cat /var/run/pflogd.pid)
-	if [ $(ls -l /var/log/pflog | cut -d " " -f 8) -gt 24 ]; then
+	if [ $(stat -f %z /var/log/pflog) -gt 24 ]; then
 	   mv /var/log/pflog $FILE
-	   chown pflogger $FILE
 	   kill -HUP $(cat /var/run/pflogd.pid)
-	fi
-</pre>
-
-<p>
-<tt>/home/pflogger/pfl2sysl</tt>
-<pre>
-	#!/bin/sh
-	# feed rotated pflog file(s) to syslog
-	# do not start if another instance of this script is already running
-	pgrep pfl2sysl >/dev/null 2>&1
-	if [ $? -ne 0 ] ; then
-		for logfile in /home/pflogger/pflog5min* ; do
-			if [ -f "$logfile" ] ; then
-				tcpdump -n -e -ttt -r $logfile | logger -t pf -p local0.info
-				rm $logfile
-			fi
-		done
+	   tcpdump -n -e -ttt -r $FILE | logger -t pf -p local0.info
+	   rm $FILE
 	fi
 </pre>
 
@@ -295,23 +272,6 @@ Add the following two lines:
 <tt>
 # rotate pf log file every 5 minutes<br>
 0-59/5 *       *       *       *       /bin/sh /etc/pflogrotate
-</tt>
-</blockquote>
-
-<p>
-Create a cron job for user <tt>pflogger</tt>:
-<blockquote>
-<tt>
-# crontab -u pflogger -e
-</tt>
-</blockquote>
-
-<p>
-Add the following two lines:
-<blockquote>
-<tt>
-# feed rotated pflog file(s) to syslog<br>
-0-59/5 *       *       *       *       /bin/sh /home/pflogger/pfl2sysl
 </tt>
 </blockquote>
 
@@ -338,10 +298,11 @@ Make sure host <i>syslogger</i> has been defined in the
 
 <p>
 Create the file <tt>/var/log/pflog.txt</tt> to allow syslog to log to
-that file.
+that file, and give it the same permissions as the pflog file.
 <blockquote>
 <tt>
 # touch /var/log/pflog.txt
+# chmod 600 /var/log/pflog.txt
 </tt>
 </blockquote>
 
@@ -388,7 +349,7 @@ file.
 <a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a> 
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: logging.html,v 1.26 2006/05/01 00:54:29 nick Exp $</small>
+<small>$OpenBSD: logging.html,v 1.27 2006/05/29 19:25:57 steven Exp $</small>
 
 </body>
 </html> 
