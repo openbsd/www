@@ -241,7 +241,7 @@ wi0-Interface geblockt worden sind.
 <h2>Pakete durch syslog aufzeichnen</h2>
 In vielen Situationen ist es erwünscht, die Firewall-Logs im ASCII-Format
 verfügbar zu haben und/oder diese zu einem entfernten Logserver zu senden.
-All das kann mit zwei kleinen Shellskripten, ein paar kleinen Änderungen
+All das kann mit einem kleinen Shellskript, ein paar kleinen Änderungen
 an den OpenBSD-Konfigurationsdateien und
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=syslogd&amp;sektion=8&amp;manpath=OpenBSD+3.9"
 >syslogd(8)</a>, dem Logging-Daemon, erreicht werden. Syslogd zeichnet
@@ -249,43 +249,20 @@ in ASCII auf und ist ebenfalls in der Lage, auf einen entfernten Logserver
 aufzuzeichnen.
 
 <p>
-Zuerst müssen wir einen Benutzer <tt>pflogger</tt> anlegen, der eine
-<tt>/sbin/nologin</tt>-Shell besitzt. Der einfachste Weg, um diesen
-Benutzer anzulegen, ist
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=adduser&amp;sektion=8&amp;manpath=OpenBSD+3.9"
->adduser(8)</a>.
-
-<p>
-Nachdem wir den Benutzer <tt>pflogger</tt> angelegt haben, erstellen
-wir die beiden folgenden Skripte:
+Erstelle das folgende Skript:
 
 <p>
 <tt>/etc/pflogrotate</tt>
 <pre>
 	#!/bin/sh
-	FILE=/home/pflogger/pflog5min.$(date "+%Y%m%d%H%M")
+	PFLOG=/var/log/pflog
+	FILE=/var/log/pflog5min.$(date "+%Y%m%d%H%M")
 	kill -ALRM $(cat /var/run/pflogd.pid)
-	if [ $(ls -l /var/log/pflog | cut -d " " -f 8) -gt 24 ]; then
-	   mv /var/log/pflog $FILE
-	   chown pflogger $FILE
+	if [ -r $PFLOG ] && [ $(stat -f %z $PFLOG) -gt 24 ]; then
+	   mv $PFLOG $FILE
 	   kill -HUP $(cat /var/run/pflogd.pid)
-	fi
-</pre>
-
-<p>
-<tt>/home/pflogger/pfl2sysl</tt>
-<pre>
-	#!/bin/sh
-	# feed rotated pflog file(s) to syslog
-	# do not start if another instance of this script is already running
-	pgrep pfl2sysl >/dev/null 2>&1
-	if [ $? -ne 0 ] ; then
-		for logfile in /home/pflogger/pflog5min* ; do
-			if [ -f "$logfile" ] ; then
-				tcpdump -n -e -ttt -r $logfile | logger -t pf -p local0.info
-				rm $logfile
-			fi
-		done
+	   tcpdump -n -e -ttt -r $FILE | logger -t pf -p local0.info
+	   rm $FILE
 	fi
 </pre>
 
@@ -303,23 +280,6 @@ Fügen diese beiden Zeilen mit ein:
 <tt>
 # rotate pf log file every 5 minutes<br>
 0-59/5 *       *       *       *       /bin/sh /etc/pflogrotate
-</tt>
-</blockquote>
-
-<p>
-Erstellen einen Cron-Job für den Benutzer <tt>pflogger</tt>:
-<blockquote>
-<tt>
-# crontab -u pflogger -e
-</tt>
-</blockquote>
-
-<p>
-Fügen die folgenden beiden Zeilen ein:
-<blockquote>
-<tt>
-# feed rotated pflog file(s) to syslog<br>
-0-59/5 *       *       *       *       /bin/sh /home/pflogger/pfl2sysl
 </tt>
 </blockquote>
 
@@ -347,10 +307,12 @@ Stelle sicher, dass der Host <i>syslogger</i> in der
 
 <p>
 Erstelle die Datei <tt>/var/log/pflog.txt</tt>, damit syslog in der Lage
-ist, in diese Datei aufzuzeichnen.
+ist, in diese Datei aufzuzeichnen, und gib dieser Datei die gleichen
+Rechte wie der pflog-Datei.
 <blockquote>
 <tt>
-# touch /var/log/pflog.txt
+# touch /var/log/pflog.txt<br>
+# chmod 600 /var/log/pflog.txt
 </tt>
 </blockquote>
 
@@ -401,10 +363,10 @@ Datei auftauchen.
 <br>
 <small>
 <!--
-Originally [OpenBSD: logging.html,v 1.26 ]<br>
-$Translation: logging.html,v 1.18 2006/05/01 11:17:11 paldium Exp $<br>
+Originally [OpenBSD: logging.html,v 1.29 ]<br>
+$Translation: logging.html,v 1.19 2006/05/31 19:00:25 paldium Exp $<br>
 -->
-$OpenBSD: logging.html,v 1.18 2006/05/01 12:19:17 jufi Exp $
+$OpenBSD: logging.html,v 1.19 2006/06/01 06:33:44 jufi Exp $
 </small>
 
 </body>

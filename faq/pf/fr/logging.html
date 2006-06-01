@@ -247,7 +247,7 @@ entrants bloqués sur l'interface wi0.
 Dans plusieurs situations, il est souhaitable de disposer des événements
 enregistrés par le pare-feu sous format ASCII ou de les envoyer à un
 serveur d'événements central distant. Tout ceci peut être effectué par
-deux petits scripts shell, quelques modifications mineures aux fichiers
+un petit script shell, quelques modifications mineures aux fichiers
 de configuration OpenBSD, et
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=syslogd&amp;sektion=8&amp;manpath=OpenBSD+3.9">syslogd(8)</a>, 
 le service qui permet d'enregistrer les événements.
@@ -255,43 +255,21 @@ Syslogd enregistre les événements au format ASCII et il est aussi
 capable de les envoyer à un serveur d'événements distant.
 
 <p>
-Il faut d'abord créer un utilisateur, <tt>pflogger</tt>, avec un shell
-<tt>/sbin/nologin</tt>. La façon la plus simple de créer cet utilisateur
-consiste à utiliser la commande
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=adduser&amp;sektion=8&amp;manpath=OpenBSD+3.9">adduser(8)</a>.
-
-<p>
-Après avoir crée l'utilisateur <tt>pflogger</tt>, créez les deux scripts
-suivants :
+Créez le script suivant :
 
 <p>
 <tt>/etc/pflogrotate</tt>
 <pre>
 	#!/bin/sh
-        FILE=/home/pflogger/pflog5min.$(date "+%Y%m%d%H%M")
+        PFLOG=/var/log/pflog
+        FILE=/var/log/pflog5min.$(date "+%Y%m%d%H%M")
         kill -ALRM $(cat /var/run/pflogd.pid)
-        if [ $(ls -l /var/log/pflog | cut -d " " -f 8) -gt 24 ]; then
-           mv /var/log/pflog $FILE
-           chown pflogger $FILE
+        if [ -r $PFLOG ] && [ $(stat -f %z $PFLOG) -gt 24 ]; then
+           mv $PFLOG $FILE
            kill -HUP $(cat /var/run/pflogd.pid)
+           tcpdump -n -e -ttt -r $FILE | logger -t pf -p local0.info
+           rm $FILE
         fi
-</pre>
-
-<p>
-<tt>/home/pflogger/pfl2sysl</tt>
-<pre>
-	#!/bin/sh
-	# feed rotated pflog file(s) to syslog
-	# do not start if another instance of this script is already running
-	pgrep pfl2sysl >/dev/null 2>&1
-	if [ $? -ne 0 ] ; then
-		for logfile in /home/pflogger/pflog5min* ; do
-			if [ -f "$logfile" ] ; then
-				tcpdump -n -e -ttt -r $logfile | logger -t pf -p local0.info
-				rm $logfile
-			fi
-		done
-	fi
 </pre>
 
 <p>
@@ -309,26 +287,6 @@ Ajoutez-y les deux lignes suivantes :
 # effectuer une rotation du fichier d'événements<br>
 # toutes les 5 minutes
 0-59/5 *       *       *       *       /bin/sh /etc/pflogrotate
-</tt>
-</blockquote>
-
-<p>
-Créer une liste de tâches cron pour l'utilisateur
-<tt>pflogger</tt> :
-<blockquote>
-<tt>
-# crontab -u pflogger -e
-</tt>
-</blockquote>
-
-<p>
-Ajoutez-y les deux lignes suivantes :
-<blockquote>
-<tt>
-# alimenter le(s) fichier(s) pflog après rotation à<br>
-# syslog
-
-0-59/5 *       *       *       *       /bin/sh /home/pflogger/pfl2sysl
 </tt>
 </blockquote>
 
@@ -356,10 +314,12 @@ fichier
 
 <p>
 Créez le fichier <tt>/var/log/pflog.txt</tt> afin de permettre à syslog
-d'enregistrer les événements dans ce fichier.
+d'enregistrer les événements dans ce fichier et donnez lui les mêmes
+permissions qu'au fichier pflog.
 <blockquote>
 <tt>
-# touch /var/log/pflog.txt
+# touch /var/log/pflog.txt<br>
+# chmod 600 /var/log/pflog.txt
 </tt>
 </blockquote>
 
@@ -413,10 +373,10 @@ src="../../../images/back.gif" border="0" alt="[back]"></a>
 <br>
 <small>
 <!--
-Originally [OpenBSD: logging.html,v 1.26 ]<br>
-$Translation: logging.html,v 1.25 2006/05/12 07:05:02 ajacoutot Exp $<br>
+Originally [OpenBSD: logging.html,v 1.29 ]<br>
+$Translation: logging.html,v 1.28 2006/05/31 08:54:24 ajacoutot Exp $<br>
 -->
-$OpenBSD: logging.html,v 1.23 2006/05/14 09:54:41 saad Exp $
+$OpenBSD: logging.html,v 1.24 2006/06/01 06:33:44 jufi Exp $
 </small>
 
 </body>
