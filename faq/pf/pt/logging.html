@@ -241,51 +241,31 @@ bloquados na interface wi0.
 
 <a name="syslog"></a>
 <h2>Logando Pacotes Atrav&eacute;s do Syslog</h2>
-Em muitas situa&ccedil;&otilde;es &eacute; desej&aacute;vel possuir logs do firewall 
-dispon&iacute;veis em formato texto ASCII e/ou envi&accute;-los a um servidor de logs remoto. 
-Tudo isso pode ser obtido com o uso de dois pequenos shell scripts, algumas 
-pequenas altera&ccedil;&otilde;es em arquivos de configura&ccedil;&atilde;o do OpenBSD, e o 
-daemon de log 
+Em muitas situa&ccedil;&otilde;es &eacute; desej&aacute;vel possuir 
+logs do firewall dispon&iacute;veis em formato texto ASCII e/ou 
+envi&accute;-los a um servidor de logs remoto. 
+Tudo isso pode ser obtido com o uso de um pequeno shell script, 
+algumas pequenas altera&ccedil;&otilde;es em arquivos de 
+configura&ccedil;&atilde;o do OpenBSD, e o daemon de log 
 <a
-href="http://www.openbsd.org/cgi-bin/man.cgi?query=syslogd&amp;sektion=8&amp;manpath=OpenBSD+3.9">syslogd(8)</a>. O syslogd loga em formato ASCII e tamb&eacute;m &eacute; capaz de logar 
-em servidor remoto.
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=syslogd&amp;sektion=8&amp;manpath=OpenBSD+3.9">syslogd(8)</a>. O syslogd loga em formato ASCII e 
+tamb&eacute;m &eacute; capaz de logar em servidor remoto.
 
 <p>
-Primeiro devemos criar um usu&aacute;rio, <tt>pflogger</tt>, com shell 
-<tt>/sbin/nologin</tt>. A forma mais f&aacute;cil de cria-lo &eacute; com 
-<a
-href="http://www.openbsd.org/cgi-bin/man.cgi?query=adduser&amp;sektion=8&amp;manpath=OpenBSD+3.9">adduser(8)</a>.
-
-<p>
-Ap&oacute;s criar o usu&aacute;rio <tt>pflogger</tt>, crie os dois scripts:
+Crie o seguinte script:
 
 <p>
 <tt>/etc/pflogrotate</tt>
 <pre>
 	#!/bin/sh
-	FILE=/home/pflogger/pflog5min.$(date "+%Y%m%d%H%M")
+	PFLOG=/var/log/pflog
+	FILE=/var/log/pflog5min.$(date "+%Y%m%d%H%M")
 	kill -ALRM $(cat /var/run/pflogd.pid)
-	if [ $(ls -l /var/log/pflog | cut -d " " -f 8) -gt 24 ]; then
-		mv /var/log/pflog $FILE
-		chown pflogger $FILE
+	if [ -r $PFLOG ] && [ $(stat -f %z $PFLOG) -gt 24 ]; then
+		mv $PFLOG $FILE
 		kill -HUP $(cat /var/run/pflogd.pid)
-	fi
-</pre>
-
-<p>
-<tt>/home/pflogger/pfl2sysl</tt>
-<pre>
-	#!/bin/sh
-	# feed rotated pflog file(s) to syslog
-	# do not start if another instance of this script is already running
-	pgrep pfl2sysl >/dev/null 2>&1
-	if [ $? -ne 0 ] ; then
-		for logfile in /home/pflogger/pflog5min* ; do
-			if [ -f "$logfile" ] ; then
-				tcpdump -n -e -ttt -r $logfile | logger -t pf -p local0.info
-				rm $logfile
-			fi
-		done
+		tcpdump -n -e -ttt -r $FILE | logger -t pf -p local0.info
+		rm $FILE
 	fi
 </pre>
 
@@ -307,23 +287,6 @@ Adicione as duas linhas seguintes:
 </blockquote>
 
 <p>
-Crie uma entrada no cron para o usu&aacute;rio <tt>pflogger</tt>:
-<blockquote>
-<tt>
-# crontab -u pflogger -e
-</tt>
-</blockquote>
-
-<p>
-Adicione as duas linhas seguintes:
-<blockquote>
-<tt>
-# feed rotated pflog file(s) to syslog<br>
-0-59/5 *       *       *       *       /bin/sh /home/pflogger/pfl2sysl
-</tt>
-</blockquote>
-
-<p>
 Adicione a linha a seguir em <tt>/etc/syslog.conf</tt>:
 <blockquote>
 <tt>
@@ -332,7 +295,8 @@ local0.info &nbsp;&nbsp;&nbsp;&nbsp;/var/log/pflog.txt
 </blockquote>
 
 <p>
-Se voc&ecirc; tamb&eacute;m quiser logar num servidor remoto, insira a linha:
+Se voc&ecirc; tamb&eacute;m quiser logar num servidor remoto, insira 
+a linha:
 <blockquote>
 <tt>
 local0.info &nbsp;&nbsp;&nbsp;&nbsp;@syslogger
@@ -347,10 +311,11 @@ href="http://www.openbsd.org/cgi-bin/man.cgi?query=hosts&amp;sektion=5&amp;manpa
 
 <p>
 Crie o arquivo <tt>/var/log/pflog.txt</tt> para que o syslog 
-possa logar nele.
+possa logar nele e de as mesmas permiss&otilde;es do arquivo pflog.
 <blockquote>
 <tt>
-# touch /var/log/pflog.txt
+# touch /var/log/pflog.txt<br>
+# chmod 600 /var/log/pflog.txt
 </tt>
 </blockquote>
 
@@ -363,16 +328,18 @@ Avise o syslogd sobre a altera&ccedil;&atilde;o, reinciando-o:
 </blockquote>
 
 <p>
-Todos pacotes logados agora s&atilde;o enviados para <tt>/var/log/pflog.txt</tt>.
-Caso a segunda linha tenha sido adicionada eles tamb&eacute;m s&atilde;o enviados para 
-o host remoto <i>syslogger</i>.
+Todos pacotes logados agora s&atilde;o enviados para 
+<tt>/var/log/pflog.txt</tt>.
+Caso a segunda linha tenha sido adicionada eles tamb&eacute;m 
+s&atilde;o enviados para o host remoto <i>syslogger</i>.
 
 <p>
 O script <tt>/etc/pflogrotate</tt> agora processa e deleta 
-<tt>/var/log/pflog</tt> assim, a rota&ccedil;&atilde;o do <tt>pflog</tt> por 
-<a
-href="http://www.openbsd.org/cgi-bin/man.cgi?query=newsyslog&amp;sektion=8&amp;manpath=OpenBSD+3.9">newsyslog(8)</a> n&atilde;o &eacute; mais necess&aacute;ria, e deve 
-ser desabilitada. Contudo, <tt>/var/log/pflog.txt</tt> subistitui
+<tt>/var/log/pflog</tt> assim, a rota&ccedil;&atilde;o do 
+<tt>pflog</tt> por <a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=newsyslog&amp;sektion=8&amp;manpath=OpenBSD+3.9">newsyslog(8)</a> n&atilde;o &eacute; mais 
+necess&aacute;ria, e deve ser desabilitada. Contudo, 
+<tt>/var/log/pflog.txt</tt> subistitui
 <tt>/var/log/pflog</tt> e sua rota&ccedil;&atilde;o deve ser ativada.
 Altere <tt>/etc/newsyslog.conf</tt> da seguinte forma:
 <pre>    
@@ -383,9 +350,9 @@ Altere <tt>/etc/newsyslog.conf</tt> da seguinte forma:
 <p>
 Agora o PF loga em <tt>/var/log/pflog.txt</tt> no formato ASCII. 
 Se estiver configurado em <tt>/etc/syslog.conf</tt>, tamb&eacute;m 
-logar&aacute; num servidor remoto.  O log n&atilde;o &eacute; imediato podendo ser 
-necess&aacute;rio no m&aacute;ximo 5-6 minutos (o intervalo da tarefa no cron) para que 
-eles apace&ccedil;am no arquivo.
+logar&aacute; num servidor remoto.  O log n&atilde;o &eacute; imediato 
+podendo ser necess&aacute;rio no m&aacute;ximo 5-6 minutos (o 
+intervalo da tarefa no cron) para que eles apace&ccedil;am no arquivo.
 
 <p>
 [<a href="tagging.html">Anterior: Marca&ccedil;&atilde;o de Pacotes</a>]
@@ -399,10 +366,10 @@ eles apace&ccedil;am no arquivo.
 <br>
 <small>
 <!--
-Originally [OpenBSD: index.html,v 1.26 ]<br>
-$Translation: logging.html,v 1.8 2006/05/28 17:23:02 dsantos Exp $<br>
+Originally [OpenBSD: index.html,v 1.29 ]<br>
+$Translation: logging.html,v 1.9 2006/06/23 15:10:21 dsantos Exp $<br>
 -->
-$OpenBSD: logging.html,v 1.8 2006/05/29 11:06:11 jufi Exp $ 
+$OpenBSD: logging.html,v 1.9 2006/06/26 18:32:12 jufi Exp $ 
 </small>
 
 </body>
