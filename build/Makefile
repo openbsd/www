@@ -50,5 +50,8 @@ ftp: mirrors.pl mirrors.dat mirrors/ftp.html.{end,head,mid1,mid2} \
 anoncvs: mirrors.pl mirrors.dat mirrors/anoncvs.html.{end,head}
 	perl mirrors.pl anoncvs ${STABLE_VERSION}
 
+cvsync: mirrors.pl mirrors.dat mirrors/cvsync.html.{end,head}
+	perl mirrors.pl cvsync ${STABLE_VERSION}
+
 clean:
 		rm -f *.countries

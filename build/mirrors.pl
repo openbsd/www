@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.7 2006/05/06 06:02:59 steven Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.8 2006/08/23 07:39:34 steven Exp $';
 
 # note: some files are being reused because they would be identical
 my $sources = {
@@ -29,7 +29,9 @@ my $sources = {
 	'openntpd-portable-mid2'=> 'mirrors/openntpd-ftp.html.mid2',
 	'openntpd-portable-end'	=> 'mirrors/openntpd-ftp.html.end',
 	'anoncvs-head'		=> 'mirrors/anoncvs.html.head',
-	'anoncvs-end'		=> 'mirrors/anoncvs.html.end'
+	'anoncvs-end'		=> 'mirrors/anoncvs.html.end',
+	'cvsync-head'		=> 'mirrors/cvsync.html.head',
+	'cvsync-end'		=> 'mirrors/cvsync.html.end'
 };
 my $targets = {
 	'ftplist'		=> '../ftplist',
@@ -37,7 +39,8 @@ my $targets = {
 	'openbgpd-ftp'		=> '../openbgpd/ftp.html',
 	'openntpd-ftp'		=> '../openntpd/ftp.html',
 	'openntpd-portable'	=> '../openntpd/portable.html',
-	'anoncvs'		=> '../anoncvs.html'
+	'anoncvs'		=> '../anoncvs.html',
+	'cvsync'		=> '../cvsync.html'
 };
 
 # read in mirror list from given file into an array of hash references.
@@ -124,14 +127,15 @@ sub _paste_in($$) {
 sub _paste_mirrorlist($$$$$$) {
 	my ($fh, $mirrorref, $type, $proj, $version, $links) = @_;
 
-	print $fh ' ' x 4;		# indent for first <td> to come
+	# indent for first <td> to come
+	print $fh ' ' x 4 if ($type eq 'UF' || $type eq 'UH' || $type eq 'UR');
 	for my $lv (1, 2, 3) {
 	foreach my $mirror (sort _by_country @$mirrorref) {
 		if ($type eq 'UF' || $type eq 'UH' || $type eq 'UR') {
 			next if (($lv <= 2) && !defined $mirror->{'LF'});
 			next if ((defined $mirror->{'LF'}) && ($mirror->{'LF'} != $lv));
 		}
-		elsif ($type eq 'AH') {
+		elsif ($type eq 'AH' || $type eq 'VH') {
 			next if (($lv <= 2) && !defined $mirror->{'LC'});
 			next if ((defined $mirror->{'LC'}) && ($mirror->{'LC'} != $lv));
 		}
@@ -193,6 +197,36 @@ sub _paste_mirrorlist($$$$$$) {
 				if ($mirror->{'SD'});
 			print $fh "<p>\n";
 		}
+		elsif ($type eq 'VH') {
+			if ($mirror->{'VH'}) {
+				print $fh "<li>";
+				print $fh "<a href=\"", $mirror->{'VU'}, "\">"
+					if ($mirror->{'VU'});
+				print $fh "<strong>", $mirror->{'VH'},
+					"</strong>";
+				print $fh "</a>" if ($mirror->{'VU'});
+				print $fh "<br>\n";
+			} else {
+				die "Unable to determine CVSync hostname.\nCheck for missing fields.\n";
+			}
+			if ($mirror->{'HA'}) {
+				print $fh "Host also known as <strong>",
+				join(", ", split(/\s+/, $mirror->{'HA'})),
+				"</strong>.<br>\n";
+			}
+			print $fh "Location: $loc.<br>\n";
+			print $fh "Maintained by <a href=\"mailto:",
+					$mirror->{'ME'}, "\">",
+					$mirror->{'MN'}, "</a>.<br>\n"
+				if ($mirror->{'ME'} && $mirror->{'MN'});
+			if ($mirror->{'CE'}) {
+				print $fh "Updated every $mirror->{'CE'} hours";
+				print $fh " from $mirror->{'CF'}"
+					if ($mirror->{'CF'});
+				print $fh ".<br>\n";
+			}
+			print $fh "<p>\n";
+		}
 	}
 	}
 	print $fh "\n";
@@ -218,14 +252,23 @@ sub write_ftphtml($$$$) {
 	close($fh) or die "close $filename: $!";
 }
 
-sub write_anoncvshtml($$$) {
-	my ($filename, $ver, $mirrorref) = @_;
+sub write_cvshtml($$$$) {
+	my ($what, $filename, $ver, $mirrorref) = @_;
+	my $code;
+
+	if ($what eq 'anoncvs') {
+		$code = 'AH';
+	} elsif ($what eq 'cvsync') {
+		$code = 'VH';
+	} else {
+		die "illegal command: $what\n";
+	}
 
 	open(my $fh, '>', $filename) or die "open $filename: $!";
-	_paste_in($fh, $sources->{'anoncvs-head'});
-	# produce cvsync mirror list
-	_paste_mirrorlist($fh, $mirrorref, 'AH', 'openbsd', $ver, 1);
-	_paste_in($fh, $sources->{'anoncvs-end'});
+	_paste_in($fh, $sources->{"${what}-head"});
+	# produce anoncvs/cvsync mirror list
+	_paste_mirrorlist($fh, $mirrorref, $code, 'openbsd', $ver, 1);
+	_paste_in($fh, $sources->{"${what}-end"});
 	close($fh) or die "close $filename: $!";
 }
 
@@ -264,7 +307,7 @@ sub _get_location($$) {
 			$location .= ')' if ($m->{'GT'});
 		}
 	}
-	elsif ($type eq 'AH') {
+	elsif ($type eq 'AH' || $type eq 'VH') {
 		$location .= "$m->{'GI'}, " if ($m->{'GI'});
 		$location .= "$m->{'GT'}, " if ($m->{'GT'});
 		$location .= "$m->{'GS'}, " if ($m->{'GS'});
@@ -290,8 +333,8 @@ if (@ARGV == 2) {
 	} elsif ($cmd eq 'openbsd-ftp' || $cmd eq 'openbgpd-ftp' ||
 		 $cmd eq 'openntpd-ftp' || $cmd eq 'openntpd-portable') {
 		write_ftphtml($cmd, $targets->{"$cmd"}, $ver, \@mirrors);
-	} elsif ($cmd eq 'anoncvs') {
-		write_anoncvshtml($targets->{'anoncvs'}, $ver, \@mirrors);
+	} elsif ($cmd eq 'anoncvs' || $cmd eq 'cvsync') {
+		write_cvshtml($cmd, $targets->{"$cmd"}, $ver, \@mirrors);
 	} else {
 		die "Unknown mirror target.\n"
 	}
