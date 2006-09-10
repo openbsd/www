@@ -1281,7 +1281,6 @@ issues, if you are not prepared.
 
 <h3>What is a chroot?</h3>
 
-<p>
 A
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=chroot&amp;sektion=2">chroot(2)</a>ed
 application is locked into a particular directory and unable to wander
@@ -1292,18 +1291,26 @@ to its TCP ports (though, it doesn't accept data yet), and reads its
 configuration. Next, it locks itself into <i>/var/www</i> and drops
 privileges, then starts to accept requests.
 This means all files served and used by Apache must be in the
-<i>/var/www</i> directory. This helps security tremendously -- should
+<i>/var/www</i> directory.
+In the default configuration of OpenBSD, all the files in the
+<i>/var/www</i> directory are read-only by the user Apache runs as,
+<i>www</i>.
+This helps security tremendously -- should
 there be a security issue with Apache, the damage will be confined to a
 single directory with only "read only" permissions and no resources to
 cause mischief with.
 
-<h3>What does this mean to the user?</h3>
+<h3>What does this mean to the administrator?</h3>
 
 <p>
-Put bluntly, chroot(2)ing Apache is something new, and not done by
+Put bluntly, chroot(2)ing Apache is something not done by
 default in most other operating systems.
 Many applications and system configurations will not work in a chroot(2)
 without some customization.
+Further, it must be remembered that security and convience are often
+not compatible goals.
+OpenBSD's implementation of Apache does not compromise security 
+for features or "ease".  
 
 <ul>
 <li><b>Historic file system layouts:</b> Servers upgraded from older
@@ -1320,18 +1327,32 @@ users to have <a href="faq10.html#ftpchroot">chroot(2)ed FTP access</a>,
 this will not work, as the FTP chroot will (again) prevent you from
 accessing the targets of the symbolic links. A solution to this is to
 not use <i>/home</i> as your home directories for these users, rather
-use something similar to <i>/var/www/home</i>.
+use something similar to <i>/var/www/users</i>.
+Symbolic links can be used completely within the chroot(2), but they
+have to be relative, not absolute.
 
 <li><b>Log Rotation:</b> Normally, logs are rotated by renaming the old
 files, then sending httpd(8) a SIGUSR1 signal to cause Apache to close
 its old log files and open new ones. This is no longer possible, as
 httpd(8) has no ability to open log files for writing once privileges are
-dropped. httpd(8) must be stopped and restarted:
+dropped. httpd(8) must be stopped and restarted.
+It sometimes takes a few seconds for all the child
+processes to terminate, which must happen before httpd(8) can be
+restarted, so one possible way to rotate the logs would be as follows:
 
 <blockquote><pre>
-# <b>apachectl stop && apachectl start</b>
+# <b>apachectl stop</b>
+    <i>rename your log files</i>
+# <b>apachectl start ; sleep 10 ; apachectl start</b>
 </pre></blockquote>
 
+Yes, the last line attempts to restart Apache immediately, and in case
+that fails it waits a few seconds and tries again.
+And yes, that does mean that for a few seconds every time you do your
+log rotation, your web server will be unavailable.
+While this could be annoying, any attempt to permit httpd(8) to 
+reopen files after chroot(2)ing would defeat the very purpose of
+the chroot!
 There are also other strategies available, including logging to a 
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pipe&amp;sektion=2">pipe(2)</a>,
 and using an external log rotator at the other end of the pipe(2).
@@ -1345,15 +1366,22 @@ restart</tt>", generating an error, which causes httpd(8) to exit.
 programs or libraries outside <i>/var/www</i>. Some can be fixed by
 compiling so they are statically linked (not needing libraries in other
 directories), most may be fixed by populating the <i>/var/www</i>
-directory with the files required by the application, though this is non-
-trivial and requires considerable programming knowledge -- most users
-will find it easier to just disable the chroot(2) feature until they are
-updated.
+directory with the files required by the application, though this is
+non-trivial and requires some knowledge of the program.
+
+<li><b>File system mount options:</b>
+By default in OpenBSD, your <i>/var</i> partition will be mounted 
+with the <tt>nosuid</tt> and <tt>nodev</tt> options.
+If you attempt to use an application within the chroot, you may need
+to change those options.
+You may need to do that even if you don't use the chroot option, of
+course.
 
 </ul>
 
 In some cases, the application or configuration can be altered to run
-within the chroot. In other cases, you will simply have to disable this
+within the chroot(2).
+In other cases, you will simply have to disable this
 feature using the <tt>-u</tt> option for httpd(8) in
 <i><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rc.conf&amp;sektion=8">/etc/rc.conf</a></i>.
 
@@ -1456,18 +1484,53 @@ chroot, as well.
 we test again...  and it works!
 
 <p>
-In this example, the program is fairly simple, and yet we have seen several 
-different kinds of problems.
+Note that we have copied over only files that are absolutely required
+for operation.
+In general, only the minimum files needed to run an application should
+be copied into the chroot.
+
+<h3>Should I use the chroot feature?</h3>
+In the above example, the program is fairly simple, and yet we have seen
+several different kinds of problems.
+
+<p>
+<i>Not every application can or should be chroot(2)ed.</i>
+
+<p>
+The goal is a secure web server, chroot()ing is just a tool to accomplish
+this, it is not the goal itself.
+Remember, the starting configuration of the OpenBSD chroot(2)ed Apache
+is where the user the httpd(8) program is running as can not run any
+programs, can not alter any files, and can not assume another user's
+identity.
+Loosen these restrictions, you have lessened your security, chroot or no
+chroot.
+ 
+<p>
 Some applications are pretty simple, and chroot(2)ing them makes sense.
 Others are very complex, and are either not worth the effort of forcing
 them into a chroot(2), or by the time you copy enough of the system into
-the chroot, you have lost all benefit of the chroot(2) environment.
-Even with an application as simple as this, it must write to disk (to
-keep track of its counters), so some benefit of the chroot(2) is lost.
-In general, the minimum files needed to run an application should be 
-copied into the chroot.
-<i>Not every application can or should be chroot(2)ed.</i>
+the chroot, you have lost the benefit of the chroot(2) environment.
+For example, the OpenWebMail program requires the ability to read and
+write to the mail directory, the user's home directory, and must be able
+to work as any user on the system.
+Attempting to push it into a chroot would be completely pointless, as
+you would end up disabling all the benefits of chroot(2)ing.
+Even with an application as simple as the above counter, it must write
+to disk (to keep track of its counters), so <i>some</i> benefit of the
+chroot(2) is lost.
 
+<p>
+Any application which has to assume root privileges to operate is 
+pointless to attempt to chroot(2), as root can generally escape a
+chroot(2).
+
+<p>
+Do not forget, if the chrooting process for your application is too
+difficult, you may not upgrade or update the system as often as you
+should.
+This could end up making your system LESS secure than a more
+maintainable system with the chroot feature deactivated.
 
 <a name="rootshell"></a>
 <h2>10.17 - Can I change the root shell?</h2>
@@ -1576,6 +1639,6 @@ to give an overly verbose but somewhat useful prompt.
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq10.html,v 1.129 2006/08/30 02:34:47 nick Exp $</small>
+<small>$OpenBSD: faq10.html,v 1.130 2006/09/10 18:47:47 nick Exp $</small>
 </body>
 </html>
