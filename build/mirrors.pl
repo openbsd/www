@@ -7,7 +7,17 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.8 2006/08/23 07:39:34 steven Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.9 2006/09/17 06:08:46 steven Exp $';
+
+my %format;
+$format{'alias'}	= 'Host also known as <strong>%s</strong>.';
+$format{'location'}	= 'Location: %s.';
+$format{'maintainer'}	= 'Maintained by <a href="mailto:%s">%s</a>.';
+$format{'proto'}	= 'Protocols: %s.';
+$format{'updated'}	= 'Updated every %s hours.';
+$format{'updated_from'}	= 'Updated every %s hours from %s.';
+$format{'fingerprints'}	= 'SSH fingerprints:';
+$format{'cvsroot'}	= '<strong>CVSROOT=%s@%s:%s</strong>';
 
 # note: some files are being reused because they would be identical
 my $sources = {
@@ -161,32 +171,33 @@ sub _paste_mirrorlist($$$$$$) {
 		}
 		elsif ($type eq 'AH') {
 			if ($mirror->{'AH'} && $mirror->{'AU'} && $mirror->{'AR'}) {
-				print $fh "<li><strong>CVSROOT=",
-					$mirror->{'AU'}, '@',
-					$mirror->{'AH'}, ':',
-					$mirror->{'AR'}, "</strong><br>\n";
+				printf $fh "<li>".$format{'cvsroot'}."<br>\n",
+					$mirror->{'AU'}, $mirror->{'AH'},
+					$mirror->{'AR'};
 			} else {
 				die "Unable to determine CVSROOT for $mirror->{AH}.\nCheck for missing fields.\n";
 			}
 			if ($mirror->{'HA'}) {
-				print $fh "Host also known as <strong>",
-				join(", ", split(/\s+/, $mirror->{'HA'})),
-				"</strong>.<br>\n";
+				printf $fh $format{'alias'}."<br>\n",
+				join(", ", split(/\s+/, $mirror->{'HA'}));
 			}
-			print $fh "Location: $loc.<br>\n";
-			print $fh "Maintained by <a href=\"mailto:",
-					$mirror->{'ME'}, "\">",
-					$mirror->{'MN'}, "</a>.<br>\n"
+			printf $fh $format{'location'}."<br>\n", $loc;
+			printf $fh $format{'maintainer'}."<br>\n",
+					$mirror->{'ME'}, $mirror->{'MN'}
 				if ($mirror->{'ME'} && $mirror->{'MN'});
-			print $fh "Protocols: $mirror->{'AP'}.<br>\n"
+			printf $fh $format{'proto'}."<br>\n", $mirror->{'AP'}
 				if ($mirror->{'AP'});
 			if ($mirror->{'CE'}) {
-				print $fh "Updated every $mirror->{'CE'} hours";
-				print $fh " from $mirror->{'CF'}"
-					if ($mirror->{'CF'});
-				print $fh ".<br>\n";
+				if ($mirror->{'CF'}) {
+					printf $fh $format{'updated_from'},
+					$mirror->{'CE'}, $mirror->{'CF'};
+				} else {
+					printf $fh $format{'updated'},
+					$mirror->{'CE'};
+				}
+				print $fh "<br>\n";
 			}
-			print $fh "SSH fingerprints:<br>\n"
+			printf $fh $format{'fingerprints'}."<br>\n"
 				if ($mirror->{'SD'} || $mirror->{'SR'} ||
 					$mirror->{'SO'});
 			print $fh "(RSA1) $mirror->{'SO'}<br>\n"
@@ -200,30 +211,34 @@ sub _paste_mirrorlist($$$$$$) {
 		elsif ($type eq 'VH') {
 			if ($mirror->{'VH'}) {
 				print $fh "<li>";
-				print $fh "<a href=\"", $mirror->{'VU'}, "\">"
-					if ($mirror->{'VU'});
-				print $fh "<strong>", $mirror->{'VH'},
-					"</strong>";
-				print $fh "</a>" if ($mirror->{'VU'});
+				if ($mirror->{'VU'}) {
+					printf $fh '<a href="%s"><strong>%s</strong></a>',
+						$mirror->{'VU'}, $mirror->{'VH'};
+				} else {
+					printf $fh '<strong>%s</strong>',
+						$mirror->{'VH'};
+				}
 				print $fh "<br>\n";
 			} else {
 				die "Unable to determine CVSync hostname.\nCheck for missing fields.\n";
 			}
 			if ($mirror->{'HA'}) {
-				print $fh "Host also known as <strong>",
-				join(", ", split(/\s+/, $mirror->{'HA'})),
-				"</strong>.<br>\n";
+				printf $fh $format{'alias'}."<br>\n",
+				join(", ", split(/\s+/, $mirror->{'HA'}));
 			}
-			print $fh "Location: $loc.<br>\n";
-			print $fh "Maintained by <a href=\"mailto:",
-					$mirror->{'ME'}, "\">",
-					$mirror->{'MN'}, "</a>.<br>\n"
+			printf $fh $format{'location'}."<br>\n", $loc;
+			printf $fh $format{'maintainer'}."<br>\n",
+					$mirror->{'ME'}, $mirror->{'MN'}
 				if ($mirror->{'ME'} && $mirror->{'MN'});
 			if ($mirror->{'CE'}) {
-				print $fh "Updated every $mirror->{'CE'} hours";
-				print $fh " from $mirror->{'CF'}"
-					if ($mirror->{'CF'});
-				print $fh ".<br>\n";
+				if ($mirror->{'CF'}) {
+					printf $fh $format{'updated_from'},
+					$mirror->{'CE'}, $mirror->{'CF'};
+				} else {
+					printf $fh $format{'updated'},
+					$mirror->{'CE'};
+				}
+				print $fh "<br>\n";
 			}
 			print $fh "<p>\n";
 		}
