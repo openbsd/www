@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.9 2006/09/17 06:08:46 steven Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.10 2006/10/24 18:08:41 grunk Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -92,6 +92,10 @@ sub read_mirrors ($) {
 sub write_ftplist($$$) {
 	my ($filename, $ver, $mirrorref) = @_;
 
+	my $MAXWIDTH = 72;
+	my $URLLEN = 54;
+	my $LOCLEN = $MAXWIDTH - $URLLEN - 1;
+
 	open(my $fh, '>', $filename) or die "open $filename: $!";
 
 	for my $lv (1, 2, 3) {
@@ -106,13 +110,17 @@ sub write_ftplist($$$) {
 			$loc .= "$mirror->{'GT'}, " if $mirror->{'GT'};
 			$loc .= "$mirror->{'GS'}, " if $mirror->{'GS'};
 			$loc .= "$mirror->{'GC'}" if $mirror->{'GC'};
+			$loc =~ s/&auml;/a/g ;
+			$loc =~ s/&ouml;/o/g ;
+			$loc =~ s/&uuml;/u/g ;
+			$loc =~ s/&eacute;/e/g ;
 			(my $url = $mirror->{$type}) =~ s,/$,,;
-			if ((length($url) + length($loc) < 78)
-					&& (length($loc) > 25)) {
-				my $lr = 78 - length($url);
+			if ((length($url) + 1 + length($loc) <= $MAXWIDTH)
+					&& (length($loc) > $LOCLEN)) {
+				my $lr = $URLLEN - length($url) + $LOCLEN;
 				printf $fh "%s %" . $lr . "s\n", $url, $loc;
 			} else {
-				printf $fh "%-54s %s\n", $url, $loc;
+				printf $fh "%-". $URLLEN ."s %s\n", $url, $loc;
 			}
 		}
 	}
