@@ -74,7 +74,7 @@ Je¶li chcesz pomóc w aktualizacji tego pliku, zajrzyj na
 <li><a href="#ftpchroot">10.14 - Ograniczanie dostêpu u¿ytkowników
 	wy³±cznie do ich katalogów domowych w ftpd(8)</a>
 <li><a href="#Patches">10.15 - £atanie systemu OpenBSD</a>
-<li><a href="#httpdchroot">10.16 - Zastosowanie ¶rodowiska chroot() 
+<li><a href="#httpdchroot">10.16 - Zastosowanie ¶rodowiska chroot(2) 
 	dla serwera Apache.</a>
 <li><a href="#rootshell">10.17 - Mogê zmieniæ pow³okê roota?</a>
 <li><a href="#ksh">10.18 - Co jeszcze mo¿na zrobiæ z ksh?</a>
@@ -1095,7 +1095,7 @@ po³±czenie jest logowane do sysloga, w³±czaj±c w to komendy ftp takie
 jak get, retrieve itd):
 
 <blockquote><pre>
-<b>ftp             stream  tcp     nowait  root    /usr/libexec/tcpd       ftpd -llUSA</b>
+<b>ftp             stream  tcp     nowait  root    /usr/libexec/ftpd       ftpd -llUSA</b>
 </pre></blockquote>
 
 
@@ -1354,7 +1354,7 @@ w przypadku w±tpliwo¶ci, na³ó¼ je wszystkie w kolejno¶ci.
 
 
 <a name="httpdchroot"></a>
-<h2>10.16 - Zastosowanie ¶rodowiska chroot() dla serwera Apache.</h2>
+<h2>10.16 - Zastosowanie ¶rodowiska chroot(2) dla serwera Apache.</h2>
 
 <p>
 W systemie OpenBSD, serwer HTTP Apache
@@ -1366,7 +1366,7 @@ systemu, mog± siê z tym wi±zaæ pewne niespodzianki dla osób nieprzygotowanych
 na tak± zmianê.
 
 <h3>Co to jest chroot?</h3>
-<p>Proces dzia³aj±cy w ¶rodowisku zmodyfikowanym poleceniem 
+Proces dzia³aj±cy w ¶rodowisku zmodyfikowanym poleceniem 
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=chroot&amp;sektion=2">
 chroot(2)</a> (dalej bêdziemy pisali po prostu: "proces dzia³aj±cy w 
 ¶rodowisku chroot") jest ograniczony do okre¶lonego katalogu i nie ma 
@@ -1378,18 +1378,27 @@ otwiera swoje pliki dziennika, pod³±cza siê do swojego portu TCP
 konfiguracyjny. Nastêpnie "zamyka siê" w <i>/var/www</i>, oddaje 
 przywileje, a potem rozpoczyna przyjmowanie ¿±dañ. Oznacza to, ¿e 
 wszystkie pliki wysy³ane b±d¼ odbierane przez serwer Apache musz± 
-znajdowaæ siê w katalogu <i>/var/www</i>. Ogromnie pomaga to w 
-podniesieniu bezpieczeñstwa systemu -- je¿eli nast±pi³o by w³amanie 
-poprzez serwer Apache, to zniszczenia dokonane przez w³amywacza by³yby 
-ograniczone do jednego katalogu z prawami "tylko do odczytu" -- bez 
-dostêpu do zasobów, które mo¿na by wykorzystaæ do niecnych zamiarów.
+znajdowaæ siê w katalogu <i>/var/www</i>. 
+W domy¶lnej konfiguracji OpenBSD, wszystkie pliki w <i>/var/www</i>
+maj± atrybuty tylko do odczytu dla u¿ytkownika <i>www</i> z uprawnieniami
+którego chodzi Apache.
+Ogromnie pomaga to w podniesieniu bezpieczeñstwa systemu -- 
+je¿eli nast±pi³o by w³amanie poprzez serwer Apache, to zniszczenia 
+dokonane przez w³amywacza by³yby ograniczone do jednego katalogu z 
+prawami "tylko do odczytu" -- bez dostêpu do zasobów, które mo¿na 
+by wykorzystaæ do niecnych zamiarów.
 
-<h3>Co to oznacza dla u¿ytkownika?</h3>
+<h3>Co to oznacza dla administratora?</h3>
 
-<p>Nie owijaj±c w bawe³nê trzeba powiedzieæ, ¿e uruchamianie serwera 
+<p>
+Nie owijaj±c w bawe³nê trzeba powiedzieæ, ¿e uruchamianie serwera 
 Apache w ¶rodowisku chroot(2) jest czym¶ nowym. Dlatego te¿ wiele 
 starszych programów czy ustawieñ systemowych przestanie dzia³aæ,
-bez kilku przeróbek:
+bez kilku przeróbek.
+Ponadto musimy pamiêtaæ, ¿e bezpieczeñstwo i wygoda czêsto nie s±
+kompatybilnymi za³o¿eniami.
+Implementacja Apache w OpenBSD nie jest kompromisem bezpieczeñstwa
+wzglêdem funkcjonalno¶ci i "wygody".
 
 <ul>
 <li><b>Stare rozk³ady systemu plików:</b> Na serwerach, na których 
@@ -1410,19 +1419,33 @@ chroot(2)</a>, to nie zadzia³a to tak, jak oczekujemy, poniewa¿
 chroot (ponownie) nie zezwoli na dostêp do plików wskazywanych przez 
 ³±cza symboliczne. Rozwi±zaniem tego problemu jest niekorzystanie z 
 katalogów domowych <i>/home</i> dla tych u¿ytkowników, a zamiast tego 
-utworzenie ich w katalogu <i>/var/www/home</i> lub podobnym.
+utworzenie ich w katalogu <i>/var/www/users</i> lub podobnym.
+Dowi±zania symboliczne mog± byæ u¿ywane w chroot(2), musz± byæ jednak wzglêdne
+a nie bezwzglêdne.
 
 <li><b>Rotacja logów:</b> Standardowo, rotacja logów odbywa siê przez 
 zmianê nazwy starych plików, a nastêpnie wys³anie httpd(8) sygna³u 
 SIGUSR1 w celu zmuszenia Apache do zamkniêcia swoich starych logów i 
 otwarcia nowych. W chroot nie jest to mo¿liwe, poniewa¿ httpd(8) nie ma 
 mo¿liwo¶ci otwarcia logu do zapisu po oddaniu przywilejów. httpd(8) musi 
-byæ zatrzymany i zrestartowany:
+byæ zatrzymany i zrestartowany.
+Czasem, zakoñczenie procesów potomnych zajmuje kilka sekund, a musi to 
+nast±piæ zanim httpd(8) zostanie zrestartowany, zatem jednym z mo¿liwych
+sposobów pozwalaaj±cych na rotacjê logów jest:
 
 <blockquote><pre>
-     # <b>apachectl stop &amp;&amp; apachectl start</b>
+# <b>apachectl stop</b>
+  <i>zmieñ nazwy swoich logów</i>
+# <b>apachectl start ; sleep 10 ; apachectl start</b>
 </pre></blockquote>
 
+Tak, ostatnia linia uruchamia ponownie Apache, i w przypadku gdy 
+ta operacja siê nie powiedzie, usi³uje to zrobiæ jeszcze raz.
+A tak¿e, oznacza, ¿e za kazdym razem jak wykonujesz rotacjê swoich logów,
+twój serwer www bêdzie niedostêpny.
+Chocia¿ mo¿e to byæ irytuj±ce, jednak ka¿da próba zezwolenia httpd(8)
+na ponowne otwarcie plików poza chroot(8)em prze³amuje wiele celów
+chroot-a!
 Istniej± jeszcze inne sposoby, np. logowanie do 
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pipe&amp;sektion=2">
 pipe(2)</a> przy korzystaniu z zewnêtrznego programu do rotacji logów, 
@@ -1441,15 +1464,21 @@ poprzez statyczne ³±czenie (eliminuje to potrzebê korzystania z
 zewnêtrznych bibliotek przez te programy). Kolejnym sposobem, bardzo 
 skutecznym, jest umieszczenie kopii potrzebnych plików w katalogu 
 <i>/var/www</i>. Jest to jednak zadanie niebanalne, wymagaj±ce sporej 
-wiedzy programistycznej. Wiêkszo¶æ u¿ytkowników zdecyduje siê na 
-rozwi±zanie prostsze i po prostu nie skorzysta z chroot(2), dopóki dany 
-skrypt nie zostanie zaktualizowany tak, by dzia³a³ w ¶rodowisku chroot(2). 
+wiedzy o programie.
+
+<li><b>Opcje montowania systemów plików:</b>
+Domy¶lnie w OpenBSD, twoja partycja <i>/var</i> bedzie montowana
+z opcjami <tt>nosuid</tt> oraz <tt>nodev</tt>.
+Je¿eli zamierzasz korzystaæ z aplikacji w ramach chroot-a, mo¿esz
+potrzebowaæ zmieniæ te opcje.
+Oczywi¶cie, mo¿esz tak¿e potrzebowaæ zmiany tych opcji, nawet je¿eli nie korzystasz
+z chroot-a.
 
 </ul>
 
 Jak wiêc widaæ, w niektórych przypadkach, programy lub ustawienia mog± 
-byæ zmienione tak, by dzia³a³y w ¶rodowisku chroot(2). W innych 
-przypadkach trzeba bêdzie po prostu wy³±czyæ chroot(2) za pomoc± opcji 
+byæ zmienione tak, by dzia³a³y w ¶rodowisku chroot(2).
+W innych przypadkach trzeba bêdzie po prostu wy³±czyæ chroot(2) za pomoc± opcji 
 <tt>-u</tt> demona httpd(8) w pliku 
 <i><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rc.conf&amp;sektion=8">/etc/rc.conf</a></i>
 
@@ -1544,24 +1573,58 @@ Po krótkich poszukiwaniach, odnajdujemy je w
 do chroot'a.
 
 <blockquote><pre>
-     # <b>tar cf - /usr/local/lib/wwwcount | (cd /var/www; tar xpf - )</b>
+# <b>tar cf - /usr/local/lib/wwwcount | (cd /var/www; tar xpf - )</b>
 </pre></blockquote>
 
 Testujemy ponownie... i wszystko dzia³a!
 
 <p>
-W przytoczonym przyk³adzie, program by³ do¶æ prosty, jednak mimo to
-napotkali¶my kilka ró¿nych problemów.
-Niektóre aplikacje bywaj± bardzo proste, wiêc chroot(2)owanie ich ma sens.
+Zwróæ uwagê, ¿e skopiowali¶my tylko te pliki które s± absolutnie niezbêdne.
+Generalnie, tylko minimalna ilo¶æ plików potrzebna do uruchomienia aplikacji
+powinna byæ kopiowana do chroot'a.
+
+<h3>Czy powinienem korzystaæ z funkcjonalno¶ci chroot-a?</h3>
+W powy¿szym przyk³adzie, program by³ bardzo prosty, a mimo to natrafili¶my
+na kilka ró¿nych problemów.
+
+<p>
+<i>Nie ka¿d± aplikacjê mo¿na lub powinno siê chroot(8)-owaæ.</i>
+
+<p>
+Celem jest bezpieczny serwer www, chroot(8) jest tylko narzêdziem
+doskonal±cym to zadanie, lecz sam nie jest celem.
+Pamiêtaj, pocz±tkowa konfiguracja chroot(2)-owanego Apache'a w OpenBSD
+oznacza, ¿e u¿ytkownik z uprawnieniami którego dzia³a httpd(8), nie mo¿e
+uruchamiaæ ¿adnych programów, nie mo¿e modyfikowaæ ¿adnych plików, 
+a tak¿e nie mo¿e przejmowaæ to¿samo¶ci innych u¿ytkowników.
+Trac±c te ograniczenia, tracisz bezpieczeñstwo, nie wa¿ne czy chrootowane
+czy nie.
+
+<p>
+Niektóre aplikacje bywaj± bardzo proste, wiêc chroot(2)-owanie ich ma sens.
 Inne bywaj± do¶æ skomplikowane i albo nie s± warte wysi³ku by umie¶ciæ
 je w chroot(2), albo podczas kopiowania systemu w chroot, mo¿esz straciæ
-wszystkie korzy¶ci ¶rodowiska chroot(2).
+korzy¶ci ¶rodowiska chroot(2).
+Przyk³adowo, program OpenWebMail wymaga dostêpu do czytania i zapisu katalogów
+z poczt±, katalogów domowych u¿ytkowników, a tak¿e musi mieæ mo¿liwo¶æ
+dzia³ania jako jakikolwiek u¿ytkownik w systemie.
+Usi³owanie wepchniêcia go w chroot jest zupe³nie bezcelowe, poniewa¿ w rezultacie
+i tak pozbawisz siê wszystkich zalet chroot(2)-owania.
 Nawet w przypadku aplikacji tak prostej jak nasza, musi ona zapisywaæ 
-na dysk (by zapamiêtywaæ liczniki), wiêc niektóre korzy¶ci z chroot'a s± tracone.
+na dysk (by zapamiêtywaæ liczniki), wiêc <i>niektóre</i> korzy¶ci z chroot(2)-a s± tracone.
 Generalnie, tylko minimum plików koniecznych by aplikacja dzia³a³a
 powinno byæ kopiowane w chroot.
-<i>Nie wszystkie programy mog± lub powinny byæ chrootowane.</i>
 
+<p>
+Usi³owanie chroot(2)-owania jakiejkolwiek aplikacji dzia³aj±cej z uprawnieniami
+root-a jest bezcelowe, root generalnie mo¿e uciec z chroot(2)-a.
+
+<p>
+Nie zapomninaj tak¿e, ¿e w sytuacji gdy chrootowanie jakiej¶ aplikacji 
+oka¿e siê bardzo trudne, mo¿esz nie aktualizowaæ systemu tak czêsto jak
+powiniene¶.
+Mo¿e to spowodowaæ, ¿e twój system bêdzie MNIEJ bezpieczny, ni¿ bardziej
+zarz±dzalny system z wy³±czon± funkcjonalno¶ci± chroota.
 
 <a name="rootshell"></a>
 <h2>10.17 - Mogê zmieniæ pow³okê roota?</h2>
@@ -1679,9 +1742,9 @@ by otrzymaæ zbyt rozwlek³y ale w jaki¶ sposób u¿yteczny prompt.
 <br>
 <small>
 <!--
-Originally [OpenBSD: faq10.html,v 1.128 ]<br>
-$Translation: faq10.html,v 1.32 2006/08/25 18:17:09 tkniaz Exp $<br>
+Originally [OpenBSD: faq10.html,v 1.132 ]<br>
+$Translation: faq10.html,v 1.33 2006/10/24 19:41:37 tkniaz Exp $<br>
 -->
-$OpenBSD: faq10.html,v 1.26 2006/08/27 09:43:20 saad Exp $
+$OpenBSD: faq10.html,v 1.27 2006/10/25 07:40:55 jufi Exp $
 </small>
 </body></html>
