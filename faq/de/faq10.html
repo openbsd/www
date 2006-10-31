@@ -63,7 +63,7 @@
   Heimatverzeichnisse einsperren.</a>
 <li><a href="#Patches"       >10.15 - Patches in OpenBSD einfügen.</a>
 <li><a href="#httpdchroot"   >10.16 - Wie geht das mit dem
-  chroot()-Apache?</a>
+  chroot(2)-Apache?</a>
 <li><a href="#rootshell"     >10.17 - Kann ich die Rootshell ändern?</a>
 <li><a href="#ksh"           >10.18 - Was kann ich noch mit ksh
   machen?</a>
@@ -1401,7 +1401,6 @@ führen, wenn man nicht darauf vorbereitet ist.
 
 <h3>Was ist ein chroot?</h3>
 
-<p>
 Eine
 ,<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=chroot&amp;sektion=2">chroot(2)</a>ed'
 Anwendung wird in ein bestimmtes Verzeichnis eingesperrt und ist nicht
@@ -1414,18 +1413,23 @@ sich in <i>/var/www</i> ein und lässt seine Privilegien fallen; erst
 dann akzeptiert es Anfragen.
 Dies bedeutet, dass alle Dateien, die von Apache zur Verfügung gestellt
 und benutzt werden, sich im Verzeichnis <i>/var/www</i> befinden müssen.
+In der Standardkonfiguration von OpenBSD kann der Apache-User
+<i>www</i> die Dateien im <i>/var/www</i>-Verzeichnis nur lesen.
 Dies hilft der Sicherheit ungemein -- sollte es ein Sicherheitsproblem
 mit Apache geben, wird der Schaden auf ein einziges Verzeichnis
 begrenzt sein, dessen Rechte nur das Lesen erlauben und auch keine
 Ressourcen hat, die jemand ausnutzen könnte.
 
-<h3>Was bedeutet das für den Benutzer?</h3>
+<h3>Was bedeutet das für den Administrator?</h3>
 
 <p>
-Grob gesagt ist chroot(2)ing Apache etwas Neues und wird nicht
-standardmäßig unter anderen Betriebssystemen eingesetzt.
+Grob gesagt ist chroot(2)ing Apache etwas, das nicht standardmäßig
+unter anderen Betriebssystemen eingesetzt wird.
 Viele Applikationen und Systemkonfigurationsdateien werden in einem
-chroot(2) ohne Anpassungen nicht funktionieren.
+chroot(2) ohne Anpassungen nicht funktionieren. Zusätzlich muss erwähnt
+werden, dass sich Sicherheit und Komfort als Ziel gegenseitig
+ausschließen. OpenBSDs Implementation von Apache gefährdet die
+Sicherheit nicht, um Funktionen oder »Bequemlichkeiten« zu ermöglichen.
 
 <ul>
 <li><b>Historische Dateisystemlayouts:</b> Server, die von einer
@@ -1447,7 +1451,9 @@ dann nicht funktionieren wird, da der FTP-Chroot (wieder einmal)
 den Zugriff auf die Ziele der symbolischen Links verhindern wird.
 Eine Lösung hierfür ist es, nicht <i>/home</i> als Heimatverzeichnis
 für solche Anwender zu benutzen sondern stattdessen etwas wie
-<i>/var/www/home</i>.
+<i>/var/www/users</i>. Symbolische Links können innerhalb der
+chroot(2)-Umgebung verwendet werden - sie müssen aber relativ und
+nicht absolut sein.
 
 <li><b>,Log Rotation':</b> Normalerweise werden Logs rotiert, indem
 die alten Dateien umbenannt werden, httpd(8) ein SIGUSR1-Signal
@@ -1455,12 +1461,23 @@ gesendet wird, das Apache dazu veranlasst, die alten Dateien zu
 schließen und neue zu öffnen. Dies ist nicht länger möglich, da
 httpd(8) nicht mehr in der Lage ist, neue Logdateien zu öffnen, um
 in sie zu schreiben, sobald die Privilegien abgegeben worden sind. Daher
-muss httpd(8) beendet und neugestartet werden:
+muss httpd(8) beendet und neugestartet werden. Es dauert manchmal
+ein paar Sekunden, bis alle Kindprozesse beendet wurden. Diese
+müssen beendet werden, bevor httpd(8) neugestartet werden kann. Ein
+Möglichkeit, die Logs zu rotiereren, ist diese:
 
 <blockquote><pre>
-# <b>apachectl stop && apachectl start</b>
+# <b>apachectl stop</b>
+    <i>rename your log files</i>
+# <b>apachectl start ; sleep 10 ; apachectl start</b>
 </pre></blockquote>
 
+Ja, die letzte Zeile versucht, Apache sofort neuzustarten. Sollte dies
+fehlschlagen, wird es nach einigen Sekunden wieder versucht. Und ja,
+das bedeutet auch, dass dein Webserver jedes Mal, wenn deine Logs
+rotiert werden, für kurze Zeit nicht erreichbar sein wird. Es mag zwar
+nerven, doch würde der Sinn und Zweck des Chroots verworfen werden,
+würde man Apache erlauben, Dateien nach dem Chroot(2)en zu öffnen!
 Es gibt weitere Strategien hierfür, einschließlich die Möglichkeit,
 über eine
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pipe&amp;sektion=2">pipe(2)</a>
@@ -1481,15 +1498,21 @@ können durch Kompilieren statisch gelinkt werden (keine Bibliotheken
 in anderen Verzeichnissen werden benötigt), die meisten werden behoben
 werden können, indem im <i>/var/www</i> die Verzeichnisse mit den
 benötigten Dateien der Applikation angelegt werden, wobei dies nicht
-so einfach ist, wie es klingt, und daher einiges an Programmierwissen
-benötigt -- die meisten Benutzer werden es einfach finden, lediglich
-die chroot(2)-Funktionalität zu beenden, bis die CGIs aktualisiert
-wurden.
+so einfach ist, wie es klingt, und daher Wissen über das Programm
+benötigt.
+
+<li><b>Mountoptionen für das Dateisystem:</b>
+Standardmäßig wird unter OpenBSD deine <i>/var</i>-Partition mit den
+Optionen <tt>nosuid</tt> und <tt>nodev</tt> gemountet. Wenn du eine
+Applikation im Chroot ausführen möchtest, so musst du diese Optionen
+eventuell ändern. Selbstverständlich kann es auch vorkommen, dass du
+diese Optionen ändern musst, wenn du kein Chroot betreibst.
 
 </ul>
 
 In einigen Fällen können die Applikation oder die Konfiguration
-geändert werden, damit sie im chroot läuft. In anderen Fällen wirst
+geändert werden, damit sie im chroot(2) läuft.
+In anderen Fällen wirst
 du diese Funktionalität einfach unter Verwendung der Option <tt>-u</tt>
 mit httpd(8) in der
 <i><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rc.conf&amp;sektion=8">/etc/rc.conf</a></i>
@@ -1599,19 +1622,55 @@ ins chroot kopieren müssen.
 wir testen wieder ... und es läuft!
 
 <p>
-In diesem Beispiel ist das Programm recht einfach und doch sahen wir
-unterschiedliche Arten von Problemen.
+Beachte, dass wir wirklich nur die Dateien kopiert haben, die absolut
+notwendig sind, um das Programm ausführen zu können. Generell gilt,
+dass die Mindestanzahl an Dateien in die Chroot-Umgebung kopiert
+werden sollte, um das Programm ausführen zu können.
+
+<h3>Sollte ich auf die Chroot-Funktion zurückgreifen?</h3>
+Im obigen Beispiel war das Programm zwar recht einfach, doch hatten
+wir unterschiedlichste Probleme, bis es lief.
+
+<p>
+<i>Nicht jede Anwendung kann oder sollte in einer Chroot(2)-Umgebung
+laufen.</i>
+
+<p>
+Das Ziel ist ein sicherer Webserver. Chroot(2)ing ist nur ein Teil des
+Weges, um dieses Ziel zu erreichen - und nicht das Ziel selbst. Denke
+daran, dass die Standardkonfiguration von OpenBSDs Apache in chroot(2)
+vorsieht, dass der Benutzer des httpd(8)-Programms keine anderen
+Programme ausführen, keine Dateien verändern und auch nicht die
+Identität des Benutzers ändern kann. Wenn du diese Einschränkungen
+lockerst, so verringerst du die Gesamtsicherheit - mit oder ohne chroot.
+
+<p>
 Einige Applikationen sind recht einfach und ,chroot(2)ing' macht für sie
 Sinn. Andere sind recht komplex und sind die Anstrengungen, sie in ein
 chroot zu zwingen, nicht wert, oder aber du wirst den kompletten Nutzen
 der chroot(2)-Umgebung verloren haben, wenn du genügend Dateien vom
-System kopiert hast. Selbst Applikationen, die so einfach wie diese
-sind, müssen auf die Platte schreiben (um den Zähler zu speichern), so
-dass einige Vorteile vom chroot(2) verloren gegangen sind. Generell
-gilt, dass nur so viele Dateien ins chroot kopiert werden sollten, wie
-für das Ausführen der Datei zwingend erforderlich sind.
-<i>Nicht jede Applikation kann oder sollte ,chroot(2)ed' werden.</i>
+System kopiert hast. Zum Beispiel muss das Programm OpenWebMail auf das
+Mailverzeichnis und auf das Heimatverzeichnis des Benutzers zugreifen
+können sowie die Möglichkeit haben, Programme mit den Rechten aller
+Anwender auszuführen. Ein Versuch, diese Anwendungen in eine
+Chroot-Umgebung zu sperren wäre völlig sinnlos, da hiermit alle
+Vorzüge einer solchen Umgebung umgangen werden. Selbst Applikationen,
+die so einfach wie der zuvor beschrieben Counter sind, müssen auf die
+Platte schreiben (um den Zähler zu speichern), so dass <i>einige</i>
+Vorteile vom chroot(2) verloren gegangen sind.
 
+<p>
+Des Weiteren ist es nutzlos, chroot(2) für Programme umzusetzen, die
+Rootrechte benötigen. Root kann generell aus einer Chroot(2)-Umgebung
+ausbrechen.
+
+<p>
+Vergiss eine Sache nicht: wenn die Einrichtung einer Chroot-Umgebung
+sehr schwer war, so wirst du vielleicht der Versuchung erliegen, das
+System seltener zu aktualisieren/upgraden als du solltest. Dies
+wiederum würde dazu führen, dass dein System UNSICHERER ist als ein
+System, das zwar auf Chroot verzichtet, dafür aber leichter zu
+verwalten ist.
 
 <a name="rootshell"></a>
 <h2>10.17 - Kann ich die Rootshell ändern?</h2>
@@ -1726,10 +1785,10 @@ um einen recht ausgiebigen aber nützlichen Prompt zu bekommen.
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br><small>
 <!--
-Originally [OpenBSD: faq10.html,v 1.129 ]<br>
-$Translation: faq10.html,v 1.19 2006/08/30 07:55:54 paldium Exp $<br>
+Originally [OpenBSD: faq10.html,v 1.132 ]<br>
+$Translation: faq10.html,v 1.20 2006/10/31 14:57:06 paldium Exp $<br>
 -->
-$OpenBSD: faq10.html,v 1.19 2006/08/30 13:47:18 jufi Exp $
+$OpenBSD: faq10.html,v 1.20 2006/10/31 15:09:58 jufi Exp $
 </small>
 </body>
 </html>
