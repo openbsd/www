@@ -54,6 +54,7 @@ Gateways</a>]
 <li><a href="#natserver">FTP-Server, die durch eine externe PF-Firewall
 mit NAT beschützt werden</a>
 <li><a href="#info">Weitere Informationen zum Thema FTP</a>
+<li><a href="#tftp-proxy">Proxy für TFTP</a>
 </ul>
 
 <hr>
@@ -93,7 +94,7 @@ sie das Paket fallen lassen und nicht zum Client weiterleiten.
 
 <p>
 Beim passiven FTP-Modus (dem standardmäßigen Modus mit OpenBSDs <a
-href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp&amp;sektion=1&amp;manpath=OpenBSD+3.9"
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp&amp;sektion=1&amp;manpath=OpenBSD+4.0"
 >ftp(1)</a>-Client) wird der Client vom Server verlangen, dass dieser
 einen zufälligen Port auswählen soll, auf dem er dann auf die
 Datenverbindung wartet. Der Server teilt dem Client mit, welchen
@@ -120,7 +121,7 @@ NAT-Firewall, indem aktiv benötigte Regeln zum PF-System hinzugefügt
 und danach wieder entfernt werden. All das wird über das
 <a href="anchors.html">Anker</a>-System von PF ermöglicht.
 Der FTP-Proxy, der von OpenBSD und PF verwendet wird, ist
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+3.9"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+4.0"
 >ftp-proxy(8)</a>. (Hinweis: frühere OpenBSD-Versionen verwendeten
 einen anderen Proxy mit dem selben Namen, der in OpenBSD 3.8
 dokumentiert wurde:
@@ -182,11 +183,6 @@ Um Verbindungen für aktives FTP zu ermöglichen, musst du die Option
 »-r« an ftp-proxy(8) übergeben (hierfür musstest du an den alten
 Proxy »-u root« benutzen).
 
-<p>
-Bedenke bitte, dass der ftp-proxy(8) dazu da ist, den <b>FTP-Clients</b>
-hinter einem PF-Filter zu helfen; er kann keinen <b>FTP-Server</b> hinter
-einem PF-Filter handhaben.
-
 
 <a name="server"></a>
 <h2>Ein FTP-Server, der »sich selbst mit PF schützt«</h2>
@@ -195,7 +191,7 @@ extra dafür installiertem Firewall-Computer. Wenn eine passive
 FTP-Verbindung angeboten wird, wird FTP zufällig einen hohen TCP-Port
 für eingehende Daten auswählen. Standardmäßig wird OpenBSDs nativer
 FTP-Server
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftpd&amp;sektion=8&amp;manpath=OpenBSD+3.9"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftpd&amp;sektion=8&amp;manpath=OpenBSD+4.0"
 >ftpd(8)</a>
 einen Port aus dem Bereich 49152 bis 65535 nutzen.
 Diese müssen selbstverständlich zusätzlich zum Port 21
@@ -212,9 +208,9 @@ pass in on $ext_if proto tcp from any to any port &gt; 49151 \<br>
 <p>
 Wenn du möchtest, kannst du den Bereich der Ports beachtlich
 verbessern. Im Falle von OpenBSDs
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftpd&amp;sektion=8&amp;manpath=OpenBSD+3.9"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftpd&amp;sektion=8&amp;manpath=OpenBSD+4.0"
 >ftpd(8)</a>-Programm wird dies durch die Verwendung von den
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=8&amp;manpath=OpenBSD+3.9"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=8&amp;manpath=OpenBSD+4.0"
 >sysctl(8)</a>-Variablen <tt>net.inet.ip.porthifirst</tt> und
 <tt>net.inet.ip.porthilast</tt> ermöglicht.
 
@@ -222,36 +218,61 @@ verbessern. Im Falle von OpenBSDs
 <h2>FTP-Server, die durch eine externe PF-Firewall mit NAT beschützt
 werden</h2>
 In diesem Fall muss die Firewall den Verkehr zum FTP-Server nicht nur
-zu den Ports durchlassen, sondern auch weiterleiten. Um das Beispiel
-einfach zu halten, nehmen wir an, dass wieder der normale
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftpd&amp;sektion=8&amp;manpath=OpenBSD+3.9"
->ftpd(8)</a> von OpenBSD mit dem standardmäßigen Portbereich genutzt
-wird.
+zu den Ports durchlassen, sondern auch weiterleiten. Um dies zu
+bewerkstelligen, wenden wir uns wieder ftp-proxy(8) zu.
 
 <p>
-Hier ist ein Beispiel-Unterregelsatz, der dies realisieren würde:
+ftp-proxy(8) kann in einem Modus betrieben werden, der alle
+FTP-Verbindungen zu einem bestimmten FTP-Server weiterleitet. Im Grunde
+werden wir also einen Proxy einrichten, der auf Port 21 der Firewall
+lauscht und alle Verbindungen zum eigentlichen Server weiterleitet.
+
+
+<p>
+Editiere <tt>/etc/rc.conf.local</tt> und füge folgende Zeile hinzu:
+
 <blockquote>
 <tt>
-ftp_server = "10.0.3.21"<br>
-<br>
-rdr on $ext_if proto tcp from any to any port 21 -&gt; $ftp_server \<br>
-&nbsp;&nbsp;&nbsp;port 21<br>
-rdr on $ext_if proto tcp from any to any port 49152:65535 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;$ftp_server port 49152:65535<br>
-<br>
-# in on $ext_if<br>
-pass in quick on $ext_if proto tcp from any to $ftp_server \<br>
-&nbsp;&nbsp;&nbsp;port 21 keep state<br>
-pass in quick on $ext_if proto tcp from any to $ftp_server \<br>
-&nbsp;&nbsp;&nbsp;port &gt; 49151 keep state<br>
-<br>
-# out on $int_if<br>
-pass out quick on $int_if proto tcp from any to $ftp_server \<br>
-&nbsp;&nbsp;&nbsp;port 21 keep state<br>
-pass out quick on $int_if proto tcp from any to $ftp_server \<br>
-&nbsp;&nbsp;&nbsp;port &gt; 49151 keep state
+ftpproxy_flags="-R 10.10.10.1 -p 21 -b 192.168.0.1"
 </tt>
 </blockquote>
+
+<p>
+10.10.10.1 ist hierbei die IP-Adresse des tatsächlichen FTP-Servers,
+21 ist die Portnummer, auf der ftp-proxy(8) lauschen soll und
+192.168.0.1 ist die Adresse der Firewall, an die sich der Proxy binden
+soll.
+
+<p>
+Kommen wir nun zu den pf.conf-Regeln:
+
+<blockquote>
+<tt>
+ext_ip = "192.168.0.1"<br>
+ftp_ip = "10.10.10.1"<br>
+<br>
+nat-anchor "ftp-proxy/*"<br>
+nat on $ext_if inet from $int_if -&gt; ($ext_if)<br>
+rdr-anchor "ftp-proxy/*"<br>
+<br>
+pass in on $ext_if inet proto tcp to $ext_ip port 21 \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;flags S/SA keep state<br>
+pass out on $int_if inet proto tcp to $ftp_ip port 21 \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;user proxy flags S/SA keep state<br>
+anchor "ftp-proxy/*"
+</tt>
+</blockquote>
+
+<p>
+Hiermit erlauben wir eingehenden Verkehr zum Port 21 des externen
+Interfaces und ausgehenden Verkehr zum FTP-Server. Die Erweiterung
+»user proxy« bei der ausgehenden Verbindung stellt sicher, dass nur
+Verbindungen erlaubt werden, die vom ftp-proxy initiiert wurden.
+
+<p>
+Falls du mit ftp-proxy(8) einen FTP-Server beschützen möchtest und
+gleichzeitig FTP-Clients hinter der Firewall verwalten musst, so
+brauchst du zwei ftp-proxy-Instanzen.
 
 
 <a name="info"></a>
@@ -262,6 +283,53 @@ funktioniert, können in diesem Whitepaper gefunden werden:
 <li><a href="http://www.pintday.org/whitepapers/ftp-review.shtml">FTP
 Reviewed</a>
 </ul>
+
+
+<a name="tftp-proxy"></a>
+<h2>Proxy für TFTP</h2>
+
+<p>
+Das »Trivial File Transfer Protocol« (TFTP) hat die gleichen Nachteile
+wie FTP, wenn es um die Weiterleitung durch eine Firewall geht.
+Zum Glück verfügt PF über einen Hilfsproxy für TFTP:
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+4.0"
+>tftp-proxy(8)</a>.
+
+<p>
+tftp-proxy(8) wird fast genauso wie ftp-proxy(8) im Abschnitt
+<a href="#client">FTP-Client hinter der Firewall</a> eingerichtet.
+
+<blockquote>
+<tt>
+nat on $ext_if from $int_if -&gt; ($ext_if)<br>
+rdr-anchor "tftp-proxy/*"<br>
+rdr on $int_if proto udp from $int_if to port tftp -&gt; \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;127.0.0.1 port 6969<br>
+<br>
+anchor "tftp-proxy/*"
+</tt>
+</blockquote>
+
+<p>
+Diese Regeln erlauben ausgehenden TFTP-Verkehr vom internen Netzwerk
+zu TFTP-Servern im externen Netzwerk.
+
+<p>
+Der letzte Schritt besteht darin, tftp-proxy in der
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=inetd.conf&amp;sektion=5&amp;manpath=OpenBSD+4.0"
+>inetd.conf(5)</a> zu aktivieren, so dass der Proxy auf dem
+selben Port lauscht, wie in der <tt>rdr</tt>-Regel angegeben; in diesem
+Fall 6969.
+
+<blockquote>
+<tt>
+127.0.0.1:6969  dgram   udp   wait  root  /usr/libexec/tftp-proxy tftp-proxy
+</tt>
+</blockquote>
+
+<p>
+Im Gegensatz zu ftp-proxy(8) wird tftp-proxy(8) von inetd aufgerufen.
+
 
 <p>
 [<a href="perf.html">Zurück: Leistung</a>]
@@ -276,10 +344,10 @@ Gateways</a>]
 <br>
 <small>
 <!--
-Originally [OpenBSD: ftp.html,v 1.22 ]<br>
-$Translation: ftp.html,v 1.12 2006/08/06 14:06:56 paldium Exp $<br>
+Originally [OpenBSD: ftp.html,v 1.23 ]<br>
+$Translation: ftp.html,v 1.13 2006/11/01 10:48:51 paldium Exp $<br>
 -->
-$OpenBSD: ftp.html,v 1.12 2006/08/08 07:14:20 saad Exp $
+$OpenBSD: ftp.html,v 1.13 2006/11/01 11:30:45 jufi Exp $
 </small>
 
 </body>
