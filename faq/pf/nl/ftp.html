@@ -53,6 +53,7 @@ Gateways</a>]
 <li><a href="#natserver">FTP Server Beschermd door een Externe PF Firewall
 die NAT draait</a>
 <li><a href="#info">Meer Informatie over FTP</a>
+<li><a href="#tftp-proxy">TFTP Proxy'en</a>
 </ul>
 
 <hr>
@@ -90,7 +91,7 @@ aan de client bezorgen.
 
 <p>
 Bij passieve FTP modus (de standaard modus voor OpenBSD's <a
-href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp&amp;sektion=1&amp;manpath=OpenBSD+3.9"
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp&amp;sektion=1&amp;manpath=OpenBSD+4.0"
 >ftp(1)</a> client), vraagt de client aan de server een willekeurige poort te
 kiezen om op te luisteren voor de "data connection". De server informeert de
 client over de poort die hij gekozen heeft, en de client verbindt naar deze
@@ -115,8 +116,8 @@ FTP verkeer doorheen de NAT gateway/firewall te "gidsen", door op een
 actieve manier de nodige regels toe te voegen aan het PF systeem en ze
 weer te verwijderen als het klaar is, door middel van het PF
 <a href="anchors.html">ankers</a> systeem.
-De FTP proxy die gebruikt wordt door OpenBSD 3.9 en PF, is
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+3.9"
+De FTP proxy die door PF gebruikt wordt in OpenBSD 3.9 en later, is
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+4.0"
 >ftp-proxy(8)</a>.
 (opmerking: vroegere versies van OpenBSD gebruikten een andere proxy met
 dezelfde naam, die gedocumenteerd is in OpenBSD 3.8's
@@ -175,11 +176,6 @@ bovenstaande <tt>rdr</tt> commando FTP verkeer naartoe stuurt.
 Om actieve modus verbindingen toe te laten, hebt u de '-r' optie voor
 ftp-proxy(8) nodig (hiervoor moest u de oude proxy met "-u root" uitvoeren).
 
-<p>
-Merk alstublieft op dat ftp-proxy(8) dient om <b>FTP clients</b> achter een
-PF filter te helpen; het wordt niet gebruikt om een <b>FTP server</b> achter
-een PF filter aan te pakken.
-
 
 <a name="server"></a>
 <h2>Een FTP Server die "zichzelf beschermt" met PF</h2>
@@ -187,7 +183,7 @@ In dit geval draait PF op de FTP server zelf, veeleer dan op een toegewijde
 firewall computer. Bij het bedienen van een passieve FTP verbinding zal
 FTP een willekeurig gekozen, hoge TCP poort gebruiken voor binnenkomende
 gegevens. Standaard gebruikt OpenBSD's aangeboren FTP server
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftpd&amp;sektion=8&amp;manpath=OpenBSD+3.9"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftpd&amp;sektion=8&amp;manpath=OpenBSD+4.0"
 >ftpd(8)</a> het bereik 49152 tot 65535.
 Vanzelfsprekend moeten deze doorgelaten worden door de filterregels, samen
 met poort 21 (de FTP controlepoort):
@@ -203,44 +199,69 @@ pass in on $ext_if proto tcp from any to any port &gt; 49151 \<br>
 <p>
 Merk op dat indien u dat wenst, u dat bereik van poorten aanzienlijk kan
 vernauwen. In het geval van het OpenBSD
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftpd&amp;sektion=8&amp;manpath=OpenBSD+3.9"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftpd&amp;sektion=8&amp;manpath=OpenBSD+4.0"
 >ftpd(8)</a> programma, gebeurt dat met de
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=8&amp;manpath=OpenBSD+3.9"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=8&amp;manpath=OpenBSD+4.0"
 >sysctl(8)</a> variabelen <tt>net.inet.ip.porthifirst</tt> en
 <tt>net.inet.ip.porthilast</tt>.
 
 <a name="natserver"></a>
 <h2>FTP Server Beschermd door een Externe PF Firewall die NAT draait</h2>
 In dit geval moet de firewall verkeer omleiden naar de FTP server bovenop
-het niet blokkeren van de vereiste poorten. Om een concreet voorbeeld te geven,
-zullen we aannemen dat de FTP server in kwestie opnieuw de standaard OpenBSD
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftpd&amp;sektion=8&amp;manpath=OpenBSD+3.9"
->ftpd(8)</a> is, met gebruik van het standaard poortbereik.
+het niet blokkeren van de vereiste poorten.
+Om dit te verwezenlijken, keren we terug naar ftp-proxy(8).
 
 <p>
-Hier is een voorbeeld van een subset van regels die dit zouden verwezenlijken:
+ftp-proxy(8) kan gedraaid worden in een modus die ervoor zorgt dat het alle
+FTP verbindingen doorstuurt naar een specifieke FTP server.
+Eigenlijk zullen we de proxy instellen om te luisteren op poort 21 van de
+firewall en alle verbindingen naar de back-end server door te sturen.
+
+<p>
+Wijzig <tt>/etc/rc.conf.local</tt> door het volgende toe te voegen:
+
 <blockquote>
 <tt>
-ftp_server = "10.0.3.21"<br>
-<br>
-rdr on $ext_if proto tcp from any to any port 21 -&gt; $ftp_server \<br>
-&nbsp;&nbsp;&nbsp;port 21<br>
-rdr on $ext_if proto tcp from any to any port 49152:65535 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;$ftp_server port 49152:65535<br>
-<br>
-# in on $ext_if<br>
-pass in quick on $ext_if proto tcp from any to $ftp_server \<br>
-&nbsp;&nbsp;&nbsp;port 21 keep state<br>
-pass in quick on $ext_if proto tcp from any to $ftp_server \<br>
-&nbsp;&nbsp;&nbsp;port &gt; 49151 keep state<br>
-<br>
-# out on $int_if<br>
-pass out quick on $int_if proto tcp from any to $ftp_server \<br>
-&nbsp;&nbsp;&nbsp;port 21 keep state<br>
-pass out quick on $int_if proto tcp from any to $ftp_server \<br>
-&nbsp;&nbsp;&nbsp;port &gt; 49151 keep state
+ftpproxy_flags="-R 10.10.10.1 -p 21 -b 192.168.0.1"
 </tt>
 </blockquote>
+
+<p>
+Hier is 10.10.10.1 het IP adres van de eigenlijke FTP server, 21 is de poort
+waarop we willen dat ftp-proxy(8) luistert, en 192.168.0.1 is het adres op
+de firewall waaraan we de proxy willen binden.
+
+<p>
+Nu de pf.conf regels:
+
+<blockquote>
+<tt>
+ext_ip = "192.168.0.1"<br>
+ftp_ip = "10.10.10.1"<br>
+<br>
+nat-anchor "ftp-proxy/*"<br>
+nat on $ext_if inet from $int_if -&gt; ($ext_if)<br>
+rdr-anchor "ftp-proxy/*"<br>
+<br>
+pass in on $ext_if inet proto tcp to $ext_ip port 21 \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;flags S/SA keep state<br>
+pass out on $int_if inet proto tcp to $ftp_ip port 21 \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;user proxy flags S/SA keep state<br>
+anchor "ftp-proxy/*"
+</tt>
+</blockquote>
+
+<p>
+Hier zullen we de ingaande verbinding toelaten op poort 21 op de externe
+interface, alsook de overeenkomstige uitgaande verbinding naar de FTP
+server.
+De "user proxy" toevoeging aan de uitgaande regel verzekert dat alleen
+verbindingen geïnitieerd door ftp-proxy(8) toegestaan worden.
+
+<p>
+Merk op dat als u ftp-proxy(8) wil draaien zowel om een FTP server te
+beschermen als om clients naar buiten te laten FTP'en van achter de
+firewall, dan twee instanties van ftp-proxy vereist zullen zijn.
 
 
 <a name="info"></a>
@@ -251,6 +272,52 @@ kan u terugvinden in dit artikel:
 <li><a href="http://www.pintday.org/whitepapers/ftp-review.shtml">FTP
 Reviewed</a>
 </ul>
+
+
+<a name="tftp-proxy"></a>
+<h2>TFTP Proxy'en</h2>
+
+<p>
+Trivial File Transfer Protocol (TFTP) leidt aan enkele van dezelfde
+beperkingen als FTP wanneer het gaat om door een firewall heen te geraken.
+Gelukkig heeft PF een helper-proxy voor TFTP,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+4.0"
+>tftp-proxy(8)</a> genoemd.
+
+<p>
+tftp-proxy(8) wordt ingesteld op een gelijkaardige manier als ftp-proxy(8)
+in de <a href="#client">FTP Client achter de Firewall</a> sectie hierboven.
+
+<blockquote>
+<tt>
+nat on $ext_if from $int_if -&gt; ($ext_if)<br>
+rdr-anchor "tftp-proxy/*"<br>
+rdr on $int_if proto udp from $int_if to port tftp -&gt; \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;127.0.0.1 port 6969<br>
+<br>
+anchor "tftp-proxy/*"
+</tt>
+</blockquote>
+
+<p>
+De regels hierboven laten uitgaande TFTP toe vanaf het interne netwerk naar
+TFTP servers op het externe netwerk.
+
+<p>
+De laatste stap is om tftp-proxy in te schakelen in 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=inetd.conf&amp;sektion=5&amp;manpath=OpenBSD+4.0"
+>inetd.conf(5)</a> zodat het luistert op dezelfde poort als de
+<tt>rdr</tt> regel hierboven gespecificeerd, in dit geval 6969.
+
+<blockquote>
+<tt>
+127.0.0.1:6969  dgram   udp   wait  root  /usr/libexec/tftp-proxy tftp-proxy
+</tt>
+</blockquote>
+
+<p>
+In tegenstelling tot ftp-proxy(8), wordt tftp-proxy ge-"spawned" vanuit inetd.
+
 
 <p>
 [<a href="perf.html">Vorige: Prestatie</a>]
@@ -265,10 +332,10 @@ Gateways</a>]
 <br>
 <small>
 <!--
-Originally [OpenBSD: ftp.html,v 1.22 ]<br>
-$Translation: ftp.html,v 1.9 2006/05/11 04:52:46 smestdag Exp $<br>
+Originally [OpenBSD: ftp.html,v 1.23 ]<br>
+$Translation: ftp.html,v 1.10 2006/11/03 20:35:18 smestdag Exp $<br>
 -->
-$OpenBSD: ftp.html,v 1.8 2006/05/11 14:20:51 jufi Exp $
+$OpenBSD: ftp.html,v 1.9 2006/11/04 17:38:45 saad Exp $
 </small>
 
 </body>

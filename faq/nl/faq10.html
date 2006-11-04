@@ -20,8 +20,7 @@
 <font color= "#0000e0">
 <a href= "index.html">[FAQ Index]</a>
 <a href= "faq9.html">[Naar Sectie 9 - Migreren naar OpenBSD]</a>
-<!-- a href= "faq11.html">[Naar Sectie 11 - Prestatie Tuning]</a -->
-<a href="faq12.html">[Naar Sectie 12 - Platform-specifieke Vragen]</a>
+<a href= "../faq11.html">[Naar Sectie 11 - Het X Window System]</a>
 </font>
 
 <h1><font color="#e00000">10 - Systeembeheer</font></h1>
@@ -45,7 +44,7 @@
 <li><a href="#AnonFTP"       >10.13 - Een Anonymous FTP Server opzetten</a>
 <li><a href="#ftpchroot"     >10.14 - Gebruikers vastzetten in hun home directories in ftpd(8)</a>
 <li><a href="#Patches"       >10.15 - Patches in OpenBSD aanbrengen</a>
-<li><a href="#httpdchroot"   >10.16 - Vertel me eens over chroot() Apache?</a>
+<li><a href="#httpdchroot"   >10.16 - Vertel me eens over chroot(2) Apache?</a>
 <li><a href="#rootshell"     >10.17 - Kan ik de root shell wijzigen?</a>
 <li><a href="#ksh"           >10.18 - Wat kan ik nog doen met ksh?</a>
 </ul>
@@ -1302,7 +1301,7 @@ aanbrengt, en indien u twijfelt, breng ze dan allemaal aan, in volgorde.
 
 
 <a name="httpdchroot"></a>
-<h2>10.16 - Vertel me over die chroot() Apache?</h2>
+<h2>10.16 - Vertel me over die chroot(2) Apache?</h2>
 
 <p>
 In OpenBSD werd de Apache 
@@ -1314,7 +1313,6 @@ scheppen, als u zich niet voorbereidt.
 
 <h3>Wat is een chroot?</h3>
 
-<p>
 Een
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=chroot&amp;sektion=2">chroot(2)</a>ed
 toepassing wordt opgesloten in een bepaalde directory en kan niet rondwaren
@@ -1326,18 +1324,26 @@ en leest zijn configuratie. Vervolgens sluit het zichzelf op in
 <i>/var/www</i> en laat privileges vallen, daarna begint het aanvragen
 te aanvaarden.
 Dit betekent dat alle bestanden bediend en gebruikt door Apache in de
-<i>/var/www</i> directory moeten staan. Dit helpt de veiligheid enorm --
+<i>/var/www</i> directory moeten staan.
+In de standaardconfiguratie van OpenBSD kunnen alle bestanden in de
+<i>/var/www</i> directory alleen gelezen worden door de gebruiker die
+Apache draait, <i>www</i>.
+Dit helpt de veiligheid enorm --
 als er een beveiligingsprobleem is met Apache, zal de schade beperkt blijven
 tot een enkele directory met slechts "read only" permissies en zonder middelen
 om onheil mee aan te richten.
 
-<h3>Wat betekent dit voor de gebruiker?</h3>
+<h3>Wat betekent dit voor de beheerder?</h3>
 
 <p>
-Botweg gezegd, is Apache chroot(2)en iets nieuw, en het gebeurt niet standaard
+Botweg gezegd, is Apache chroot(2)en iets dat niet standaard gebeurt
 in de meeste andere besturingssystemen.
 Vele toepassingen en systeemconfiguraties zullen niet werken in een chroot(2)
 zonder wat aanpassing.
+Verder moet onthouden worden dat veiligheid en gemak vaak geen compatibele
+doelstellingen zijn.
+OpenBSD's implementatie van Apache compromitteert veiligheid niet voor
+functionaliteit of "gemak".
 
 <ul>
 <li><b>Historische bestandssysteem layouts:</b> Servers opgewaardeerd van
@@ -1356,19 +1362,33 @@ Merk op dat als u wil dat uw gebruikers
 zal werken, aangezien de FTP chroot u (opnieuw) zal beletten om de doelen
 van de symbolische links te bereiken. Een oplossing hiervoor is om niet
 <i>/home</i> te gebruiken als uw home directories voor deze gebruikers,
-gebruik veeleer iets gelijkaardig aan <i>/var/www/home</i>.
+gebruik veeleer iets gelijkaardig aan <i>/var/www/users</i>.
+Symbolische links kunnen volledig binnen de chroot(2) gebruikt worden,
+maar ze moeten relatief zijn, niet absoluut.
 
 <li><b>Log Rotatie:</b> Normaal worden logs geroteerd door de oudere bestanden
 te hernoemen, vervolgens httpd(8) een SIGUSR1 signaal te sturen om Apache
 zijn oude logbestanden te laten sluiten en er nieuwe te openen. Dit is niet
 langer mogelijk, aangezien httpd(8) geen mogelijkheid heeft om logbestanden
 te openen en om hier naar te schrijven zodra hij privileges heeft laten vallen.
-httpd(8) moet gestopt en herstart worden:
+httpd(8) moet gestopt en herstart worden.
+Soms duurt het enkele seconden vooraleer al de kind-processen beëindigd
+zijn, wat moet gebeuren vooraleer httpd(8) kan herstart worden, dus een
+mogelijke manier om de logs te roteren zou het volgende zijn:
 
 <blockquote><pre>
-# <b>apachectl stop && apachectl start</b>
+# <b>apachectl stop</b>
+    <i>hernoem uw logbestanden</i>
+# <b>apachectl start ; sleep 10 ; apachectl start</b>
 </pre></blockquote>
 
+Ja, de laatste lijn probeert onmiddelijk apache te herstarten, en indien
+dat mislukt, wacht het enkele seconden en probeert opnieuw.
+En ja, dat betekent dat gedurende enkele seconden telkens wanneer u uw
+logs roteert, uw webserver niet beschikbaar zal zijn.
+Terwijl dit vervelend kan zijn, is elke poging om httpd(8) toe te laten om
+bestanden te heropenen na chroot(2)en, de doelstelling van de chroot
+dwarsbomen!
 Er zijn ook andere strategieën beschikbaar, waaronder het loggen naar een
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pipe&amp;sektion=2">pipe(2)</a>,
 en het gebruik van een externe logroteerder aan het andere uiteinde van de
@@ -1386,14 +1406,21 @@ kunnen gecorrigeerd worden door ze te compileren zodat ze statisch gelinkt
 zijn (en geen libraries in andere directories nodig hebben), de meeste kunnen
 gecorrigeeerd worden door de <i>/var/www</i> directory op te vullen met de
 bestanden vereist door de toepassing, hoewel dit niet-triviaal is en
-aanzienlijke programmeringskennis vereist -- de meeste gebruikers zullen het
-gemakkelijker vinden om gewoon de chroot(2) functionaliteit uit te schakelen
-totdat ze geüpdatet zijn.
+enige kennis van het programma vereist.
+
+<li><b>Bestandssysteem mount opties:</b>
+Standaard zal in OpenBSD uw <i>/var</i> partitie gemount worden met de
+<tt>nosuid</tt> en <tt>nodev</tt> opties.
+Indien u probeert een toepassing te gebruiken binnen de chroot, kan het
+gebeuren dat u die opties moet veranderen.
+Het kan uiteraard ook dat u dat moet doen zelfs als u de chroot optie
+niet gebruikt.
 
 </ul>
 
 In sommige gevallen kan de toepassing of configuratie aangepast worden om
-binnen de chroot te draaien. In andere gevallen zal u deze functionaliteit
+binnen de chroot(2) te draaien.
+In andere gevallen zal u deze functionaliteit
 gewoon moeten uitschakelen met de <tt>-u</tt> optie voor httpd(8) in
 <i><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rc.conf&amp;sektion=8">/etc/rc.conf</a></i>.
 
@@ -1498,20 +1525,55 @@ kopiëren.
 we testen opnieuw... en het werkt!
 
 <p>
-In dit voorbeeld is het programma vrij eenvoudig, en toch hebben we
-verschillende soorten problemen gezien.
+Merk op dat we alleen bestanden hebben gekopieerd die absoluut vereist
+zijn voor de werking.
+In het algemeen moet alleen het minimum aan bestanden nodig om een
+toepassing te draaien, gekopieerd worden in de chroot.
+
+<h3>Moet ik de chroot functionaliteit gebruiken?</h3>
+In het bovenstaande voorbeeld is het programma vrij eenvoudig, en toch
+hebben we verschillende soorten problemen gezien.
+
+<p>
+<i>Niet elke toepassing kan of moet ge-chroot(2)ed worden.</i>
+
+<p>
+De doelstelling is een veilige webserver, chroot(2)en is gewoon een
+hulpmiddel om dit te verwezenlijken, het is niet de doelstelling zelf.
+Onthou dat de beginconfiguratie van OpenBSD's gechroot(2)ed Apache
+is dat de gebruiker die het httpd(8) programma draait, geen andere
+programma's kan draaien, geen bestanden kan wijzigen, en niet de identiteit
+van een andere gebruiker kan aannemen.
+Versoepel deze beperkingen, en u hebt de beveiliging verminderd, chroot
+of geen chroot.
+
+<p>
 Sommige toepassingen zijn vrij eenvoudig, en ze chroot(2)en houdt steek.
 Andere zijn heel complex, en ofwel zijn ze niet de moeite om ze in een
 chroot(2) te dwingen, ofwel hebt u, tegen de tijd dat u voldoende van het
-systeem in de chroot kopieert, alle voordelen van de chroot(2) omgeving
+systeem in de chroot kopieert, het voordeel van de chroot(2) omgeving
 verloren.
-Zelfs met een toepassing zo eenvoudig als deze, ze moet naar de schijf
-schrijven (om haar tellers bij te houden), dus een beetje voordeel van
-de chroot(2) gaat verloren.
-In het algemeen moeten de minimale bestanden nodig om een toepassing te
-draaien, in de chroot gekopieerd worden.
-<i>Niet elke toepassing kan of moet gechroot(2)ed worden.</i>
 
+Het OpenWebMail programma vereist bijvoorbeeld de mogelijkheid om te lezen
+en te schrijven naar de mail directory, de home directory van de gebruiker,
+en moet als gelijk welke gebruiker kunnen werken op het systeem.
+Proberen om het in een chroot te duwen zou volledig zinloos zijn,
+aangezien u uiteindelijk al de voordelen van chroot(2)en zou uitschakelen.
+Zelfs met een toepassing zo eenvoudig als de bovenstaande teller, die
+naar de schijf moet schrijven (om zijn tellers bij te houden), gaat
+het voordeel van de chroot(2) <i>voor een deel</i> verloren.
+
+<p>
+Gelijk welke toepassing die root-privileges moet aannemen om te werken
+is zinloos om te proberen chroot(2)en, aangezien root in het algemeen
+uit een chroot(2) kan ontsnappen.
+
+<p>
+Vergeet niet dat, als het chroot-proces voor uw toepassing te ingewikkeld
+is, u misschien het systeem niet zo vaak zal upgraden of updaten als u
+zou moeten doen.
+Dit kan uiteindelijk uw systeem MINDER veilig maken dan een meer
+onderhoudbaar systeem met de chroot functionaliteit uitgeschakeld.
 
 <a name="rootshell"></a>
 <h2>10.17 - Kan ik de root shell wijzigen?</h2>
@@ -1613,8 +1675,7 @@ om een heel uitgebreide maar ietwat nuttige prompt te geven.
 <font color= "#0000e0">
 <a href= "index.html">[FAQ Index]</a>
 <a href= "faq9.html">[Naar Sectie 9 - Migreren naar OpenBSD]</a>
-<!-- a href= "faq11.html">[Naar Sectie 11 - Prestatie Tuning]</a -->
-<a href="faq12.html">[Naar Sectie 12 - Platform-specifieke Vragen]</a>
+<a href= "../faq11.html">[Naar Sectie 11 - Het X Window System]</a>
 </font>
 
 <p>
@@ -1624,10 +1685,10 @@ om een heel uitgebreide maar ietwat nuttige prompt te geven.
 <br>
 <small>
 <!--
-Originally [OpenBSD: faq10.html,v 1.129 ]<br>
-$Translation: faq10.html,v 1.26 2006/10/27 12:05:29 smestdag Exp $<br>
+Originally [OpenBSD: faq10.html,v 1.133 ]<br>
+$Translation: faq10.html,v 1.27 2006/11/03 21:15:42 smestdag Exp $<br>
 -->
-$OpenBSD: faq10.html,v 1.23 2006/10/27 13:32:07 jufi Exp $
+$OpenBSD: faq10.html,v 1.24 2006/11/04 17:38:44 saad Exp $
 </small>
 </body>
 </html>
