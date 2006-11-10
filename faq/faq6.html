@@ -52,6 +52,8 @@
 <li><a href= "#CARP">6.11 - The Common Address Redundancy Protocol (CARP)</a>
 <li><a href="#OpenNTPD">6.12 - Using OpenNTPD</a>
 <li><a href="#Wireless">6.13 - What are my wireless networking options?</a>
+<li><a href="#Multipath">6.14 - How can I do equal-cost multipath
+	routing?</a>
 </ul>
 
 <hr>
@@ -1966,6 +1968,119 @@ where it is most effective, which is often not directly on the back of
 your firewall.
 
 
+<a name="Multipath">
+<h2>6.14 - How can I do equal-cost multipath routing?</h2>
+
+<p>
+Equal-cost multipath routing refers to having multiple routes in
+the routing table for the same network, such as the default route,
+0.0.0.0/0.
+When the kernel is doing a route lookup to determine where to send
+packets destined to that network, it can choose from any of the
+equal-cost routes.
+In most scenarios, multipath routing is used to provide redundant uplink
+connections, e.g., redundant connections to the Internet.
+
+<p>
+The
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=route&amp;sektion=8">route(8)</a>
+command is used to add/change/delete routes in the routing table.
+The <tt>-mpath</tt> argument is used when adding multipath routes.
+
+<blockquote>
+<tt>
+# route add -mpath default 10.130.128.1<br>
+# route add -mpath default 10.132.0.1<br>
+</tt>
+</blockquote>
+
+<p>
+Verify the routes:
+
+<blockquote>
+<pre>
+# netstat -rnf inet | grep default
+default     10.130.128.1      UGS       2      134      -     fxp1
+default     10.132.0.1        UGS       0      172      -     fxp2
+</pre>
+</blockquote>
+
+<p>
+In this example we can see that one default route points to 10.130.128.1
+which is accessible via the fxp1 interface, and the other points
+to 10.132.0.1 which is accessible via fxp2.
+
+<p>
+Since the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mygate&amp;sektion=5"
+>mygate(5)</a> file does not yet support multipath default routes, the
+above ifconfig commands should be added to the bottom of the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hostname.if&amp;sektion=5"
+>hostname.if(5)</a> files for the fxp1 and fxp2 interfaces and
+<tt>/etc/mygate</tt> should be deleted.
+This will install the routes when the system is booted.
+
+<dl>
+<dt><b>/etc/hostname.fxp1</b></dt>
+<dd><tt>!route add -mpath default 10.130.128.1</tt></dd>
+<dt><b>/etc/hostname.fxp2</b></dt>
+<dd><tt>!route add -mpath default 10.132.0.1</tt></dd>
+</dl>
+
+<p>
+Lastly, don't forget to enable use of multipath routes by enabling the
+proper sysctl(3) variable.
+Be sure to edit
+<a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl.conf&amp;sektion=5"
+>sysctl.conf(5)</a>
+to make the changes permanent.
+
+<blockquote>
+<tt>
+# sysctl net.inet.ip.multipath=1<br>
+# sysctl net.inet6.ip6.multipath=1
+</tt>
+</blockquote>
+
+<p>
+Now try a traceroute to different destinations.
+The kernel will load balance the traffic over each multipath route.
+
+<blockquote>
+<pre>
+# traceroute -n 154.11.0.4
+traceroute to 154.11.0.4 (154.11.0.4), 64 hops max, 60 byte packets
+ 1  10.130.128.1  19.337 ms  18.194 ms  18.849 ms
+ 2  154.11.95.170  17.642 ms  18.176 ms  17.731 ms
+ 3  154.11.5.33  110.486 ms  19.478 ms  100.949 ms
+ 4  154.11.0.4  32.772 ms  33.534 ms  32.835 ms
+
+# traceroute -n 154.11.0.5
+traceroute to 154.11.0.5 (154.11.0.5), 64 hops max, 60 byte packets
+ 1  10.132.0.1  14.175 ms  14.503 ms  14.58 ms
+ 2  154.11.95.38  13.664 ms  13.962 ms  13.445 ms
+ 3  208.38.16.151  13.964 ms  13.347 ms  13.788 ms
+ 4  154.11.0.5  30.177 ms  30.95 ms  30.593 ms
+</pre>
+</blockquote>
+
+<p>
+For more information about how the route is chosen, please refer to
+<a href="http://www.ietf.org/rfc/rfc2992.txt">RFC2992</a>, "Analysis of an
+Equal-Cost Multi-Path Algorithm"</a>.
+
+<p>
+It's worth noting that if an interface used by a multipath route goes
+down (i.e., loses carrier), the kernel can and will still try to
+forward packets using the route that points out that interface.
+This traffic will of course be blackholed and end up going nowhere.
+It's highly recommended to use
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifstated&amp;sektion=8"
+>ifstated(8)</a> to check for downed interfaces and adjust the routing
+table accordingly.
+
+
 <p>
 <font color="#0000e0">
 <a href="index.html">[FAQ Index]</a>
@@ -1978,7 +2093,7 @@ your firewall.
 <a href="index.html"><img height="24" width="24" src="../images/back.gif" border="0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq6.html,v 1.248 2006/11/01 06:04:26 steven Exp $</small>
+<small>$OpenBSD: faq6.html,v 1.249 2006/11/10 06:13:38 joel Exp $</small>
 
 </body>
 </html>
