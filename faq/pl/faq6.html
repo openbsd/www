@@ -73,6 +73,8 @@ Je¶li chcesz pomóc w aktualizacji tego pliku, zajrzyj na
 <li><a href= "#OpenNTPD">6.12 - Korzystanie z OpenNTPD</a>
 <li><a href="#Wireless">6.13 - Jaki wybraæ sprzêt do budowy sieci
       bezprzewodowych?</a>
+<li><a href="#Multipath">6.14 - Jak mogê zrobiæ routing oparty na wyborze
+jednej z tras o jednakowym koszcie?</a>
 </ul>
 
 <hr>
@@ -2014,6 +2016,114 @@ Ma to t± zaletê, ¿e pozwala na ³atwe umiejscowienie anteny w
 najdogodniejszym miejscu, które czêsto nie jest bezpo¶rednio przy
 firewall-u.
 
+<a name="Multipath">
+<h2>6.14 - Jak mogê zrobiæ routing oparty na wyborze jednej z wielu tras o jednakowym koszcie?</h2>
+
+<p>
+Routing oparty na wyborze jednej z tras o jednakowym koszcie (ECMP - Equal Cost Multipath Routing)
+pozwala na posiadanie wielu wpisów w tablicy routingu dla tej samej podsieci, przyk³adowo
+dla trasy domy¶lnej 0.0.0.0/0.
+Gdy kernel przegl±da trasy routingu staraj±c siê okre¶liæ gdzie pos³aæ pakiety przeznaczone do
+danej podsieci, mo¿e wybraæ jedn± z wielu tras o równym koszcie.
+W wiêkszo¶ci przypadków routing "wielo-¶cie¿kowy" (ang. multipath) wykorzystywany jest
+w po³±czeniach wychodz±cych zapewniaj±c redundantne po³±czenia z sieci± Internet.
+
+<p>
+Polecenie
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=route&amp;sektion=8">route(8)</a>
+wykorzystywane jest do dodawania/zmian/kasowania tras w tablicy routingu.
+Argument <tt>-mpath</tt> jest u¿ywany w przypadku dodawania ¶cie¿ek multipath.
+
+<blockquote>
+<tt>
+# route add -mpath default 10.130.128.1<br>
+# route add -mpath default 10.132.0.1<br>
+</tt>
+</blockquote>
+
+<p>
+Sprawdzanie tras:
+
+<blockquote>
+<pre>
+# netstat -rnf inet | grep default
+default     10.130.128.1      UGS       2      134      -     fxp1
+default     10.132.0.1        UGS       0      172      -     fxp2
+</pre>
+</blockquote>
+
+W powy¿szym przyk³adzie mo¿emy zobaczyæ jak jedna trasa domy¶lna wskazuje
+na 10.130.128.1, który jest osi±galny przez interfejs fxp1, natomiast
+druga wskazuje na 10.132.0.1, osiagalny przez interfejs fxp2.
+
+<p>
+Poniewa¿ plik
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mygate&amp;sektion=5">mygate(5)</a>
+nie obs³uguje jeszcze tego mechanizmu, poni¿sze linie powinny byæ dodane na koñcu plików
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hostname.if&amp;sektion=5">hostname.if(5)</a>
+dla interfejsów fxp1 i fxp2, natomiast sam <tt>/etc/mygate</tt> powinien zostaæ skasowany.
+W ten sposób w³a¶ciwe trasy zostan± zainstalowane podczas startu systemu.
+
+<dl>
+<dt><b>/etc/hostname.fxp1</b></dt>
+<dd><tt>!route add -mpath default 10.130.128.1</tt></dd>
+<dt><b>/etc/hostname.fxp2</b></dt>
+<dd><tt>!route add -mpath default 10.132.0.1</tt></dd>
+</dl>
+
+<p>
+Na koniec nie zapomnij w³±czyæ obs³ugê routingu multipath poprzez w³a¶ciw± 
+zmienn± sysctl(3).
+Upewnij siê, ¿e zmieni³e¶ to tak¿e w pliku
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl.conf&amp;sektion=5">sysctl.conf(5)</a>
+tak by zmana by³a trwa³a.
+
+<blockquote>
+<tt>
+# sysctl net.inet.ip.multipath=1<br>
+# sysctl net.inet6.ip6.multipath=1
+</tt>
+</blockquote>
+
+<p>
+Spróbuj teraz prze¶ledziæ trasy do ró¿nych celów.
+Kernel powinien roz³o¿yæ obci±¿enie pomiêdzy ka¿d±
+z tras.
+
+<blockquote>
+<pre>
+# traceroute -n 154.11.0.4
+traceroute to 154.11.0.4 (154.11.0.4), 64 hops max, 60 byte packets
+ 1  10.130.128.1  19.337 ms  18.194 ms  18.849 ms
+ 2  154.11.95.170  17.642 ms  18.176 ms  17.731 ms
+ 3  154.11.5.33  110.486 ms  19.478 ms  100.949 ms
+ 4  154.11.0.4  32.772 ms  33.534 ms  32.835 ms
+
+# traceroute -n 154.11.0.5
+traceroute to 154.11.0.5 (154.11.0.5), 64 hops max, 60 byte packets
+ 1  10.132.0.1  14.175 ms  14.503 ms  14.58 ms
+ 2  154.11.95.38  13.664 ms  13.962 ms  13.445 ms
+ 3  208.38.16.151  13.964 ms  13.347 ms  13.788 ms
+ 4  154.11.0.5  30.177 ms  30.95 ms  30.593 ms
+</pre>
+</blockquote>
+
+<p>
+Wiêcej informacji na temat sposobu w jaki s± wybierane trasy znajdziesz w
+dokumencie
+<a href="http://www.ietf.org/rfc/rfc2992.txt">RFC2992</a>, "Analysis of an
+Equal-Cost Multi-Path Algorithm"</a>.
+
+<p>
+Rozwi±zanie to mo¿e okazaæ siê nic nie warte je¿eli interfejs wykorzystywany
+w routinigu wieloscie¿kowym zostanie wy³±czony (np. utracone zostanie po³±czenie),
+poniewa¿ kernel wci±¿ bêdzie stara³ siê przekazywaæ pakiety korzystaj±c z trasy
+wskazuj±cej na ten interfejs.
+Taki ruch bêdzie oczywi¶cie gubiony i ostatecznie nigdzie nie trafi.
+Zdecydowanie zalecamy korzystanie z
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifstated&amp;sektion=8">ifstated(8)</a>
+w celu sprawdzania wy³±czonych interfejsów i modyfikacji tablicy routingu.
+
 <p>
 <font color="#0000e0">
 <a href="index.html">[Spis tre¶ci]</a>
@@ -2028,10 +2138,10 @@ firewall-u.
 <br>
 <small>
 <!--
-Originally [OpenBSD: faq6.html,v 1.248 ]<br>
-$Translation: faq6.html,v 1.50 2006/11/04 16:11:12 tkniaz Exp $<br>
+Originally [OpenBSD: faq6.html,v 1.249 ]<br>
+$Translation: faq6.html,v 1.51 2006/11/10 19:09:17 tkniaz Exp $<br>
 -->
-$OpenBSD: faq6.html,v 1.44 2006/11/04 17:38:44 saad Exp $
+$OpenBSD: faq6.html,v 1.45 2006/11/12 16:09:22 jufi Exp $
 </small>
 
 </body>
