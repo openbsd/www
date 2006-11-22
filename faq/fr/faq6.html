@@ -68,6 +68,8 @@ réseau</a>
 <li><a href="#OpenNTPD">6.12 - Utiliser OpenNTPD</a>
 <li><a href="#Wireless">6.13 - Quels sont les types de cartes Sans Fil
 supportées par OpenBSD ?</a>
+<li><a href="#Multipath">6.14 - Comment puis-je mettre en oeuvre un
+routage multi-chemin à coût égal ?</a>
 </ul>
 
 <hr>
@@ -2125,6 +2127,127 @@ accès sans fil est d'utiliser une carte conventionnelle et un point
 d'accès externe en mode pont. Cette méthode a l'avantage de vous
 permettre de positionner l'antenne là où elle est la plus efficace.
 
+<a name="Multipath">
+<h2>6.14 - Comment puis-je mettre en oeuvre un routage multi-chemin à
+      coût égal ?</h2>
+
+<p>
+Le routage multi-chemin à coût égal permet d'avoir de multiples routes
+vers le même réseau, tel que la route par défaut (0.0.0.0/0), dans la
+table de routage.
+Lorsque le noyau recherche une route pour déterminer où acheminer des
+paquets destinés à un réseau donné, il pourra alors choisir parmi les
+routes à coût égal.
+Dans la majorité des cas, un routage multi-chemin est utilisé pour
+redonder des connexions "montantes" telles que les connexions vers
+Internet.
+
+<p>
+La commande
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=route&amp;sektion=8">route(8)</a>
+est employée pour ajouter, modifier et supprimer des routes dans la
+table de routage.
+L'argument <tt>-mpath</tt> est utilisé lors de l'ajout de routes
+s'inscrivant dans un politique de routage multi-chemin.
+
+<blockquote>
+<tt>
+# route add -mpath default 10.130.128.1<br>
+# route add -mpath default 10.132.0.1<br>
+</tt>
+</blockquote>
+
+<p>
+Vérifiez les routes :
+
+<blockquote>
+<pre>
+# netstat -rnf inet | grep default
+default     10.130.128.1      UGS       2      134      -     fxp1
+default     10.132.0.1        UGS       0      172      -     fxp2
+</pre>
+</blockquote>
+
+<p>
+A travers cet exemple, nous pouvons voir que la route par défaut pointe
+vers 10.130.128.1, accessible par le biais de l'interface fxp1 tandis
+que l'autre route par défaut pointe vers 10.132.0.1 qui est accessible
+par le biais de l'interface fxp2.
+
+<p>
+Etant donné que le fichier
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mygate&amp;sektion=5"
+>mygate(5)</a> ne supporte pas encore les routes par défaut
+multi-chemin, la commande ifconfig précitée devrait être ajoutée à la
+fin des fichiers
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hostname.if&amp;sektion=5"
+>hostname.if(5)</a> correspondant aux interfaces fxp1 et fxp2 et le
+fichier devrait être supprimé.
+Ceci aura pour effet d'ajouter les routes lorsque le système est
+démarré.
+
+<dl>
+<dt><b>/etc/hostname.fxp1</b></dt>
+<dd><tt>!route add -mpath default 10.130.128.1</tt></dd>
+<dt><b>/etc/hostname.fxp2</b></dt>
+<dd><tt>!route add -mpath default 10.132.0.1</tt></dd>
+</dl>
+
+<p>
+Enfin, n'oubliez pas d'activer le support de routes multi-chemin à
+l'aide de la variable sysctl(3) adéquate.
+Assurez-vous d'éditer
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl.conf&amp;sektion=5"
+>sysctl.conf(5)</a>
+pour rendre les modifications permanentes.
+
+<blockquote>
+<tt>
+# sysctl net.inet.ip.multipath=1<br>
+# sysctl net.inet6.ip6.multipath=1
+</tt>
+</blockquote>
+
+<p>
+Maintenant essayez d'effectuer un traceroute vers des destinations
+différentes.
+Le noyau partagera le traffic entre les différentes routes multi-chemin.
+
+<blockquote>
+<pre>
+# traceroute -n 154.11.0.4
+traceroute to 154.11.0.4 (154.11.0.4), 64 hops max, 60 byte packets
+ 1  10.130.128.1  19.337 ms  18.194 ms  18.849 ms
+ 2  154.11.95.170  17.642 ms  18.176 ms  17.731 ms
+ 3  154.11.5.33  110.486 ms  19.478 ms  100.949 ms
+ 4  154.11.0.4  32.772 ms  33.534 ms  32.835 ms
+
+# traceroute -n 154.11.0.5
+traceroute to 154.11.0.5 (154.11.0.5), 64 hops max, 60 byte packets
+ 1  10.132.0.1  14.175 ms  14.503 ms  14.58 ms
+ 2  154.11.95.38  13.664 ms  13.962 ms  13.445 ms
+ 3  208.38.16.151  13.964 ms  13.347 ms  13.788 ms
+ 4  154.11.0.5  30.177 ms  30.95 ms  30.593 ms
+</pre>
+</blockquote>
+
+<p>
+Pour de plus amples informations concernant la manière de choisir une
+route, veuillez vous référer à la
+<a href="http://www.ietf.org/rfc/rfc2992.txt">RFC2992</a>, "Analysis of
+an Equal-Cost Multi-Path Algorithm"</a>.
+
+<p>
+Il est utile de noter que si une interface utilisée par une route
+multi-chemin tombe (perte de signal par exemple), le noyau 
+acheminera tout de même des paquets à travers cette interface. Ces paquets
+seront bien entendus perdus. 
+Il est hautement recommandé d'utiliser
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifstated&amp;sektion=8"
+>ifstated(8)</a> pour vérifier l'état des interfaces et ajuster la table
+de routage si besoin.
+
+
 <p>
 <font color="#0000e0">
 <a href="index.html">[Index de la FAQ]</a>
@@ -2139,10 +2262,10 @@ border="0" alt="[back]"></a>
 <br>
 <small>
 <!--
-Originally [OpenBSD: faq6.html,v 1.248 ]<br>
-$Translation: faq6.html,v 1.95 2006/11/03 10:39:34 ajacoutot Exp $<br>
+Originally [OpenBSD: faq6.html,v 1.249 ]<br>
+$Translation: faq6.html,v 1.96 2006/11/22 10:17:11 saad Exp $<br>
 -->
-$OpenBSD: faq6.html,v 1.72 2006/11/03 14:23:31 jufi Exp $
+$OpenBSD: faq6.html,v 1.73 2006/11/22 15:14:07 saad Exp $
 </small>
 
 </body>
