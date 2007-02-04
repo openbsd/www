@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# $OpenBSD: pkgstable.pl,v 1.3 2007/01/04 22:28:43 sturm Exp $
+# $OpenBSD: pkgstable.pl,v 1.4 2007/02/04 18:01:10 sturm Exp $
 
 # Public Domain, Nikolay Sturm <sturm@openbsd.org>
 
@@ -17,13 +17,13 @@ while (<$fh>) {
 	my ($pkg, $desc) = split / /, $_, 2;
 	my $archs = "amd64 i386";
 
-	if (defined $desc and $desc eq "i386") {
-		$archs = $desc;
-		undef $desc;
+	if (defined $desc and $desc =~ /^i386 ?(.*)/) {
+		$archs = "i386";
+		$desc = $1;
 	}
 
 	print "<dt>";
-	if (not defined $desc) {
+	if (not defined $desc or $desc eq "") {
 		print "<font color=\"#e00000\">$pkg</font>\n";
 		$desc = "Security fix";
 	} else {
