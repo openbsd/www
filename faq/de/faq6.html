@@ -31,14 +31,18 @@
 <h3>Inhaltsverzeichnis</h3>
 <ul>
 <li><a href= "#Intro" >6.1 - Bevor wir weitermachen</a>
-<li><a href= "#Setup" >6.2 - Erste Netzwerkeinrichtung</a>
+<li><a href= "#Setup" >6.2 - Netzwerkkonfiguration</a>
 <ul>
-  <li><a href="#Setup.1" >6.2.1 - Identifizieren und Einstellen deiner
-    Netzwerkkarten</a>
-  <li><a href="#Setup.2" >6.2.2 - Einrichten deines OpenBSD Rechners als
-    Gateway</a>
-  <li><a href="#Setup.3" >6.2.3 - Einrichten von Aliases auf deiner
-    Netzwerkkarte</a>
+  <li><a href="#Setup.if"      >6.2.1 - Netzwerkinterfaces finden und
+    einrichten</a>
+  <li><a href="#Setup.gateway" >6.2.2 - Standardgateway</a>
+  <li><a href="#Setup.resolver">6.2.3 - DNS-Auflösung</a>
+  <li><a href="#Setup.myname"  >6.2.4 - Hostname</a>
+  <li><a href="#Setup.activate">6.2.5 - Änderungen übernehmen</a>
+  <li><a href="#Setup.chkroute">6.2.6 - Routen überprüfen</a>
+  <li><a href="#Setup.forward" >6.2.7 - Dein OpenBSD-System als Gateway
+    konfigurieren</a>
+  <li><a href="#Setup.aliases" >6.2.8 - Interface-Aliases einrichten</a>
 </ul>
 <li><a href= "#PF"    >6.3 - Wie kann ich mit OpenBSD filtern und eine
     Firewall aufsetzen?</a>
@@ -56,6 +60,8 @@
 <li><a href="#OpenNTPD">6.12 - OpenNTPD verwenden</a>
 <li><a href="#Wireless">6.13 - Welche Möglichkeiten stehen mir für
     Drahtlosnetzwerk zur Verfügung?</a>
+<li><a href="#Multipath">6.14 - Wie kann ich »equal-cost multipath routing«
+    durchführen?</a>
 </ul>
 
 <hr>
@@ -97,15 +103,21 @@ sollten.
 
 <p>
 <a name="Setup"></a>
-<h2>6.2 - Erste Netzwerkeinrichtung</h2>
+<h2>6.2 - Netzwerkkonfiguration</h2>
+
+Normalerweise wird OpenBSD während der
+<a href="faq4.html">Installation</a> das erste Mal konfiguriert. Es ist
+jedoch von Vorteil, wenn man genau versteht, was während des Vorgangs
+passiert und wie genau das alles funktioniert. Die gesamte
+Netzwerkkonfiguration wird mit einfachen Textdateien im
+<i>/etc</i>-Verzeichnis abgehandelt.
 
 <p>
-<a name="Setup.1"></a>
+<a name="Setup.1f"></a>
 <h3>6.2.1 - Identifizieren und Einstellen deiner Netzwerkkarten</h3>
 
 <p>
-Um beginnen zu können, musst du zunächst deine Netzwerkkarte
-identifizieren können. Bei OpenBSD werden Netzwerkkarten nach ihrem
+Unter OpenBSD werden Netzwerkkarten nach ihrem
 Typ, nicht nach Verbindungsart benannt. Du kannst sehen, ob deine 
 Netzwerkkarte initialisiert wurde, entweder schon beim Booten oder auch 
 später mit Hilfe des Befehls 
@@ -128,6 +140,11 @@ für deine Plattform nach. Du wirst eine Liste vieler bekannter Karten
 und ihre OpenBSD Geräte-Namen finden (wie etwa fxp), zusammen mit 
 einer Nummer, die vom Kernel zugewiesen wird, und du hast den sogenannten 
 Interface-Namen (wie z.&nbsp;B. fxp0).
+Die Nummer wird nach bestimmten Kriterien zugewiesen: diese
+unterscheiden sich je nach Karte und weiteren Details deines Systems.
+Einige Karten werden in der Reihenfolge nummeriert, in der sie während
+des Bus-Probings gefunden werden. Bei anderen entscheidet die
+Einstellung der Hardwareressourcen oder die MAC-Adresse.
 
 <p>
 Du kannst herausfinden, ob deine Netzwerkkarte(n) erkannt wurde(n), indem 
@@ -135,7 +152,7 @@ du das
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8">ifconfig(8)</a>
 Kommando benutzt.
 Das folgende Kommando zeigt uns alle Netzwerk-Interfaces im System an.
-Diese Beispielausgabe zeigt ein physikalisches Ethernet Interface, ein
+Diese Beispielausgabe zeigt ein physikalisches Ethernetinterface, ein
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fxp&amp;sektion=4">fxp(4)</a>.
 
 <blockquote><pre>
@@ -219,19 +236,23 @@ Seiten:
 </ul>
 
 <p>
-Falls du deine Netzwerkkarte noch nicht konfiguriert hast, ist der erste Schritt
-das Erstellen der <i>/etc/hostname.xxx</i> Datei, wobei der Name deiner Karte
-den Platz von ,xxx' einnnimmt. Aus der Information der obigen Beispiele
-würde der Name <i>/etc/hostname.fxp0</i> lauten. Das Layout dieser Datei
-ist simpel:<br>
+Das Interface wird während des Bootvorgangs über die
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hostname.if&amp;sektion=5">/etc/hostname.<i>if</i>(5)</a>-Dateien
+konfiguriert, wobei <i>if</i> für den vollständigen Namen deines
+Interfaces steht (für das vorherige Beispiel wäre es also
+<i>/etc/hostname.fxp0</i>).
+
+<p>
+Der Aufbau dieser Datei ist simpel:
 
 <blockquote><pre>
 address_family address netmask broadcast [weitere Optionen]
 </pre></blockquote>
 
-(Viel mehr Details zu dieser Datei findest du in der 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hostname.if&amp;sektion=5">hostname.if(5)</a>
-Manual Seite.)
+Viel mehr Details zu dieser Datei findest du in der Manualseite für
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hostname.if&amp;sektion=5">hostname.if(5)</a>.
+In ihr finden sich vor allem Informationen für nicht ganz so einfache
+Konfigurationen.
 
 <p>
 Eine typische Interface-Konfigurationsdatei für eine IPv4 Adresse
@@ -241,6 +262,12 @@ würde so aussehen:
 $ <strong>cat /etc/hostname.fxp0</strong>
 inet 10.0.0.38 255.255.255.0 NONE
 </pre></blockquote>
+
+<p>
+In diesem Fall haben wir eine IPv4-Adresse (inet) mit der IP-Adresse
+10.0.0.38, einer Subnetmask von 255.255.255.0 und ohne bestimmter
+Broadcastadresse definiert (die in diesem Fall standardmäßig 10.0.0.255
+ist).
 
 <p>
 Du solltest auch den ,media type' für Ethernet angeben, wenn du z.&nbsp;B. den
@@ -253,7 +280,9 @@ inet 10.0.0.38 255.255.255.0 NONE media 100baseTX mediaopt full-duplex
 <p>
 (Auf keinen Fall solltest du das tun, wenn nicht beide Seiten der 
 Verbindungen auf Voll-Duplex gestellt sind! Wenn du keine besonderen
-Anforderungen hast, kannst du diese media Einstellungen einfach ignorieren.)
+Anforderungen hast, kannst du diese media Einstellungen einfach
+ignorieren. Ein viel wahrscheinlicheres Beispiel wäre eine Einstellung
+auf 10base-T oder Half Duplex, wenn das Netzwerk dies erfordert.)
 
 <p>
 Oder vielleicht willst du auch spezielle Flags für ein einzelnes 
@@ -262,40 +291,76 @@ besonders!
 
 <blockquote><pre>
 $ <strong>cat /etc/hostname.vlan0</strong>
-inet 172.21.0.31 255.255.255.0 NONE vlan 2 vlandev fxp1
+Inet 172.21.0.31 255.255.255.0 NONE vlan 2 vlandev fxp1
 </pre></blockquote>
 
-<p>
-Der nächste Schritt ist das Einstellen deines Standard-Gateways
-(default gateway). Dazu trage einfach die IP deines Gateways in die Datei
-<i>/etc/mygate</i> ein. Dies erlaubt das Aktivieren deines Gateways beim
-Starten. Jetzt solltest du deine Nameserver eintragen und die Datei
-<i>/etc/hosts</i> einrichten (siehe die
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hosts&amp;sektion=5">hosts(5)</a>-Manualseite).
-Für die Nameserver benötigst du eine Datei namens
-<i>/etc/resolv.conf</i>. Mehr über das Format dieser Datei findest du in
-der 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=resolv.conf&amp;sektion=5">resolv.conf(5)</a>
-Manual Seite.
-Wenn du DHCP einsetzt, solltest du <a href="#DHCP">6.4 - DHCP</a>
-lesen und den Einsatz von
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=resolv.conf.tail&amp;sektion=5">resolv.conf.tail(5)</a>
-in Erwägung ziehen. Aber hier folgt nun ein Beispiel für eine normale
-Verwendung.
 
-<p>
-In diesem Beispiel sind deine Nameserver 125.2.3.4 und 125.2.3.5.
-Du gehörst ebenfalls zur Domain ,example.com'.
+<a name="Setup.gateway"></a>
+<h3>6.2.2 - Standardgateway</h3>
+Schreib die IP-Adresse deines Standardgateways in die Datei <i>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mygate&amp;sektion=5">/etc/mygate</a></i>.
+Damit wird dein Gateway während des Bootvorgangs eingestellt. Die
+Datei besteht nur aus einer einzigen Zeile, in der die Adresse
+deines Gateways steht:
 
 <blockquote><pre>
-$ <strong>cat /etc/resolv.conf</strong>
+10.0.0.1
+</pre></blockquote>
+
+Du kannst auch einen Hostnamen verwenden, doch sei vorsichtig: du
+kannst während des Bootvorgangs nicht davon ausgehen, dass die
+Namensauflösung bereits funktioniert oder der Nameserver überhaupt
+erreichbar ist BIS das Standardgateway definiert wurde. Mit anderen
+Worten: es ist besser eine IP-Adresse oder etwas in
+<i>/etc/hosts</i> fest definiertes in diese Datei zu schreiben.
+
+<a name="Setup.resolver"></a>
+<h3>6.2.3 - DNS-Auflösung</h3>
+Die DNS-Auflösung wird über die Datei
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=resolv.conf&amp;sektion=5"><i>/etc/resolv.conf</i></a>
+verwaltet. Hier ist ein Beispiel einer <i>/etc/resolv.conf</i>-Datei:
+
+<blockquote><pre>
 search example.com
 nameserver 125.2.3.4
 nameserver 125.2.3.5
 lookup file bind
 </pre></blockquote>
 
+In diesem Fall wird der Standarddomainname auf <tt>example.com</tt>
+gesetzt, zwei DNS-Resolver (<tt>125.2.3.4</tt> und <tt>125.2.3.5</tt>)
+definiert und vorgegeben, dass die Datei <tt>/etc/hosts</tt> durchsucht
+werden soll bevor eine Anfrage an die DNS-Resolver gesendet wird.
+
 <p>
+Wie in fast jedem anderen Unix-System (und vielen Nicht-Unix-Systemen)
+gibt es eine
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hosts&amp;sektion=5"><i>/etc/hosts</i></a>-Datei,
+in die alle Systemene eingetragen werden können, die sich nicht in
+einem formalen DNS-System befinden (falls sie dort anders angegeben sind
+als gewünscht, kann man die »lookup«-Reihenfolge wie im vorherigen
+Beispiel anpassen).
+
+<p>
+Wenn du DHCP einsetzt, lies <a href="#DHCP">6.4 - DHCP</a> und
+achte auf den Einsatz von
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=resolv.conf.tail&amp;sektion=5">resolv.conf.tail(5)</a>.
+
+<a name="Setup.myname"></a>
+<h3>6.2.4 - Hostname</h3>
+Jede Unix-Maschine hat einen Namen. Unter OpenBSD wird der Name als
+»Fully Qualified Domain Name« (FQDN) in einer einzelnen Zeile in der
+Datei
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=myname&amp;sektion=5"><i>/etc/myname</i></a>
+angegeben. Falls die Maschine »puffy« heißt und sich in der Domain
+»example.com« befindet, würde folgende Zeile in der Datei stehen:
+
+<blockquote><pre>
+puffy.example.com
+</pre></blockquote>
+
+<a name="Setup.activate"></a>
+<h3>6.2.5 - Änderungen übernehmen</h3>
 Jetzt kannst du entweder rebooten oder das <strong>/etc/netstart</strong>
 Skript ausführen, indem du (als root) Folgendes eingibst:
 
@@ -315,6 +380,20 @@ Kernel Routing Tabelle. Von hier ab sollte dein System laufen und online sein.
 Du kannst hier erneut mit
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8">ifconfig(8)</a> 
 prüfen, ob deine Interfaces richtig konfiguriert wurden.
+
+<p>
+Obwohl du dein Netzwerk unter OpenBSD ohne Neustart vollständig
+neukonfigurieren kannst, wird dir DRINGEND dazu geraten, wenn
+grundlegende Einstellungen geändert wurden. Der Grund hierfür ist, dass
+die Umgebung während des Bootvorgangs etwas anders ist als wenn das
+System bereits vollständig hochgefahren wurde. Wenn du zum Beispiel
+einen über DNS auflösbaren Namen in eine der Dateien geschrieben hast,
+wirst du diesen im laufenden Betrieb sicherlich auflösen können. Während
+des Bootvorgangs aber kann es sein, dass der externe Resolver noch nicht
+verfügbar ist und die Konfiguration somit fehlschlägt.
+
+<a name="Setup.chkroute"></a>
+<h3>6.2.6 - Routen überprüfen</h3>
 Deine Routen kannst du via
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=netstat&amp;sektion=1">netstat(1)</a>
 oder <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=route&amp;sektion=8">route(8)</a> 
@@ -357,8 +436,8 @@ BASE-ADDRESS.MCA LOCALHOST          U
 </pre></blockquote>
 
 <p>
-<a name="Setup.2"></a>
-<h3>6.2.2 - Einrichten deines OpenBSD Rechners als Gateway</h3>
+<a name="Setup.forward"></a>
+<h3>6.2.2 - Deinen OpenBSD-Rechner als Gateway einrichten</h3>
 
 <p>
 Dies sind nur die grundlegenden Informationen, um deinen OpenBSD Rechner als
@@ -410,8 +489,8 @@ mehrere T1, HSSI, ATM, FDDI, Ethernet und serielle (PPP/SLIP)
 Schnittstellen.
 
 <p>
-<a name="Setup.3"></a>
-<h3>6.2.3 - Einrichten von Aliases auf deiner Netzwerkkarte</h3>
+<a name="Setup.aliases"></a>
+<h3>6.2.8 - Einrichten von Aliases auf deiner Netzwerkkarte</h3>
 
 <p>
 OpenBSD hat einen einfachen Mechanismus, um IP-Aliase für deine
@@ -465,6 +544,9 @@ hochbringen. Für den ersten Alias geht das so:
 # <b>ifconfig dc0 inet alias 192.168.0.3 netmask 255.255.255.255</b>
 </pre></blockquote>
 
+(Und wieder ist ein Neustart empfehlenswert um sicherzustellen, dass
+alles wie erwartet konfiguriert wird!)
+
 <p>
 Um die Aliases zu sehen:
 
@@ -478,7 +560,6 @@ dc0: flags=8863&lt;UP,BROADCAST,NOTRAILERS,RUNNING,SIMPLEX,MULTICAST&gt;
 
 
 <p>
-<a name="NAT"></a>
 <a name="PF"></a>
 <h2>6.3 - Wie kann ich mit OpenBSD filtern und eine Firewall aufsetzen?</h2>
 Packet Filter (ab hier nur noch als PF bezeichnet) ist OpenBSDs System 
@@ -2059,6 +2140,119 @@ mit Leichtigkeit an die Stelle ändern kannst, an der sie am
 effektivsten ist, was nicht häufig direkt auf der Rückseite
 deiner Firewall ist.
 
+
+<a name="Multipath">
+<h2>6.14 - Wie kann ich »equal-cost multipath routing« durchführen?</h2>
+
+<p>
+»Equal-cost multipath routing« bedeutet, dass sich mehrere Routen
+in der Routingtabelle für das gleiche Netzwerkwerk befinden - zum
+Beispiel die Standardroute 0.0.0.0/0. Wenn der Kernel nach einer Route
+sucht, um Pakete an ein bestimmtes Netzwerk senden zu können, kannn er
+eine von den »equal-cost routes« auswählen. In den meisten Fällen wird
+Multipathrouting eingesetzt, um redundante Uplinkverbindungen aufzubauen,
+z. B. redundante Internetverbindungen.
+
+<p>
+Das Kommando <a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=route&amp;sektion=8"
+>route(8)</a> wird verwendet, um Routen zur Routingtabelle hinzuzufügen,
+dort zu ändern oder sie aus der Routingtabelle zu löschen. Das Argument
+<tt>-mpath</tt> wird verwendet, um Multipath-Routen hinzuzufügen.
+
+<blockquote>
+<tt>
+# route add -mpath default 10.130.128.1<br>
+# route add -mpath default 10.132.0.1<br>
+</tt>
+</blockquote>
+
+<p>
+Überprüfe die Routen wie folgt:
+
+<blockquote>
+<pre>
+# netstat -rnf inet | grep default
+default     10.130.128.1      UGS       2      134      -     fxp1
+default     10.132.0.1        UGS       0      172      -     fxp2
+</pre>
+</blockquote>
+
+<p>
+In diesem Beispiel können wir sehen, dass eine Standardroute auf
+10.130.128.1 zeigt, die über das fxp1-Interface erreichbar ist. Die
+andere zeigt auf 10.132.0.1 und ist über fxp2 erreichbar.
+
+<p>
+Da die Datei
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mygate&amp;sektion=5"
+>mygate(5)</a> bisher noch keine Multipath-Standardrouten unterstützt,
+sollte der vorherige Befehl an das Ende der
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hostname.if&amp;sektion=5"
+>hostname.if(5)</a>-Dateien für die Interfaces fxp1 und fxp2 angehängt
+werden. Die <tt>/etc/mygate</tt>-Datei sollte danach gelöscht werden.
+
+<dl>
+<dt><b>/etc/hostname.fxp1</b></dt>
+<dd><tt>!route add -mpath default 10.130.128.1</tt></dd>
+<dt><b>/etc/hostname.fxp2</b></dt>
+<dd><tt>!route add -mpath default 10.132.0.1</tt></dd>
+</dl>
+
+<p>
+Vergiss zum Schluss nicht, dass du den Einsatz von Multipathrouten
+mit der dafür vorgesehenen sysctl(3)-Variablen aktivieren musst.
+
+<blockquote>
+<tt>
+# sysctl net.inet.ip.multipath=1<br>
+# sysctl net.inet6.ip6.multipath=1
+</tt>
+</blockquote>
+
+<p>
+Ändere ebenfalls die Datei <a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl.conf&amp;sektion=5"
+>sysctl.conf(5)</a>, um die Änderungen permanent zu machen.
+
+<p>
+Versuch nun traceroute mit verschiedenen Zielen aufzurufen. Der
+Kernel wird die Datenlast auf die einzelnen Multipathrouten ausgleichen.
+
+<blockquote>
+<pre>
+# traceroute -n 154.11.0.4
+traceroute to 154.11.0.4 (154.11.0.4), 64 hops max, 60 byte packets
+ 1  10.130.128.1  19.337 ms  18.194 ms  18.849 ms
+ 2  154.11.95.170  17.642 ms  18.176 ms  17.731 ms
+ 3  154.11.5.33  110.486 ms  19.478 ms  100.949 ms
+ 4  154.11.0.4  32.772 ms  33.534 ms  32.835 ms
+
+# traceroute -n 154.11.0.5
+traceroute to 154.11.0.5 (154.11.0.5), 64 hops max, 60 byte packets
+ 1  10.132.0.1  14.175 ms  14.503 ms  14.58 ms
+ 2  154.11.95.38  13.664 ms  13.962 ms  13.445 ms
+ 3  208.38.16.151  13.964 ms  13.347 ms  13.788 ms
+ 4  154.11.0.5  30.177 ms  30.95 ms  30.593 ms
+</pre>
+</blockquote>
+
+<p>
+Lies im <a href="http://www.ietf.org/rfc/rfc2992.txt">RFC2992</a>
+das Kapitel »Analysis of an Equal-Cost Multi-Path Algorithm« wenn du
+Genaueres über die Routenauswahl erfahren möchtest.
+
+<p>
+Des Weiteren ist es erwähnenswert, dass beim Ausfall eines Interfaces
+(z. B. beim Verlust des Carriers) für eine Multipathroute der Kernel 
+weiterhin versucht, Pakete über die Route zu senden, die an dieses
+Interface gebunden wurde. Der Datenverkehr wird natürlich ins Nichts
+führen und somit verloren gehen. Es wird daher dringend empfohlen,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifstated&amp;sektion=8"
+>ifstated(8)</a> auf nicht verfügbare Interfaces zu überprüfen und die
+Routingtabelle dementsprechend anzupassen.
+
+
 <p>
 <font color="#0000e0">
 <a href="index.html">[FAQ-Index]</a>
@@ -2073,10 +2267,10 @@ deiner Firewall ist.
 <br>
 <small>
 <!--
-Originally [OpenBSD: faq6.html,v 1.248 ]<br>
-$Translation: faq6.html,v 1.125 2007/02/09 18:13:48 paldium Exp $<br>
+Originally [OpenBSD: faq6.html,v 1.253 ]<br>
+$Translation: faq6.html,v 1.126 2007/03/19 15:07:23 paldium Exp $<br>
 -->
-$OpenBSD: faq6.html,v 1.105 2007/02/10 05:22:17 saad Exp $
+$OpenBSD: faq6.html,v 1.106 2007/03/19 17:39:09 jufi Exp $
 </small>
 
 </body>
