@@ -8,16 +8,7 @@
 
 
 <h1>MINI-FAQ: Upgrading OpenBSD - Old Versions</h1>
-<h2>Versions covered here: 2.3 to 4.0</h2>
-
-<address>
-<p>
-Kjell Wooding 
-&lt;<a href="mailto:kjell@openbsd.com">kjell@openbsd.org</a>&gt; <br />
-</p>
-</address>
-
-<br />
+<h2>Versions covered here: 2.3 to 4.1</h2>
 
 <blockquote>
 <p>
@@ -36,6 +27,21 @@ the <a href="current.html">Following <i>-current</i></a> page.
 1.1: Where do I find information on more recent OpenBSD versions?
 </a>
 </p>
+
+<h2>Upgrading from 4.0 to 4.1</h2>
+<ul>
+<li><a href="#20060926">2006/09/26 - Switch to gcc3 (alpha)</a>
+<li><a href="#20061006">2006/10/06 - 'flags S/SA keep state' implicit in pf.conf(5)</a>
+<li><a href="#20061011">2006/10/11 - disklabel not in FreeBSD or NetBSD partitions</a>
+<li><a href="#20061012">2006/10/12 - don't boot from NetBSD partitions</a>
+<li><a href="#20061029">2006/10/29 - new user for ripd(8)</a>
+<li><a href="#20061227">2006/12/27 - ARM (zaurus/armish) Flag day</a>
+<li><a href="#20070131">2007/01/31 - new user for hoststated(8)</a>
+<li><a href="#20070202">2007/02/02 - new way to enable/disable system
+accounting on boot</a>
+<li><a href="#20070226">2007/02/26 - spamd: greylisting on by
+default; config files moved to /etc/mail</a>
+</ul>
 
 <h2>Upgrading from 3.9 to 4.0</h2>
 <ul>
@@ -329,6 +335,142 @@ something for the PowerPC.
 <p>
 See the <a href="current.html">Following <i>-current</i></a> page.
 </p>
+
+<a name="4.0"></a>
+<h2>Upgrading from 4.0 to 4.1</h2>
+<a name="20060926"></a>
+<h3>2006/09/26 - Switch to gcc3 (alpha)</h3>
+OpenBSD/alpha has converted to gcc3.
+To upgrade,
+<pre>
+    # rm -rf /usr/include/g++
+    # cp /usr/src/share/mk/bsd.own.mk /usr/share/mk/
+</pre>
+Now, <a href="faq5.html#NewCompiler">build gcc3</a>, (using the gcc3
+directory) then build new ld.so:
+<pre>
+    cd /usr/src/libexec/ld.so
+    make clean
+    make obj
+    make depend
+    make
+    make install
+</pre>
+
+Now, build the kernel and system as <a href="faq5.html#Bld">usual</a>.
+<p>
+
+<a name="20061006"></a>
+<h3>2006/10/06 - 'flags S/SA keep state' implicit in pf.conf(5)</h3>
+<i>flags S/SA keep state</i> is now the default for pass rules in
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5">pf.conf(5)</a>,
+and new <i>no state</i> and <i>flags any</i> options have been added to
+override these defaults.  Current rulesets will continue to load, but the
+behaviour may be slightly changed as these defaults are more restrictive.
+Rulesets with stateless filtering (<i>no state</i>) or a requirement to
+create states on intermediate packets (<i>flags any</i>) should be updated
+to explicitly request the desired behaviour.
+<p>
+In particular care should be taken with the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=enc&amp;sektion=4">enc0</a>
+interface, as floating states are a potential problem for filtering IPsec
+traffic: states need to be interface bound, to avoid permitting unencrypted
+traffic should
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd&amp;sektion=8">isakmpd(8)</a>
+exit. Therefore all rules on the enc0 interface should explicitly set
+<i>keep state (if-bound)</i>.
+<p>
+
+<a name="20061011"></a>
+<h3>2006/10/11 - disklabel not in FreeBSD or NetBSD partitions</h3>
+<i>FreeBSD and NetBSD DOS MBR partitions</i> are no longer used to store
+disklabels, and are no longer searched for a disklabel. As a result disks with
+only FreeBSD or NetBSD DOS MBR partitions will no longer have an 'a' partition
+created in the spoofed disklabel. The disklabel on such disks will be stored
+and loaded from sector 1, and this could find an old accidental disklabel. Use
+fdisk(8) to change the partition type to OpenBSD ('A6') to use the existing
+disklabel.
+<p>
+
+<a name="20061012"></a>
+<h3>2006/10/12 - don't boot from NetBSD partitions</h3>
+<i>amd64, i386, macppc, and mvmeppc</i> no longer try to boot from the first
+NetBSD partition when no OpenBSD partition is found.
+<p>
+
+<a name="20061029"></a>
+<h3>2006/10/29 - new user for ripd(8)</h3>
+<i>A new RIP daemon has been imported</i> in order to use this daemon, a new
+user and group are required.
+
+As <i>root</i>, add the following user and group, using
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=useradd&amp;sektion=8">useradd(8)</a>:
+
+<blockquote><pre>
+# useradd -u88 -g=uid -c"RIP Daemon" -d/var/empty -s/sbin/nologin _ripd
+</pre></blockquote>
+
+This step will add both the new user and its corresponding group.
+Your environment may allow you to copy/paste those commands.
+<p>
+
+<a name="20061227"></a>
+<h3>2006/12/27 - ARM (zaurus/armish) Flag day</h3>
+<i>The syscall mechanism for arm has changed</i> which will cause binaries
+and shared libraries from before Nov 7 to no longer work. It is necessary to
+update from snapshot to get past this ABI change.
+<p>
+
+<a name="20070131"></a>
+<h3>2007/01/31 - new user for hoststated(8)</h3>
+<i>A HostState daemon has been imported</i> in order to use this daemon, a new
+user and group are required.
+
+As <i>root</i>, add the following user and group, using
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=useradd&amp;sektion=8">useradd(8)</a>:
+
+<blockquote><pre>
+# useradd -u89 -g=uid -c"HostState Daemon" -d/var/empty -s/sbin/nologin _hoststated
+</pre></blockquote>
+
+This step will add both the new user and its corresponding group.
+Your environment may allow you to copy/paste those commands.
+<p>
+
+<a name="20070202"></a>
+<h3>2007/02/02 - new way to enable/disable system accounting on boot</h3>
+In order to enable accounting on boot you need to set the new rc.conf
+variable "accounting=YES". The presence of the /var/account/acct file
+does not make it start automatically anymore.
+<p>
+
+
+<a name="20070226"></a>
+<h3>2007/02/26 - spamd: greylisting on by default; config files moved
+to /etc/mail</h3>
+<p>
+Greylisting is now the default runtime mode for spamd(8); the
+<tt>-g</tt> flag is obsolete.
+To disable greylisting and run in blacklist-only mode, use the
+<tt>-b</tt> flag.
+In order to control which address spamd binds to, use the new
+<tt>-l</tt> flag.
+
+<p>
+spamd-setup(8) can also be told to run in blacklist-only mode by passing
+the new <tt>-b</tt> flag.
+
+<p>
+The spamd.conf(5) file has moved from <tt>/etc</tt> to <tt>/etc/mail</tt>.
+
+<p>
+Refer to the manpages for
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=spamd&amp;sektion=8">spamd(8)</a>
+and
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=spamd-setup&amp;sektion=8">spamd-setup(8)</a>
+for all the details.
+
+
 
 
 <a name="3.9"></a>
@@ -3719,13 +3861,10 @@ Note that /usr/share/man/cat4/powerpc was one of the directories created by this
 </p>
 <address>
 <p>
-$OpenBSD: upgrade-old.html,v 1.17 2007/02/20 22:26:41 tom Exp $
+$OpenBSD: upgrade-old.html,v 1.18 2007/05/01 16:30:13 nick Exp $
 <br />
-Copyright &copy; 1998-2003, Kjell Wooding. 
+Copyright &copy; 1998-2007, OpenBSD.
 <br />
-Please send any comments, questions, or suggestions to 
-<a href="mailto:kjell@openbsd.org">kjell@openbsd.org</a>
-</p>
 </address>
 
 </body>
