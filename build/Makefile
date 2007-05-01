@@ -28,13 +28,13 @@ all: ../groups.html ../support.html ../pkg-stable.html \
 # Build stable packages pages.
 ../pkg-stable.html: packages-${STABLE_VERSION} pkg-stable.html.head \
 	pkg-stable.html.tail
-		cat pkg-stable.html.head > $@
+		sed -e "s/_STABLE_/${STABLE_VERSION}/g" pkg-stable.html.head > $@
 		perl pkgstable.pl ${STABLE_VERSION} >> $@
 		cat pkg-stable.html.tail >> $@
 
 ../pkg-stable${PREV_VERSION:S/.//}.html: packages-${PREV_VERSION} \
 	pkg-stable.prev.html.head pkg-stable.html.tail
-		cat pkg-stable.prev.html.head > $@
+		sed -e "s/_PREV_/${PREV_VERSION}/g" pkg-stable.prev.html.head > $@
 		perl pkgstable.pl ${PREV_VERSION} >> $@
 		cat pkg-stable.html.tail >> $@
 
