@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# $OpenBSD: pkgstable.pl,v 1.4 2007/02/04 18:01:10 sturm Exp $
+# $OpenBSD: pkgstable.pl,v 1.5 2007/05/01 17:02:12 sturm Exp $
 
 # Public Domain, Nikolay Sturm <sturm@openbsd.org>
 
@@ -31,7 +31,7 @@ while (<$fh>) {
 	}
 
 	print "<a href=\"ftp://ftp.openbsd.org/pub/OpenBSD/$release/packages/i386/$pkg\">i386</a>\n";
-	if ($release == 4.0 and $archs =~ /amd64/) {
+	if ($release >= 4.0 and $archs =~ /amd64/) {
 		print "<a href=\"ftp://ftp.openbsd.org/pub/OpenBSD/$release/packages/amd64/$pkg\">amd64</a>\n";
 	}
 	print "<dd>$desc\n";
