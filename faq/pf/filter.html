@@ -126,8 +126,7 @@ drop</tt> or <tt>block return</tt>.
 <dt><tt>log</tt>
 <dd>Specifies that the packet should be logged via
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+4.1"
->pflogd(8)</a>. If the rule specifies the <tt>keep state</tt>,
-<tt>modulate state</tt>, or <tt>synproxy state</tt> option, then only the
+>pflogd(8)</a>. If the rule creates state then only the
 packet which establishes the state is logged. 
 To log all packets regardless, use <tt>log (all)</tt>.
 
@@ -257,12 +256,15 @@ be specified as:
 <tt>flags <i>check</i>/<i>mask</i></tt>. For example: <tt>flags
 S/SA</tt> - this instructs PF to only look at the S and A (SYN and ACK)
 flags and to match if only the SYN flag is "on".
+In OpenBSD 4.1 and later, the default flags <tt>S/SA</tt> are applied to all
+TCP filter rules.
 
 <dt><tt><i>state</i></tt>
 <dd>Specifies whether state information is kept on packets matching this
 rule.
 <ul>
 <li><tt>keep state</tt> - works with TCP, UDP, and ICMP.
+In OpenBSD 4.1 and later, this option is the default for all filter rules.
 <li><tt>modulate state</tt> - works only with TCP. PF will generate
 strong Initial Sequence Numbers (ISNs) for packets matching this rule.
 <li><tt>synproxy state</tt> - proxies incoming TCP connections to help
@@ -382,11 +384,28 @@ evaluation, the time PF spends processing those packets can be greatly
 lessened.
 
 <p>
-When a rule has the <tt>keep state</tt> option, the first packet
+When a rule creates state, the first packet
 matching the rule creates a "state" between the sender and receiver.  
 Now, not only do packets going from the sender to receiver match the
 state entry and bypass ruleset evaluation, but so do the reply packets
-from receiver to sender. For example:
+from receiver to sender.
+
+<p>
+Starting in OpenBSD 4.1, all filter rules automatically create a state
+entry when a packet matches the rule.
+In earlier versions of OpenBSD the filter rule had to explicitly use the
+<tt>keep state</tt> option.
+
+<p>
+Example using OpenBSD 4.1 and later:
+<blockquote>
+<tt>
+pass out on fxp0 proto tcp from any to any
+</tt>
+</blockquote>
+
+<p>
+Example using OpenBSD 4.0 and earlier:
 <blockquote>
 <tt>
 pass out on fxp0 proto tcp from any to any keep state
@@ -394,7 +413,7 @@ pass out on fxp0 proto tcp from any to any keep state
 </blockquote>
 
 <p>
-This allows any outbound TCP traffic on the <tt>fxp0</tt> interface 
+These rules allow any outbound TCP traffic on the <tt>fxp0</tt> interface 
 and also permits the reply traffic to pass back through the firewall.
 While keeping state is a nice feature, its use significantly improves
 the performance of your firewall as state lookups are dramatically
@@ -421,8 +440,9 @@ pass out on fxp0 proto { tcp, udp, icmp } from any \<br>
 
 <p>
 Another advantage of keeping state is that corresponding ICMP traffic
-will be passed through the firewall. For example, if <tt>keep state</tt>
-is specified for a TCP connection and an ICMP source-quench message
+will be passed through the firewall.
+For example, if a TCP connection passing through the firewall is being
+tracked statefully and an ICMP source-quench message
 referring to this TCP connection arrives, it will be matched to the
 appropriate state entry and passed through the firewall.
 
@@ -468,10 +488,8 @@ file.
 
 <a name="stateopts"></a>
 <h2>Stateful Tracking Options</h2>
-When a filter rule creates a state table entry through the use of any of
-the <tt>keep state</tt>, <tt>modulate state</tt>, or <tt>synproxy state</tt>
-keywords, certain options can be specified that control the behavior of
-state creation.
+Filter rules that create state entries can specify various options to
+control the behavior of the resulting state entry.
 The following options are available:
 
 <dl>
@@ -480,6 +498,9 @@ The following options are available:
 <i>number</i>.
 If the maximum is reached, packets that would normally create state are
 dropped until the number of existing states decreases.
+
+<dt><tt>no state</tt>
+<dd>Prevents the rule from automatically creating a state entry.
 
 <dt><tt>source-track</tt>
 <dd>This option enables the tracking of number of states created per
@@ -521,7 +542,7 @@ An example rule:
 <blockquote>
 <tt>
 pass in on $ext_if proto tcp to $web_server \<br>
-&nbsp;&nbsp;&nbsp;&nbsp;port www flags S/SA keep state \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;port www keep state \<br>
 &nbsp;&nbsp;&nbsp;&nbsp;(max 200, source-track rule, max-src-nodes 100,
 max-src-states 3)
 </tt>
@@ -539,6 +560,12 @@ by this rule only
 state to 100
 <li>Limit the maximum number of simultaneous states per source IP to 3
 </ul>
+
+<p>
+In OpenBSD 4.1 and later, the <tt>keep state</tt> option became the
+implicit default for all filter rules.
+Despite this, when specifying stateful options <tt>keep state</tt> must
+still be used in front of the options.
 
 <p>
 A separate set of restrictions can be placed on stateful TCP connections
@@ -620,7 +647,8 @@ To have PF inspect the TCP flags during evaluation of a rule, the
 <tt>flags</tt> keyword is used with the following syntax:
 <blockquote>
 <tt>
-flags <i>check</i>/<i>mask</i>
+flags <i>check</i>/<i>mask</i><br>
+flags any
 </tt>
 </blockquote>
 
@@ -628,6 +656,8 @@ flags <i>check</i>/<i>mask</i>
 The <tt><i>mask</i></tt> part tells PF to only inspect the specified flags
 and the <tt><i>check</i></tt> part specifies which flag(s) must be
 "on" in the header for a match to occur.
+Using the <tt>any</tt> keyword allows any combination of flags to be set
+in the header.
 <blockquote>
 <tt>
 pass in on fxp0 proto tcp from any to any port ssh flags S/SA
@@ -641,29 +671,33 @@ would match the above rule while a packet with SYN and ACK or just ACK
 would not.
 
 <p>
-Note: in previous versions of OpenBSD, the following syntax was
-supported:
+In OpenBSD 4.1 and later, the default flags applied to TCP rules is
+<tt>flags S/SA</tt>.
+Combined with the OpenBSD 4.1 default of <tt>keep state</tt> on filter
+rules, these two rules become equivalent:
 <blockquote>
 <tt>
-. . . flags S
+pass out on fxp0 proto tcp all flags S/SA keep state<br>
+pass out on fxp0 proto tcp all
 </tt>
 </blockquote>
 
 <p>
-This is no longer true. A mask must now <i>always</i> be specified.
+Each rule will match TCP packets with the SYN flag set and ACK flag
+clear and each will create a state entry for matching packets.
+The default flags can be overridden by using the <tt>flags</tt> option
+as outlined above.
 
 <p>
-Flags are often used in conjunction with <tt>keep state</tt> rules to 
-help control the creation of state entries:
+In OpenBSD 4.0 and earlier there were no default flags applied to any
+filter rules.
+Each rule had to specify which flag(s) to match on and also had to
+explicity use the <tt>keep state</tt> option.
 <blockquote>
 <tt>
 pass out on fxp0 proto tcp all flags S/SA keep state
 </tt>
 </blockquote>
-
-<p>
-This would permit the creation of state on any outgoing TCP packet
-with the SYN flag set out of the SYN and ACK flags.
 
 <p>
 One should be careful with using flags -- understand what you are
@@ -678,8 +712,11 @@ is set and no others". Such a rule would end with:
 The theory is, create state only on the start of the TCP session, and
 the session should start with a SYN flag, and no others.  The problem
 is some sites are starting to use the ECN flag and any site using ECN
-that tries to connect to you would be rejected by such a rule.  A
-much better guideline is:
+that tries to connect to you would be rejected by such a rule.
+A much better guideline is to not specify any flags at all and let PF
+apply the default flags to your rules.
+If you truly need to specify flags yourself then this combination should
+be safe:
 <blockquote>
 <tt>
 . . . flags S/SAFR
@@ -693,17 +730,7 @@ FIN and RST flags if traffic is also being
 to drop any incoming packets with illegal TCP flag combinations (such as
 SYN and RST) and to normalize potentially ambiguous combinations (such
 as SYN and FIN).
-It's highly recommended to always <tt>scrub</tt> incoming traffic:
-<blockquote>
-<tt>
-scrub in on fxp0<br>
-.<br>
-.<br>
-.<br>
-pass in on fxp0 proto tcp from any to any port ssh flags S/SA \<br>
-&nbsp;&nbsp;&nbsp;keep state
-</tt>
-</blockquote>
+
 
 <a name="synproxy"></a>
 <h2>TCP SYN Proxy</h2>
@@ -879,21 +906,6 @@ routing is symmetric.
 uRPF provides the same functionality as
 <a href="#antispoof">antispoof</a> rules.
 
-<p>
-Hosts acting as IPsec endpoints should not enable uRPF on the
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=enc&amp;sektion=4"
-><tt>enc0</tt></a> interface.
-uRPF will always fail on <tt>enc0</tt> and will block all packets.
-If you do not need to filter the encapsulated IPsec traffic, then
-<tt>set skip on enc0</tt> is recommended.
-Otherwise, avoid uRPF checks on that interface.
-
-<blockquote>
-<tt>
-block in quick on ! enc0 from urpf-failed label uRPF
-</tt>
-</blockquote>
-
 
 <a name="osfp"></a>
 <h2>Passive Operating System Fingerprinting</h2>
@@ -1004,23 +1016,27 @@ antispoof quick for $int_if inet
 # sent to close blocked connections right away. use "quick" so that this
 # rule is not overridden by the "pass" rules below.
 block return in quick on $int_if proto tcp from ! 192.168.0.15 \
-   to $int_if port ssh flags S/SA
+   to $int_if port ssh
 
-# pass all traffic to and from the local network
+# pass all traffic to and from the local network.
+# these rules will create state entries due to the default
+# "keep state" option which will automatically be applied.
 pass in  on $int_if from $lan_net to any
 pass out on $int_if from any to $lan_net
 
 # pass tcp, udp, and icmp out on the external (Internet) interface. 
-# keep state on udp and icmp and modulate state on tcp.
-pass out on $ext_if proto tcp all modulate state flags S/SA
-pass out on $ext_if proto { udp, icmp } all keep state
+# tcp connections will be modulated, udp/icmp will be tracked
+# statefully.
+pass out on $ext_if proto { tcp udp icmp } all modulate state
 
 # allow ssh connections in on the external interface as long as they're
 # NOT destined for the firewall (i.e., they're destined for a machine on
 # the local network). log the initial packet so that we can later tell
 # who is trying to connect. use the tcp syn proxy to proxy the connection.
+# the default flags "S/SA" will automatically be applied to the rule by
+# PF.
 pass in log on $ext_if proto tcp from any to ! &lt;firewall&gt; \
-   port ssh flags S/SA synproxy state
+   port ssh synproxy state
 </pre>
 </td></tr>
 </table>
@@ -1035,7 +1051,7 @@ pass in log on $ext_if proto tcp from any to ! &lt;firewall&gt; \
 <a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a> 
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: filter.html,v 1.41 2007/05/06 18:59:54 nick Exp $</small>
+<small>$OpenBSD: filter.html,v 1.42 2007/05/07 01:13:53 joel Exp $</small>
 
 </body>
 </html> 
