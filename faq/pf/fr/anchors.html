@@ -11,7 +11,7 @@
 </head>
 
 <!--
-Copyright (c) 2003-2005 Joel Knight <enabled@myrealbox.com>
+Copyright (c) 2003-2007 Joel Knight <enabled@myrealbox.com>
 
 Permission to use, copy, modify, and distribute this documentation for
 any purpose with or without fee is hereby granted, provided that the
@@ -60,7 +60,7 @@ En plus de la base de règles principale, PF peut aussi évaluer des bases
 de règles secondaires. Vu que les bases de règles secondaires ("sub
 rulesets" en anglais) peuvent être manipulées à la volée en utilisant
 <a
-href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+4.0">pfctl(8)</a>, 
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+4.1">pfctl(8)</a>, 
 elles fournissent un bon moyen de modifier dynamiquement l'ensemble des
 règles actives. Alors qu'une <a href="tables.html">table</a> est
 utilisée pour contenir une liste dynamique d'adresses, une base de règle
@@ -129,11 +129,12 @@ qui n'est pas connu est interdit par défaut) sur l'interface
 <tt>fxp0</tt> aussi bien pour le trafic entrant que le trafic sortant.
 Le trafic sortant est ensuite autorisé et un état est gardé. Ensuite une
 règle d'ancrage est créée avec le nom <tt>goodguys</tt>. Les ancres
-peuvent être peuplées avec des règles de deux façons différentes :
+peuvent être peuplées avec des règles de trois façons différentes :
 <ul>
 <li>en utilisant une règle de chargement <tt>load</tt>
 <li>en utilisant 
-	<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+4.0">pfctl(8)</a>
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+4.1">pfctl(8)</a>
+<li>en spécifiant les règles directement dans le jeu de règles principal
 </ul>
 
 <p>
@@ -172,14 +173,53 @@ pass in proto tcp from 192.0.2.4 to any port { 80 443 }<br>
 </blockquote>
 
 <p>
+Pour charger les règles directement à partir du jeu de règles principal,
+entourez les règles d'ancrage dans un bloc délimité par des accolades :
+
+<blockquote>
+<tt>
+anchor "goodguys" { <br>
+&nbsp;&nbsp;&nbsp;pass in proto tcp from 192.168.2.3 to port 22<br>
+}
+</tt>
+</blockquote>
+
+<p>
+Les ancres spécifiées de cette façon peuvent contenir d'autres ancres.
+
+<blockquote>
+<tt>
+allow = "{ 192.0.2.3 192.0.2.4 }" <br>
+<br>
+anchor "goodguys" { <br>
+&nbsp;&nbsp;&nbsp;anchor { <br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pass in proto tcp from 192.0.2.3 to
+port 80 <br>
+&nbsp;&nbsp;&nbsp;} <br>
+&nbsp;&nbsp;&nbsp;pass in proto tcp from $allow to port 22<br>
+}
+</tt>
+</blockquote>
+
+Lorsque les règles d'ancrage sont directement spécifiées dans le jeu de
+règles principal, le nom de l'ancre devient optionnel.
+Veuillez noter que l'ancre imbriquée dans l'exemple précité n'a pas de
+nom.
+Veuillez notez aussi que la macro <tt>$allow</tt> est créée en dehors de
+l'ancre (dans le jeu de règles principal) puis utilisée à l'intérieur de
+cette dernière.
+
+<p>
 Des règles de filtrage et de traduction peuvent être chargées dans une
 base de règles nommée en utilisant les mêmes syntaxes et options
 utilisées par les règles définies dans la base de règles principale. Une
-exception est à signaler cépendant dans le cas des
-<a href="macros.html">macros</a>. Les macros utilisées dans une base de
-règles nommée doivent aussi être définies dans la base de règles nommée
-qui les utilisent; les macros définies dans la base de règles principale
-ne sont <i>pas</i> visibles par les bases de règles nommées.
+exception est à signaler cependant dans le cas des
+<a href="macros.html">macros</a>, sauf si vous utilisez des ancres
+directement dans le jeu de règles principal. Les macros utilisées dans
+une base de règles nommée doivent aussi être définies dans la base de
+règles nommée qui les utilisent; les macros définies dans la base de
+règles principale ne sont <i>pas</i> visibles par les bases de règles
+nommées.
 
 <p>
 Etant donné que les ancres peuvent être imbriquées, il est possible de
@@ -207,7 +247,7 @@ autres bases. De plus, la suppression d'un point d'ancrage dans la base
 de règles principale ne détruit pas l'ancre ni les ancres attachées à celles-
 ci. Une ancre n'est détruite que lorsque toutes les ancres qu'elle contient
 sont supprimées à l'aide de
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+4.0">pfctl(8)</a>.
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+4.1">pfctl(8)</a>.
 
 <a name="options"></a>
 <h2>Options d'Ancrage</h2>
@@ -242,6 +282,26 @@ protocole ni d'autres paramètres tels que le port, l'hôte 192.0.2.10
 sera uniquement autorisé à faire des connexions SSH vu la définition de
 la règle d'ancrage (<tt>anchor</tt>).
 
+<p>
+La même syntaxe peut être appliquée aux ancres spécifiées directement
+dans le jeu de règles principal.
+
+<blockquote>
+<tt>
+allow = "{ 192.0.2.3 192.0.2.4 }" <br>
+<br>
+anchor "goodguys" in proto tcp { <br>
+&nbsp;&nbsp;&nbsp;anchor proto tcp to port 80 { <br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pass from 192.0.2.3 <br>
+&nbsp;&nbsp;&nbsp;} <br>
+&nbsp;&nbsp;&nbsp;anchor proto tcp to port 22 { <br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;pass from $allow<br>
+&nbsp;&nbsp;&nbsp;} <br>
+}
+</tt>
+</blockquote>
+
+
 <a name="manip"></a>
 <h2>Manipulation des Ancres</h2>
 La manipulation des ancres se fait à l'aide de <tt>pfctl</tt>. Cette
@@ -266,7 +326,7 @@ Pour supprimer toutes les règles de filtrage de la même ancre :
 
 <p>
 Pour une liste complète des commandes, veuillez consulter
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+4.0">pfctl(8)</a>.
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+4.1">pfctl(8)</a>.
 
 <p>
 [<a href="scrub.html">Précédent : Scrub (Normalisation de Paquets)</a>]
@@ -281,10 +341,10 @@ src="../../../images/back.gif" border="0" alt="[back]"></a>
 <br>
 <small>
 <!--
-Originally [OpenBSD: anchors.html,v 1.20 ]<br>
-$Translation: anchors.html,v 1.20 2007/02/11 17:10:10 benoit Exp $<br>
+Originally [OpenBSD: anchors.html,v 1.22 ]<br>
+$Translation: anchors.html,v 1.21 2007/05/10 11:55:06 saad Exp $<br>
 -->
-$OpenBSD: anchors.html,v 1.16 2007/02/14 19:01:55 jufi Exp $
+$OpenBSD: anchors.html,v 1.17 2007/05/10 12:43:45 saad Exp $
 </small>
 
 </body>

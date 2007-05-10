@@ -13,7 +13,7 @@
 <!--
 
 Copyright (c) 2003, Nick Holland <nick@openbsd.org>
-Copyright (c) 2003-2005 Joel Knight <enabled@myrealbox.com>
+Copyright (c) 2003-2007 Joel Knight <enabled@myrealbox.com>
 
 Permission to use, copy, modify, and distribute this documentation for
 any purpose with or without fee is hereby granted, provided that the
@@ -61,16 +61,20 @@ Paquets</a>]
 
 <a name="intro"></a>
 <h2>Introduction</h2>
-L'enregistrement des Evénements dans PF est effectué par
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+4.0">pflogd(8)</a>
-qui écoute sur l'interface
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflog&amp;sektion=4&amp;manpath=OpenBSD+4.0"><tt>pflog0</tt></a>
-et écrit les paquets dans un fichier d'événements
-(normalement /var/log/pflog) au format binaire
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tcpdump&amp;sektion=8&amp;manpath=OpenBSD+4.0">tcpdump(8)</a>.
-Les flux correspondant aux règles de
-<a href="filter.html">filtrage</a> qui contiennent les mots-clés
-<tt>log</tt> ou <tt>log (all)</tt> sont enregistrés de cette manière.
+Lorsqu'un paquet est enregistré par PF, une copie de l'en-tête est
+envoyée à une interface
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflog&amp;sektion=4&amp;manpath=OpenBSD+4.1"
+>pflog(4)</a> ainsi que des informations supplémentaires telles que
+l'interface sur laquelle transitait le paquet, l'action que PF a
+entreprise (pass ou block), etc.
+L'interface pflog(4) permet aux applications utilisateur de recevoir les
+événements enregistrés par PF à partir du noyau.
+Si PF est activé lors du démarrage du système, le service
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+4.1"
+>pflogd(8)</a> est démarré.
+Par défaut, pflog(8) écoute sur l'interface <tt>pflog0</tt> et
+enregistre tous les événements reçus dans le fichier
+<tt>/var/log/pflog</tt>.
 
 <a name="log"></a>
 <h2>Traçage De Paquets</h2>
@@ -97,6 +101,22 @@ Les options qui peuvent être fournies au mot-clef <tt>log</tt> sont :
 <dd>Tous les paquets seront tracés et pas uniquement le paquet initial.
 Utile pour les règles à état.
 
+<dt><tt>to <i>pflogN</i></tt>
+<dd>Tous les paquets correspondants seront enregistrés par l'interface
+pflog(4) spécifiée.
+Par exemple, lorsque
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=spamlogd&amp;sektion=8"
+>spamlogd(8)</a> est utilisé, tout le trafic SMTP peut être enregistré
+par une une interface pflog(4) dédiée.
+Le service spamlogd(8) peut alors être configuré pour écouter sur cette
+interface. Ceci permet de garder le fichier d'événements principal
+propre de tout trafic SMTP qui n'aurait pas dû figuré dans les fichiers
+journaux.
+Utilisez
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8"
+>ifconfig(8)</a> pour créer des interfaces pflog(4). L'interface par
+défaut <tt>pflog0</tt> est créée automatiquement.
+
 <dt><tt>user</tt>
 <dd>Trace aussi les identifiants UNIX utilisateur et groupe qui
 possèdent la socket à partir de laquelle le paquet est émis ou vers
@@ -111,13 +131,10 @@ un espace.
 
 <blockquote>
 <tt>
-pass in log (all) on $ext_if inet proto tcp to $ext_if port 22 keep
-state
+pass in log (all, to pflog1) on $ext_if inet proto tcp to $ext_if port 22 keep state
 </tt>
 </blockquote>
 
-<p>
-Trace tous les paquets entrants à destination du port 22.
 
 <a name="logfile"></a>
 <h2>Lire un Fichier d'Evénements</h2>
@@ -162,8 +179,10 @@ l'accès aux événements. Par défaut, pflogd enregistrera 96 octets du
 paquet dans le fichier d'événements. L'accès aux fichiers d'événements
 pourrait fournir un accès partiel à des charges utiles de paquets
 sensibles (tels que les noms d'utilisateurs et les mots de passe
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=telnet&amp;sektion=1&amp;manpath=OpenBSD+4.0">telnet(1)</a>
-ou <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp&amp;sektion=1&amp;manpath=OpenBSD+4.0">ftp(1)</a>).
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=telnet&amp;sektion=1"
+>telnet(1)</a>
+ou <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp&amp;sektion=1"
+>ftp(1)</a>).
 
 <a name="filter"></a>
 <h2>Filtrer les Evénements en Sortie</h2>
@@ -203,7 +222,8 @@ enregistrés.
 
 <p>
 En plus de l'utilisation des règles de filtrage standard
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tcpdump&amp;sektion=8&amp;manpath=OpenBSD+4.0">tcpdump(8)</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tcpdump&amp;sektion=8"
+>tcpdump(8)</a>,
 le langage de filtrage du tcpdump a été étendu pour lire la sortie de
 pflogd :
 <ul>
@@ -249,7 +269,8 @@ enregistrés par le pare-feu sous format ASCII ou de les envoyer à un
 serveur d'événements central distant. Tout ceci peut être effectué par
 un petit script shell, quelques modifications mineures aux fichiers
 de configuration d'OpenBSD, et
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=syslogd&amp;sektion=8&amp;manpath=OpenBSD+4.0">syslogd(8)</a>, 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=syslogd&amp;sektion=8"
+>syslogd(8)</a>, 
 le service qui permet d'enregistrer les événements.
 Syslogd enregistre les événements au format ASCII et il est aussi
 capable de les envoyer à un serveur d'événements distant.
@@ -310,7 +331,8 @@ local0.info &nbsp;&nbsp;&nbsp;&nbsp;@syslogger
 <p>
 Assurez vous que l'hôte <i>syslogger</i> a bien été défini dans le
 fichier
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hosts&amp;sektion=5&amp;manpath=OpenBSD+4.0">hosts(5)</a>.
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hosts&amp;sektion=5"
+>hosts(5)</a>.
 
 <p>
 Créez le fichier <tt>/var/log/pflog.txt</tt> afin de permettre à syslog
@@ -341,7 +363,8 @@ Tous les événements enregistrés sont maintenant envoyés vers
 Le script <tt>/etc/pflogrotate</tt> traite désormais
 <tt>/var/log/pflog</tt> et le supprime à la fin du traitement. La
 rotation du fichier <tt>pflog</tt> par
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=newsyslog&amp;sektion=8&amp;manpath=OpenBSD+4.0">newsyslog(8)</a> 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=newsyslog&amp;sektion=8"
+>newsyslog(8)</a> 
 n'est plus nécessaire désormais et devrait être désactivée. Cependant
 <tt>/var/log/pflog.txt</tt> remplace <tt>/var/log/pflog</tt> et sa
 rotation devrait être activée. Modifiez <tt>/etc/newsyslog.conf</tt>
@@ -373,10 +396,10 @@ src="../../../images/back.gif" border="0" alt="[back]"></a>
 <br>
 <small>
 <!--
-Originally [OpenBSD: logging.html,v 1.31 ]<br>
-$Translation: logging.html,v 1.31 2007/02/13 09:14:15 benoit Exp $<br>
+Originally [OpenBSD: logging.html,v 1.33 ]<br>
+$Translation: logging.html,v 1.32 2007/05/10 12:25:24 saad Exp $<br>
 -->
-$OpenBSD: logging.html,v 1.27 2007/02/14 19:01:55 jufi Exp $
+$OpenBSD: logging.html,v 1.28 2007/05/10 12:43:45 saad Exp $
 </small>
 
 </body>

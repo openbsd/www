@@ -11,7 +11,7 @@
 </head>
 
 <!--
-Copyright (c) 2003-2006 Joel Knight <enabled@myrealbox.com>
+Copyright (c) 2003-2007 Joel Knight <enabled@myrealbox.com>
 
 Permission to use, copy, modify, and distribute this documentation for
 any purpose with or without fee is hereby granted, provided that the
@@ -129,9 +129,8 @@ kluczowych <tt>block drop</tt> lub <tt>block return</tt>.
 <dt><tt>log</tt>
 <dd>Okre¶la, ¿e dany pakiet powinien byæ zapisany w logach przez
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+4.1"
->pflogd(8)</a>. Je¶li regu³a zawiera opcjê <tt>keep state</tt>,
-<tt>modulate state</tt> lub <tt>synproxy state</tt>, wówczas
-jedynie pakiet, który rozpoczyna po³±czenie stanowe
+>pflogd(8)</a>. Je¿eli regu³a tworzy stan wówczas
+jedynie pakiet który rozpoczyna po³±czenie stanowe
 jest odnotowywany w logach.
 Aby bezwzglêdnie zapisywaæ w logach wszystkie pakiety,
 nale¿y zastosowaæ opcjê <tt>log (all)</tt>.
@@ -218,6 +217,8 @@ wyra¿eñ:
   Przyk³ad: <tt>fxp0:network:0</tt>
   </dl>
 <li><a href="tables.html">Tabela</a>.
+<li>S³owo kluczowe <tt>urpf-failed</tt> mo¿e byæ u¿ywane dla adresu
+¼ród³owego aby wskazaæ, ¿e powinien przej¶æ <a href="#urpf">kontrolê uRPF</a>.
 <li>Którykolwiek z powy¿szych, lecz zanegowany przy pomocy modyfikatora
 <tt>!</tt> ("not").
 <li>Zestaw adresów w postaci <a href="macros.html#lists">listy</a>.
@@ -263,11 +264,15 @@ byæ podawane jako:
 <tt>flags <i>check</i>/<i>mask</i></tt>. Na przyk³ad: <tt>flags
 S/SA</tt> - PF bierze pod uwagê jedynie flagi S i A (SYN i ACK),
 a regu³a jest dopasowana je¶li tylko flaga SYN jest ustawiona.
+W OpenBSD 4.1 i pó¼niejszych, flagi <tt>S/SA</tt> s± domy¶lnie do³±czane
+do wszystkich regu³ TCP.
+
 <dt><tt><i>state</i></tt>
 <dd>Okre¶la, czy informacje o stanie po³±czenia s± przechowywane, gdy
 pakiety s± dopasowywane do tej regu³y.
 <ul>
-<li><tt>keep state</tt> - dzia³a z TCP, UDP, i ICMP.
+<li><tt>keep state</tt> - dzia³a z TCP, UDP oraz ICMP.
+W OpenBSD 4.1 i pó¼niejszych, opcja ta jest domy¶lna dla wszystkich regu³.
 <li><tt>modulate state</tt> - dzia³a jedynie z TCP. PF wygeneruje
 trudny do przewidzenia Inicjuj±cy Numer Sekwencyjny (ang. Initial Sequence
 Number - ISN) dla pakietów pasuj±cych do tej regu³y.
@@ -387,13 +392,29 @@ nie przechodz± zestawu regu³, czas zu¿ywany na przetwarzanie tych
 pakietów mo¿e byæ bardzo znacz±co zmniejszony.
 
 <p>
-Gdy regu³a posiada opcje <tt>keep state</tt>, pierwszy pakiet
+Gdy regu³a tworzy stan, pierwszy pakiet
 pasuj±cy do niej tworzy "po³±czenie stanowe" pomiêdzy nadawc± i
 odbiorc±. Wówczas, nie tylko pakiety pochodz±ce od nadawcy,
 zmierzaj±ce do odbiorcy, ale i pakiety odbiorcy, skierowane do
 nadawcy pasuj± do regu³y i nie s± sprawdzane przez zestaw regu³
-filtruj±cych. Na przyk³ad:
+filtruj±cych.
 
+<p>
+Pocz±wszy od OpenBSD 4.1, wszystkie regu³y automatycznie tworz±
+stany w tabeli stanów gdy pakiet pasuje do danej regu³y.
+We wcze¶niejszych wersjach OpenBSD regu³a filtra musia³a zawieraæ
+opcjê <tt>keep state</tt>. 
+
+<p>
+Przyk³adowo, korzystaj±c z OpenBSD 4.1 i pó¼niejszych:
+<blockquote>
+<tt>
+pass out on fxp0 proto tcp from any to any
+</tt>
+</blockquote>
+
+<p>
+Dla OpenBSD 4.0 i wcze¶niejszych natomiast:
 <blockquote>
 <tt>
 pass out on fxp0 proto tcp from any to any keep state
@@ -401,8 +422,8 @@ pass out on fxp0 proto tcp from any to any keep state
 </blockquote>
 
 <p>
-Zezwala to na wychodzenie ruchu TCP na interfejsie <tt>fxp0</tt>
-i przepuszcza ruch powrotny pakietów stanowi±cych odpowied¼.
+Regu³y te zezwalaj± na wychodzenie ruchu TCP na interfejsie <tt>fxp0</tt>
+i przepuszczaj± ruch powrotny pakietów stanowi±cych odpowied¼.
 ¦ledzenie stanów poza swoj± funkcjonalno¶ci±, zapewnia tak¿e
 znacz±cy wzrost wydajno¶ci firewalla, poniewa¿ wyszukania
 stanów s± du¿o szybsze ni¿ porównywanie pakietu z zestawem regu³
@@ -429,8 +450,9 @@ pass out on fxp0 proto { tcp, udp, icmp } from any \<br>
 
 <p>
 Inn± zalet± ¶ledzenia stanów jest to, i¿ odpowiedni ruch ICMP bêdzie
-przepuszczany przez firewall. Na przyk³ad, je¶li <tt>keep state</tt>
-jest zdefiniowane dla po³±czenia TCP i nadejdzie komunikat ICMP
+przepuszczany przez firewall.
+Na przyk³ad, je¶li po³±czenie TCP przechodzi przez firewall, jest ono
+¶ledzone stanowo i w momencie gdy nadejdzie komunikat ICMP
 "gasz±cy ¼ród³o" (ang. source-quench) odwo³uj±cy siê do tego po³±czenia,
 bêdzie on dopasowany do odpowiedniego wpisu stanowego i przepuszczony
 przez firewall.
@@ -479,10 +501,8 @@ w sekcji <a href="options.html">opcje</a> pliku <tt>pf.conf</tt>.
 
 <a name="stateopts"></a>
 <h2>Opcje dla ¶ledzenia stanów</h2>
-Kiedy regu³a filtra tworzy wpis o stanie poprzez u¿ycie któregokolwiek
-z kluczy <tt>keep state</tt>, <tt>modulate state</tt>, lub <tt>synproxy state</tt>,
-pewne opcje mog± byæ u¿yte do kontroli zachowania tworzonego stanu.
-Dostêpne s± poni¿sze opcje:
+Regu³y tworz±ce wpisy w tabeli stanów mog± posiadaæ ró¿ne opcje
+kontroluj±ce zachowanie stanu.
 
 <dl>
 <dt><tt>max <i>number</i></tt>
@@ -491,6 +511,9 @@ warto¶ci ustalonej przez <i>number</i>.
 Je¿eli to maksimum zosta³o osi±gniête, pakiety które normalnie utworzy³yby
 nowy stan s± blokowane a¿ do czasu gdy liczba aktualnych stanów zostanie
 zmniejszona.
+
+<dt><tt>no state</tt>
+<dd>zapobiega przed utworzeniem wpisu stanu.
 
 <dt><tt>source-track</tt>
 <dd>Opcja ta w³±cza ¶ledzenie liczby utworzonych stanów dla ka¿dego
@@ -528,11 +551,20 @@ jest zale¿ny od u¿ycia opcji <tt>source-track</tt>.
 </dl>
 
 <p>
+Opcje podawane s± w nawiasach, zaraz po u¿yciu jednego ze s³ów kluczowych
+(<tt>keep state</tt>, <tt>modulate state</tt>, or <tt>synproxy state</tt>).
+Opcje oddzielone s± przecinkami.
+W OpenBSD 4.1 i pó¼niejszych, opcja <tt>keep state</tt>, jest wstawiana
+domy¶lnie do wszystkich regu³ filtra.
+Pomimo tego, u¿ywaj±c opcji dla filtrowania stanowego, konieczne jest
+u¿ycie jednego ze s³ów kluczowych przed okre¶lonymi opcjami.
+
+<p>
 Przyk³ad:
 <blockquote>
 <tt> 
 pass in on $ext_if proto tcp to $web_server \<br>
-&nbsp;&nbsp;&nbsp;&nbsp;port www flags S/SA keep state \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;port www keep state \<br>
 &nbsp;&nbsp;&nbsp;&nbsp;(max 200, source-track rule, max-src-nodes 100,
 max-src-states 3)
 </tt>
@@ -632,7 +664,8 @@ wykorzystywane jest s³owo kluczowe <tt>flags</tt>. Jego sk³adnia jest
 nastêpuj±ca:
 <blockquote>
 <tt>
-flags <i>check</i>/<i>mask</i>
+flags <i>check</i>/<i>mask</i><br>
+flags any
 </tt>
 </blockquote>
 
@@ -640,6 +673,9 @@ flags <i>check</i>/<i>mask</i>
 Czê¶æ <tt><i>mask</i></tt> mówi PF aby sprawdzaæ jedynie podane flagi, a
 czê¶æ <tt><i>check</i></tt> okre¶la która flaga(i) powinny byæ "ustawione"
 w nag³ówku, aby dopasowanie mia³o miejsce.
+U¿ycie klucza <tt>any</tt> zezwala na ustawienie dowolnej kombinacji flag
+w nag³ówku. 
+
 <blockquote>
 <tt>
 pass in on fxp0 proto tcp from any to any port ssh flags S/SA
@@ -653,29 +689,35 @@ bêdzie pasowa³ do powy¿szej regu³y, jednak pakiet z SYN i ACK lub
 tylko ACK ju¿ nie.
 
 <p>
-Uwaga: we wcze¶niejszych wersjach OpenBSD, nastêpuj±ca zapis by³
-poprawny:
+W OpenBSD 4.1 i pó¼niejszych, domy¶lne flagi stosowane od regu³ TCP
+to <tt>flags S/SA</tt>.
+W po³±czeniu z domy¶lnym dla OpenBSD 4.1 zachowaniem <tt>keep state</tt>
+w regu³ach filtra, poni¿sze dwie linie s± równowa¿ne:
+
 <blockquote>
 <tt>
-. . . flags S
+pass out on fxp0 proto tcp all flags S/SA keep state<br>
+pass out on fxp0 proto tcp all
 </tt>
 </blockquote>
 
 <p>
-Nie jest to ju¿ prawdziwe. Maska <i>zawsze</i> musi byæ podana.
+Ka¿da regu³a do której pasuje pakiet TCP z ustawiona flag± SYN
+i wygaszona flag± ACK utworzy odpowiedni stan.
+Domy¶lne zachowanie mo¿e byæ zmienione poprzez u¿ycie opcji <tt>flags</tt>,
+jak to zosta³o pokazane wcze¶niej.
 
 <p>
-Flagi czêsto s± stosowane w po³±czeniu z regu³ami <tt>keep state</tt>,
-aby wspomóc kontrolê tworzenia stanów: 
+W OpenBSD 4.0 i wcze¶niejszych flagi domy¶lne nie by³y stosowane w
+regu³ach filtra.
+Ka¿da regu³a musia³a mieæ okre¶lone pasuj±ce flagi oraz bezpo¶rednio
+u¿yt± opcjê <tt>keep state</tt>.
+
 <blockquote>
 <tt>
 pass out on fxp0 proto tcp all flags S/SA keep state
 </tt>
 </blockquote>
-
-<p>
-Regu³a ta zezwala na tworzenie stanu dla wychodz±cych pakietów TCP
-z ustawion± jedynie flag± SYN i przy braniu pod uwagê SYN oraz ACK.
 
 <p>
 Przy korzystaniu z flag trzeba byæ bardzo ostro¿nym - nale¿y rozumieæ
@@ -691,7 +733,12 @@ wygl±da³a by tak:
 W teorii, tworzy siê po³±czenie stanowe na pocz±tku sesji TCP, a sesja
 powinna rozpocz±æ siê od flagi SYN, i ¿adnej innej. Problem polega
 na tym, ¿e niektórzy u¿ytkownicy rozpoczynaj± po³±czenia wraz z flag±
-ECN, i bêd± odrzuceni przez tak± regu³ê. Du¿o lepsz± praktyk± jest:
+ECN, i bêd± odrzuceni przez tak± regu³ê. Du¿o lepsz± praktyk± jest
+nie okre¶lanie ¿adnych flag i pozwolenie PF-owi by zastosowa³
+domy¶lne flagi do twoich regu³.
+Je¶li naprawde chcesz sam okre¶liæ swoje flagi poni¿sza kombinacja
+powinna byæ bezpieczna:
+
 <blockquote>
 <tt>
 . . . flags S/SAFR
@@ -705,18 +752,7 @@ flag FIN i RST. Normalizacja powoduje, ¿e PF porzuca nadchodz±ce
 pakiety z nieprawid³ow± kombinacja flag (tak± jak SYN i FIN lub
 SYN i RST) a tak¿e normalizuje potencjalnie niejasne kombinacje
 (takie jak SYN i FIN).
-Zaleca siê zawsze normalizowaæ przychodz±cy ruch
-przy pomocy <tt>scrub</tt>:
-<blockquote>
-<tt>
-scrub in on fxp0<br>
-.<br>
-.<br>
-.<br>
-pass in on fxp0 proto tcp from any to any port ssh flags S/SA \<br>
-&nbsp;&nbsp;&nbsp;keep state
-</tt>
-</blockquote>
+
 
 <a name="synproxy"></a>
 <h2>TCP SYN Proxy</h2>
@@ -898,23 +934,6 @@ gdzie routing jest symetryczny.
 uRPF dostarcza tak± sam± funkcjonalno¶æ jak regu³y
 <a href="#antispoof">antispoof</a>.
 
-<p>
-Hosty bêd±ce koñcówkami tuneli IPsec nie powinny mieæ w³±czonego uRPF na
-interfejsach
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=enc&amp;sektion=4"
-><tt>enc0</tt></a>.
-uRPF na <tt>enc0</tt> zawsze siê nie powiedzie i spowoduje blokowanie wszystkich pakietów.
-Je¶li nie potrzebujesz filtrowaæ enkapsulowanego ruchu IPsec zalecane jest u¿ycie
-<tt>set skip on enc0</tt>.
-W przeciwnym wypadku unikaj sprawdzania uRPF na tych interfejsach.
-
-<blockquote>
-<tt>
-block in quick on ! enc0 from urpf-failed label uRPF
-</tt>
-</blockquote>  
-
-
 <a name="osfp"></a>
 <h2>Pasywne rozpoznawanie systemów operacyjnych</h2>
 
@@ -1020,8 +1039,8 @@ scrub in all
 # ustawienie polityki domy¶lnego blokowania
 block all
 
-# aktywuj ochronê przed spoofing-iem dla interfejsu wewnêtrznego.
-antispoof quick for $int_if inet
+# aktywuj ochronê przed spoofing-iem na wszystkich interfejsach.
+block in quick from urpf-failed
 
 # zezwalaj na po³±czenia ssh z sieci lokalnej jedynie z zaufanego
 # hosta - 192.168.0.15. korzystaj z "block return", aby TCP RST
@@ -1029,25 +1048,28 @@ antispoof quick for $int_if inet
 # korzystaj z "quick", aby regu³a nie by³a nadpisana przez
 # znajduj±ce siê poni¿ej regu³y "pass"
 block return in quick on $int_if proto tcp from ! 192.168.0.15 \
-   to $int_if port ssh flags S/SA
+   to $int_if port ssh
 
-# przepuszczaj ca³y ruch z i do lokalnej sieci przeznaczony dla 
-# maszyny bêd±cej firewall-em
-pass in  on $int_if from $lan_net to $int_if 
-pass out on $int_if from $int_if to $lan_net
+# przepuszczaj ca³y ruch z i do lokalnej sieci.
+# regu³y te utworz± wpisy w tabeli stanów zgodnie z domy¶lnym
+# do³±czeniem opcji "keep state"
+pass in  on $int_if from $lan_net to any
+pass out on $int_if from any to $lan_net
 
 # wypuszczaj tcp, udp i icmp na interfejsie zewnêtrznym (Internet). 
-# ¶led¼ stan dla udp i icmp oraz moduluj stan dla tcp.
-pass out on $ext_if proto tcp all modulate state flags S/SA
-pass out on $ext_if proto { udp, icmp } all keep state
+# po³±czenia tcp bêd± modulowane, po³±czenia udp/icmp bêd±
+# ¶ledzone poprzez stany
+pass out on $ext_if proto { tcp udp icmp } all modulate state
 
 # zezwalaj na po³±czenia ssh na interfejsie zewnêtrznym pod warunkiem,
 # ¿e NIE s± one skierowane do firewall-a (np, nie s± skierowane
 # do maszyny z sieci lokalnej). twórz logi dla pakietów inicjuj±cych
 # po³±czenia, aby mo¿na by³o potem stwierdziæ, kto próbowa³ siê
 # po³±czyæ. u¿ywamy "tcp syn proxy" dla nadchodz±cych po³±czeñ.
+# flagi domy¶lne "S/SA" bêd± automatycznie do³±czane do regu³ 
+# PF-a.
 pass in log on $ext_if proto tcp from any to ! &lt;firewall&gt; \
-   port ssh flags S/SA synproxy state
+   port ssh synproxy state
 </pre>
 </td></tr>
 </table>
@@ -1064,10 +1086,10 @@ pass in log on $ext_if proto tcp from any to ! &lt;firewall&gt; \
 <br>
 <small>
 <!--
-Originally [OpenBSD: filter.html,v 1.41 ]<br>
-$Translation: filter.html,v 1.22 2007/05/07 00:53:30 tkniaz Exp $<br>
+Originally [OpenBSD: filter.html,v 1.44 ]<br>
+$Translation: filter.html,v 1.23 2007/05/09 16:25:25 tkniaz Exp $<br>
 -->
-$OpenBSD: filter.html,v 1.21 2007/05/09 05:49:53 jufi Exp $
+$OpenBSD: filter.html,v 1.22 2007/05/10 12:43:46 saad Exp $
 </small>
 </body>
 </html> 
