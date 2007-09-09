@@ -66,18 +66,21 @@ Table of Contents:
 <hr>
 <p>
 <a name="before"></a>
-<h2>Before upgrading</h2>
+<h2>Before upgrading: things to think about and be aware of</h2>
 
 <!-- XXX add new stuff -->
-<p>
+
+<ul>
+<li><b>Modified kernel:</b><br>
 Check whether you have made any modifications to your kernel.
-For example, you might have modified your network device to use a non-default
-setting using config(8).
+For example, you might have modified your network device to use a
+non-default setting using config(8).
 Note your changes, so you can repeat them for the new 4.2 kernel.
 
 <p>
-<b>rc.conf:</b>
-Unlike earlier versions of this process, it is now assumed that
+<li><b>rc.conf:</b><br>
+Unlike earlier versions of this process, since
+<a href="upgrade41.html">4.1</a>, it is assumed that
 <tt>/etc/rc.conf</tt> is not a user-altered file.
 If you have made changes to your <tt>/etc/rc.conf</tt> file, merge those
 changes into <tt>/etc/rc.conf.local</tt>.
@@ -87,6 +90,97 @@ If you have NO <tt>/etc/rc.conf.local</tt>, simply copy your existing
 Otherwise, pull your existing <tt>rc.conf</tt> into the top of your
 existing <tt>rc.conf.local</tt> file <i>and remove the last line</i>
 before doing the rest of this process.
+
+<p>
+Failure to do this will probably result in unhappy results.
+
+<p>
+<li><b>Enter Xenocara, exit XF3:</b><br>
+A new version of X is in OpenBSD 4.2, and along with it, a new tree and
+build process called <a href="http://www.xenocara.com">Xenocara</a>.
+Your old X configuration may need to be adjusted, but many people will
+find they don't need an X configuration file at all anymore.
+
+<p>
+As OpenBSD adapts to the newest versions of X.org, support for
+XF3 on the i386 platform (the only platform it was used on still)
+has been dropped.
+XF3 was needed only for some very old video chips which were not
+supported by XF4 and X.org.
+It is not believed this will impact many people.
+
+<p>
+<li><b>Updated
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ahci&amp;sektion=4">ahci</a>
+driver may change how disks are handled:</b><br>
+Systems using the ahci(4) driver may find SATA disks which had been
+recognized and handled by the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=wd&amp;sektion=4">wd(4)</a>
+(i.e., wd0) to become
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sd&amp;sektion=4">sd(4)</a>
+(i.e., sd0) devices.
+Watch the <tt>dmesg</tt> output at boot.
+A drive which turned up earlier as:
+
+<p>
+<blockquote><tt>
+pciide1 at pci0 dev 31 function 2 "Intel 82801GBM AHCI SATA" rev 0x02: DMA, channel 0 wired to native-PCI, channel 1 wired to native-PCI<br>
+pciide1: using apic 2 int 11 (irq 11) for native-PCI interrupt<br>
+wd0 at pciide1 channel 0 drive 0: &lt;FUJITSU MHV2080BH&gt;<br>
+wd0: 16-sector PIO, LBA48, 76319MB, 156301488 sectors<br>
+wd0(pciide1:0:0): using PIO mode 4, Ultra-DMA mode 5
+</tt></blockquote>
+
+now instead turns up as
+
+<p>
+<blockquote><tt>
+ahci0 at pci0 dev 31 function 2 "Intel 82801GBM AHCI SATA" rev 0x02: AHCI 1.1: apic 2 int 16 (irq 11)<br>
+scsibus1 at ahci0: 32 targets<br>
+sd0 at scsibus1 targ 0 lun 0: &lt;ATA, FUJITSU MHV2080B, 0084&gt; SCSI2 0/direct fixed<br>
+sd0: 76319MB, 76319 cyl, 64 head, 32 sec, 512 bytes/sec, 156301488 sec total
+</tt></blockquote>
+
+This will cause problems for people doing remote upgrades of these
+machines, as if the fstab file is not "correct", the system will not
+complete booting.
+Unfortunately, how the driver handles the disk is dependent upon a lot
+of things including BIOS configurations, so IF one has an AHCI SATA
+interface, one will have to experiment with a similarly configured
+local machine to see if the <tt>/etc/fstab</tt> file will need to be
+re-worked.
+
+<p>
+It is believed very few people will be hit by this now, as ahci(4)
+devices are moderately rare on existing hardware, though becoming much
+more common now.
+
+<p>
+
+<li><b>Packages are now using libexpat shipped with xenocara;
+xbase42.tgz is your friend:</b><br>
+The libexpat port has been removed.
+Packages now use the libexpat which is shipped with xenocara instead.
+Many packages depend on libexpat through other dependencies.
+For instance, the many packages which use gettext, also depend on
+libexpat.
+
+<p>
+This means that many systems that didn't use X before will now need to
+have <tt>xbase42.tgz</tt> installed, even if the system does not have a
+graphical operation.
+If you don't do this and try to install a package that requires libexpat,
+pkg_add(1) will give an error message.
+
+<p>
+Finally, after upgrading all your packages to the 4.2 versions, clean up
+by removing the old expat package from your system:
+
+<blockquote><pre>
+# <b>pkg_delete expat</b>
+</pre></blockquote>
+
+</ul>
 
 <p>
 <hr>
@@ -274,7 +368,19 @@ For a more complete list of changes, see
 <a href="../plus42.html">plus42.html</a> and the CVS change logs.
 
 <ul>
-  XXX
+<p>
+<li><b>bgpd filter language change:</b><br>
+bgpd filters using only <tt>prefixlen</tt> as filter parameter need to 
+include now a address family identifier like <tt>inet</tt> or
+<tt>inet6</tt>:
+
+<p>
+<blockquote><tt>
+allow from any <b>inet</b> prefixlen 8 - 24<br>
+deny from any <b>inet6</b> prefixlen &gt; 64<br>
+</tt></blockquote>
+
+
 </ul>
 
 <a name="etcfiles"></a>
@@ -313,7 +419,7 @@ otherwise, just copy them over, too:
 </pre></blockquote>
 
 The changes to these files are in <a href="upgrade42.patch">this
-non-existant patch file</a>.
+non-existent patch file</a>.
 You can attempt to use this by executing the following as root:
 <blockquote><pre>
 <b>cd /</b>
@@ -448,7 +554,7 @@ clean up by removing the old expat package from your system:
 <a href="index.html"><img height="24" width="24" src="../images/back.gif" border="0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: upgrade42.html,v 1.4 2007/08/24 10:46:33 nick Exp $</small>
+<small>$OpenBSD: upgrade42.html,v 1.5 2007/09/09 15:04:49 nick Exp $</small>
 
 </body>
 </html>
