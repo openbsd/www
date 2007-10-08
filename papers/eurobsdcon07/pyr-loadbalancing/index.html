@@ -1,0 +1,459 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" 
+	"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+<title>OpenBSD: Load-Balancing using hoststated</title>
+<!-- metadata -->
+<meta name="generator" content="S5" />
+<meta name="version" content="S5 1.1" />
+<meta name="presdate" content="20050728" />
+<meta name="author" content="Eric A. Meyer" />
+<meta name="company" content="Complex Spiral Consulting" />
+<!-- configuration parameters -->
+<meta name="defaultView" content="slideshow" />
+<meta name="controlVis" content="hidden" />
+<!-- style sheet links -->
+<link rel="stylesheet" href="ui/slides.css" type="text/css" media="projection" id="slideProj" />
+<link rel="stylesheet" href="ui/outline.css" type="text/css" media="screen" id="outlineStyle" />
+<link rel="stylesheet" href="ui/print.css" type="text/css" media="print" id="slidePrint" />
+<link rel="stylesheet" href="ui/opera.css" type="text/css" media="projection" id="operaFix" />
+<!-- S5 JS -->
+<script src="ui/slides.js" type="text/javascript"></script>
+</head>
+<body>
+
+<div class="layout">
+<div id="controls"><!-- DO NOT EDIT --></div>
+<div id="currentSlide"><!-- DO NOT EDIT --></div>
+<div id="header"></div>
+<div id="footer">
+<!-- <h1>Saint-Laurent du Var, 2007</h1> -->
+<h2>OpenBSD: Load-Balancing using HostStated.</h2>
+</div>
+
+</div>
+
+
+<div class="presentation">
+
+<div class="slide">
+<h3>Load-Balancing using HostStated</h3>
+<h4>Pierre-Yves Ritschard</h4>
+</div>
+
+<div class="slide">
+<h1>Introducing HostStated</h1>
+<ul>
+	<li>Name Bum: slbd, hostated and then hoststated.</li>
+	<li>The HostState Daemon for Load-Balancing.</li>
+	<li>Introduced in 4.1</li>
+	<li>Layer 7 support introduced in 4.2</li>
+</ul>
+
+<div class="slide">
+<h1>Talk Overview</h1>
+<ul>
+	<li>Available tools and Concepts.</li>
+	<li>Design.</li>
+	<li>Hoststatectl features.</li>
+	<li>Layer 3 configuration.</li>
+	<li>Layer 7 configuration.</li>
+	<li>The future.</li>
+</ul>
+
+<div class="slide">
+<h1>What is Load-Balancing ?</h1>
+<ul>
+	<li>Span a service across multiple machines.</li>
+	<li>Functions as an application gateway or proxy.</li>
+	<li>Related: High-Availability.</li>
+</ul>
+</div>
+
+<div class="slide">
+<h1>Load-Balancing tools in OpenBSD: PF</h1>
+<ul>
+	<li>Provides address tables stored in kernel for fast access.</li>
+	<li>Provides an interface to allow the userland to modify tables.</li>
+	<li>Provides different kind of load-balancing methods.</li>
+</ul>
+
+<p>
+Example rule: 
+<i>rdr from any to $public_ip port http -> &lt;webservers&gt; </i>
+</p>
+
+<div class="slide">
+<h1>High-Availability tools in OpenBSD: Carp and Pfsync</h1>
+<ul>
+	<li>Carp provides virtual adresses.</li>
+	<li>Pfsync provides shared firewall states across firewalls.</li>
+	<li>Carp interfaces can be grouped together.</li>
+	<li>A Carp group can be manipulated from userland to force failover.
+	</li>
+</ul>
+
+<div class="slide">
+<h1>Types of load-balancing: Layer 3</h1>
+<ul>
+	<li>Packet level.</li>
+	<li>Extension of NAT.</li> 
+</ul>
+
+<div class="slide">
+<h1>Types of load-balancing: Layer 7</h1>
+<ul>
+	<li>Application level.</li>
+	<li>Man-in-the-middle approach.</li>
+	<li>Allows packet processing.</li>
+</ul>
+
+<div class="slide">
+<h1>The need</h1>
+<ul>
+	<li>Knowing when a service fails to stop directing requests at it.</li>
+
+	<li>A tool that is able to maintain address tables up to date with
+	regard to host availability.</li>
+
+	<li>A tool that is able to create and remove pf rules based on the
+	status of the hosts it monitors.</li>
+
+	<li>A tool that can provide a solution to a general failure.</li>
+</div>
+
+<div class="slide">
+<h1>Similar or related applications</h1>
+<ul>
+	<li>Many vendors provide commercial solutions: F5, Nortel and Cisco
+	for instance.</li>
+
+	<li>A few linux projects provide limited load-balancing solutions
+	such as keepalived.</li>
+</ul>
+
+<div class="slide">
+<h1>Design goals</h1>
+<ul>
+	<li>Security: use privilege separation and separate the
+	different aspects of the daemon into several processes.</li>
+
+	<li>Efficiency: create a fast and asynchronous host checking
+	engine with various commonly used checking methods.</li>
+
+	<li>Simplicity: provide a clean and familiar looking configuration
+	file syntax. Consistent syntax across layer 3 and layer 7, standard
+	and SSL.</li>
+
+	<li>Administrator Friendly: provide a simple control tool to 
+	report host statuses and manually set status.</li>
+</ul>
+
+<div class="slide">
+<h1>Design</h1>
+<p>Parent Process</p>
+<ul>
+	<li>Handle configuration loading and reloading.</li>
+	<li>Handle external script execution.</li>
+	<li>Handle carp demotion requests.</li>
+</ul>
+
+<p>HCE: Host check engine</p>
+<ul>
+	<li>Mono-process, fully asynchronous checks.</li>
+	<li>Schedule checks and notify PFE of state transitions.</li>
+</ul>
+</div>
+
+<div class="slide">
+<h1>Design (cont.)</h1>
+<p>PFE: PF Engine</p>
+<ul>
+	<li>Create and destroy PF rules.</li>
+	<li>Update PF tables based on HCE notifications.</li>
+</ul>
+
+<p>Relay Engine</p>
+<ul>
+	<li>Create listening sockets for services.</li>
+	<li>Filter protocols before relaying.</li>
+</ul>
+
+<div class="slide">
+<h1>Design details</h1>
+<ul>
+	<li>Steal as much as possible from recent OpenBSD daemons:
+	ospfd, bgpd.</li>
+
+	<li>Use safe buffer routines.</li>
+
+	<li>Use the imsg protocol to communicate between the different
+	processes.</li>
+
+	<li>Create a set of easy asynchronous SSL routines.</li>
+
+	<li>Use libevent to facilitate asynchronous socket programming.</li>
+</ul>
+
+<div class="slide">
+<h1>Configuration elements</h1>
+<ul>
+	<li>hosts: real service providers.</li>
+	<li>tables: groups of hosts providing a common service.</li>
+	<li>services: layer 3 load-balancing declarations.</li>
+	<li>protocols: protocol specific parameters for relays.</li>
+	<li>relays: layer 7 load-balancing declarations.</li>
+</ul>
+
+<div class="slide">
+<h1>Simple layer 3 setup</h1>
+<ul>
+	<li>One internet reachable host.</li>
+	<li>Two web servers using private addressing.</li>
+</ul>
+</div>
+
+<div class="slide">
+<h1>Initial Configuration</h1>
+<p>In pf.conf</p>
+<pre>
+rdr-anchor "hoststated/*"
+</pre>
+
+<p>In hoststated.conf</p>
+<pre>
+public_addr=81.81.81.81
+
+webhost1=10.1.1.100
+webhost2=10.1.1.101
+
+table webhosts {
+	real port http
+	check http "/" code 200
+	host $webhost1
+	host $webhost2
+}
+
+service www {
+	virtual host $public_addr port http interface trunk0
+	table webhosts
+}
+</pre>
+</div>
+
+<div class="slide">
+<h1>Retrieving status information</h1>
+<pre>
+# hoststatectl show summary
+Type      Id    Name                            Avlblty Status
+service    0    www                                     active
+table      0    webhosts                                active (2 hosts up)
+host       1    10.1.100.2                      100.00% up
+host       0    10.1.100.1                      100.00% up
+</pre>
+
+<div class="slide">
+<h1>Hoststatectl features</h1>
+<ul>
+	<li>Host disable/enable.</li>
+	<li>Service disable/enable.</li>
+	<li>Table disable/enable.</li>
+	<li>Reload.</li>
+	<li>Host, tables, services and relay display.</li>
+	<li>Summary display.</li>
+	<li>Monitor mode.</li>
+</ul>
+</div>
+
+<div class="slide">
+<h1>More table options</h1>
+<p>checking methods</p>
+<ul>
+	<li>HTTP(S) code</li>
+	<li>HTTP(S) digest</li>
+	<li>ICMP</li>
+	<li>send / expect</li>
+	<li>script</li>
+	<li>TCP / SSL</li>
+</ul>
+<p>other options</p>
+<ul>
+	<li>real port</li>
+	<li>timeout</li>
+	<li>disable</li>
+</ul>
+
+<div class="slide">
+<h1>What if every host goes down</h1>
+<pre>
++table sorry_server {
++       check icmp
++       host 127.0.0.1
++}
++
+ service www {
+         virtual host $public_addr port http interface trunk0
+         table webhosts
++       backup table sorry_server
+ }
+</pre>
+<p>result in hoststatectl's output:</p>
+<pre>
+Type      Id    Name                            Avlblty Status
+service    0    www                                     active (using backup table)
+table      0    webhosts                                empty
+host       1    10.1.1.101                      0.00%   down
+host       0    10.1.1.100                      0.00%   down
+table      2    sorry_server:80                         active (1 hosts up)
+host       3    127.0.0.1                       100.00% up
+</pre>
+</div>
+
+<div class="slide">
+<h1>Bringing things down</h1>
+<p>Forcible disabling of hosts is useful for maintenance updates</p>
+<pre>
+# hoststatectl table disable webhosts:80 
+command succeeded
+# hoststatectl show su                   
+Type      Id    Name                            Avlblty Status
+service    0    www                                     active (using backup table)
+table      2    webhosts:80                             disabled
+table      3    sorry_server:80                         active (1 hosts up)
+host       5    127.0.0.1                       100.00% up
+</pre>
+</div>
+
+<div class="slide">
+<h1>Layer 7 Features</h1>
+<ul>
+	<li>Generic TCP relaying.</li>
+	<li>HTTP/HTTPS relaying.</li>
+	<li>DNS relaying.</li>
+</ul>
+<p>Generic UDP relaying can not be achieved due to the stateless
+datagram based nature of the protocol.</p>
+</div>
+
+<div class="slide">
+<h1>Sample HTTPS Relaying configuration</h1>
+<pre>
+ext_addr="172.16.1.1"
+webhost1="10.1.1.100"
+webhost2="10.1.1.101"
+
+table webhosts {
+        check http "/" code 200
+        host $webhost1
+        host $webhost2
+}
+
+protocol http {
+        protocol http
+        header append "$REMOTE_ADDR" to "X-Forwarded-For"
+        header append "$SERVER_ADDR:$SERVER_PORT" to "X-Forwarded-By"
+        header change "Connection" to "close"
+}
+
+relay wwwssl {
+        listen on $ext_addr port http
+        protocol http
+
+        table webhosts loadbalance
+}
+</pre>
+</div>
+
+<div class="slide">
+<h1>Relaying methods</h1>
+<ul>
+	<li>Fixed forwarding.  </li>
+	<li>Table forwarding, with either roundrobin, loadbalance or hash
+	method.</li>
+	<li>Service: use address of specified service.</li>
+</ul>
+
+<div class="slide">
+<h1>Available HTTP actions</h1>
+<ul>
+	<li>Select connection direction (request / response).</li>
+	<li>Manipulate cookies and urls (in the request), headers and path.</li>
+	<li>Append key/value pairs.</li>
+	<li>Change key/value pairs.</li>
+	<li>Remove a key and its value.</li>
+	<li>Expect a value to be present  in a key/value pair.</li>
+	<li>Filter connections which contain a key/value pair.</li>
+	<li>Feed a value to a table's hash.</li>
+	<li>Log a key/value pair.</li>
+</ul>
+
+<div class="slide">
+<h1>Available variables for the HTTP protocol</h1>
+<ul>
+	<li><em>$REMOTE_ADDR</em>: The IP address of the connected client.</li>
+	<li><em>$REMOTE_PORT</em>: The TCP source port of the connected client.
+	</li>
+	<li><em>$SERVER_ADDR</em>: The configured IP address of the relay.</li>
+	<li><em>$SERVER_PORT</em>: The configured TCP server port of the relay.
+	</li>
+	<li><em>$TIMEOUT</em>: The configured session timeout of the relay.</li>
+</ul>
+</div>
+
+<div class="slide">
+<h1>Other protocol options</h1>
+<p>TCP</p>
+<ul>
+	<li>Backlog.</li>
+	<li>IP minttl, ip ttl.</li>
+	<li>Nodelay, sack and socket buffer.</li>
+</ul>
+<p>SSL</p>
+<ul>
+	<li>Ciphers.</li>
+	<li>Session cache.</li>
+	<li>SSLv2, SSLv3, TLSv1.</li>
+</ul>
+</div>
+
+<div class="slide">
+<h1>Tips and Tricks</h1>
+<ul>
+	<li>Load Balancing across networks.</li>
+	<li>Combining hoststated and carp.</li> 
+	<li>Following development.</li>
+</ul>
+
+<div class="slide">
+<h1>The Future</h1>
+<ul>
+	<li>Layer 7 reloading.</li>
+	<li>More layer 7 protocols.</li>
+	<li>Conditionnal tables.</li>
+	<li>More reverse proxy features.</li>
+	<li>Layer 3 weighted hosts and other methods.</li>
+</ul>
+</div>
+
+<div class="slide">
+<h1>The Future (cont.)</h1>
+<ul>
+<li>GSLB: dns.</li>
+<li>GSLB: bgpd.</li>
+<li>Direct Server Return.</li>
+<li>TCP Splicing.</li>
+</ul>
+</div>
+
+<div class="slide">
+<h1>Thank you</h1>
+<ul>
+	<li>http://www.OpenBSD.org</li>
+	<li>Questions ?</li>
+</ul>
+</div>
+
+</body>
+</html>
