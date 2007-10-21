@@ -67,6 +67,12 @@ Table of Contents:
 <a name="before"></a>
 <h2>Before upgrading: things to think about and be aware of</h2>
 
+This is <i>not</i> a complete list of the changes that took place
+between 4.1 and 4.2, but rather some of the important things that will
+impact a large number of users in the upgrade process.
+For a more complete list of changes, see
+<a href="../plus42.html">plus42.html</a> and the CVS change logs.
+
 <!-- XXX add new stuff -->
 
 <ul>
@@ -97,30 +103,10 @@ by removing the old expat package from your system:
 </pre></blockquote>
 
 <i>This will impact a large number of users!</i>
-<p>
-
-<li><b>Modified kernel:</b><br>
-Check whether you have made any modifications to your kernel.
-For example, you might have modified your network device to use a
-non-default setting using config(8).
-Note your changes, so you can repeat them for the new 4.2 kernel.
-
-<p>
-<li><b>rc.conf:</b><br>
-Unlike earlier versions of this process, since
-<a href="upgrade41.html">4.1</a> it is assumed that
-<tt>/etc/rc.conf</tt> is not a user-altered file.
-If you have made changes to your <tt>/etc/rc.conf</tt> file, merge those
-changes into <tt>/etc/rc.conf.local</tt>.
-If you have NO <tt>/etc/rc.conf.local</tt>, simply copy your existing
-<tt>/etc/rc.conf</tt> file to <tt>/etc/rc.conf.local</tt> and 
-<i>delete the last line of the script!</i>
-Otherwise, pull your existing <tt>rc.conf</tt> into the top of your
-existing <tt>rc.conf.local</tt> file <i>and remove the last line</i>
-before doing the rest of this process.
-
-<p>
-Failure to do this will probably result in unhappy results.
+This was an unfortunate decision whose ramifications were not recognized
+earlier in the process.
+For 4.3, libexpat will be part of <tt>base43.tgz</tt>, solving this
+problem.
 
 <p>
 <li><b>Enter X.org v7.2, exit XF3:</b><br>
@@ -137,8 +123,8 @@ supported by XF4 and X.org.
 It is not believed this will impact many people.
 
 <p>
-The new X.org version changes a lot of config files, so there is
-a separate section to this upgrade process for X users.
+The new X.org version changes a lot of config files, so there is a
+<a href="#Xup">separate section</a> to this upgrade process for X users.
 
 <p>
 <li><b>Updated
@@ -185,6 +171,111 @@ re-worked.
 It is believed very few people will be hit by this now, as ahci(4)
 devices are moderately rare on existing hardware, though becoming much
 more common now.
+
+<p>
+<li><b>bgpd filter language change:</b><br>
+bgpd filters using only <tt>prefixlen</tt> as filter parameter need to 
+include now a address family identifier like <tt>inet</tt> or
+<tt>inet6</tt>:
+
+<p>
+<blockquote><tt>
+allow from any <b>inet</b> prefixlen 8 - 24<br>
+deny from any <b>inet6</b> prefixlen &gt; 64<br>
+</tt></blockquote>
+
+<p>As a reminder, bgplg and associated binaries are disabled at
+install/upgrade time. If you use them, they must be re-enabled as
+described in bgplg(8).
+
+<p>
+<li><b>SSH protocol 1 discouraged on new installs:</b><br>
+New OpenBSD installs will default to not accepting SSH v1 connections.
+This upgrade process will not replace the <tt>/etc/ssh</tt>
+configuration files, but you may wish to manually do this to gain the
+new behavior.
+The following diff shows what has changed on new installs:
+
+<blockquote><pre>
+--- ./etc/ssh/sshd_config       Sat Mar 10 20:31:32 2007
++++ ../42/etc/ssh/sshd_config   Tue Aug 28 11:59:52 2007
+@@ -11,3 +11,2 @@
+ #Port 22
+-#Protocol 2,1
+ #AddressFamily any
+@@ -15,2 +14,7 @@  
+ #ListenAddress :: 
++
++# Disable legacy (protocol version 1) support in the server for new
++# installations. In future the default will change to require explicit
++# activation of protocol 1
++Protocol 2
+        
+</pre></blockquote>
+
+Again, this change is NOT part of the standard upgrade process.
+
+<p>
+<li><b>Changes in the way sudo(8) passes environment:</b><br>
+For
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sudo&amp;sektion=8#SECURITY+NOTES"
+>security reasons</a>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sudo&amp;sektion=8">sudo(8)</a>
+will now reset the environment to a small default set
+with only certain variables preserved from the previous environment.
+
+<p>
+In order for many things to continue to work as expected, the patch file
+below will add a "<tt>Defaults env_keep</tt>" line to your
+<tt>/etc/sudoers</tt> file and otherwise try to make the file look like
+the one in <tt>etc42.tgz</tt>, but will possibly fail.
+You will want to make sure your <tt>sudoers</tt> file contains
+a line that looks something like:
+<blockquote><pre>
+%wheel       ALL=(ALL) SETENV: ALL
+  <i>-- or --</i>
+%wheel       ALL=(ALL) NOPASSWD: SETENV: ALL
+</pre></blockquote>
+
+assuming you wish "wheel" group users to have full sudo rights.
+It would probably be wise to test sudo(8) for proper operation before
+logging out of the system after the patch file is applied.
+
+<p>
+<li><b>[alpha Only] Some de(4) NICs will become dc(4):</b><br>
+On the <a href="../alpha.html">alpha</a> platform, some NICs which had
+been supported by the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=de&amp;sektion=4">de(4)</a>
+driver will now be supported by
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dc&amp;sektion=4">dc(4)</a>.
+
+<p>
+IF your NIC is one of these, you will need to alter at least your <tt>/etc/hostname.deX</tt>
+(hint: hard link) and your pf.conf files as appropriate.
+
+<p>
+Again, this is <i>only</i> on the alpha platform.
+
+<p>
+<li><b>rc.conf:</b><br>
+Unlike earlier versions of this process, since
+<a href="upgrade41.html">4.1</a> it is assumed that
+<tt>/etc/rc.conf</tt> is not a user-altered file.
+If you have made changes to your <tt>/etc/rc.conf</tt> file, merge those
+changes into <tt>/etc/rc.conf.local</tt>.
+If you have NO <tt>/etc/rc.conf.local</tt>, simply copy your existing
+<tt>/etc/rc.conf</tt> file to <tt>/etc/rc.conf.local</tt> and
+<i>delete the last line of the script!</i>
+Otherwise, pull your existing <tt>rc.conf</tt> into the top of your
+existing <tt>rc.conf.local</tt> file <i>and remove the last line</i>
+before doing the rest of this process.
+
+<p>
+<li><b>Modified kernel:</b><br>
+Check whether you have made any modifications to your kernel.
+For example, you might have modified your network device to use a
+non-default setting using config(8).
+Note your changes, so you can repeat them for the new 4.2 kernel.
 
 </ul>
 
@@ -353,88 +444,7 @@ Whether you upgrade by using an install kernel and doing a formal
 "upgrade" process, or do a "in-place" binary upgrade, there are certain
 manual steps that have to be performed.
 
-<a name="apps"></a>
-<h4>1.2. Operational changes</h4>
-This is <i>not</i> a complete list of the changes that took place
-between 4.1 and 4.2, but rather some of the important things that will
-impact a large number of users in the upgrade process.
-For a more complete list of changes, see
-<a href="../plus42.html">plus42.html</a> and the CVS change logs.
-
-<ul>
 <p>
-<li><b>bgpd filter language change:</b><br>
-bgpd filters using only <tt>prefixlen</tt> as filter parameter need to 
-include now a address family identifier like <tt>inet</tt> or
-<tt>inet6</tt>:
-
-<p>
-<blockquote><tt>
-allow from any <b>inet</b> prefixlen 8 - 24<br>
-deny from any <b>inet6</b> prefixlen &gt; 64<br>
-</tt></blockquote>
-
-<p>As a reminder, bgplg and associated binaries are disabled at
-install/upgrade time. If you use them, they must be re-enabled as
-described in bgplg(8).
-
-<p>
-<li><b>SSH protocol 1 discouraged on new installs:</b><br>
-New OpenBSD installs will default to not accepting SSH v1 connections.
-This upgrade process will not replace the <tt>/etc/ssh</tt>
-configuration files, but you may wish to manually do this to gain the
-new behavior.
-The following diff shows what has changed on new installs:
-
-<blockquote><pre>
---- ./etc/ssh/sshd_config       Sat Mar 10 20:31:32 2007
-+++ ../42/etc/ssh/sshd_config   Tue Aug 28 11:59:52 2007
-@@ -11,3 +11,2 @@
- #Port 22
--#Protocol 2,1
- #AddressFamily any
-@@ -15,2 +14,7 @@  
- #ListenAddress :: 
-+
-+# Disable legacy (protocol version 1) support in the server for new
-+# installations. In future the default will change to require explicit
-+# activation of protocol 1
-+Protocol 2
-        
-</pre></blockquote>
-
-Again, it is NOT part of the standard upgrade process.
-
-<p>
-<li><b>Changes in the way sudo(8) passes environment:</b>
-For
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sudo&amp;sektion=8#SECURITY+NOTES"
->security reasons</a>
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sudo&amp;sektion=8">sudo(8)</a>
-will now reset the environment to a small default set
-with only certain variables preserved from the previous environment.
-
-<p>
-In order for many things to continue to work as expected, the patch file
-below will add a "<tt>Defaults env_keep</tt>" line to your
-<tt>/etc/sudoers</tt> file and otherwise try to make the file look like
-the one in <tt>etc42.tgz</tt>, but will probably fail.
-You will want to make sure your <tt>sudoers</tt> file contains
-a line that looks something like:
-<blockquote><pre>
-%wheel       ALL=(ALL) SETENV: ALL
-  <i>-- or --</i>
-%wheel       ALL=(ALL) NOPASSWD: SETENV: ALL
-</pre></blockquote>
-
-assuming you wish "wheel" group users to have full sudo rights.
-
-
-
-</ul>
-
-<a name="etcfiles"></a>
-<h4>1.3. <tt>/etc</tt> file changes</h4>
 You will want to extract the <tt>etc42.tgz</tt> files to a temporary
 location:
 <blockquote><pre>
@@ -545,6 +555,7 @@ in the GENERIC kernel.
 Please consult <a href="faq5.html">FAQ 5 - Building the system from source</a>
 before considering to recompile your kernel.
 
+<a name="Xup"></a>
 <h3>3. X configuration files</h3>
 Due to the significant changes in X for this release, the easiest way to
 upgrade your X for 4.2 may be to back up your existing X configuration
@@ -659,7 +670,7 @@ clean up by removing the old expat package from your system:
 <a href="index.html"><img height="24" width="24" src="../images/back.gif" border="0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: upgrade42.html,v 1.16 2007/10/19 10:44:12 nick Exp $</small>
+<small>$OpenBSD: upgrade42.html,v 1.17 2007/10/21 16:15:27 nick Exp $</small>
 
 </body>
 </html>
