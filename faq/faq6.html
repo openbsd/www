@@ -1096,39 +1096,48 @@ you are allowing into your NFS server.  There are several attacks that
 can result.  When properly configured, IPsec protects against these
 types of attacks.
 
-<p>
-Another important security note.  Don't just add a filesystem to
-<i>/etc/exports</i> without some kind of list of allowed host(s).
-Without a list of hosts which can mount a particular directory, anyone
-on who can reach your host will be able to mount your NFS exports.
+<h3>Setting up an NFS Server</h3>
 
 <p>
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=portmap&amp;sektion=8">portmap(8)</a>
-must be running for NFS to operate.  Portmap(8) is off by
-default on OpenBSD, so you must add the line
+These services must be enabled and running on the server:
 
-<blockquote><pre>
-portmap=YES
-</pre></blockquote>
-
-to
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rc.conf.local&amp;sektion=8">rc.conf.local(8)</a>
-to start it on boot. It can also be started manually:
-
-<blockquote><pre>
-# <strong>/usr/sbin/portmap</strong>
-</pre></blockquote>
+<ul>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=nfsd&amp;sektion=8">portmap(8)</a>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mountd&amp;sektion=8">mountd(8)</a>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=nfsd&amp;sektion=8">nfsd(8)</a>
+</ul>
 
 <p>
-The setup consists of a server with the ip <b>10.0.0.1</b>. This server
-will be serving NFS only to clients within that network. The first step
-to setting up NFS is to setup your <i>/etc/exports</i> file. This file
-lists which filesystems you wish to have accessible via NFS and defines
-who is able to access them. There are many options that you can use in
-your <i>/etc/exports</i> file, and it is best that you read the
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=exports&amp;sektion=5">exports(5)</a>
-man page. For this example we have an <i>/etc/exports</i> that looks
-like this:
+By default each of these is disabled in OpenBSD.
+Add the following lines to 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rc.conf.local&amp;sektion=8"
+>rc.conf.local(8)</a>
+to enable them:
+
+<blockquote>
+<tt>
+portmap=YES<br>
+nfs_server=YES
+</tt>
+</blockquote>
+
+<p>
+The next step is to configure the list of filesystems that will be made
+available for clients to mount.
+
+<p>
+In this example, we have a server with IP address 10.0.0.1.
+This server will be serving NFS only to clients within its own subnet.
+All of this is configured in the /etc/exports file.
+This file lists which filesystems you wish to have accessible via NFS
+and defines who is able to access them.
+There are many options that you can use in /etc/exports; it is best that
+you read the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=exports&amp;sektion=5"
+>exports(5)</a>
+man page.
+For our example server, we've setup an exports file that looks like
+this:
 
 <blockquote><pre>
 #
@@ -1140,62 +1149,137 @@ like this:
 
 <p>
 This means that the local filesystem <tt>/work</tt> will be made
-available via NFS. <tt>-alldirs</tt> specifies that clients will be able
-to mount at any point under the <tt>/work</tt> mount point. <tt>-ro</tt>
-specifies that it will only be allowed to be mounted read-only. The last
+available via NFS.
+The <tt>-alldirs</tt> option specifies that clients will be able
+to mount at any point under <tt>/work</tt> as well as <tt>/work</tt>
+itself.
+For example, if there was a directory called <tt>/work/monday</tt>,
+clients could mount <tt>/work</tt> (and have access to all
+files/directories underneath that directory) or they could mount 
+<tt>/work/monday</tt> and have access to just the files/directories
+contained there.
+The <tt>-ro</tt> option specifies that clients will only be granted
+read-only access.
+The last
 two arguments specify that only clients within the 10.0.0.0 network
 using a netmask of 255.255.255.0 will be authorized to mount this
 filesystem. This is important for some servers that are accessible by
 different networks.
 
 <p>
-Once your <i>/etc/exports</i> file is setup, you can go ahead and setup
-your NFS server. You should first make sure that options NFSSERVER &amp;
-NFSCLIENT are in your kernel configuration. (GENERIC kernel has these
-options included.) Next, you should add the line
+Another important security note: don't just add a filesystem to
+/etc/exports without some kind of list of allowed host(s).
+Without a list of hosts which can mount a particular directory, anyone
+who can reach your server will be able to mount your NFS exported
+directories.
+
+<p>
+Now you can start the server services.
+You can either reboot (after enabling them as per the instructions
+above) or run them manually.
+
+<blockquote>
+<tt>
+# <b>/usr/sbin/portmap</b><br>
+# <b>echo -n &gt;/var/db/mountdtab</b><br>
+# <b>/sbin/mountd</b><br>
+# <b>/sbin/nfsd -tun 4</b><br>
+</tt>
+</blockquote>
+
+<p>
+The arguments passed to nfsd enable TCP (-t) and UDP (-u) connections and
+enable 4 instances (-n) of nfsd to run.
+You should set an appropriate number of NFS server instances to handle the
+maximum number of concurrent client requests that you want to service.
+
+<p>
+You're now ready to mount the exported filesystems from the client(s).
+
+<p>
+Remember: If you make changes to /etc/exports while NFS is already running, you
+need to make mountd aware of this!
+Just HUP mountd and the changes will take affect.
 
 <blockquote><pre>
-nfs_server=YES
+# <b>kill -HUP `cat /var/run/mountd.pid`</b>
 </pre></blockquote>
+<h3>Mounting NFS Filesystems</h3>
 
-to <i>/etc/rc.conf.local</i>.
-This will bring up both nfsd(8) and mountd(8) when
-you reboot. Now, you can go ahead and start the daemons yourself. These
-daemons need to be started as root, and you need to make sure that
-portmap(8) is running on your system. Here is an example of starting
-nfsd(8) which serves on both TCP and UDP using 4 daemons.  You should
-set an appropriate number of NFS server daemons to handle the maximum
-number of concurrent client requests that you want to service.
+<p>
+NFS filesystems can be mounted from a client without needing to enable
+any services or daemons.
+They can be mounted just like any other filesystem.
+
+<p>
+NFS filesystems should be mounted via mount(8), or more specifically,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mount_nfs&amp;sektion=8">mount_nfs(8)</a>.
+To mount a filesystem <tt>/work</tt> on host 10.0.0.1 to local filesystem
+<tt>/mnt</tt>, do this (note that you don't need to use an IP address;
+mount will resolve host names):
 
 <blockquote><pre>
-# <strong>/sbin/nfsd -tun 4</strong>
+# <b>mount -t nfs 10.0.0.1:/work /mnt</b>
 </pre></blockquote>
 
 <p>
-Not only do you have to start the nfsd(8) server, but you need to start
-mountd(8). This is the daemon that actually services the mount requests
-on NFS. To start mountd(8), make sure an empty mountdtab file exists,
-and run the daemon:
+To have that filesystem mounted at boot, add something like this to
+/etc/fstab:
 
 <blockquote><pre>
-# <strong>echo -n &gt;/var/db/mountdtab</strong>
-# <strong>/sbin/mountd</strong>
+10.0.0.1:/work /mnt nfs rw 0 0
 </pre></blockquote>
 
 <p>
-If you make changes to /etc/exports while NFS is already running, you
-need to make mountd aware of this!  Just HUP it:
+It is important that you use <tt>0 0</tt> at the end of this line so
+that your computer does not try to fsck the NFS filesystem on boot.
+The other standard security options, such as <tt>noexec</tt>,
+<tt>nodev</tt>, and <tt>nosuid</tt>, should also be used where
+applicable.
+For example:
 
 <blockquote><pre>
-# <strong>kill -HUP `cat /var/run/mountd.pid`</strong>
+10.0.0.1:/work /mnt nfs rw,nodev,nosuid 0 0
 </pre></blockquote>
 
 <p>
+This way, no devices or setuid programs on the NFS server can subvert
+security measures on the NFS client.
+If you are not mounting programs which you expect to run on the NFS
+client, add noexec to this list.
+
+<p>
+When accessing an NFS mount as the root user, the server automatically
+maps root's access to username "nobody" and group "nobody".
+This is important to know when considering file permissions.
+For example, take a file with these permissions:
+
+<blockquote>
+<tt>
+-rw-------    1 root     wheel           0 Dec 31 03:00 _daily.B20143
+</tt>
+</blockquote>
+
+<p>
+If this file was on an NFS share and the root user tried to access this
+file from the NFS client, access would be denied.
+This is because the server uses the credentials of the user "nobody"
+when root tries to access the file.
+Since the user nobody doesn't have permissions to access the file,
+access is denied.
+
+<p>
+The user and group that root are mapped to are configurable via the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=exports&amp;sektion=5"
+>exports(5)</a>
+file on the NFS server.
+
 <h3>Checking Stats on NFS</h3>
 
 <p>
-From here, you can check to make sure that all these daemons are up and
-registered with RPC. To do this, use rpcinfo(8).
+One thing to check to ensure NFS is operating properly is that all the
+daemons have properly registered with RPC.
+To do this, use rpcinfo(8).
 
 <blockquote><pre>
 $ <strong>rpcinfo -p 10.0.0.1</strong>
@@ -1231,41 +1315,9 @@ All mount points on 10.0.0.1:
 </pre></blockquote>
 
 <p>
-<h3>Mounting NFS Filesystems</h3>
+This output shows that the client 10.0.0.37 has mounted the
+<tt>/work</tt> export being served from the server at 10.0.0.1.
 
-<p>
-NFS filesystems should be mounted via mount(8), or more specifically,
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mount_nfs&amp;sektion=8">mount_nfs(8)</a>.
-To mount a filesystem <i>/work</i> on host 10.0.0.1 to local filesystem
-<i>/mnt</i>, do this (note that you don't need to use an IP address;
-mount will resolve host names):
-
-<blockquote><pre>
-# <strong>mount -o ro -t nfs 10.0.0.1:/work /mnt</strong>
-</pre></blockquote>
-
-<p>
-To have your system mount upon boot,
-add something like this to your <i>/etc/fstab</i>:
-
-<blockquote><pre>
-10.0.0.1:/work /mnt nfs ro 0 0
-</pre></blockquote>
-
-<p>
-It is important that you use <tt>0 0</tt> at the end of this line so
-that your computer does not try to fsck the NFS filesystem on boot!!!!
-The other standard security options, such as noexec, nodev, and nosuid,
-should also be used where applicable.  Such as:
-
-<blockquote><pre>
-10.0.0.1:/work /mnt nfs ro,nodev,nosuid 0 0
-</pre></blockquote>
-
-<p>
-This way, no devices or setuid programs on the NFS server can subvert
-security measures on the NFS client.  If you are not mounting programs
-which you expect to run on the NFS client, add noexec to this list.
 
 
 <a name="Bridge"></a>
@@ -2173,7 +2225,7 @@ table accordingly.
 <a href="index.html"><img height="24" width="24" src="../images/back.gif" border="0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq6.html,v 1.260 2008/01/05 17:13:04 joel Exp $</small>
+<small>$OpenBSD: faq6.html,v 1.261 2008/02/11 04:44:38 joel Exp $</small>
 
 </body>
 </html>
