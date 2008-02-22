@@ -1,0 +1,627 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+  <title>OpenBSD 匿名 CVS 服务器</title>
+  <link rev="made" href="mailto:www@openbsd.org">
+  <meta name="resource-type" content="document">
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta name="description" content="How to get OpenBSD updates via Internet using Anonymous CVS">
+  <meta name="keywords" content="openbsd,anoncvs,updates">
+  <meta name="distribution" content="global">
+  <meta name="copyright" content="This document copyright 1996-2007 by OpenBSD.">
+</head>
+
+<body bgcolor="#FFFFFF" text="#000000">
+  <a href="index.html"><img alt="[OpenBSD]" height="30" width="141" src="../images/smalltitle.gif" border="0"></a>
+
+  <h2><font color="#E00000">匿名 CVS 服务器</font></h2>
+  <hr>
+
+  <h3>目录</h3>
+
+  <ul>
+    <li><a href="#anoncvs">什么是匿名 CVS?</a></li>
+
+    <li><a href="#CVS">什么是 CVS?</a></li>
+
+    <li><a href="#starting">开始使用匿名 CVS</a></li>
+
+    <li><a href="#using">使用 CVS 获得和更新源码树</a></li>
+
+    <li><a href="#CVSROOT">可用的匿名 CVS 服务器</a></li>
+
+    <li><a href="#CRYPTO">通过 cvs(1) 获取加密软件源代码</a></li>
+
+    <li><a href="#EXAMPLE">cvs(1) 使用范例</a></li>
+
+    <li><a href="#WHICH">使用 rsh(1) 还是 ssh(1)?</a></li>
+
+    <li><a href="#SUP">使用 sup(1) 镜像 CVS 版本库</a></li>
+
+    <li><a href="#MIRROR">配置匿名 CVS 镜像</a></li>
+  </ul>
+  <hr>
+
+  <h3><a name="anoncvs" id="anoncvs"><font color="#0000E0">什么是匿名 CVS?</font></a></h3>
+
+  <p>匿名 CVS 是用来跟踪 OpenBSD 源代码，从而保证本地副本是最新的源代码的一种方法。
+除了可以跟踪开发状态，还可以跟踪发行版本勘误的补丁。</p>
+
+  <p>匿名 CVS 与其它代码更新技术相比，主要的优势是直接与中心版本库或其镜像通信。
+这意味着你可以使用全部的 CVS 命令来控制合并与更新，执行比较，
+查询历史或其它针对中央版本库的操作。</p>
+
+  <p>OpenBSD 项目当前有 6 个主要的版本库:</p>
+
+  <ul>
+    <li><b>src</b> - 存放 OpenBSD 操作系统的全部代码。</li>
+
+    <li><b>ports</b> - 存放 <a href="../ports.html">OpenBSD Ports</a>。</li>
+
+    <li><b>www</b> - 存放全部的 OpenBSD 网页(包括本页)。</li>
+
+    <li><b>X11</b> - 存放 OpenBSD 对
+        <a href="http://www.XFree86.org/">XFree86-3</a> 项目的移植。
+        它只是用来保留历史，大多数用户没有理由使用，也不再被使用。</li>
+
+    <li><b>XF4</b> - 存放 OpenBSD 活跃的 X 代码开发树
+        (<font color="red">译者注：原文中的信息已经过时，从 OpenBSD 4.2
+        开始废弃此版本库，现在只是用来保留历史</font>)。</li>
+
+    <li><b>xenocara</b> - 存放 OpenBSD 正在开发的 X.org v7 代码树
+        (<font color="red">译者注：原文中的信息已经过时，从 OpenBSD 4.2
+        开始使用此版本库作为正式的 X11 代码库</font>)。</li>
+  </ul>
+
+  <p>简而言之，使用匿名 CVS 真正强大之处在于它是一个"宽容的"的版本控制系统 -
+  它<strong>尊重</strong>你的本地修改，
+  并且以<strong>"最好的效果"</strong>更新你的整个代码树，
+  不会给你留下一系列神秘的问题，让你必须解决后才能继续工作
+  (<font color="red">译者注：推测起来，似乎是批评 svn 的 cleanup 等命令，
+  更不用说晦涩难懂的 git 操作了</font>)。</p>
+
+  <h3><a name="CVS" id="CVS"><font color="#0000E0">什么是 CVS?</font></a></h3>
+
+  <p><a href="http://ximbiot.com/cvs/">CVS</a> 是<a href="why-cvs.html">管理
+OpenBSD 代码树</a>的源代码控制系统。
+它为所有官方发布源代码和修改实现了一个中央仓库，
+允许开发者维护源代码的本地副本和他们的修改。有两个级别的源代码访问权限:</p>
+
+  <ul>
+    <li><b>开发者拥有读写权限:</b> 需要提交修改到源代码树的开发者必须在 OpenBSD
+主机上有账号。对于与其他 OpenBSD 开发人员协同开发的人来说，
+拥有此权限是很正常的事情。如果有人作出了很好的成绩，
+显示了他们可以与团队一起工作，那么将会获得账号。</li>
+
+    <li><b>所有人拥有只读权限:</b> 任何人都可以访问只读的 CVS 版本库。
+可读写的 CVS 版本库通常有许多只读的 CVS 版本库镜像。</li>
+  </ul>
+
+  <p>CVS 主要的强处是能对中心库的修改与本地副本的修改执行智能合并。它意味着，
+如果你对某个模块作了修改，然后执行更新操 作，你的修改不会被风吹走，而且 CVS
+还会对两者的修改做最佳的合并。</p>
+
+  <p>如果修改不能被完全合并，CVS 提供了"soft fallback"，
+它为你的本地副本提供带注解的修改，为你的版本保留一个未修改的副本，
+然后继续更新你所请求的其它源代码模块。</p>
+
+  <h3><a name="starting" id="starting"><font color="#0000E0">开始使用匿名
+CVS</font></a></h3>当你从匿名 CVS 服务器下载全部源代码时，你可以从 OpenBSD CD
+或 FTP 服务器"预加载"，它会节约大量时间和带宽。尤其是当你运行
+<a href="stable.html"><i>-stable</i></a> 版本时，它更加有效，因为在
+<i>-release</i> 和 <i>-stable</i> 之间修改的文件很少。
+
+  <p>将源代码从 CD 解压到 <i>/usr/src</i>(假设 CD 被挂接到 /mnt):</p>
+  <pre>
+    # <b>cd /usr/src; tar xzf /mnt/src.tar.gz</b>
+    # <b>cd /usr; tar xzf /mnt/XF4.tar.gz</b>
+    # <b>tar xzf /mnt/ports.tar.gz</b>
+</pre>为了缩小那些只需要部分代码的用户的下载时间，从 FTP
+服务器下载的源文件分为两部分。<tt>sys.tar.gz</tt> 包含了创建内核需要的文件，
+<tt>src.tar.gz</tt> 包含了其他"用户空间"工具。然而，你通常都需要全部安装它们。
+假定下载的文件 <tt>src.tar.gz</tt> 和 <tt>sys.tar.gz</tt> 在 <tt>/usr</tt>
+目录:
+  <pre>
+    # <b>cd /usr/src</b>
+    # <b>tar xzf ../sys.tar.gz</b>
+    # <b>tar xzf ../src.tar.gz</b>
+    # <b>cd /usr</b>
+    # <b>tar xzf XF4.tar.gz</b>
+    # <b>tar xzf ports.tar.gz</b>
+</pre>
+
+  <p>并非所有人想要解压全部文件集，但是系统必须保持同步，
+通常你需要配置全部代码树。</p>
+
+  <p>你也可以只用 cvs(1) "<b>检出</b>"源代码。
+它在<a href="#using">下节</a>讨论。</p>
+
+  <p>此时，<tt>/usr/src</tt> 是良好的检出目录，全部的
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=cvs&amp;sektion=1&amp;format=html">cvs(1)</a>
+命令可以正确工作。</p>
+
+  <h3><a name="using" id="using"><font color="#0000E0">使用 CVS 获得和更新源码树</font></a></h3>
+
+  <p>CVS 被设计为一种简便的方法来获得和更新你的源代码。首先，
+你必须确定你要跟踪的是 <i>-current</i>，还是 <a href="stable.html">patch
+branch</a>。current 反映所有最新的修改，patch branch 包含正式的发行版本加上<a
+href="../errata.html">勘误</a>发布的补丁，它更安全可靠。请参阅<a
+href="faq/faq5.html#Flavors">风味</a>以了解关于 OpenBSD "风味"的更多信息。</p>
+
+  <p>一旦确定了要跟踪的代码树，你必须选择要使用的匿名 CVS 服务器。
+<a href="#CVSROOT">下面</a>是这些服务器的列表。</p>
+
+  <p>选择了使用哪个<a href="#CVSROOT">匿名 CVS 服务器</a>之后，你就可以开始使用
+cvs 了。对于拥有 CD 的人，可以用<a href="#starting">上述</a>方法从 CD
+获得源代码的检出副本。如果你手边没有 CD，使用下面的方法检出源代码。它将 OpenBSD
+源代码树放到 <i>/usr/src</i>。</p>
+  <pre>
+        # <b>cd /usr; cvs checkout -P src</b>
+</pre>
+
+  <p>上述命令将检出 <i>current</i> 源代码树。大多数人只需要补丁分支的源代码。
+检出补丁分支的时候，必须在命令行指定标签。例如:</p>
+  <pre>
+        # <b>cd /usr; cvs checkout -P -rOPENBSD_4_2 src</b>
+</pre>
+
+  <p>或用 OPENBSD_4_1 检出 4.1 的补丁分支源代码，等等。</p>
+
+  <p>OPENBSD_4_2 标签包含了 4.2 发行版本源代码和已经应用的补丁。</p>
+
+  <h3><a name="CVSROOT" id="CVSROOT"><font color="#0000E0">可用的匿名 CVS 服务器</font></a></h3>
+
+  <p><em>请察看下面对 <a href="#WHICH">ssh vs. rsh</a> 的注解!</em></p>
+
+  <ul>
+    <li><strong>CVSROOT=anoncvs@anoncvs.de.openbsd.org:/cvs</strong><br>
+    位置: University of Erlangen-Nuremberg, Erlangen, Germany.<br>
+    维护者: <a href="mailto:grunk@pestilenz.org">Alexander von Gernler</a>.<br>
+    协议: ssh, ssh 端口 2022, pserver.<br>
+    每 2 小时更新一次。<br>
+    SSH 指纹:<br>
+    (RSA) 1024 fc:94:b0:c1:e5:b0:98:7c:58:43:99:76:97:ee:9f:b7<br>
+    (DSA) 1024 a9:00:3f:ba:50:81:16:d1:e9:b8:4f:3c:b2:10:e2:6c<br></li>
+
+    <li><strong>CVSROOT=anoncvs@anoncvs1.usa.openbsd.org:/cvs</strong><br>
+    主机别名: <strong>anoncvs.usa.openbsd.org，anoncvs4.usa.openbsd.org</strong>。<br>
+    位置: Redwood City, CA, USA。<br>
+    维护者: <a href="mailto:millert@openbsd.org">Todd C. Miller</a>.<br>
+    协议: rsh, ssh, ssh 端口 2022, pserver.<br>
+    每 2 小时更新一次。<br>
+    SSH 指纹:<br>
+    (RSA1) 1024 64:de:26:16:c2:ff:1b:c7:24:ed:a4:4a:d7:2f:69:3e<br>
+    (RSA) 1024 49:67:9a:46:62:8a:3f:4e:b3:63:ca:d6:41:29:2a:2f<br>
+    (DSA) 1024 a7:75:49:77:f3:47:d1:3c:5e:65:84:84:3b:03:f1:33<br></li>
+
+    <li><strong>CVSROOT=anoncvs@anoncvs3.usa.openbsd.org:/cvs</strong><br>
+    位置: National Center for Atmospheric Research, Boulder, CO, USA.<br>
+    维护者: <a href="mailto:millert@openbsd.org">Todd C. Miller</a>.<br>
+    协议: rsh, ssh, ssh 端口 2022, pserver.<br>
+    每 2 小时更新一次。<br>
+    SSH 指纹:<br>
+    (RSA1) 2048 80:cd:f6:fc:4f:0e:cb:80:6a:d0:6a:5e:dd:9e:5d:0a<br>
+    (RSA) 2048 49:6f:4a:be:02:63:0d:c0:54:b0:57:f0:48:7f:ce:16<br>
+    (DSA) 1024 f9:ab:fc:60:a3:15:8f:9c:47:24:9e:92:15:78:0d:f3<br></li>
+
+    <li><strong>CVSROOT=anoncvs@rt.fm:/cvs</strong><br>
+    位置: Lake in the Hills, IL, USA.<br>
+    维护者: <a href="mailto:jcs@rt.fm">Joshua Stein</a>.<br>
+    协议: ssh.<br>
+    每 3 小时更新一次。<br>
+    SSH 指纹:<br>
+    (RSA) 1024 54:74:ca:17:d0:07:c3:53:b7:7e:1d:9b:10:bf:04:37<br>
+    (DSA) 1024 46:78:40:52:7a:18:f9:0e:68:61:b0:27:29:f9:d9:c4<br></li>
+
+    <li><strong>CVSROOT=anoncvs@anga.funkfeuer.at:/cvs</strong><br>
+    位置: Vienna, Austria.<br>
+    维护者: <a href="mailto:martin@openbsd.org">Martin Reindl</a>.<br>
+    协议: ssh, ssh 端口 2022.<br>
+    每 2 小时从 anoncvs1.usa.openbsd.org 更新一次。<br>
+    SSH 指纹:<br>
+    (RSA) 2048 e4:a7:3a:ab:e1:a7:c8:eb:5c:f4:ff:38:95:6f:81:f2<br>
+    (DSA) 2048 66:03:a3:bc:46:85:f3:6c:4b:6b:e3:d4:f5:5f:a6:c4<br></li>
+
+    <li><strong>CVSROOT=anoncvs@anoncvs1.ca.openbsd.org:/cvs</strong><br>
+    主机别名: <strong>anoncvs.ca.openbsd.org, openbsd.sunsite.ualberta.ca</strong>.<br>
+    位置: Edmonton, Canada.<br>
+    维护者: <a href="mailto:beck@ualberta.ca">Bob Beck</a>.<br>
+    协议: ssh, ssh 端口 2022, pserver.<br>
+    每 2 小时更新一次。<br></li>
+
+    <li><strong>CVSROOT=anoncvs@anoncvs.skyrock.com:/cvs/openbsd</strong><br>
+    位置: Paris, France.<br>
+    维护者: <a href="mailto:anoncvs@pureftpd.org">Frank Denis</a>.<br>
+    协议: ssh, ssh 端口 2022.<br>
+    每 2 小时从 anoncvs3.usa.openbsd.org 更新一次。<br>
+    SSH 指纹:<br>
+    (RSA1) 2048 4d:60:d8:ab:bc:c6:29:64:b4:45:1b:98:2b:fe:40:7e<br>
+    (RSA) 2048 01:f1:c4:25:c8:e3:0d:0e:7a:33:94:14:f4:9d:98:5f<br>
+    (DSA) 2048 73:36:41:46:fd:0a:67:df:e6:c1:4a:6b:02:61:f4:61<br></li>
+
+    <li><strong>CVSROOT=anoncvs@openbsd.spline.de:/cvs</strong><br>
+    主机别名: <strong>openbsd.spline.inf.fu-berlin.de</strong>.<br>
+    位置: SPLINE, Institut für Informatik, Freie Universität, Berlin, Germany.<br>
+    维护者: <a href="mailto:stsp@spline.de">Stefan Sperling</a>.<br>
+    协议: ssh, ssh 端口 2222, pserver.<br>
+    每 2 小时从 openbsd.informatik.uni-erlangen.de 更新一次。<br>
+    SSH 指纹:<br>
+    (RSA) 2048 13:d2:a6:ff:5c:29:f8:ca:15:73:75:1b:b1:d3:b0:48<br>
+    (DSA) 2048 a0:c2:60:15:54:50:af:07:64:85:89:66:29:e7:0b:86<br></li>
+
+    <li><strong>CVSROOT=anoncvs@mirror.osn.de:/cvs</strong><br>
+    位置: Nürnberg, Germany.<br>
+    维护者: <a href="mailto:aw@osn.de">Armin Wolfermann</a>.<br>
+    协议: ssh.<br>
+    每 4 小时从 anoncvs1.usa.openbsd.org 更新一次。<br>
+    SSH 指纹:<br>
+    (RSA) 1024 f2:73:d2:f6:e3:01:ef:ca:3b:e7:6c:80:b6:bd:bb:84<br>
+    (DSA) 1024 fb:33:05:62:96:20:cf:88:7e:10:cb:8d:91:72:57:32<br></li>
+
+    <li><strong>CVSROOT=anoncvs@anoncvs.silihost.hu:/cvs</strong><br>
+    位置: Budapest, Hungary.<br>
+    维护者: <a href="mailto:robert@openbsd.org">Robert Nagy</a>.<br>
+    协议: ssh.<br>
+    每 3 小时从 anoncvs.de.openbsd.org 更新一次。<br></li>
+
+    <li><strong>CVSROOT=anoncvs@anoncvs.jp.openbsd.org:/cvs</strong><br>
+    主机别名: <strong>kankoromochi.econ.nagasaki-u.ac.jp</strong>.<br>
+    位置: Nagasaki University, Faculty of Economics, Nagasaki, Japan.<br>
+    维护者: <a href="mailto:sigh@net.nagasaki-u.ac.jp">Suzuki Itoshi</a>.<br>
+    协议: ssh, pserver.<br>
+    每 3 小时更新一次。<br></li>
+
+    <li><strong>CVSROOT=anoncvs@anoncvs.openbsd.lt:/cvs</strong><br>
+    位置: TVK, Cable TV and Internet Services, Taurage, Lithuania.<br>
+    维护者: <a href="mailto:helpas@ebox.lt">Donatas Budvytis</a>.<br>
+    协议: ssh.<br>
+    每 3 小时从 cvsup.no.openbsd.org 更新一次。<br></li>
+
+    <li><strong>CVSROOT=anoncvs@anoncvs.nl.openbsd.org:/cvs</strong><br>
+    主机别名: <strong>anoncvs.calyx.nl</strong>.<br>
+    位置: Amsterdam, The Netherlands.<br>
+    协议: ssh.<br>
+    每 3 小时更新一次。<br></li>
+
+    <li><strong>CVSROOT=anoncvs@anoncvs.no.openbsd.org:/cvs</strong><br>
+    主机别名: <strong>cvs.inet.no</strong>.<br>
+    位置: Oslo, Norway.<br>
+    维护者: <a href="mailto:cvsadmin@inet.no">Michael Schuldman</a>.<br>
+    协议: rsh, ssh, ssh 端口 2022.<br>
+    每 4 小时更新一次。<br></li>
+
+    <li><strong>CVSROOT=anoncvs@openbsd.chem.uw.edu.pl:/cvs</strong><br>
+    位置: Warsaw, Poland.<br>
+    维护者: <a href="mailto:admin@chem.uw.edu.pl">Piotr Klein</a>.<br>
+    协议: ssh.<br>
+    每 3 小时更新一次。<br></li>
+
+    <li><strong>CVSROOT=anoncvs@anoncvs.obsd.si:/cvs</strong><br>
+    主机别名: <strong>nina.kerberos.si</strong>.<br>
+    位置: Ljubljana, Slovenia.<br>
+    维护者: <a href="mailto:mitja@kerberos.si">Mitja Muzenic</a>.<br>
+    协议: ssh.<br>
+    每 2 小时从 cvsync.de.openbsd.org 更新一次。<br></li>
+
+    <li><strong>CVSROOT=anoncvs@anoncvs.se.openbsd.org:/cvs</strong><br>
+    位置: Stacken computer club, Stockholm, Sweden.<br>
+    维护者: <a href="mailto:mho@stacken.kth.se">Magnus Holmberg</a>.<br>
+    协议: ssh.<br>
+    每 3 小时更新一次。<br></li>
+
+    <li><strong>CVSROOT=anoncvs@anoncvs.btradianz.se:/cvs</strong><br>
+    位置: BT GFS Sweden, Stockholm, Sweden.<br>
+    维护者: <a href="mailto:tybollt@solace.miun.se">Johan M:son Lindman</a>.<br>
+    协议: ssh, ssh 端口 2022.<br>
+    每 2 小时从 rsync.de.openbsd.org 更新一次。<br></li>
+
+    <li><strong>CVSROOT=anoncvs@mirror.sg.depaul.edu:/cvs</strong><br>
+    位置: DePaul University, Chicago, IL, USA.<br>
+    维护者: <a href="mailto:mirror-admin@sg.depaul.edu">Eric Pancer</a>.<br>
+    协议: ssh, ssh 端口 2022, pserver.<br>
+    每 2 小时更新一次。<br>
+    SSH 指纹:<br>
+    (RSA1) 1024 5b:1c:cb:b7:5f:82:82:cc:af:13:21:a4:2c:c2:55:6b<br>
+    (RSA) 1024 18:0f:97:2a:cf:6c:7f:d4:ca:2b:bc:c8:b9:56:2b:86<br>
+    (DSA) 1024 65:cb:ce:7c:3e:29:5c:82:0b:9d:fa:b7:bb:e0:4b:47<br></li>
+
+    <li><strong>CVSROOT=anoncvs@mirror.planetunix.net:/cvs</strong><br>
+    位置: CalPOP, Los Angeles, CA, USA.<br>
+    维护者: <a href="mailto:brian@planetunix.net">Brian Brombacher</a>.<br>
+    协议: ssh, ssh 端口 2022, pserver.<br>
+    每 3 小时从 rt.fm 更新一次。<br>
+    SSH 指纹:<br>
+    (RSA1) 2048 e4:22:93:81:84:e0:68:8c:0b:d5:1f:78:cd:6f:fa:c3<br>
+    (RSA) 2048 8f:42:bd:b0:a2:94:df:6b:af:1e:96:03:ea:68:03:d9<br>
+    (DSA) 1024 26:51:e8:b3:38:88:dc:a8:2a:98:59:86:ab:40:bb:a4<br></li>
+
+    <li><strong>CVSROOT=anoncvs@anoncvs.nyc.openbsd.org:/cvs</strong><br>
+    位置: New York Internet, New York, NY, USA.<br>
+    维护者: <a href="mailto:mickey@lucifier.net">Michael Shalayeff</a>.<br>
+    协议: rsh, ssh, ssh 端口 2022, pserver.<br>
+    每 2 小时更新一次。<br>
+    SSH 指纹:<br>
+    (RSA1) 1024 ff:97:fc:34:c6:09:7f:b2:bd:31:4e:d5:51:ce:f3:44<br>
+    (RSA) 1024 05:ac:be:be:f8:f6:ab:63:5e:80:6c:be:d3:31:41:cd<br>
+    (DSA) 1024 89:be:38:4d:2a:1b:1a:db:93:65:9d:36:7f:ee:d2:76<br></li>
+  </ul>
+
+  <p><em>注意:</em> 如果列在这里的你的服务器的信息不准确或者不清楚，请联系 <a
+href="mailto:beck@openbsd.org"><tt>beck@openbsd.org</tt></a>。</p>
+
+  <p>你可能想用
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=traceroute&amp;sektion=8&amp;format=html">traceroute(8)</a>
+来找出距离你最近的服务器。当发现服务器有问题请报告给我们的<b>维护者</b>。</p>
+
+  <h3><a name="CRYPTO" id="CRYPTO"><font color="#0000E0">通过 cvs(1) 获取加密软件源代码</font></a></h3>
+
+  <p><strong>重要说明:</strong> 有一些与加密软件相关的问题每个人都应该注意:</p>
+
+  <ul>
+    <li>OpenBSD 源代码出自加拿大。根据<a
+href="http://www.efc.ca/pages/doc/crypto-export.html">加拿大个人研究</a>和<a
+href="http://axion.physics.ubc.ca/ECL.html">加拿大输出控制列表</a>的描述，
+从加拿大向世界各地输出加密软件是合法的。</li>
+
+    <li>然而，如果你不在美国或加拿大，你不应该从位于美国的匿名 CVS 服务器上获取
+OpenBSD 源代码的加密软件部分。可能有问题的文件是...
+
+      <ul>
+        <li>src/kerberosIV/*</li>
+
+        <li>src/kerberosV/*</li>
+
+        <li>src/lib/libdes/*</li>
+
+        <li>src/lib/libc/crypt/crypt.c</li>
+
+        <li>src/lib/libc/crypt/morecrypt.c</li>
+
+        <li>src/sys/crypto</li>
+
+        <li>src/sys/netinet</li>
+
+        <li>src/usr.sbin/afs/src/rxkad/*</li>
+
+        <li>XF4/xc-mit/lib/Xdmcp/Wraphelp.c</li>
+
+        <li>XF4/xc-old/lib/Xdmcp/Wraphelp.c</li>
+
+        <li>XF4/xc/lib/Xdmcp/Wraphelp.c</li>
+      </ul>
+
+      <p>由于美国商业部门的的政策，加密软件只能从美国输出到加拿大。</p>
+    </li>
+  </ul>
+
+  <h3><a name="EXAMPLE" id="EXAMPLE"><font color="#0000E0">cvs(1) 使用范例</font></a></h3>
+
+  <p>注意: 如果你想更新某个分支(例如 patch branch)到 <i>current</i>，需要在 cvs
+命令行增加 <code>-A</code> 标记，然而这个标记很少使用。一些 OpenBSD
+的旧文档在许多例子中建议使用这个标记。除非绝对需要，我们不再建议使用这个标记。</p>
+
+  <p>一个使用匿名 CVS 服务器的例子:</p>
+  <pre>
+$ <strong>cd /tmp</strong>
+$ <strong>cvs -d anoncvs@anoncvs.ca.openbsd.org:/cvs co src/sys/arch/sparc</strong>
+    [从版本库向你的机器复制文件]
+$ <strong>cd src/sys/arch/sparc</strong>
+$ <strong>cvs log locore.s</strong>
+    [显示指定文家的提交信息]
+$ <strong>cvs diff -bc -r1.1 -r1.5 locore.s</strong>
+    [显示版本 1.1 与 版本 1.5 的差异]
+</pre>
+
+  <p><a name="pserver" id="pserver">为了使用 cvs "pserver"(用直接 TCP
+连接代替使用 ssh 或 rsh)，你必须登录一次:</a></p>
+  <pre>
+$ <strong>cvs -d :pserver:anoncvs@anoncvs.ca.openbsd.org:/cvs login</strong>
+(Logging in to anoncvs@anoncvs1.ca.openbsd.org)
+CVS password: <strong>anoncvs</strong>
+    [它向 ~/.cvspass (可以用 CVS_PASSFILE修改文件名称)增加一行。]
+    [如上输入密码"blah"之后，我的 ~/.cvspass 文件样例行:      ]
+    [:pserver:anoncvs@anoncvs5.usa.openbsd.org:/cvs Au'yc       ]
+    [在输入一次后，每次使用这个 CVSROOT 都不需要再次登录。      ]
+$ <strong>cvs -d :pserver:anoncvs@anoncvs.ca.openbsd.org:/cvs get ksrc-i386 ksrc-common</strong>
+    [只获得重建 i386 内核的文件。                               ]
+</pre>
+
+  <p>下面是某人使用匿名 CVS 服务器定期更新他的源代码的例子:</p>
+
+  <ul>
+    <li>首先，开始获得初始化源代码树:
+
+      <p>(如果你正在跟踪 <i>current</i>):</p>
+      <pre>
+        # <strong>cd /usr</strong>
+        # <strong>cvs -qd anoncvs@anoncvs.ca.openbsd.org:/cvs get -P src</strong>
+</pre>
+
+      <p>(如果你正在跟踪 4.2 的补丁分支):</p>
+      <pre>
+        # <strong>cd /usr</strong>
+        # <strong>cvs -qd anoncvs@anoncvs.ca.openbsd.org:/cvs get -rOPENBSD_4_2 -P src</strong>
+</pre>
+    </li>
+
+    <li>然后在任何时间，更新源代码树:
+
+      <p>(如果你正在跟踪 <i>current</i>):</p>
+      <pre>
+        # <strong>cd /usr/src</strong>
+        # <strong>cvs -q up -Pd</strong>
+</pre>
+
+      <p>(如果你正在跟踪 4.2 的补丁分支):</p>
+      <pre>
+        # <strong>cd /usr/src</strong>
+        # <strong>cvs -q up -rOPENBSD_4_2 -Pd</strong>
+</pre>每次你运行此命令都会同步你的 /usr/src 树。它不会破坏你的任何本地修改，
+相反会尝试合并修改。
+    </li>
+
+    <li>说明: 如果你使用与最初检出源代码时不同的服务器，或者是从 CD
+获得的源代码，你<strong>必须</strong>增加
+<em>-d anoncvs@anoncvs.ca.openbsd.org:/cvs</em> 选项到 cvs 命令行。
+      <pre>
+        # <strong>cd /usr/src</strong>
+        # <strong>cvs -d anoncvs@anoncvs.ca.openbsd.org:/cvs -q up -Pd</strong>
+</pre>
+    </li>
+  </ul>
+
+  <p><a name="ports" id="ports">使用</a> <a href="ports.html">ports</a>与 src 类似:</p>
+
+  <ul>
+    <li>
+      <p>(如果你正在跟踪 <i>current</i>):</p>
+      <pre>
+        # <strong>cd /usr</strong>
+        # <strong>cvs -qd anoncvs@anoncvs.ca.openbsd.org:/cvs get -P ports</strong>
+</pre>
+
+      <p>(如果你正在跟踪 4.2 的补丁分支[<font color="red">译者注：
+原文中的信息已经过时，由于资源不足，OpenBSD 不再维护 ports 的稳定版本，
+只维护 current 版本</font>]):</p>
+      <pre>
+        # <strong>cd /usr</strong>
+        # <strong>cvs -qd anoncvs@anoncvs.ca.openbsd.org:/cvs get -rOPENBSD_4_2 -P ports</strong>
+</pre>
+    </li>
+
+    <li>然后在任何时间，更新此代码树:
+
+      <p>(如果你正在跟踪 <i>current</i>):</p>
+      <pre>
+        # <strong>cd /usr/ports</strong>
+        # <strong>cvs -q up -Pd</strong>
+</pre>
+
+      <p>(如果你正在跟踪 4.2 的补丁分支[<font color="red">译者注：
+原文中的信息已经过时，由于资源不足，OpenBSD 不再维护 ports 的稳定版本，
+只维护 current 版本</font>]):</p>
+      <pre>
+        # <strong>cd /usr/ports</strong>
+        # <strong>cvs -q up -rOPENBSD_4_2 -Pd</strong>
+</pre>
+    </li>
+  </ul>在上述例子中，<i>-q</i> 是选项，只是用来减少 cvs 的输出信息。
+对于喜欢看屏幕输出的人而言，可以省略。
+
+  <p>创建补丁(此处是 <i>cd.c</i>)，包含到问题报告中:</p>
+  <pre>
+        # <strong>cd /usr</strong>
+        # <strong>cvs diff -u src/sys/scsi/cd.c &gt; /tmp/patch</strong>
+</pre>
+
+  <p><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=cvs&amp;sektion=1&amp;format=html">cvs(1)
+手册页</a> (包含于 CVS 源代码)有许多如何使用 CVS 的信息。</p>
+
+  <p><strong>警告:</strong> 当使用 cvs 时要注意当前目录，
+一般使用源代码树的根目录或者 /tmp。象“get”
+这些命令会在当前目录创建任意深度的子目录，后续的更新也会递归的更新这些子目录树。</p>
+
+  <p>在获得"提交"权限之前，匿名 CVS 服务给新开发人员一个学习 CVS 操作的机会，
+相当彻底的了解开发流程。-- 作为显示了有用的技能和高质量的工作结果，
+他们之后会自然的获得开发权限。此外，大家可以提供相对于 CVS 树的"差异"补丁，
+它很容易集成。</p>
+
+  <h3><a name="WHICH" id="WHICH"><font color="#0000E0">使用 rsh(1) 还是 ssh(1)?</font></a></h3>
+CVS 支持客户端使用三种方式访问服务器:
+
+  <ul>
+    <li><b>ssh:</b> 它可以用来访问匿名 CVS 服务器。由于它是加密的，
+所以是<i>被推荐</i>的方式。</li>
+
+    <li><b>rsh:</b> 对于不能访问 <a href="http://www.openssh.com/">ssh</a>
+的用户，rsh 可以用来访问某些服务器。</li>
+
+    <li><b>pserver:</b> pserver 主要供在阻塞其它两种访问方式的防火墙后面的用户使用。</li>
+  </ul>
+
+  <p><b>注意:</b> 对于希望使用 rsh 的用户，必须先设置环境变量 <tt>CVS_RSH</tt>
+指向 rsh(1) 程序:</p>
+
+  <ul>
+    <li>对于 ksh/bsh/bash:
+      <pre>
+        $ <b>export CVS_RSH=/usr/bin/rsh</b>
+</pre>
+    </li>
+
+    <li>对于 csh/tcsh:
+      <pre>
+        % <b>setenv CVS_RSH /usr/bin/rsh</b>
+</pre>
+    </li>
+  </ul>
+
+  <p>OpenBSD 的 CVS 客户端默认使用 ssh ("secure shell":
+<a href="http://www.openssh.com/">OpenSSH</a>) 与 CVS 服务器通信。</p>
+
+  <p>由于安全原因，许多 CVS 站点不再支持 rsh。本地问题，例如防火墙，或者象 slirp
+等有缺陷的协议仿真器也可能阻碍使用 rsh。然而，如果希望使用 rsh，必须设置环境变量
+<tt>CVS_RSH</tt> 指向 rsh(典型位置是 <strong>/usr/bin/rsh</strong>)。</p>
+
+  <p>如果本地策略阻塞 ssh 默认端口 22 的向外连接，某些服务器可以使用端口 2022。
+注意，不是所有的匿名 CVS 服务器在端口 2022 接受 ssh 连接。此外，由于安全原因，
+最近的 ssh 版本已经禁用了 <strong>none</strong> 加密算法，因此大多数匿名
+CVS 服务器也不再支持此算法了。而且，不要试图打开压缩，因为 CVS 已经压缩了。</p>
+
+  <p>某些人可能需要修改配置文件 <strong>$HOME/.ssh/config</strong>
+来避免上述缺陷和约束带来的麻烦:</p>
+  <pre>
+        Host anoncvs.ca.openbsd.org
+            Compression no
+            Port 2022
+</pre>
+
+  <p>CVS 启动有些吵闹；你可能想让它安静一些:</p>
+  <pre>
+        <strong>$ export CVS_CLIENT_PORT=-1</strong>
+</pre>
+
+  <h3><a name="SUP" id="SUP"><font color="#0000E0">使用 sup(1) 镜像 CVS 版本库</font></a></h3>
+
+  <p>希望镜像 OpenBSD CVS 的用户可以使用 <em>anoncvs.usa.openbsd.org</em> 或
+<em>anoncvs3.usa.openbsd.org</em> (它们是不同的主机)。注意这是 cvs 版本库，
+<b>不是</b> 检出的代码树。它只对以下情况有用：执行快速 cvs 操作(diff，
+annotate，等)，或者你有多个源代码树，并且只想传输一次数据(然后你可以从本地
+cvs 镜像检出)。</p>
+
+  <p>一个 supfile 的例子:</p>
+  <pre>
+        cvs host=anoncvs.usa.openbsd.org hostbase=/ base=/home delete
+</pre>
+
+  <p>它会将 cvs 版本库镜像到 /home/cvs，保存 sup 数据文件到 /home/sup。全部的
+OpenBSD cvs 版本库当前有 3.5 GB，当然将会持续增长。</p>
+
+  <h3><a name="MIRROR" id="MIRROR"><font color="#0000E0">配置匿名 CVS 镜像</font></a></h3>
+
+  <p>如果你配置了新的公开服务匿名 CVS 镜像站点，请与匿名 CVS 的<a
+href="mailto:sup@openbsd.org">维护者</a>联系。匿名 CVS 镜像当前需要大约 3.5GB
+磁盘空间(将会持续增长!)，每个匿名 CVS 用户使用 32MB 的 swap
+空间(假定用户执行大操作；当然小操作需要的资源也少，但是仍旧比 ftp 或 sup
+消耗的多)。这些匿名 CVS 主机应当对于所服务器的地区具有极好的网络性能。有<a
+href="anoncvs.shar">文档</a> 描述了配置匿名 CVS 服务器的方法。</p>
+
+  <h3><font color="#0000E0">最后说明</font></h3>更新源代码树之后，
+你应当在构建之前阅读文件 <kbd>/usr/src/Makefile</kbd> 中的注解。同样，
+如果可能，你应该在 <kbd>make build</kbd> <strong>之前</strong>构建新内核。
+某些情况下，你需要在构建新内核之前，重构和安装 <kbd>config</kbd> 工具，
+尤其是在 <kbd>config GENERIC</kbd> 失败的时候。
+
+  <p>重要说明：由于经常有不明显的依赖关系，
+使用重新构建从发行版本升级到当前开发版本可能相当困难。因此，
+建议你在尝试从源代码构建之前先安装最新的<a
+href="ftp://ftp.openbsd.org/pub/OpenBSD/snapshots/">快照</a>。</p>
+  <hr>
+  <a href="index.html"><img height="24" width="24" src="../back.gif" border="0" alt="OpenBSD"></a>
+  <a href="mailto:www@openbsd.org">www@openbsd.org</a><br>
+  <small><!--
+Originally [OpenBSD: anoncvs.html,v 1.279 ]<br>
+$Translation: anoncvs.html,v 1.3 2008/02/18 06:02:39 dongsheng Exp $<br>
+-->$OpenBSD: anoncvs.html,v 1.1 2008/02/22 10:09:27 tobias Exp $</small>
+</body>
+</html>

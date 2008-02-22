@@ -1,0 +1,467 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+  <link rev="made" href="mailto:www@openbsd.org">
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta name="resource-type" content="document">
+  <meta name="description" content="OpenBSD cryptography">
+  <meta name="keywords" content="openbsd,cryptography,openssh,openssl,kerberos">
+  <meta name="keywords" content="ipsec,isakmp,ike,blowfish,des,rsa,dsa">
+  <meta name="distribution" content="global">
+  <meta name="copyright" content="This document copyright 1997-2006 by OpenBSD.">
+  <title>OpenBSD 中的密码系统</title>
+</head>
+
+<body bgcolor="#FFFFFF" text="#000000" link="#23238E">
+  <img align="left" alt="[OpenBSD]" height="166" width="197" src="../images/blowfish-notext.jpg"><br>
+  <br>
+  <br>
+  "任何优秀的安全工程师都奉之为圭皋：'安全不是一个产品，而是一个过程'。
+不只是把强大的密码技术融入系统的设计；安全是在整个系统的设计上，
+让所有的安全措施，包括密码技术都整合到一起，协同工作。"<br>
+  <br>
+  -- Bruce Schneier, "Applied Cryptography" 的作者。<br clear="all">
+
+  <h2><font color="#E00000">Cryptography</font></h2>
+  <hr>
+  <strong>Index</strong><br>
+  <a href="#why">为什么我们提供密码系统?</a><br>
+  <a href="#ssh">OpenSSH</a><br>
+  <a href="#prng">伪随机数生成器</a> (PRNG): ARC4，...<br>
+  <a href="#hash">密码学散列函数</a>: MD5，SHA1，...<br>
+  <a href="#trans">密码学变换</a>: DES，Blowfish，...<br>
+  <a href="#hardware">对密码系统硬件的支持</a><br>
+  <a href="#people">寻找国际密码系统安全专家</a><br>
+  <a href="#papers">进阶读物</a><br>
+  <hr>
+  <a name="why" id="why"></a>
+
+  <h3><font color="#E00000">为什么我们提供密码系统?</font></h3>
+
+  <p>简单的说: <strong>因为我们有这个能力</strong>。</p>
+
+  <p>OpenBSD 项目基地设在加拿大。</p>
+
+  <p>加拿大<a
+href="../ECL.html">出口控制列表</a>没有对密码学软件的出口设置特别的限制性条款，
+甚至明文规定允许自由出口自由的密码学软件。Marc Plumb 已经<a
+href="http://www.efc.ca/pages/doc/crypto-export.html">做了一些研究来验证相关的法律</a>。</p>
+
+  <p>因此，OpenBSD 项目把密码学技术嵌入了操作系统的很多地方。
+我们要求所使用的加密软件<a
+href="../policy.html">可以免费获取并拥有良好版权许可</a>。
+我们不会直接使用那些带有令人厌恶的专利权的加密软件。
+我们还要求这些软件是从有出口许可的国家输出的，
+因为我们并不想违反任何国家的法律。
+我们当前使用的密码学软件组件来自阿根廷，澳大利亚，加拿大，德国，希腊,
+挪威和瑞士。</p>
+
+  <p>当我们制作 OpenBSD 发行版本和快照版本的时候，
+我们在允许自由输出的国家来完成，
+以保证我们提供的源码和二进制代码可以被用户自由使用。
+在过去，我们提供的编译好的版本是在加拿大，瑞士和德国完成的。</p>
+
+  <p>OpenBSD 包含了 Kerberos V。其基本代码来自瑞士的可以出口的 Heimdal 版本。
+我们的 X11 源码也已经扩展到可以使用 Kerberos 验证机制了</p>
+
+  <p><img align="right" src="../images/vpnc-test-partner.gif" alt="VPNC TEST PARTNER">
+OpenBSD 是第一个带 IPsec 栈的操作系统。我们从1997年发行的 OpenBSD 2.1
+版本就开始带 IPsec。我们完全内嵌在内核里面的 IPsec 栈，
+加上可基于多种卡的硬件加速，以及我们自由的 ISAKMP 守护进程,
+被用于 <a href="http://www.vpnc.org">VPNC</a> 中的一些 IPsec 兼容性测试主机。<br clear="all"></p>
+
+  <p>今天，密码学技术成为了增强操作系统<a
+href="../security.html">安全性</a>的一个重要手段。
+OpenBSD 中对密码学技术的利用可以分为以下几个方面。</p>
+
+  <p><a name="ssh" id="ssh"></a></p>
+
+  <h3><font color="#E00000">OpenSSH</font></h3>
+
+  <p>从版本 2.6 开始，OpenBSD 包含 <a href="http://www.openssh.com/">
+OpenSSH</a>，一个完全自由免费，没有任何专利权限制的 ssh 实现。
+<a href="http://www.openssh.com/">OpenSSH</a> 除了兼容 ssh 版本 1
+之外还增加了很多新特性：</p>
+
+  <ul>
+    <li>所有受限制的组件(也就是专利权，参见 <a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=ssl&amp;sektion=8">ssl(8)</a>)
+都已被直接从源码中去除掉；任何有版权或者专利权的软件用外部函数库的形式提供。</li>
+
+    <li>已经更新到支持 ssh 协议 2。</li>
+
+    <li>增加对 Kerberos 验证和票据传递的支持</li>
+
+    <li>支持使用 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=skey&amp;sektion=1">skey(1)</a>
+进行一次性密码验证。</li>
+  </ul>
+
+  <p>粗略的说，我们发行的是 OpenBSD 自由的兼容版 ssh。大约过了一年后，我们把
+OpenSSH 扩展至支持 SSH 2 协议，从而 OpenSSH 就可以支持所有主要的 3 个 SSH 协议:
+1.3，1.5 和 2.0(<font color="red">译者注：目前老协议已经被大多数主机废弃，
+默认安装仅支持 2.0 协议</font>)。<a name="prng" id="prng"></a></p>
+
+  <h3><font color="#E00000">伪随机数生成器</font></h3>
+
+  <p>伪随机数生成器(PRNG)为应用程序提供数字流，并且为系统安全提供了重要的特性:</p>
+
+  <ul>
+    <li>对外界来说，即使知道上次的输出，也不可能推测出随机数生成器下次的输出。</li>
+
+    <li>产生的数字不应该有重复模式，这意味着 PRNG 应该有很长的周期。</li>
+  </ul>
+
+  <p>PRNG 通常只是算法，相同的初始值将产生同样的输出序列。
+在一个多用户操作系统上，有很多来源为 PRNG 产生种子。
+OpenBSD 内核使用鼠标中断时间，网络数据中断延时，键盘按键间隔时间，
+和磁盘 IO 信息来填充熵池。内核例程可以读取随机数，
+而且也通过设备输出到了用户空间程序。到目前为止，随机数用于如下场合:</p>
+
+  <ul>
+    <li>Dynamic sin_port allocation in bind(2).</li>
+
+    <li>PIDs of processes.</li>
+
+    <li>IP datagram IDs.</li>
+
+    <li>RPC transaction IDs (XID).</li>
+
+    <li>NFS RPC transaction IDs (XID).</li>
+
+    <li>DNS Query-IDs.</li>
+
+    <li>Inode generation numbers, see getfh(2) and fsirand(8).</li>
+
+    <li>Timing perturbance in traceroute(8).</li>
+
+    <li>Stronger temporary names for mktemp(3) and mkstemp(3)</li>
+
+    <li>Randomness added to the TCP ISS value for protection against spoofing attacks.</li>
+
+    <li>random padding in IPsec esp_old packets.</li>
+
+    <li>To generate salts for the various password algorithms.</li>
+
+    <li>For generating fake S/Key challenges.</li>
+
+    <li>In <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd&amp;sektion=8">isakmpd(8)</a>
+        to provide liveness proof of key exchanges.</li>
+  </ul>
+
+  <p><a name="hash" id="hash"></a></p>
+
+  <h3><font color="#E00000">密码学散列函数</font></h3>
+
+  <p>散列函数在接收输入的数据后，将其压缩到一个恒定的大小。
+对散列函数来说，不可能出现以下情况:</p>
+
+  <ul>
+    <li>两个输入产生同样的输出(抵抗冲突)，</li>
+
+    <li>对于一个给定的输入，找到一个不同的输入得到了相同的输出(抵抗前象)。</li>
+  </ul>
+
+  <p>在 OpenBSD 中，MD5，SHA1，和 RIPEMD-160 用于散列函数，举例来说:</p>
+
+  <ul>
+    <li>In <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=skey&amp;sektion=1">S/Key(1)</a>
+        to provide one time passwords.</li>
+
+    <li>In <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ipsec&amp;sektion=4">IPsec(4)</a>
+        and <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd&amp;sektion=8">isakmpd(8)</a>
+        to authenticate the data origin of packets and to ensure packet integrity.</li>
+
+    <li>For FreeBSD-style MD5 passwords (not enabled by default), see
+        <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=passwd.conf&amp;sektion=5">passwd.conf(5)</a></li>
+
+    <li>In libssl for digital signing of messages.</li>
+  </ul>
+
+  <p><a name="trans" id="trans"></a></p>
+
+  <h3><font color="#E00000">密码学变换</font></h3>
+
+  <p>密码学变换被用于数据的加密和解密。通常是一个加密密钥用于数据加密，
+一个解密密钥用作数据的解密。一个密码学变换的安全性取决于密钥自身。</p>
+
+  <p>OpenBSD 提供了 DES, 3DES, Blowfish 和 Cast 用于内核与用户空间的程序，
+它们用于许多场合，例如:</p>
+
+  <ul>
+    <li>In libc for creating <a
+        href="http://www.openbsd.org/cgi-bin/man.cgi?query=blf_key&amp;sektion=3">Blowfish</a>
+        passwords. See also the <a href="../papers/bcrypt-paper.ps">USENIX paper</a> on this topic.</li>
+
+    <li>In <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ipsec&amp;sektion=4">IPsec(4)</a>
+        to provide confidentiality for the network layer.</li>
+
+    <li>In <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=isakmpd&amp;sektion=8">isakmpd(8)</a>
+        to protect the exchanges where IPsec key material is negotiated.</li>
+
+    <li>In AFS to protect the messages passing over the network, providing
+        confidentiality of remote filesystem access.</li>
+
+    <li>In libssl to let applications communicate over the de-facto standard
+        cryptographically secure SSL protocol.</li>
+  </ul>
+
+  <p><a name="hardware" id="hardware"></a></p>
+
+  <h3><font color="#E00000">对密码系统硬件的支持</font></h3>
+
+  <p>从 OpenBSD 2.7 开始支持一些密码系统硬件，比如加速器和随机数生成器。</p>
+
+  <ul>
+    <li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=crypto&amp;sektion=9">
+    IPsec crypto dequeue</a></b><br>
+    Our IPsec stack has been modified so that cryptographic functions get done
+    out-of-line. Most simple software IPsec stacks need to do cryptography when
+    processing each packet. This results in synchronous performance. To use
+    hardware properly and speedily one needs to separate these two components,
+    as we have done. Actually, doing this gains some performance even for the
+    software case.</li>
+
+    <li>
+      <b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hifn&amp;sektion=4">Hifn 7751</a></b><br>
+      Cards using the Hifn 7751 can be used as a symmetric cryptographic
+      accelerator, i.e., the <a href="http://www.soekris.com/vpn1201.htm">
+      Soekris VPN1201 or VPN1211</a> (<a href="http://www.soekris.com/how_to_buy.htm">
+      to buy</a>) or <a href="http://www.powercrypt.com">PowerCrypt</a>.
+      Current performance using a single Hifn 7751 on each end of a tunnel
+      is 64Mbit/sec for 3DES/SHA1 ESP, nearly a 600% improvement over using a
+      P3/550 CPU. Further improvements are under way to resolve a few more
+      issues, but as of April 13, 2000 the code is considered stable. We wrote
+      our own driver for supporting this chip, rather than using the
+      (USA-written) <a href="http://www.powercrypt.com">PowerCrypt</a> driver,
+      as well our driver links in properly to the IPsec stack. The 7751 is now
+      considered slow by industry standards and many vendors have faster chips
+      (even Hifn now has a faster but more expensive chip). Peak performance
+      with 3DES SHA1 ESP is around 64Mbit/sec.
+
+      <p>After 2.9 shipped, support was added for the Hifn 7951 chip, a
+      simplified version of the 7751 which adds a public key accelerator
+      (unsupported) and a random number generator (supported). Cards were
+      donated by <a href="http://www.soekris.com/">Soekris Engineering</a>.</p>
+
+      <p>After 3.0 shipped, support was added for the Hifn 7811 chip, a faster
+      version of the 7751 (around 130Mbit/s) with a random number generator. A
+      card was donated by <a href="http://www.gtgi.com/">GTGI</a>.</p>
+
+      <p>After 3.2 shipped, support was added for the LZS compression algorithm
+      used by <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ipcomp&amp;sektion=4">ipcomp(4)</a>.</p>
+
+      <p>After 3.4 shipped, support was added for the 7955 and 7956 chips. In
+      addition to all the features of the previous 7951 chip, these add AES.</p>
+
+      <p>Hifn was initially a difficult company to deal with (threatening to
+      sue us over our non-USA reverse engineering of their crypto unlock
+      algorithm), but more recently they have been very helpful in providing
+      boards and support.</p>
+    </li>
+
+    <li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=lofn&amp;sektion=4">
+    Hifn 6500</a></b><br>
+    This device is an asymmetric crypto unit. It has support for RSA, DSA, and
+    DH algorithms, as well as other major big number functions. It also contains
+    a very high performance random number generator. We have one device, full
+    documentation, and sample code. As of OpenBSD 3.1, both the random number
+    generator and big number unit are working.</li>
+
+    <li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=nofn&amp;sektion=4">
+    Hifn 7814/7851/7854</a></b><br>
+    This device is a packet processor and asymmetric crypto unit. It has support
+    for RSA, DSA, and DH algorithms, as well as other major big number functions
+    and also has a random number generator. Currently, only the big number engine
+    and the random number generator are supported (no packet transforms).</li>
+
+    <li>
+      <b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ubsec&amp;sektion=4">
+      Broadcom BCM5801/BCM5802/BCM5805/BCM5820/BCM5821/BCM5822/5823 (or beta
+      chip Bluesteelnet 5501/5601)</a></b><br>
+      Just after the OpenBSD 2.7 release, we succeeded at adding preliminary
+      support for these early release parts provided to us by the vendor,
+      specifically starting with the test chip 5501. These devices provide
+      the highest performance symmetric cryptography we have seen.
+
+      <p>Bluesteelnet was bought by Broadcom and started making real parts.
+      Their new BCM5805 is similar, except that they also add an asymmetric
+      engine for running DSA, RSA, and other such algorithms. With approximate
+      performance starting at more than four times as fast as the Hifn,
+      hopefully this chip will become more common soon.</p>
+
+      <p>The Broadcom/Bluesteelnet people have been great to deal with. They
+      gave us complete documentation and sample code for their chips and a
+      sufficient number of cards to test with.</p>
+
+      <p>Post 2.8, this driver was also modified to generate random numbers
+      on the BCM5805 and similar versions, and feed that data into the kernel
+      entropy pool.</p>
+
+      <p>Post 2.9, support was added for the BCM5820, which is mostly just a
+      faster (64bit, higher clock speed) version of the BCM5805. Untested
+      support for the BCM5821 was also added post 3.0.</p>
+
+      <p>As of 3.1, the big num engine is supported, and RSA/DH/DSA operations
+      can be accelerated.</p>
+
+      <p>Support for the BCM5801, BCM5802, BCM5821 and BCM5822 was added before
+      OpenBSD 3.2 (the untested BCM5821 support in 3.1 was broken because of
+      some undocumented interrupt handling requirements).</p>
+
+      <p>Partial support for BCM5823 was added for 3.4. The chip supports AES,
+      but the driver does not.</p>
+    </li>
+
+    <li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ises&amp;sektion=4">
+    Securealink PCC-ISES</a></b><br>
+    The <a href="http://www.safenet-inc.com/technology/chips/safexcel_ises.asp">
+    PCC-ISES</a> is a new chipset from the Netherlands. We have received sample
+    hardware and documentation, and work on a driver is in progress. At the
+    moment, the driver is capable of feeding random numbers into the kernel
+    entropy pool.</li>
+
+    <li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=safe&amp;sektion=4">
+    SafeNet SafeXcel 1141/1741</a></b><br>
+    After 3.4 shipped, support was for added for these two chips (found on
+    various <a href="http://www.safenet-inc.com/products/accCards/">SafeNet</a>
+    crypto cards. Supports DES, Triple-DES, AES, MD5, and SHA-1 symmetric
+    crypto operations, RNG, public key operations, and full IPsec packet
+    processing.</li>
+
+    <li><b>SafeNet SafeXcel 1840</b><br>
+    We have received documentation and sample hardware for the <a
+    href="http://www.safenet-inc.com/products/chips/safeXcel1840.asp">SafeNet
+    1840</a> crypto chip. Work to support at least the RNG and symmetric
+    cryptography of these devices has started.</li>
+
+    <li><b>SafeNet SafeXcel 2141</b><br>
+    We have received documentation and sample hardware for the <a
+    href="http://www.safenet-inc.com/products/chips/safeXcel2141.asp">SafeNet
+    2141</a> crypto chip. Work to support at least the symmetric cryptography
+    of these devices has started.</li>
+
+    <li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=txp&amp;sektion=4">
+    3com 3cr990</a></b><br>
+    3com gave us a driver to support the ethernet component of this chipset,
+    and based on that, we have written our own ethernet driver. This driver
+    has now been integrated once we were able to get a free license on the
+    microcode. Due to poor documentation and lack of cooperation (partly
+    because of the high turnover rates at 3Com), the IPsec functions of the
+    chip are not supported.... so this turned out to be a less than completely
+    useful exercise.</li>
+
+    <li><b>Intel IPsec card</b><br>
+    Much like Intel does for all their networking division components, and
+    completely unlike most other vendors, Intel steadfastly refuses to provide
+    us with documentation. We have talked to about five technical people who
+    are involved in the development of those products. They all want us to
+    have documentation. They commend us on what we have done. But their hands
+    are tied by management who does not perceive a benefit to themselves for
+    providing documentation. Forget about Intel. (If you want to buy gigabit
+    ethernet hardware, we recommend anything else... for the same reason: most
+    drivers we have for Intel networking hardware were written without
+    documentation).</li>
+
+    <li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pchb&amp;sektion=4">
+    Intel 82802AB/82802AC Firmware Hub RNG</a></b><br>
+    The 82802 FWH chip (found on i810, i820, i840, i850, and i860 motherboards)
+    contains a random number generator (RNG). High-performance IPsec requires
+    more random number entropy. As of April 10, 2000, we support the RNG. We
+    will add support for other RNGs found on crypto chips.</li>
+
+    <li><b>VIA C3 RNG</b><br>
+    The newer VIA C3 CPU contains a random number generator as an instruction.
+    As of <a href="../33.html">3.3</a> this random number generator is used
+    inside the kernel to feed the entropy pool.</li>
+
+    <li><b>VIA C3 AES instructions</b><br>
+    VIA C3 CPUs with a step 8 or later Nehemiah core contains an AES
+    implementation accessible via simple instructions. As of <a
+    href="../34.html">3.4</a> the kernel supports them to be used in an IPsec
+    context and exported by <tt>/dev/crypto</tt>. As of <a
+    href="../35.html">3.5</a> performances have been greatly improved and
+    OpenSSL now uses the new instruction directly when available without the
+    need to enter the kernel, resulting in vastly improved speed (AES-128
+    measured at 780MByte/sec) for applications using OpenSSL to perform AES
+    encryption.</li>
+
+    <li><b>OpenSSL</b><br>
+    Years ago, we had a grand scheme to support crypto cards that can do
+    RSA/DH/DSA automatically via OpenSSL calls. As of OpenBSD 3.2, that support
+    works, and any card that is supported with such functionality will
+    automatically use the hardware, including OpenSSH and httpd in SSL mode.
+    No application changes are required.</li>
+  </ul>
+
+  <p><b>如果有人愿意帮助编写驱动程序，<a href="#people">请加入我们的行列</a>。</b></p>
+
+  <p><a name="people" id="people"></a></p>
+
+  <h3><font color="#E00000">寻找国际密码系统安全专家</font></h3>
+
+  <p>当然，我们的项目需要人们来开发这些系统。
+如果有非美国的密码学专家满足上述要求，愿意帮助我们开发嵌入 OpenBSD
+的密码学系统，请联系我们。</p>
+
+  <p><a name="papers" id="papers"></a></p>
+
+  <h3><font color="#E00000">进阶读物</font></h3>
+
+  <p>OpenBSD 团队成员已经撰写了很多关于他们在 OpenBSD
+的密码学系统方面所作改变的资料。这些文档的 postscript
+格式可从下列地址获取。</p>
+
+  <ul>
+    <li>A Future-Adaptable Password Scheme.<br>
+    <a href="../events.html#usenix99">Usenix 1999</a>, by
+    <a href="mailto:provos@openbsd.org">Niels Provos</a>,
+    <a href="mailto:dm@openbsd.org">David Mazieres</a>.<br>
+    <a href="../papers/bcrypt-paper.ps">paper</a> and
+    <a href="../papers/bcrypt-slides.ps">slides</a>.</li>
+
+    <li>Cryptography in OpenBSD: An Overview.<br>
+    <a href="../events.html#usenix99">Usenix 1999</a>, by
+    <a href="mailto:deraadt@openbsd.org">Theo de Raadt</a>,
+    <a href="mailto:niklas@openbsd.org">Niklas Hallqvist</a>,
+    <a href="mailto:art@openbsd.org">Artur Grabowski</a>,
+    <a href="mailto:angelos@openbsd.org">Angelos D. Keromytis</a>,
+    <a href="mailto:provos@openbsd.org">Niels Provos</a>.<br>
+    <a href="../papers/crypt-paper.ps">paper</a> and
+    <a href="../papers/crypt-slides.ps">slides</a>.</li>
+
+    <li>Implementing Internet Key Exchange (IKE).<br>
+    <a href="../events.html#usenix2000">Usenix 2000</a>, by
+    <a href="mailto:niklas@openbsd.org">Niklas Hallqvist</a> and
+    <a href="mailto:angelos@openbsd.org">Angelos D. Keromytis</a>.<br>
+    <a href="../papers/ikepaper.ps">paper</a> and
+    <a href="../papers/ikeslides.ps">slides</a>.</li>
+
+    <li>Encrypting Virtual Memory.<br>
+    <a href="../events.html#sec2000">Usenix Security 2000</a>,
+    <a href="mailto:provos@openbsd.org">Niels Provos</a>.<br>
+    <a href="../papers/swapencrypt.ps">paper</a> and
+    <a href="../papers/swapencrypt-slides.ps">slides</a>.</li>
+
+    <li>The Design of the OpenBSD Cryptographic Framework.<br>
+    <a href="../events.html#usenix2003">Usenix 2003</a>, by
+    <a href="mailto:angelos@openbsd.org">Angelos D. Keromytis</a>,
+    <a href="mailto:jason@openbsd.org">Jason L. Wright</a>, and
+    <a href="mailto:deraadt@openbsd.org">Theo de Raadt</a>.<br>
+    <a href="../papers/ocf.pdf">paper</a>.</li>
+
+    <li>Cryptography As an Operating System Service: A Case Study.<br>
+    <a href="http://www.acm.org/tocs/">ACM Transactions on Computer
+    Systems</a>, February 2006, by <a href="mailto:angelos@openbsd.org">Angelos
+    D. Keromytis</a>, <a href="mailto:jason@openbsd.org">Jason L. Wright</a>,
+    and <a href="mailto:deraadt@openbsd.org">Theo de Raadt</a>.<br>
+    <a href="../papers/crypt-service.pdf">paper</a>.</li>
+  </ul>
+  <hr>
+  <a href="index.html"><img height="24" width="24" src="../back.gif" border="0" alt="OpenBSD"></a>
+  <a href="mailto:www@openbsd.org">www@openbsd.org</a><br>
+  <small><!--
+Originally [OpenBSD: crypto.html,v 1.133 ]<br>
+$Translation: crypto.html,v 1.4 2008/02/18 06:02:39 dongsheng Exp $<br>
+-->$OpenBSD: crypto.html,v 1.1 2008/02/22 10:09:27 tobias Exp $</small>
+</body>
+</html>
