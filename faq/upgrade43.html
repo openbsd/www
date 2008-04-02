@@ -68,6 +68,7 @@ Table of Contents:
 <li><a href="#upgrade">The upgrade process</a>
 <li><a href="#final">Final steps</a>
   <ul>
+  <li><a href="#UsersGroups">New and changed Users and Groups</a>
   <li><a href="#etcUpgrade">Upgrading <tt>/etc</tt></a>
   <li><a href="#Kernchk">Checking the kernel</a>
   <li><a href="#Xup">X configuration files</a>
@@ -86,13 +87,11 @@ impact a large number of users in the upgrade process.
 For a more complete list of changes, see
 <a href="../plus43.html">plus43.html</a> and the CVS change logs.
 
-<!-- XXX add new stuff -->
-
 <a name="libexpat"></a>
 <ul>
 <li><b>libexpat has been moved to base43.tgz</b><br>
 For 4.2, libexpat moved from ports to xbase42.tgz, which was highly
-inconvienient for people who did not have any other reason to install X.
+inconvenient for people who did not have any other reason to install X.
 For 4.3, libexpat has moved from xbase42.tgz to base43.tgz, so for many
 applications, there is no longer reason to install xbase43.tgz.
 
@@ -110,7 +109,75 @@ Also note that building ports is still only supported with a full
 installation, including <i>all</i> X file sets.
 
 <p>
-......
+<li><b>httpd.conf change:</b><br>
+<a href="faq15.html">Packages</a> for
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=httpd&amp;sektion=8">httpd(8)</a>
+modules now install configuration files in
+<tt>/var/www/conf/modules.samples</tt>, and direct the user to create
+symbolic links in <tt>/var/www/conf/modules</tt>.
+The following lines should be added to <tt>/var/www/conf/httpd.conf</tt>
+after the <tt>LoadModule</tt> directives (towards the end of section 1):
+<blockquote><pre>
+#
+# Include extra module configuration files
+#
+Include /var/www/conf/modules/*.conf
+</pre></blockquote>
+
+This is in the <tt>upgrade43.patch</tt> file, but may not apply properly
+to highly customized <tt>httpd.conf</tt> files.
+You should make sure these lines end up in your system, otherwise future
+package additions may not work properly after install.
+
+<p>
+<a name="_relayd"></a>
+<li><b>hoststated renamed to relayd:</b><br>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hoststated&amp;manpath=OpenBSD+4.2&amp;sektion=8">hoststated(8)</a>
+has been renamed to
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=relayd&amp;sektion=8">relayd(8)</a>.
+This will require a renaming of the <tt>_hoststated</tt> user and group
+to <tt>_relayd</tt>, plus changes to your <tt>/etc/pf.conf</tt> file
+and a minor rework of your
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hoststated.conf&amp;manpath=OpenBSD+4.2&amp;sektion=5">hoststated.conf(5)</a>
+into a
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=relayd.conf&amp;sektion=8">relayd.conf(5)</a>
+file.
+The upgrade instructions here will install a new <tt>relayd.conf</tt>
+file, you will need to configure it as you need.
+
+<p>
+<a name="carp"></a>
+<li><b>carp(4) changes:</b><br>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=carp&amp;sektion=4">carp(4)</a>
+has been changed to make it easier to configure.
+If you are running carp with ARP or IP
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=carp&amp;sektion=4#LOAD+BALANCING">balancing</a>
+your configuration needs to be changed accordingly:
+  <ul>
+  <li> Multiple carp(4) interfaces sharing an IP have been replaced with
+  the <tt>carpnodes</tt> option.
+
+  <li> The <tt>net.inet.carp.arpbalance</tt>
+  <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=8">sysctl(8)</a>
+  has been replaced with balancing mode <tt>arp</tt>.
+
+  <li> The <tt>link0, link1</tt>, and <tt>link2</tt> flags used for IP
+  balancing have been replaced with the balancing modes <tt>ip,
+  ip-stealth</tt> and <tt>ip-unicast</tt>.
+
+  </ul>
+
+<p>
+<a name="xenocaramove"></a>
+<li><b>xenocara default tree location changed:</b><br>
+The default location of the xenocara (<a href="faq11.html">X</a>) source
+tree is now <tt>/usr/xenocara</tt>.
+This is important for those who <a href="faq5.html#Xbld">build X from
+source</a>.
+Simply move your xenocara tree:
+<blockquote><pre>
+# <b>mv /usr/src/xenocara /usr</b>
+</pre></blockquote>
 
 <p>
 <a name="rc.conf"></a>
@@ -299,9 +366,28 @@ Whether you upgrade by using an install kernel and doing a formal
 "upgrade" process, or do a "in-place" binary upgrade, there are certain 
 manual steps that have to be performed.
   
-<a name="etcUpgrade"></a>
-<h3>1. Upgrading <tt>/etc</tt></h3>
+<a name="UsersGroups"></a>
+<h3>1. New and changed Users and Groups</h3>
+New users are needed for
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ospfd&amp;sektion=8">ospf6d</a>,
+and
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=snmpd&amp;sektion=8">snmpd</a>.
+Create those users and groups using
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=useradd&amp;sektion=8">useradd(8)</a>
+<blockquote><pre>
+<b>useradd -u90 -g=uid -c"OSPF6 Daemon" -d/var/empty -s/sbin/nologin _ospf6d
+useradd -u91 -g=uid -c"SNMP Daemon" -d/var/empty -s/sbin/nologin _snmpd</b>
+</pre></blockquote>
 
+You also need to use
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vipw&amp;sektion=8">vipw(8)</a>
+to edit the password files and your favorite editor to change the
+<tt>/etc/group</tt> file, changing <tt>_hoststated</tt> to
+<tt>_relayd</tt> in each.
+Leave the rest of each line unchanged.
+
+<a name="etcUpgrade"></a>
+<h3>2. Upgrading <tt>/etc</tt></h3>
 <p>
 You will want to extract the <tt>etc43.tgz</tt> files to a temporary
 location:
@@ -347,13 +433,13 @@ cp ../var/named/etc/root.hint /var/named/etc</b>
 <a name="patchfile"></a>
 These files likely have local changes, but should be updated for
 4.3.  IF you have not altered these files, you can copy over the
-new version, othwerise the changes must be merged with your files:
+new version, otherwise the changes must be merged with your files:
 
 <blockquote><pre>
 etc/changelist
 etc/chio.conf
 etc/ftpusers
-etc/mail/aliases  MAKEALIASES!!
+etc/mail/aliases
 etc/ssh/sshd_config
 etc/sudoers
 etc/sysctl.conf
@@ -385,7 +471,7 @@ Please test this process before relying on it for a machine you can not
 easily get to.
 
 <p>
-<b><tt>/etc/ttys</tt></b> has been made more consistant across
+<b><tt>/etc/ttys</tt></b> has been made more consistent across
 platforms, but this makes updating more exciting for this file.
 It is recommended that you copy over this new file, and manually
 merge any changes back to the new one:
@@ -424,7 +510,7 @@ to create any new directories:
 </pre></blockquote>
 
 <a name="Kernchk"></a>
-<h3>2. Checking the kernel</h3>
+<h3>3. Checking the kernel</h3>
 Note: <b>most people can skip this step!</b>
 <p>
 If you followed the instructions for the upgrade process without install
@@ -451,14 +537,6 @@ that will impact a large number of users.
 The fact that a package is not on this list doesn't mean it will have a
 trivial upgrade.
 You must do some homework on the applications YOU use.
-
-<ul>
-<li>XXX
-</ul>
-
-<p>
-Before continuing, there are some major changes in the 4.3 release which
-you should know about:
 
 <ul>
 <li>XXX
@@ -510,7 +588,7 @@ If you wish to remove it, you can use the following command:
 <a href="index.html"><img height="24" width="24" src="../images/back.gif" border="0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: upgrade43.html,v 1.3 2008/03/30 16:50:25 nick Exp $</small>
+<small>$OpenBSD: upgrade43.html,v 1.4 2008/04/02 00:25:59 nick Exp $</small>
 
 </body>
 </html>
