@@ -1,0 +1,240 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: 表</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-type" content="text/html; charset=utf-8">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+</head>
+
+<!--
+Copyright (c) 2003, 2004 Joel Knight <enabled@myrealbox.com>
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<a href="../../../index.html">
+<img alt="[OpenBSD]" height=30 width=141
+    src="../../../images/smalltitle.gif" border="0">
+</a>
+<p>
+[<a href="macros.html">上页: 列表与宏</a>]
+[<a href="index.html">索引</a>]
+[<a href="../filter.html">下页: 包过滤</a>]
+
+<p>
+<h1><font color="#e00000">PF: 表</font></h1>
+
+<hr>
+
+<h3>目录</h3>
+<ul>
+<li><a href="#intro">介绍</a>
+<li><a href="#config">配置</a>
+<li><a href="#manip"><tt>pfctl</tt> 操作</a>
+<li><a href="#addr">指定地址</a>
+<li><a href="#match">匹配地址</a>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>介绍</h2>
+表用来保存 IPv4 和 IPv6 地址组。查询表非常快，而且比<a
+href="macros.html#lists">列表</a>消耗的内存和处理器时间少。
+所以，表用来保存大地址组非常完美，保存 50,000
+个地址的表的查询时间比保存 50 个地址的列表稍多。
+表可以用于下列场合:
+<ul>
+<li>
+<a href="../filter.html">过滤器</a>中的源地址或目标地址，<a
+href="../scrub.html">擦洗</a>，<a href="../nat.html">NAT</a>
+和<a href="../rdr.html">端口重定向</a>的规则。
+<li><a href="../nat.html">NAT</a> 规则中的地址转换。
+<li><a href="../rdr.html">端口重定向</a>规则中的重定向地址。
+<li><tt>route-to</tt>，<tt>reply-to</tt> 和
+<tt>dup-to</tt> 过滤器规则选项中的目标地址。
+</ul>
+
+<p>
+表可以在
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+4.2"
+><tt>pf.conf</tt></a> 中创建或者用
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+4.2"
+>pfctl(8)</a> 。
+
+<a name="config"></a>
+<h2>配置</h2>
+In <tt>pf.conf</tt>, tables are created using the <tt>table</tt>
+directive. The following attributes may be specified for each table:
+<ul>
+<li><tt>const</tt> - the contents of the table cannot be changed once the
+table is created. When this attribute is not specified,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+4.2"
+>pfctl(8)</a> may be used to add or remove addresses from the
+table at any time, even when running with a
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=securelevel&amp;sektion=7"
+>securelevel(7)</a> of two or greater.
+<li><tt>persist</tt> - causes the kernel to keep the table in memory even
+when no rules refer to it. Without this attribute, the kernel will
+automatically remove the table when the last rule referencing it is
+flushed.
+</ul>
+
+<p>
+Example:
+<blockquote>
+<tt>
+table &lt;goodguys&gt; { 192.0.2.0/24 }<br>
+table &lt;rfc1918&gt; const { 192.168.0.0/16, 172.16.0.0/12, \<br>
+&nbsp;&nbsp;&nbsp;10.0.0.0/8 }<br>
+table &lt;spammers&gt; persist<br>
+<br>
+block in on fxp0 from { &lt;rfc1918&gt;, &lt;spammers&gt; } to any<br>
+pass&nbsp; in on fxp0 from &lt;goodguys&gt; to any<br>
+</tt>
+</blockquote>
+
+<p>
+Addresses can also be specified using the negation (or "not") modifier
+such as:
+<blockquote>
+<tt>
+table &lt;goodguys&gt; { 192.0.2.0/24, !192.0.2.5 }
+</tt>
+</blockquote>
+
+<p>
+The <tt>goodguys</tt> table will now match all addresses in the
+192.0.2.0/24 network except for 192.0.2.5.
+
+<p>
+Note that table names are always enclosed in &lt; &gt; angled brackets.
+
+<p>
+Tables can also be populated from text files containing a list of IP
+addresses and networks:
+<blockquote>
+<tt>
+table &lt;spammers&gt; persist file "/etc/spammers"<br>
+<br>
+block in on fxp0 from &lt;spammers&gt; to any<br>
+</tt>
+</blockquote>
+
+<p>
+The file <tt>/etc/spammers</tt> would contain a list of IP addresses
+and/or <a href="http://public.pacbell.net/dedicated/cidr.html">CIDR</a>
+network blocks, one per line.
+Any line beginning with <tt>#</tt> is treated as a comment and ignored.
+
+<a name="manip"></a>
+<h2><tt>pfctl</tt> 操作</tt></h2>
+Tables can be manipulated on the fly by using
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+4.2"
+>pfctl(8)</a>. For
+instance, to add entries to the &lt;spammers&gt; table created above:
+<blockquote>
+<tt># pfctl -t spammers -T add 218.70.0.0/16</tt>
+</blockquote>
+
+<p>
+This will also create the &lt;spammers&gt; table if it doesn't already
+exist. To list the addresses in a table:
+<blockquote>
+<tt># pfctl -t spammers -T show</tt>
+</blockquote>
+The <tt>-v</tt> argument can also be used with <tt>-Tshow</tt> to
+display statistics for each table entry. To remove addresses from a
+table:
+<blockquote>
+<tt>
+# pfctl -t spammers -T delete 218.70.0.0/16
+</tt>
+</blockquote>
+
+<p>
+For more information on manipulating tables with <tt>pfctl</tt>,
+please read the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+4.2"
+>pfctl(8)</a> manpage.
+
+<a name="addr"></a>
+<h2>指定地址</h2>
+In addition to being specified by IP address, hosts may also be
+specified by their hostname.  When the hostname is resolved to an IP
+address, all resulting IPv4 and IPv6 addresses are placed into the
+table.  IP addresses can also be entered into a table by specifying a
+valid interface name or the <tt>self</tt> keyword.
+The table will then contain all IP addresses assigned to that interface
+or to the machine (including loopback addresses), respectively.<br>
+<br>
+One limitation when specifying addresses is that <tt>0.0.0.0/0</tt> and
+<tt>0/0</tt> will not work in tables.
+The alternative is to hard code that address or use a
+<a href="macros.html#macros">macro</a>.
+
+<a name="match"></a>
+<h2>匹配地址</h2>
+An address lookup against a table will return the most narrowly matching
+entry. This allows for the creation of tables such as:
+<blockquote>
+<tt>
+table &lt;goodguys&gt; { 172.16.0.0/16, !172.16.1.0/24, 172.16.1.100 }<br>
+<br>
+block in on dc0 all<br>
+pass &nbsp;in on dc0 from &lt;goodguys&gt; to any<br>
+</tt>
+</blockquote>
+
+<p>
+Any packet coming in through <tt>dc0</tt> will have its source address matched
+against the table <tt>&lt;goodguys&gt;</tt>:
+<ul>
+<li>172.16.50.5 - narrowest match is 172.16.0.0/16; packet matches the
+table and will be passed
+<li>172.16.1.25 - narrowest match is !172.16.1.0/24; packet matches an
+entry in the table but that entry is negated (uses the "!" modifier);
+packet does not match the table and will be blocked
+<li>172.16.1.100 - exactly matches 172.16.1.100; packet matches the
+table and will be passed
+<li>10.1.4.55 - does not match the table and will be blocked
+</ul>
+
+<p>
+[<a href="macros.html">上页: 列表与宏</a>]
+[<a href="index.html">索引</a>]
+[<a href="../filter.html">下页: 包过滤</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24"
+    src="../../../images/back.gif" border="0" alt="[back]"></a>
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>$OpenBSD: tables.html,v 1.1 2008/04/28 09:28:06 tobias Exp $</small>
+
+</body>
+</html>
+<!--
+Originally [OpenBSD: tables.html,v 1.22]<br>
+$Translation: tables.html,v 1.2 2008/03/06 03:42:46 dongsheng Exp $<br>
+-->

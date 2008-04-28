@@ -1,0 +1,2213 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>6 - 网络</title>
+<link rev= "made" href= "mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta name= "resource-type" content= "document">
+<meta name= "description"   content= "the OpenBSD FAQ page">
+<meta name= "keywords"      content= "openbsd,faq">
+<meta name= "distribution"  content= "global">
+<meta name= "copyright"     content= "This document copyright 1998-2008 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- passes validator.w3.org, please keep it this way -->
+
+<a href="../index.html">
+<img alt="[OpenBSD]" height=30 width=141 src="../../images/smalltitle.gif" border="0">
+</a>
+<p>
+<font color="#0000e0">
+<a href="index.html">[FAQ 索引]</a>
+<a href="../faq5.html">[到 5 - 从源代码构建系统]</a>
+<a href="../faq7.html">[到 7 - 键盘与显示控制台]</a>
+</font>
+
+<h1><font color="#e00000">6 - 网络</font></h1>
+<hr>
+
+<p>
+<h3>目录</h3>
+<ul>
+<li><a href= "#Intro" >6.1 - 起步</a>
+<li><a href= "#Setup" >6.2 - 初始网络配置</a>
+<ul>
+  <li><a href="#Setup.if"      >6.2.1 - 辨识和配置网络接口</a>
+  <li><a href="#Setup.gateway" >6.2.2 - 缺省网关</a>
+  <li><a href="#Setup.resolver">6.2.3 - DNS 解析</a>
+  <li><a href="#Setup.myname"  >6.2.4 - 主机名称</a>
+  <li><a href="#Setup.activate">6.2.5 - 激活修改</a>
+  <li><a href="#Setup.chkroute">6.2.6 - 检查路由</a>
+  <li><a href="#Setup.forward" >6.2.7 - 将 OpenBSD 配置为网关</a>
+  <li><a href="#Setup.aliases" >6.2.8 - 配置接口的别名</a>
+</ul>
+<li><a href= "#PF"    >6.3 - 如何使用 OpenBSD 的过滤器和防火墙?</a>
+<li><a href= "#DHCP"  >6.4 - 动态主机配置协议(DHCP)</a>
+<ul>
+  <li><a href="#DHCPclient">6.4.1 - DHCP 客户端</a>
+  <li><a href="#DHCPserver">6.4.2 - DHCP 服务器</a>
+</ul>
+<li><a href= "#PPP"   >6.5 - 点对点协议</a>
+<li><a href= "#Tuning">6.6 - 调整网络参数</a>
+<li><a href= "#NFS"   >6.7 - 使用 NFS</a>
+<li><a href= "#Bridge">6.9 - 使用 OpenBSD 配置网桥</a>
+<li><a href= "#PXE"   >6.10 - 如何使用 PXE 启动?</a>
+<li><a href= "#CARP">6.11 - 通用地址冗余协议(CARP)</a>
+<li><a href="#OpenNTPD">6.12 - 使用 OpenNTPD</a>
+<li><a href="#Wireless">6.13 - 我可以使用哪些无线网络设备?</a>
+<li><a href="#Multipath">6.14 - 如何配置等价多路径路由?</a>
+</ul>
+
+<hr>
+
+<p>
+<a name="Intro"></a>
+<h2>6.1 - Before we go any further</h2>
+
+<p>
+For the bulk of this document, it helps if you have read and
+at least partially understood the <a href="../faq5.html">Kernel
+Configuration and Setup</a> section of the FAQ, and the
+<a href= "http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8">
+ifconfig(8)</a> and
+<a href= "http://www.openbsd.org/cgi-bin/man.cgi?query=netstat&amp;sektion=1">
+netstat(1)</a> man pages.
+
+<p>
+If you are a network administrator, and you are setting up routing
+protocols, if you are using your OpenBSD box as a router, if you need to
+go in depth into IP networking, you really need to read
+<a href="http://www.3com.com/other/pdfs/infra/corpinfo/en_US/501302.pdf">Understanding
+IP Addressing</a>.
+This is an excellent document.  "Understanding IP Addressing" contains
+fundamental knowledge to build upon when working with IP networks,
+especially when you deal with or are responsible for more than one
+network.
+
+<p>
+If you are working with applications such as web servers, ftp servers,
+and mail servers, you may benefit greatly by
+<a href="http://www.rfc-editor.org/rfc.html">reading the RFCs</a>.
+Most likely, you can't read all of them.  Pick some topics that you are
+interested in, or that you use in your network environment.  Look them
+up, find out how they are intended to work.  The RFCs define many
+(thousands of) standards for protocols on the Internet and how they are
+supposed to work.
+
+<p>
+<a name="Setup"></a>
+<h2>6.2 - Network configuration</h2>
+
+Normally, OpenBSD is initially configured by the
+<a href="../faq4.html">installation</a> process.
+However, it is good to understand what is happening in this process and
+how it works.
+All network configuration is done using simple text files in the
+<i>/etc</i> directory.
+
+<p>
+<a name="Setup.if"></a>
+<h3>6.2.1 - Identifying and setting up your network interfaces</h3>
+
+<p>
+In
+OpenBSD, interfaces are named for the type of card, not for the type of
+connection. You can see your network card get initialized during the
+booting process, or after the booting process using the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dmesg&amp;sektion=8">dmesg(8)</a>
+command.  You also have the chance of seeing your network interface
+using the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8">ifconfig(8)</a> command.
+For example, here is the output of dmesg for a Intel Fast Ethernet
+network card, which uses the device name fxp.
+
+<blockquote><pre>
+fxp0 at pci0 dev 10 function 0 "Intel 82557" rev 0x0c: irq 5, address 00:02:b3:2b:10:f7
+inphy0 at fxp0 phy 1: i82555 10/100 media interface, rev. 4
+</pre></blockquote>
+
+<p>
+If you don't know what your device name is, please look at the
+<a href="../../plat.html">supported hardware list</a> for your platform.
+You will find a list of many common card names and their OpenBSD device
+names here.  Combine the short alphabetical device name (such as fxp)
+with a number assigned by the kernel and you have an interface name
+(such as fxp0).
+The number is assigned based on various criteria, depending upon the
+card and other details of the system.
+Some cards are assigned by the order they are found during bus probing.
+Others may be by hardware resource settings or MAC address.
+
+<p>
+You can find out what network interfaces have been identified by using the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8">ifconfig(8)</a>
+utility. The following command will show all network interfaces on a
+system.  This sample output shows us only one physical Ethernet interface,
+an <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fxp&amp;sektion=4">fxp(4)</a>.
+
+<blockquote><pre>
+$ <b>ifconfig</b>
+lo0: flags=8049&lt;UP,LOOPBACK,RUNNING,MULTICAST&gt; mtu 33224
+        inet 127.0.0.1 netmask 0xff000000
+        inet6 ::1 prefixlen 128
+        inet6 fe80::1%lo0 prefixlen 64 scopeid 0x5
+lo1: flags=8008&lt;LOOPBACK,MULTICAST&gt; mtu 33224
+fxp0: flags=8843&lt;UP,BROADCAST,RUNNING,SIMPLEX,MULTICAST&gt; mtu 1500
+        address: 00:04:ac:dd:39:6a
+        media: Ethernet autoselect (100baseTX full-duplex)
+        status: active
+        inet 10.0.0.38 netmask 0xffffff00 broadcast 10.0.0.255
+        inet6 fe80::204:acff:fedd:396a%fxp0 prefixlen 64 scopeid 0x1
+pflog0: flags=0&lt;&gt; mtu 33224
+pfsync0: flags=0&lt;&gt; mtu 2020
+sl0: flags=c010&lt;POINTOPOINT,LINK2,MULTICAST&gt; mtu 296
+sl1: flags=c010&lt;POINTOPOINT,LINK2,MULTICAST&gt; mtu 296
+ppp0: flags=8010&lt;POINTOPOINT,MULTICAST&gt; mtu 1500
+ppp1: flags=8010&lt;POINTOPOINT,MULTICAST&gt; mtu 1500
+tun0: flags=10&lt;POINTOPOINT&gt; mtu 3000
+tun1: flags=10&lt;POINTOPOINT&gt; mtu 3000
+enc0: flags=0&lt;&gt; mtu 1536
+bridge0: flags=0&lt;&gt; mtu 1500
+bridge1: flags=0&lt;&gt; mtu 1500
+vlan0: flags=0&lt;&gt; mtu 1500
+        address: 00:00:00:00:00:00
+vlan1: flags=0&lt;&gt; mtu 1500
+        address: 00:00:00:00:00:00
+gre0: flags=9010&lt;POINTOPOINT,LINK0,MULTICAST&gt; mtu 1450
+carp0: flags=0&lt;&gt; mtu 1500
+carp1: flags=0&lt;&gt; mtu 1500
+gif0: flags=8010&lt;POINTOPOINT,MULTICAST&gt; mtu 1280
+gif1: flags=8010&lt;POINTOPOINT,MULTICAST&gt; mtu 1280
+gif2: flags=8010&lt;POINTOPOINT,MULTICAST&gt; mtu 1280
+gif3: flags=8010&lt;POINTOPOINT,MULTICAST&gt; mtu 1280
+</pre></blockquote>
+
+<p>
+As you can see here,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8">ifconfig(8)</a>
+gives us a lot more information than we need at this point. But, it
+still allows us to see our interface. In the above example, the
+interface card is already configured. This is obvious because an IP
+network is already configured on fxp0, hence the values &quot;inet
+10.0.0.38 netmask 0xffffff00 broadcast 10.0.0.255&quot;.  Also, the
+<b>UP</b> and <b>RUNNING</b> flags are set.
+
+<p>
+Finally, you will notice several other interfaces come enabled by
+default.  These are virtual interfaces that serve various functions.
+The following manual pages describe them:
+
+<ul>
+<!-- XXXrelease -->
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=lo&amp;sektion=4">lo</a>
+ - Loopback Interface
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflog&amp;sektion=4">pflog</a>
+ - Packet Filter Logging Interface
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sl&amp;sektion=4">sl</a>
+ - SLIP Network Interface
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ppp&amp;sektion=4">ppp</a>
+ - Point to Point Protocol
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tun&amp;sektion=4">tun</a>
+ - Tunnel Network Interface
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=enc&amp;sektion=4">enc</a>
+ - Encapsulating Interface
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridge&amp;sektion=4">bridge</a>
+ - Ethernet Bridge Interface
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vlan&amp;sektion=4">vlan</a>
+ - IEEE 802.1Q Encapsulation Interface
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=gre&amp;sektion=4">gre</a>
+ - GRE/MobileIP Encapsulation Interface
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=gif&amp;sektion=4">gif</a>
+ - Generic IPv4/IPv6 Tunnel Interface
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=carp&amp;sektion=4">carp</a>
+ - Common Address Redundancy Protocol Interface
+</ul>
+
+<p>
+The interface is configured at boot time using the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hostname.if&amp;sektion=5">/etc/hostname.<i>if</i>(5)</a>
+files, where <i>if</i> will be replaced by the full name of your interface,
+for the example above, <i>/etc/hostname.fxp0</i>.
+
+<p>
+The layout of this file is simple:
+
+<blockquote><pre>
+address_family address netmask broadcast [other options]
+</pre></blockquote>
+
+Much more detail about the format of this file can be found in the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hostname.if&amp;sektion=5">hostname.if(5)</a>
+man page.
+You will need to read this for less trivial configurations.
+
+<p>
+A typical interface configuration file, configured for an IPv4 address,
+would look like this:
+
+<blockquote><pre>
+$ <b>cat /etc/hostname.fxp0</b>
+inet 10.0.0.38 255.255.255.0 NONE
+</pre></blockquote>
+
+<p>
+In this case, we have defined an IPv4 (inet) address, with an IP address of
+10.0.0.38, a subnet mask of 255.255.255.0 and no specific broadcast address
+(which will default to 10.0.0.255 in this case).
+
+<p>
+You could also specify media types for Ethernet, say, if you wanted to
+force 100baseTX full-duplex mode.
+
+<blockquote><pre>
+inet 10.0.0.38 255.255.255.0 NONE media 100baseTX mediaopt full-duplex
+</pre></blockquote>
+
+<p>
+(Of course, you should never force full duplex mode unless both sides of
+the connection are set to do this! In the absence of special needs,
+media settings should be excluded.
+A more likely case might be to force 10base-T or half duplex when your
+infrastructure requires it.)
+
+<p>
+Or, you may want to use special flags specific to a certain interface.
+The format of the hostname file doesn't change much!
+
+<blockquote><pre>
+$ <b>cat /etc/hostname.vlan0</b>
+inet 172.21.0.31 255.255.255.0 NONE vlan 2 vlandev fxp1
+</pre></blockquote>
+
+<a name="Setup.gateway"></a>
+<h3>6.2.2 - Default gateway</h3>
+Put the IP of your gateway in the file <i>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mygate&amp;sektion=5">/etc/mygate</a></i>.
+This will allow for your gateway to be set upon boot.
+This file consists of one line, with just the address of this machine's
+gateway address:
+
+<blockquote><pre>
+10.0.0.1
+</pre></blockquote>
+
+It is possible use a symbolic name there, but be careful: you can't
+assume things like the resolver are fully configured or even reachable
+until AFTER the default gateway is configured.
+In other words, it had better be an IP address or something that is
+defined in the <i>/etc/hosts</i> file.
+
+<a name="Setup.resolver"></a>
+<h3>6.2.3 - DNS Resolution</h3>
+DNS resolution is controlled by the file
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=resolv.conf&amp;sektion=5"><i>/etc/resolv.conf</i></a>.
+Here is an example of a <i>/etc/resolv.conf</i> file:
+
+<blockquote><pre>
+search example.com
+nameserver 125.2.3.4
+nameserver 125.2.3.5
+lookup file bind
+</pre></blockquote>
+
+In this case, the default domain name will be <tt>example.com</tt>,
+there are two DNS resolvers, <tt>125.2.3.4</tt> and <tt>125.2.3.5</tt>
+specified, and the <i>/etc/hosts</i> file will be consulted before the
+DNS resolvers are.
+
+<p>
+As with virtually all Unix (and many non-Unix) systems, there is an
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hosts&amp;sektion=5"><i>/etc/hosts</i></a>
+file which can be used to specify systems that are not in (or if used
+with the above "lookup" priority, not as desired in) the formal DNS
+system.
+
+<p>
+If you are using DHCP, you'll want to read <a href="#DHCP">6.4 - DHCP</a>
+taking note of
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=resolv.conf.tail&amp;sektion=5">resolv.conf.tail(5)</a>.
+
+<a name="Setup.myname"></a>
+<h3>6.2.4 - Host name</h3>
+Every Unix machine has a name.
+In OpenBSD, the name is specified as a "Fully Qualified Domain Name" (FQDN)
+in one line in the file
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=myname&amp;sektion=5"><i>/etc/myname</i></a>.
+If this machine is named "puffy" and in the domain "example.com", the
+file would contain the one line:
+
+<blockquote><pre>
+puffy.example.com
+</pre></blockquote>
+
+<a name="Setup.activate"></a>
+<h3>6.2.5 - Activating the changes</h3>
+From here, you can either reboot or run the
+<b>/etc/netstart</b> script. You can do this by simply typing
+(as root):
+
+<blockquote><pre>
+# <b>sh /etc/netstart</b>
+writing to routing socket: File exists
+add net 127: gateway 127.0.0.1: File exists
+writing to routing socket: File exists
+add net 224.0.0.0: gateway 127.0.0.1: File exists
+</pre></blockquote>
+
+<p>
+Notice that a few errors were produced.  By running this script, you are
+reconfiguring things which are already configured.  As such, some routes
+already exist in the kernel routing table.  From here your system should
+be up and running. Again, you can check to make sure that your interface
+was setup correctly with
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8">ifconfig(8)</a>.
+
+<p>
+Even though you can completely reconfigure networking on an OpenBSD
+system without rebooting, a reboot is HIGHLY recommended after any
+significant reconfiguration.
+The reason for this is the environment at boot is somewhat different
+than it is when the system is completely up and running.
+For example, if you had specified a DNS-resolved symbolic name in any of
+the files, you would probably find it worked as expected after
+reconfigure, but on initial boot, your external resolver may not be
+available, so the configuration will fail.
+
+<a name="Setup.chkroute"></a>
+<h3>6.2.6 - Checking routes</h3>
+You can check your routes via
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=netstat&amp;sektion=1">netstat(1)</a>
+or <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=route&amp;sektion=8">route(8)</a>.
+If you are having routing problems, you may want to use the -n flag to
+route(8) which prints the IP addresses rather than doing a DNS lookup
+and displaying the hostname.  Here is an example of viewing your routing
+tables using both programs.
+
+<blockquote><pre>
+$ <b>netstat -rn</b>
+Routing tables
+
+Internet:
+Destination        Gateway            Flags     Refs     Use    Mtu  Interface
+default            10.0.0.1           UGS         0       86      -  fxp0
+127/8              127.0.0.1          UGRS        0        0      -  lo0
+127.0.0.1          127.0.0.1          UH          0        0      -  lo0
+10.0.0/24          link#1             UC          0        0      -  fxp0
+10.0.0.1           aa:0:4:0:81:d      UHL         1        0      -  fxp0
+10.0.0.38          127.0.0.1          UGHS        0        0      -  lo0
+224/4              127.0.0.1          URS         0        0      -  lo0
+
+Encap:
+Source             Port  Destination        Port  Proto SA(Address/SPI/Proto)
+
+$ <b>route show</b>
+Routing tables
+
+Internet:
+Destination      Gateway            Flags
+default          10.0.0.1           UG
+127.0.0.0        LOCALHOST          UG
+localhost        LOCALHOST          UH
+10.0.0.0         link#1             U
+10.0.0.1         aa:0:4:0:81:d      UH
+10.0.0.38        LOCALHOST          UGH
+BASE-ADDRESS.MCA LOCALHOST          U
+</pre></blockquote>
+
+<p>
+<a name="Setup.forward"></a>
+<h3>6.2.7 - Setting up your OpenBSD box as a forwarding gateway</h3>
+
+<p>
+This is the basic information you need to set up your OpenBSD box as a
+gateway (also called a router). If you are using OpenBSD as a router on
+the Internet, we suggest that you also read the Packet Filter setup
+instructions below to block potentially malicious traffic. Also, due to
+the low availability of
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ip&amp;sektion=4">IPv4</a>
+addresses from network service providers and regional registries, you
+may want to look at Network Address Translation for information on
+conserving your IP address space.
+
+<p>
+The GENERIC kernel already has the ability to allow IP Forwarding, but
+needs to be turned on. You should do this using the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=8">sysctl(8)</a>
+utility. To change this permanently you should edit the file
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl.conf&amp;sektion=5">/etc/sysctl.conf</a>
+to allow for IP Forwarding. To do so add this line in that configuration
+file.
+
+<blockquote><pre>
+net.inet.ip.forwarding=1
+</pre></blockquote>
+
+<p>
+To make this change without rebooting you would use the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=8">sysctl(8)</a>
+utility directly. Remember though that this change will no longer exist
+after a reboot, and needs to be run as root.
+
+<blockquote><pre>
+# <b>sysctl net.inet.ip.forwarding=1</b>
+net.inet.ip.forwarding: 0 -&gt; 1
+</pre></blockquote>
+
+<p>
+Now modify the routes on the other hosts on both sides.  There are many
+possible uses of OpenBSD as a router by using software such as
+OpenBSD's own <a href="http://www.openbgpd.org/">OpenBGPD</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=routed&amp;sektion=8">routed(8)</a>,
+<a href="http://www.mrtd.net">mrtd</a>,
+<a href="http://www.zebra.org">zebra</a>, and
+<a href="http://www.quagga.net">quagga</a>.
+OpenBSD has support in the ports collection for zebra, quagga, and mrtd.
+OpenBGPD and routed are installed as part of the base system.
+OpenBSD supports
+several T1, HSSI, ATM, FDDI, Ethernet, and serial (PPP/SLIP) interfaces.
+
+<p>
+<a name="Setup.aliases"></a>
+<h3>6.2.8 - Setting up aliases on an interface</h3>
+
+<p>
+OpenBSD has a simple mechanism for setting up IP aliases on an
+interface. To do this simply edit the file
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hostname.if&amp;sektion=5"><i>/etc/hostname.&lt;if&gt;</i></a>.
+This file is read upon boot by the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=netstart&amp;sektion=8">/etc/netstart(8)</a>
+script, which is part of the <a href="faq10.html#rc">rc startup
+hierarchy</a>.  For the example, we assume that the user has an
+interface <b>dc0</b> and is on the network 192.168.0.0. Other important
+information:
+
+<ul>
+<li>IP for dc0 is 192.168.0.2
+<li>NETMASK is 255.255.255.0
+</ul>
+
+<p>
+A few side notes about aliases. In OpenBSD you use the interface name
+only. There is no difference between the first alias and the second
+alias. Unlike some other operating systems, OpenBSD doesn't refer to
+them as dc0:0, dc0:1.  If you are referring to a specific aliased IP
+address with ifconfig, or adding an alias, be sure to say "<tt>ifconfig
+int alias</tt>" instead of just "<tt>ifconfig int</tt>" at the command
+line.  You can delete aliases with "<tt>ifconfig int delete</tt>".
+
+<p>
+Assuming you are using multiple IP addresses which are in the same IP
+subnet with aliases, your netmask setting for each alias becomes
+255.255.255.255.  They do not need to follow the netmask of the first IP
+bound to the interface.  In this example, <i>/etc/hostname.dc0</i>, two
+aliases are added to the device dc0, which, by the way, was configured
+as 192.168.0.2 netmask 255.255.255.0.
+
+<blockquote><pre>
+# <b>cat /etc/hostname.dc0</b>
+inet 192.168.0.2 255.255.255.0 NONE media 100baseTX
+inet alias 192.168.0.3 255.255.255.255
+inet alias 192.168.0.4 255.255.255.255
+</pre></blockquote>
+
+<p>
+Once you've made this file, it just takes a reboot for it to take
+effect. You can, however, bring up the aliases by hand using the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8">ifconfig(8)</a>
+utility. To bring up the first alias you would use the command:
+
+<blockquote><pre>
+# <b>ifconfig dc0 inet alias 192.168.0.3 netmask 255.255.255.255</b>
+</pre></blockquote>
+
+(but again, a reboot is recommended to make sure you entered everything
+as you expected it to be!)
+
+<p>
+To view these aliases you must use the command:
+
+<blockquote><pre>
+$ <b>ifconfig -A</b>
+dc0: flags=8863&lt;UP,BROADCAST,NOTRAILERS,RUNNING,SIMPLEX,MULTICAST&gt;
+        media: Ethernet manual
+        inet 192.168.0.2  netmask 0xffffff00 broadcast 192.168.0.255
+        inet 192.168.0.3 netmask 0xffffffff broadcast 192.168.0.3
+</pre></blockquote>
+
+
+<p>
+<a name="PF"></a>
+<h2>6.3 - How do I filter and firewall with OpenBSD?</h2>
+Packet Filter (from here on referred to as PF) is OpenBSD's system for
+filtering IP traffic and doing Network Address Translation. PF is
+also capable of normalizing and conditioning IP traffic and
+providing bandwidth control and packet prioritization, and can be used
+to create powerful and flexible firewalls.
+It is described in the <a href="../pf/zh/index.html"><b>PF User's
+Guide</b></a>.
+
+
+<p>
+<a name= "DHCP"></a>
+<h2>6.4 - Dynamic Host Configuration Protocol (DHCP)</h2>
+
+Dynamic Host Configuration Protocol is a way to configure network
+interfaces "automatically".
+OpenBSD can be a DHCP server (configuring other machines), a DHCP client
+(configured by another machine), and in some cases, can be both.
+
+<p>
+<a name="DHCPclient"></a>
+<h3>6.4.1 - DHCP Client</h3>
+
+<p>
+To use the DHCP client
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dhclient&amp;sektion=8">dhclient(8)</a>
+included with OpenBSD, edit <tt>/etc/hostname.xl0</tt> (this is assuming
+your main Ethernet interface is xl0.
+Yours might be ep0 or fxp0 or something else.)
+All you need to put in this hostname file is '<tt>dhcp</tt>':
+
+<blockquote><pre>
+# <b>echo dhcp &gt; /etc/hostname.xl0</b>
+</pre></blockquote>
+
+<p>
+This will cause OpenBSD to automatically start the DHCP client on boot.
+OpenBSD will gather its IP address, default gateway, and DNS servers
+from the DHCP server.
+
+<p>
+If you want to start a DHCP client from the command line, make sure
+<tt>/etc/dhclient.conf</tt> exists, then try:
+
+<blockquote><pre>
+# <b>dhclient fxp0</b>
+</pre></blockquote>
+
+<p>
+Where <tt>fxp0</tt> is the interface on which you want to receive DHCP.
+
+<p>
+No matter how you start the DHCP client, you can edit the
+<tt>/etc/dhclient.conf</tt> file to <b>not</b> update your DNS according to the
+dhcp server's idea of DNS by first uncommenting the 'request' lines in
+it (they are examples of the default settings, but you need to uncomment
+them to override dhclient's defaults.)
+
+<blockquote><pre>
+request subnet-mask, broadcast-address, time-offset, routers,
+      domain-name, domain-name-servers, host-name, lpr-servers, ntp-servers;
+</pre></blockquote>
+
+<p>
+and then remove <tt>domain-name-servers</tt>.
+Of course, you may want to remove <tt>hostname</tt>, or other settings
+too.
+
+<p>
+By changing options in your
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dhclient.conf&amp;sektion=5">
+dhclient.conf(5)</a>
+file, you're telling the DHCP client how to build your
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=resolv.conf&amp;sektion=5">resolv.conf(5)</a>
+file.
+The DHCP client overrides any information you already have in
+resolv.conf(5) with the information it retrieves from the DHCP server.
+Therefore, you'll lose any changes you made manually to resolv.conf.
+
+<p>
+There are two mechanisms available to prevent this:
+
+<ul>
+<li>
+<tt><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dhclient.conf&amp;sektion=5#OPTION+MODIFIERS">OPTION
+MODIFIERS</a></tt>
+(<b>default</b>, <b>supersede</b>, <b>prepend</b>, and <b>append</b>)
+allow you to override any of the options in dhclient.conf(5).
+
+<li>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=resolv.conf.tail&amp;sektion=5"><tt>resolv.conf.tail(5)</tt></a>
+allows you to append anything you want to the resolv.conf(5) file
+created by dhclient(8).
+</ul>
+
+<p>
+An example would be if you're using DHCP but you want to append
+<tt>lookup file bind</tt> to the resolv.conf(5) created by dhclient(8).
+There is no option for this in <tt>dhclient.conf</tt> so you must use
+<tt>resolv.conf.tail</tt> to preserve this.
+
+<blockquote><pre>
+# <b>echo "lookup file bind" &gt /etc/resolv.conf.tail</b>
+</pre></blockquote>
+
+Now your resolv.conf(5) should include "lookup file bind" at the end.
+<blockquote><pre>
+nameserver 192.168.1.1
+nameserver 192.168.1.2
+lookup file bind
+</pre></blockquote>
+
+<p>
+<a name="DHCPserver"></a>
+<h3>6.4.2 - DHCP Server</h3>
+
+<p>
+If you want to use OpenBSD as a DHCP server
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dhcpd&amp;sektion=8">dhcpd(8)</a>,
+edit <tt>/etc/rc.conf.local</tt> so that it contains the line <tt>dhcpd_flags=""</tt>.
+Put the interfaces that you want
+dhcpd to <b>listen</b> on in <tt>/etc/dhcpd.interfaces</tt>.
+
+<pre>
+     # <b>echo xl1 xl2 xl3 &gt;/etc/dhcpd.interfaces</b>
+</pre>
+
+<p>
+Then, edit <tt>/etc/dhcpd.conf</tt>.
+The options are pretty self-explanatory.
+
+<pre>
+        option  domain-name "example.com";
+        option  domain-name-servers 192.168.1.3, 192.168.1.5;
+
+        subnet 192.168.1.0 netmask 255.255.255.0 {
+                option routers 192.168.1.1;
+
+                range 192.168.1.32 192.168.1.127;
+        }
+</pre>
+
+<p>
+This will tell your DHCP clients that the domain to append to DNS
+requests is example.com (so, if the user types in 'telnet joe' then it
+will send them to joe.example.com).  It will point them to DNS servers
+192.168.1.3 and 192.168.1.5.  For hosts that are on the same network as
+an Ethernet interface on the OpenBSD machine, which is in the
+192.168.1.0/24 range, it will assign them an IP address between
+192.168.1.32 and 192.168.1.127.  It will set their default gateway as
+192.168.1.1.
+
+<p>
+If you want to start dhcpd(8) from the command line, after editing
+<tt>/etc/dhcpd.conf</tt>, try:
+
+<pre>
+     # <b>touch /var/db/dhcpd.leases</b>
+     # <b>dhcpd fxp0</b>
+</pre>
+
+<p>
+The <tt>touch</tt> line is needed to create an empty
+<tt>dhcpd.leases</tt> file before dhcpd(8) can start.
+The OpenBSD <a href="../faq10.html#rc">startup scripts</a> will create this
+file if needed on boot, but if you are starting dhcpd(8) manually,
+you must create it first.
+<tt>fxp0</tt> is an interface that you want to start serving DHCP on.
+
+<p>
+If you are serving DHCP to a Windows box, you may want dhcpd(8) to give
+the client a 'WINS' server address.  To make this happen, just add the
+following line to your <tt>/etc/dhcpd.conf</tt>:
+
+<pre>
+     option    netbios-name-servers    192.168.92.55;
+</pre>
+
+<p>
+(where <tt>192.168.92.55</tt> is the IP of your Windows or Samba
+server.) See
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dhcp-options&amp;sektion=5">dhcp-options(5)</a>
+for more options that your DHCP clients may want.
+
+
+<p>
+<a name="PPP"></a>
+<h2>6.5 - PPP </h2>
+
+<p>
+The Point to Point Protocol (PPP) is generally what is used to create a
+connection to your ISP via a dial-up modem. OpenBSD has 2 ways of doing this:
+
+<ul>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pppd&amp;sektion=8">pppd(8)</a>
+ - the kernel PPP daemon
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ppp&amp;sektion=8">ppp(8)</a>
+ - the userland PPP daemon
+</ul>
+
+<p>
+Both ppp and pppd perform similar functions, in different ways.
+pppd works with the kernel
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ppp&amp;sektion=4">ppp(4)</a>
+driver, whereas ppp works in userland with
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tun&amp;sektion=4">tun(4)</a>.
+This document will cover only the userland PPP daemon, since it is
+easier to debug and to interact with. To start
+off you will need some simple information about your ISP. Here is a list
+of helpful information that you will need.
+
+<ul>
+<li>Your ISP's dial-up number
+<li>Your nameserver
+<li>Your username and password
+<li>Your gateway
+</ul>
+
+<p>
+Some of these you can do without, but would be helpful in setting up
+ppp. The userland PPP daemon uses the file
+<a href="http://www.openbsd.org/cgi-bin/cvsweb/src/etc/ppp/ppp.conf.sample">/etc/ppp/ppp.conf</a>
+as its configuration file. There are many helpful files in
+<i>/etc/ppp</i> that can have different setups for many different
+situations. You should take a browse through that directory.
+
+<p>
+<h3>Initial Setup - for PPP(8)</h3>
+
+<p>
+Initial Setup for the userland PPP daemon consists of editing your
+<i>/etc/ppp/ppp.conf</i> file. This file doesn't exist by default, but
+there is a file <i>/etc/ppp/ppp.conf.sample</i> which you can simply
+edit to create your own <i>ppp.conf</i> file. Here I will start with the
+simplest and probably most used setup.  Here is a quick
+<i>ppp.conf</i> file that simply sets some defaults:
+
+<blockquote><pre>
+default:
+set log Phase Chat LCP IPCP CCP tun command
+set device /dev/cua01
+set speed 115200
+set dial "ABORT BUSY ABORT NO\\sCARRIER TIMEOUT 5 \"\" AT OK-AT-OK ATE1Q0 OK \\dATDT\\T TIMEOUT 40 CONNECT"
+</pre></blockquote>
+
+<p>
+The section under the <tt>default:</tt> tag gets executed each time.
+Here we set up all our critical information. With &quot;set
+log&quot; we set our logging levels. This can be changed: refer to
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ppp&amp;sektion=8">ppp(8)</a>
+for more info on setting up logging levels. Our device gets set with
+&quot;set device&quot;. This is the device that the modem is on. In this
+example the modem is on com port 2. Therefore com port 1 would be
+<i>/dev/cua00</i>. With &quot;set speed&quot; we set the speed of our
+dial-up connection and with &quot;set dial&quot; we set our dial-up
+parameters. With this we can change our timeout time, etc. This line
+should stay pretty much as it is though.
+
+<p>
+Now we can move on and set up information specific to our ISP. We do
+this by adding another tag under our <tt>default:</tt> section. This tag
+can be called anything you want - easiest to just use the name of your
+ISP.  Here I will use <tt>myisp:</tt> as our tag referring to our ISP.
+Here is a simple setup incorporating all we need to get ourselves
+connected:
+
+<blockquote><pre>
+myisp:
+set phone 1234567
+set login "ABORT NO\\sCARRIER TIMEOUT 5 ogin:--ogin: ppp word: ppp"
+set timeout 120
+set ifaddr 10.0.0.1/0 10.0.0.2/0 255.255.255.0 0.0.0.0
+add default HISADDR
+enable dns
+</pre></blockquote>
+
+<p>
+Here we have set up essential info for that specific ISP. The first
+option &quot;set phone&quot; sets your ISP's dial-up number. The
+&quot;set login&quot; sets our login options. Here we have the timeout
+set to 5; this means that we will abort our login attempt after 5
+seconds if no carrier is found. Otherwise it will wait for &quot;login:&quot;
+to be sent and send in your username and password.
+
+<p>
+In this example our
+Username = ppp and Password = ppp. These values will need to be changed.
+The line &quot;set timeout&quot; sets the idle timeout for the entire
+connection duration to 120 seconds. The &quot;set ifaddr&quot; line is a
+little tricky. Here is a more extensive explanation.
+
+<blockquote><pre>
+set ifaddr 10.0.0.1/0 10.0.0.2/0 255.255.255.0 0.0.0.0
+</pre></blockquote>
+
+<p>
+In the above line, we have it set in the format of &quot;<b>set ifaddr
+[myaddr[/nn] [hisaddr[/nn] [netmask [triggeraddr]]]]</b>&quot;. So the
+first IP specified is what we want as our IP. If you have a static IP
+address, you set it here. In our example we use /0 which says that no
+bits of this IP address need to match and the whole thing can be
+replaced. The second IP specified is what we expect as their IP. If you
+know this you can specify it. Again in our line we don't know what will
+be assigned, so we let them tell us. The third option is our netmask,
+here set to 255.255.255.0.  If triggeraddr is specified, it is used in
+place of myaddr in the initial IPCP negotiation.  However, only an
+address in the myaddr range will be accepted.  This is useful when
+negotiating with some PPP implementations that will not assign an IP
+number unless their peer requests ``0.0.0.0''.
+
+<p>
+The next option used &quot;add default HISADDR&quot; sets our default
+route to their IP. This is 'sticky', meaning that if their IP should
+change, our route will automatically be updated. With &quot;enable
+dns&quot; we are telling our ISP to authenticate our nameserver
+addresses. Do NOT do this if you are running a local DNS, as ppp will
+simply circumvent its use by entering some nameserver lines in
+<i>/etc/resolv.conf</i>.
+
+<p>
+Instead of traditional login methods, many ISPs now use either CHAP or
+PAP authentication. If this is the case, our configuration will look
+slightly different:
+
+<blockquote><pre>
+myisp:
+set phone 1234567
+set authname ppp
+set authkey ppp
+set login
+set timeout 120
+set ifaddr 10.0.0.1/0 10.0.0.2/0 255.255.255.0 0.0.0.0
+add default HISADDR
+enable dns
+</pre></blockquote>
+
+<p>
+In the above example, we specify our username (ppp) and password (ppp)
+using authname and authkey, respectively. There is no need to specify
+whether CHAP or PAP authentication is used - it will be negotiated
+automatically. "set login" merely specifies to attempt to log in, with
+the username and password previously specified.
+
+<p>
+<h3>Using PPP(8)</h3>
+
+<p>
+Now that we have our <i>ppp.conf</i> file set up we can start trying to
+make a connection to our ISP. I will detail some commonly used arguments
+with ppp:
+
+<ul>
+<li><tt>ppp -auto myisp</tt> - This will run ppp, configure your
+interfaces and connect to your ISP and then go into the background.
+<li><tt>ppp -ddial myisp</tt> - This is similar to -auto, but if your
+connection is dropped it will try and reconnect.
+</ul>
+
+<p>
+If the above fails, try running <i>/usr/sbin/ppp</i> with no options - it
+will run ppp in interactive mode. The options can be specified one by
+one to check for error or other problems. Using the setup specified above,
+ppp will log to /var/log/ppp.log. That log, as well as the man page,
+all contain helpful information.
+
+<p>
+<h3>ppp(8) extras</h3>
+
+<p>
+In some situations you might want commands executed as your connection
+is made or dropped. There are two files you can create for just these
+situations: <i>/etc/ppp/ppp.linkup</i> and <i>/etc/ppp/ppp.linkdown</i>.
+Sample configurations can be viewed here:
+
+<ul>
+<li><a href="http://www.openbsd.org/cgi-bin/cvsweb/src/etc/ppp/ppp.linkup.sample">ppp.linkup</a>
+<li><a href="http://www.openbsd.org/cgi-bin/cvsweb/src/etc/ppp/ppp.linkdown.sample">ppp.linkdown</a>
+</ul>
+
+<p>
+<h3>ppp(8) variations</h3>
+
+<p>
+Many ISPs now offer xDSL services, which are faster than traditional
+dial-up methods. This includes variants such as ADSL and SDSL.
+Although no physical dialling takes place, connection is still based on the
+Point to Point Protocol. Examples include:
+
+<ul>
+<li>PPPoE
+<li>PPPoA
+<li>PPTP
+</ul>
+
+<p>
+<h3>PPPoE/PPPoA</h3>
+
+<p>
+The Point to Point Protocol over Ethernet (PPPoE) is a method for sending
+PPP packets in Ethernet frames.
+The Point to Point Protocol over ATM (PPPoA) is typically run on ATM networks,
+such as those found in the UK and Belgium.
+
+<p>
+Typically this means you can establish a connection with
+your ISP using just a standard Ethernet card and Ethernet-based DSL modem
+(as opposed to a USB-only modem).
+
+<p>
+If you have a modem which speaks PPPoE/PPPoA, it is possible to configure
+the modem to do the connecting. Alternatively, if the modem has a `bridge'
+mode, it is possible to enable this and have the modem "pass through" the
+packets to a machine running PPPoE software (see below).
+
+<p>
+The main software interface to PPPoE/PPPoA on OpenBSD is
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pppoe&amp;sektion=8">pppoe(8)</a>,
+which is a userland implementation (in much the same way that we described
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ppp&amp;sektion=8">ppp(8)</a>,
+above).
+A kernel PPPoE implementation,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pppoe&amp;sektion=4">pppoe(4)</a>,
+has been incorporated into OpenBSD.
+
+<p>
+<h3>PPTP</h3>
+
+<p>
+The Point to Point Tunneling Protocol (PPTP) is a proprietary Microsoft
+protocol.
+A pptp client is available which interfaces with
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pppd&amp;sektion=8">pppd(8)</a>
+and is capable of connecting to the PPTP-based Virtual Private Networks (VPN)
+used by some cable and xDSL providers.
+pptp itself must be installed from <a href="../faq15.html#PkgMgmt">packages</a>
+or <a href="../faq15.html#Ports">ports</a>.
+Further instructions on setting up and using pptp are available in the man page
+which is installed with the pptp package.
+
+<p>
+<a name="Tuning"></a>
+<h2>6.6 - Tuning networking parameters</h2>
+<!-- XXXrelease -->
+
+One goal of OpenBSD is to have the system <i>Just Work</i> for the vast
+majority of our users.
+Twisting knobs you don't understand is far more likely to break your
+system than it is to improve your performance.
+Always start from the default settings, and <i>only</i> adjust things
+you actually see a problem with.
+
+<p>
+<i>VERY FEW people will need to do these things!</i>
+
+<p>
+<h3>6.6.1 - How can I tweak the kernel so that there are a higher number
+of retries and longer timeouts for TCP sessions?</h3>
+
+<p>
+You would normally use this to allow for routing or connection problems.
+Of course, for it to be most effective, both sides of the connection
+need to use similar values.
+
+<p>
+To tweak this, use <tt>sysctl</tt> and increase the values of:
+
+<pre>
+net.inet.tcp.keepinittime
+net.inet.tcp.keepidle
+net.inet.tcp.keepintvl
+</pre>
+
+<p>
+Using sysctl -a, you can see the current values of these (and many
+other) parameters.  To change one, do something like
+<tt>sysctl net.inet.tcp.keepidle=28800</tt>.
+
+<p>
+<h3>6.6.2 - How can I turn on directed broadcasts?</h3>
+
+<p>
+Normally, you don't want to do this.  This allows someone to send
+traffic to the broadcast address(es) of your connected network(s) if you
+are using your OpenBSD box as a router.
+
+<p>
+There are some instances, in closed networks, where this may be useful,
+particularly when using older implementations of the NetBIOS protocol.
+This is another sysctl.
+<tt>sysctl net.inet.ip.directed-broadcast=1</tt> turns this on.  Read
+about <a href="http://www.netscan.org">smurf attacks</a> if you want to
+know why it is off by default.
+
+<p>
+<h3>6.6.3 - I don't want the kernel to dynamically allocate a certain
+port</h3>
+
+<p>
+There is a sysctl for this also.  From
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=8">sysctl(8)</a>:
+
+<pre>
+Set the list of reserved TCP ports that should not be allocated by the
+kernel dynamically.  This can be used to keep daemons from stealing a
+specific port that another program needs to function.  List elements may
+be separated by commas and/or whitespace.
+
+ #  <b>sysctl net.inet.tcp.baddynamic=749,750,751,760,761,871</b>
+
+It is also possible to add or remove ports from the current list.
+
+ #  <b>sysctl net.inet.tcp.baddynamic=+748</b>
+ #  <b>sysctl net.inet.tcp.baddynamic=-871</b>
+</pre>
+
+<p>
+<h3>6.6.4 - How can I increase performance on really high-speed, high
+traffic links?</h3>
+
+If you are seeing performance limitations when using a high-speed WAN
+connection transferring lots of data, you may see a performance gain
+by altering the following sysctls:
+<blockquote><pre>
+net.inet.tcp.recvspace
+net.inet.tcp.sendspace
+</pre></blockquote>
+
+Try a value like 65536 instead of the default of 16384.
+Note that very few will see any benefit from this.
+Don't adjust this unless you are actually seeing performance below what
+you expect.
+
+<p>
+<a name="NFS"></a>
+<h2>6.7 - Simple NFS usage</h2>
+
+<p>
+NFS, or Network File System, is used to share a filesystem over the
+network. A few choice man pages to read before trying to setup a NFS
+server are:
+
+<ul>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=nfsd&amp;sektion=8">nfsd(8)</a>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mountd&amp;sektion=8">mountd(8)</a>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=exports&amp;sektion=5">exports(5)</a>
+</ul>
+
+<p>
+This section will go through the steps for a simple setup of NFS. This
+example details a server on a LAN, with clients accessing NFS on the
+LAN. It does not talk about securing NFS. We presume you have already
+setup packet filtering or other firewalling protection, to prevent
+outside access.  If you are allowing outside access to your NFS server,
+and you have any kind of sensitive data stored on it, we strongly
+recommend that you employ IPsec.  Otherwise, people can potentially see
+your NFS traffic.  Someone could also pretend to be the IP address which
+you are allowing into your NFS server.  There are several attacks that
+can result.  When properly configured, IPsec protects against these
+types of attacks.
+
+<h3>Setting up an NFS Server</h3>
+
+<p>
+These services must be enabled and running on the server:
+
+<ul>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=portmap&amp;sektion=8">portmap(8)</a>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mountd&amp;sektion=8">mountd(8)</a>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=nfsd&amp;sektion=8">nfsd(8)</a>
+</ul>
+
+<p>
+By default each of these is disabled in OpenBSD.
+Add the following lines to
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rc.conf.local&amp;sektion=8"
+>rc.conf.local(8)</a>
+to enable them:
+
+<blockquote><pre>
+portmap=YES
+nfs_server=YES
+</pre></blockquote>
+
+<p>
+The next step is to configure the list of filesystems that will be made
+available for clients to mount.
+
+<p>
+In this example, we have a server with IP address 10.0.0.1.
+This server will be serving NFS only to clients within its own subnet.
+All of this is configured in the /etc/exports file.
+This file lists which filesystems you wish to have accessible via NFS
+and defines who is able to access them.
+There are many options that you can use in /etc/exports; it is best that
+you read the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=exports&amp;sektion=5"
+>exports(5)</a>
+man page.
+For our example server, we've setup an exports file that looks like
+this:
+
+<blockquote><pre>
+#
+# NFS exports Database
+# See exports(5) for more information.  Be very careful, misconfiguration
+# of this file can result in your filesystems being readable by the world.
+/work -alldirs -ro -network=10.0.0 -mask=255.255.255.0
+</pre></blockquote>
+
+<p>
+This means that the local filesystem <tt>/work</tt> will be made
+available via NFS.
+The <tt>-alldirs</tt> option specifies that clients will be able
+to mount at any point under <tt>/work</tt> as well as <tt>/work</tt>
+itself.
+For example, if there was a directory called <tt>/work/monday</tt>,
+clients could mount <tt>/work</tt> (and have access to all
+files/directories underneath that directory) or they could mount
+<tt>/work/monday</tt> and have access to just the files/directories
+contained there.
+The <tt>-ro</tt> option specifies that clients will only be granted
+read-only access.
+The last
+two arguments specify that only clients within the 10.0.0.0 network
+using a netmask of 255.255.255.0 will be authorized to mount this
+filesystem. This is important for some servers that are accessible by
+different networks.
+
+<p>
+Another important security note: don't just add a filesystem to
+/etc/exports without some kind of list of allowed host(s).
+Without a list of hosts which can mount a particular directory, anyone
+who can reach your server will be able to mount your NFS exported
+directories.
+
+<p>
+Now you can start the server services.
+You can either reboot (after enabling them as per the instructions
+above) or run them manually.
+
+<blockquote><pre>
+# <b>/usr/sbin/portmap</b>
+# <b>echo -n &gt;/var/db/mountdtab</b>
+# <b>/sbin/mountd</b>
+# <b>/sbin/nfsd -tun 4</b>
+</pre></blockquote>
+
+<p>
+The arguments passed to nfsd enable TCP (-t) and UDP (-u) connections and
+enable 4 instances (-n) of nfsd to run.
+You should set an appropriate number of NFS server instances to handle the
+maximum number of concurrent client requests that you want to service.
+
+<p>
+You're now ready to mount the exported filesystems from the client(s).
+
+<p>
+Remember: If you make changes to /etc/exports while NFS is already running, you
+need to make mountd aware of this!
+Just HUP mountd and the changes will take affect.
+
+<blockquote><pre>
+# <b>kill -HUP `cat /var/run/mountd.pid`</b>
+</pre></blockquote>
+<h3>Mounting NFS Filesystems</h3>
+
+<p>
+NFS filesystems can be mounted from a client without needing to enable
+any services or daemons.
+They can be mounted just like any other filesystem.
+
+<p>
+NFS filesystems should be mounted via mount(8), or more specifically,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mount_nfs&amp;sektion=8">mount_nfs(8)</a>.
+To mount a filesystem <tt>/work</tt> on host 10.0.0.1 to local filesystem
+<tt>/mnt</tt>, do this (note that you don't need to use an IP address;
+mount will resolve host names):
+
+<blockquote><pre>
+# <b>mount -t nfs 10.0.0.1:/work /mnt</b>
+</pre></blockquote>
+
+<p>
+To have that filesystem mounted at boot, add something like this to
+/etc/fstab:
+
+<blockquote><pre>
+10.0.0.1:/work /mnt nfs rw 0 0
+</pre></blockquote>
+
+<p>
+It is important that you use <tt>0 0</tt> at the end of this line so
+that your computer does not try to fsck the NFS filesystem on boot.
+The other standard security options, such as <tt>noexec</tt>,
+<tt>nodev</tt>, and <tt>nosuid</tt>, should also be used where
+applicable.
+For example:
+
+<blockquote><pre>
+10.0.0.1:/work /mnt nfs rw,nodev,nosuid 0 0
+</pre></blockquote>
+
+<p>
+This way, no devices or setuid programs on the NFS server can subvert
+security measures on the NFS client.
+If you are not mounting programs which you expect to run on the NFS
+client, add noexec to this list.
+
+<p>
+When accessing an NFS mount as the root user, the server automatically
+maps root's access to username "nobody" and group "nobody".
+This is important to know when considering file permissions.
+For example, take a file with these permissions:
+
+<blockquote><pre>
+-rw-------    1 root     wheel           0 Dec 31 03:00 _daily.B20143
+</pre></blockquote>
+
+<p>
+If this file was on an NFS share and the root user tried to access this
+file from the NFS client, access would be denied.
+This is because the server uses the credentials of the user "nobody"
+when root tries to access the file.
+Since the user nobody doesn't have permissions to access the file,
+access is denied.
+
+<p>
+The user and group that root are mapped to are configurable via the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=exports&amp;sektion=5"
+>exports(5)</a>
+file on the NFS server.
+
+<h3>Checking Stats on NFS</h3>
+
+<p>
+One thing to check to ensure NFS is operating properly is that all the
+daemons have properly registered with RPC.
+To do this, use rpcinfo(8).
+
+<blockquote><pre>
+$ <b>rpcinfo -p 10.0.0.1</b>
+   program vers proto   port
+    100000    2   tcp    111  portmapper
+    100000    2   udp    111  portmapper
+    100005    1   udp    633  mountd
+    100005    3   udp    633  mountd
+    100005    1   tcp    916  mountd
+    100005    3   tcp    916  mountd
+    100003    2   udp   2049  nfs
+    100003    3   udp   2049  nfs
+    100003    2   tcp   2049  nfs
+    100003    3   tcp   2049  nfs
+</pre></blockquote>
+
+<p>
+During normal usage, there are a few other utilities that allow you to
+see what is happening with NFS. One is
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=showmount&amp;sektion=8">showmount(8)</a>,
+which allows you to view what is currently mounted and who is mounting
+it. There is also
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=nfsstat&amp;sektion=1"
+>nfsstat(1)</a>
+which shows much more verbose statistics.
+To use showmount(8), try <tt>/usr/bin/showmount -a host</tt>. For
+example:
+
+<blockquote><pre>
+$ <b>/usr/bin/showmount -a 10.0.0.1</b>
+All mount points on 10.0.0.1:
+10.0.0.37:/work
+</pre></blockquote>
+
+<p>
+This output shows that the client 10.0.0.37 has mounted the
+<tt>/work</tt> export being served from the server at 10.0.0.1.
+
+
+
+<a name="Bridge"></a>
+<h2>6.9 - Setting up a network bridge in OpenBSD</h2>
+
+<p>
+A <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridge&amp;sektion=4">bridge</a>
+is a link between two or more separate networks.  Unlike a router,
+packets transfer through the bridge "invisibly" -- logically, the two
+network segments appear to be one segment to nodes on either side of the
+bridge.  The bridge will only forward packets that have to pass from one
+segment to the other, so among other things, they provide an easy way to
+reduce traffic in a complex network and yet allow any node to access any
+other node when needed.
+
+<p>
+Note that because of this "invisible" nature, an interface in a  bridge
+may or may not have an IP address of its own.  If it does, the interface
+has effectively two modes of operation, one as part of a bridge, the
+other as a normal, stand-alone NIC.  If neither interface has an IP
+address, the bridge will pass network data, but will not be externally
+maintainable (which can be a feature).
+
+<p>
+<h3>An example of a bridge application</h3>
+
+<p>
+One of my computer racks has a number of older systems, none of which
+have a built-in 10BASE-TX NIC.  While they all have an AUI or AAUI
+connector, my supply of transceivers is limited to coax.  One of the
+machines on this rack is an OpenBSD-based terminal server which is always
+on and connected to the high-speed network.  Adding a second NIC with a
+coax port will allow me to use this machine as a bridge to the coax
+network.
+
+<p>
+This system has two NICs in it now, an Intel EtherExpress/100
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fxp&amp;sektion=4"><tt>fxp0</tt></a>)
+and a 3c590-Combo card
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ep&amp;sektion=4"><tt>ep0</tt></a>)
+for the coax port.  <tt>fxp0</tt> is the link to the
+rest of my network and will thus have an IP address, <tt>ep0</tt> is
+going to be for bridging only and will have no IP address.
+Machines attached to the coax segment will communicate as if they
+were on the rest of my network.  So, how do we make this happen?
+
+<p>
+The file <tt>hostname.fxp0</tt> contains the configuration info for
+the <tt>fxp0</tt> card.  This machine is set up using DHCP, so its file
+looks like this:
+
+<blockquote><pre>
+$ <b>cat /etc/hostname.fxp0</b>
+dhcp NONE NONE NONE
+</pre></blockquote>
+
+<p>
+No surprises here.
+
+<p>
+The <tt>ep0</tt> card is a bit different, as you might guess:
+
+<blockquote><pre>
+$ <b>cat /etc/hostname.ep0</b>
+up media 10base2
+</pre></blockquote>
+
+<p>
+Here, we are instructing the system to activate this interface using
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8">ifconfig(8)</a>
+and set it to 10BASE-2 (coax).  No IP address or similar information
+needs to be specified for this interface.  The options the <tt>ep</tt>
+card accepts are detailed in its
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ep&amp;sektion=4">man page</a>.
+
+<p>
+Now, we need to set up the bridge.  Bridges are initialized by the
+existence of a file named something like
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridgename.if&amp;sektion=5"><tt>bridgename.bridge0</tt></a>.
+Here is an example for my situation here:
+
+<blockquote><pre>
+$ <b>cat /etc/bridgename.bridge0</b>
+add fxp0
+add ep0
+up
+</pre></blockquote>
+
+<p>
+This is saying set up a bridge consisting of the two NICs, fxp0 and ep0,
+and activate it.  Does it matter which order the cards are listed?  No,
+remember a bridge is very symmetrical -- packets flow in and out in both
+directions.
+
+<p>
+That's it!  Reboot, and you now have a functioning bridge.
+
+<p>
+<h3>Filtering on a bridge</h3>
+
+While there are certainly uses for a simple bridge like this, it is
+likely you might want to DO something with the packets as they go
+through your bridge.  As you might expect, <a href="#PF">Packet
+Filter</a> can be used to restrict what traffic goes through your
+bridge.
+
+<p>
+Keep in mind, by the nature of a bridge, the same data flows through
+both interfaces, so you only need to filter on one interface.  Your
+default "Pass all" statements would look something like this:
+
+<blockquote><pre>
+pass in  on ep0  all
+pass out on ep0  all
+pass in  on fxp0 all
+pass out on fxp0 all
+</pre></blockquote>
+
+<p>
+Now, let's say I wish to filter traffic hitting these old machines, I
+want only Web and SSH traffic to reach them.  In this case, we are going
+to let all traffic in and out of the <tt>ep0</tt> interface, but filter on the
+<tt>fxp0</tt> interface, using <tt>keep state</tt> to handle the reply data:
+
+<blockquote><pre>
+# Pass all traffic through ep0
+pass in quick on ep0 all
+pass out quick on ep0 all
+
+# Block fxp0 traffic
+block in  on fxp0 all
+block out on fxp0 all
+
+pass in quick on fxp0 proto tcp from any to any port {22, 80} \
+     flags S/SA keep state
+</pre></blockquote>
+
+<p>
+Note that this rule set will prevent anything but incoming HTTP and SSH
+traffic  from reaching either the bridge machine or any of the other
+nodes "behind" it.  Other results could be had by filtering the other
+interface.
+
+<p>
+To monitor and control the bridge you have created, use the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=brconfig&amp;sektion=8">brconfig(8)</a>
+command, which can also be used to create a bridge after boot.
+
+<p>
+<h3>Tips on bridging</h3>
+
+<ul>
+<li>It is HIGHLY recommended that you filter on only one interface.
+While it is possible to filter on both, you really need to understand
+this very well to do it right.
+
+<li>By using the <i>blocknonip</i> option of
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=brconfig&amp;sektion=8">brconfig(8)</a>
+or in
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridgename.if&amp;sektion=5">bridgename.bridge0</a>,
+you can prevent non-IP traffic (such as IPX or NETBEUI) from slipping
+around your filters.  This may be important in some situations, but you
+should be aware that bridges work for all kinds of traffic, not just IP.
+
+<li>Bridging requires that the NICs be in a "Promiscuous mode" -- they
+listen to ALL network traffic, not just that directed at the interface.
+This will put a higher load on the processor and bus than one might
+expect.  Some NICs don't work properly in this mode, the TI ThunderLAN
+chip
+(<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tl&amp;sektion=4">tl(4)</a>)
+is an example of a chip that won't work as part of a bridge.
+</ul>
+
+<a name="PXE"></a>
+<h2>6.10 - How do I boot using PXE? (i386, amd64)</h2>
+The Preboot Execution Environment, or PXE, is a way to boot a computer
+from the network, rather than from a hard disk, a floppy or a CD-ROM.
+The technology was originally developed by Intel, but is supported
+by most major network card and computer manufacturers now.
+Note that there are several different network boot protocols, PXE is
+relatively recent.
+Traditionally, PXE booting is done using ROMs on the NIC or mainboard
+of the system, but boot floppies are available from various sources
+that will permit PXE booting, as well.
+Many ROMs on older NICs support network booting but do NOT support PXE;
+OpenBSD/i386 or amd64 cannot currently be booted across the network by these.
+
+
+
+<p>
+<h3>How does PXE booting work?</h3>
+First, it is wise to understand how <a href="../faq14.html#Boot386">OpenBSD
+boots</a> on i386 and amd64 platforms.
+Upon starting the boot process, the PXE-capable NIC broadcasts a DHCP
+request over the network.
+The DHCP server will assign the adapter an IP address, and gives it
+the name of a file to be retrieved from a
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tftp&amp;sektion=1"
+>tftp(1)</a> server and executed.
+This file then conducts the rest of the boot process.
+For OpenBSD, the file is
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pxeboot&amp;sektion=8&amp;arch=i386"
+>pxeboot</a>, which takes the place of the standard
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=boot&amp;sektion=8&amp;arch=i386">
+boot(8)</a> file.
+pxeboot(8) is then able to load and execute a kernel (such as
+<tt>bsd</tt> or <a href="../faq4.html#bsd.rd"><tt>bsd.rd</tt></a>) from the
+same tftp(1) server.
+
+<h3>How do I do it?</h3>
+The first and obvious step is you must have a PXE-boot capable computer
+or network adapter.
+Some documentation will indicate all modern NICs and computers are PXE
+capable, but this is clearly not true -- many low cost systems do not
+include PXE ROMs or use an older network boot protocol.
+You also need a properly configured <a href="#DHCP">DHCP</a> and TFTP server.
+
+<p>
+Assuming an OpenBSD machine is the source of the boot files (this is
+NOT required), your DHCP server
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dhcpd.conf&amp;sektion=5">dhcpd.conf</a>
+file will need to have the following line:
+<pre>
+    filename "pxeboot";
+</pre>
+to have the DHCP server offer that file to the booting workstation.
+For example:
+
+<pre>
+    shared-network LOCAL-NET {
+            option  domain-name "example.com";
+            option  domain-name-servers 192.168.1.3, 192.168.1.5;
+
+            subnet 192.168.1.0 netmask 255.255.255.0 {
+                    option routers 192.168.1.1;
+                    <b>filename "pxeboot";</b>
+                    range 192.168.1.32 192.168.1.127;
+                    default-lease-time 86400;
+                    max-lease-time 90000;
+            }
+    }
+</pre>
+
+<p>
+You will also have to activate the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tftpd&amp;sektion=8">tftpd(8)</a>
+daemon.  This is typically done through
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=inetd&amp;sektion=8"
+>inetd(8)</a>.
+The standard OpenBSD install has a sample line in <tt>inetd.conf</tt>
+which will do nicely for you:
+<pre>
+    #tftp  dgram   udp  wait  root  /usr/libexec/tftpd   tftpd -s /tftpboot
+</pre>
+
+which simply needs to have the '#' character removed and send inetd(8) a
+-HUP signal to get it to reload <tt>/etc/inetd.conf</tt>.
+tftpd(8) serves files from a particular directory, in the case of this
+line, that directory is <tt>/tftpboot</tt>, which we will use for this
+example.
+Obviously, this directory needs to be created and populated.
+Typically, you will have only a few files here for PXE booting:
+
+<ul>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pxeboot&amp;sektion=8&amp;arch=i386"
+>pxeboot</a>, the PXE boot loader (serving the same function as
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=boot&amp;sektion=8&amp;arch=i386"
+>boot</a> on a disk-based system).
+<li><a href="../faq4.html#bsd.rd">bsd.rd</a>, the install kernel or <tt>bsd</tt>,
+a customized kernel.
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=boot.conf&amp;sektion=8&amp;arch=i386"
+>/etc/boot.conf</a>, a boot configuration file.
+</ul>
+
+Note that <tt>/etc/boot.conf</tt> is only needed if the kernel you wish to
+boot from is not named <tt>bsd</tt>, or other pxeboot defaults are not
+as you need them (for example, you wish to use a serial console).
+You can test your tftpd(8) server using a
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tftp&amp;sektion=1"
+>tftp(1)</a> client, making sure you can fetch the needed files.
+
+<p>
+When your DHCP and TFTP servers are running, you are ready to try it.
+You will have to activate the PXE boot on your system or network card;
+consult your system documentation.
+Once you have it set, you should see something similar to the following:
+
+<pre>
+    Intel UNDI, PXE-2.0 (build 067)
+    Copyright (C) 1997,1998 Intel Corporation
+
+    For Realtek RTL 8139(X) PCI Fast Ethernet Controller v1.00 (990420)
+
+    DHCP MAC ADDR: 00 E0 C5 C8 CF E1
+    CLIENT IP: 192.168.1.76  MASK: 255.255.255.0  DHCP IP: 192.168.1.252
+    GATEWAY IP: 192.168.1.1
+    probing: pc0 com0 com1 apm pxe![2.1] mem[540k 28m a20=on]
+    disk: hd0*
+    net: mac 00:e0:c5:c8:cf:e1, ip 192.168.1.76, server 192.168.1.252
+    >> OpenBSD/i386 PXEBOOT 1.00
+    boot>
+</pre>
+
+At this point, you have the standard OpenBSD boot prompt.
+If you simply type "<tt>bsd.rd</tt>" here, you will then fetch the
+file <tt>bsd.rd</tt> from the TFTP server.
+
+<pre>
+    >> OpenBSD/i386 PXEBOOT 1.00
+    boot> bsd.rd
+    booting tftp:bsd.rd: 4375152+733120 [58+122112+105468]=0x516d04
+    entry point at 0x100120
+
+    Copyright (c) 1982, 1986, 1989, 1991, 1993
+            The Regents of the University of California.  All rights reserved.
+
+    Copyright (c) 1995-2007 OpenBSD.  All rights reserved.  http://www.OpenBSD.org
+
+    OpenBSD 4.2 (RAMDISK_CD) #468: Tue Aug 28 11:02:17 MDT 2007
+      ...
+</pre>
+
+The <a href="../faq4.html#bsd.rd">bsd.rd install kernel</a> will now boot.
+
+<p>
+
+<h3>Can I boot other kinds of kernels using PXE other than
+<tt>bsd.rd</tt>?</h3>
+
+Yes, although with the tools currently in OpenBSD, PXE booting is
+primarily intended for installing the OS.
+
+
+<a name="CARP"></a>
+<h2>6.11 - The Common Address Redundancy Protocol (CARP)</h2>
+<h3>6.11.1 - What is CARP and how does it work?</h3>
+<!-- This article written by Sunny Raspet, slr@mordac.info, and
+released under the BSD license -->
+
+<p>
+CARP is a tool to help achieve system redundancy, by having multiple
+computers creating a single, virtual network interface between them,
+so that if any machine fails, another can respond instead, and/or
+allowing a degree of load sharing between systems.
+CARP is an improvement over the Virtual Router Redundancy Protocol
+(VRRP) standard.
+It was developed after VRRP was deemed to be not free enough because of
+a possibly-overlapping Cisco patent.
+For more information on CARP's origins and the legal issues surrounding
+VRRP, please visit <a href="../../lyrics.html#35">this page</a>.
+
+<p>
+To avoid legal conflicts, Ryan McBride (with help from Michael
+Shalayeff, Marco Pfatschbacher and Markus Friedl) designed CARP to be
+fundamentally different.
+The inclusion of cryptography is the most prominent change, but still
+only one of many.
+
+<p>
+How it works: CARP is a multicast protocol.
+It groups several physical computers together under one or more virtual
+addresses.
+Of these, one system is the master and responds to all packets destined
+for the group, the other systems act as hot spares.
+No matter what the IP and MAC address of the local physical interface,
+packets sent to the CARP address are returned with the CARP information.
+
+<p>
+At configurable intervals, the master advertises its operation on IP
+protocol number 112.
+If the master goes offline, the other systems in the CARP group begin to
+advertise.
+The host that's able to advertise most frequently becomes the new
+master.
+When the main system comes back up, it becomes a back up host by
+default, although if it's more desirable for one host to be master
+whenever possible (e.g. one host is a fast Sun Fire V120 and the
+others are comparatively slow SPARCstation IPCs), you can so configure
+them.
+
+<p>
+While highly redundant and fault-tolerant hardware minimizes the need
+for CARP, it doesn't erase it.
+There's no hardware fault tolerance that's capable of helping if someone
+knocks out a power cord, or if your system administrator types
+<tt>reboot</tt> in the wrong window.
+CARP also makes it easier to make the patch and reboot cycle transparent
+to users, and easier to test a software or hardware upgrade--if it
+doesn't work, you can fall back to your spare until fixed.
+
+<p>There are, however, situations in which CARP won't help.
+CARP's design does require that the members of a group be on the same
+physical subnet with a static IP address, although with the introduction
+of the carpdev directive, there is no more need for IP addresses on the
+physical interfaces.
+Similarly, services that require a constant connection to the server
+(such as SSH or IRC) will not be transparently transferred to the other
+system--though in this case, CARP can help with minimizing downtime.
+CARP by itself does not synchronize data between applications, this has
+to be done through "alternative channels" such as
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfsync&amp;sektion=4">pfsync(4)</a>
+(for redundant filtering), manually duplicating data between boxes with
+<a href="http://rsync.samba.org/">rsync</a>, or whatever is appropriate
+for your application.
+
+
+
+<h3>6.11.2 - Configuration</h3>
+
+<p>
+CARP's controls are located in two places:
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=8">sysctl(8)</a>
+and
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8">ifconfig(8)</a>.
+Let's look at the sysctls first.
+
+<p>The first sysctl, <tt>net.inet.carp.allow</tt>, defines whether the
+host handles CARP packets at all.
+Clearly, this is necessary to use CARP.
+This sysctl is enabled by default.
+
+<p>
+The second, <tt>net.inet.carp.arpbalance</tt>, is used for load
+balancing.
+If this feature is enabled, CARP source-hashes the originating IP of a
+request.
+The hash is then used to select a virtual host from the available pool
+to handle the request.
+This is disabled by default.
+
+<p>The third, <tt>net.inet.carp.log</tt>, logs CARP errors.
+Disabled by default.
+
+<p>Fourth, <tt>net.inet.carp.preempt</tt> enables natural selection
+among CARP hosts.
+The most fit for the job (that is to say, able to advertise most
+frequently) will become master.
+Disabled by default, meaning a system that is not a master will
+not attempt to (re)gain master status.
+
+<p>
+All these sysctl variables are documented in
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=3">sysctl(3)</a>.
+
+<p>For the remainder of CARP's configuration, we rely on
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8">ifconfig(8)</a>.
+The CARP-specific commands <tt>advbase</tt> and
+<tt>advskew</tt> deal with the interval between CARP advertisements.
+The formula (in seconds) is <tt>advskew</tt> divided by 256, then added
+to <tt>advbase</tt>.
+<tt>advbase</tt> can be used to decrease network
+traffic or allow longer latency before a backup host takes over;
+<tt>advskew</tt> lets you control which host will be master without much
+delaying failover (should that be required).
+
+<p>Next, <tt>pass</tt> sets a password, and <tt>vhid</tt> sets the
+virtual host identifier number of the CARP group.
+You need to assign a unique number for each CARP group, even if (for
+load balancing purposes) they share the same IP address.
+CARP is limited to 255 groups.
+
+<p>
+Finally, <tt>carpdev</tt> specifies which physical interface belongs to
+this particular CARP group.
+By default, whichever interface has an IP address in the same subnet
+assigned to the CARP interface will be used.
+
+<p>Let's put all these settings together in a basic configuration.
+Let's say you're deploying two identically configured Web servers,
+<i>rachael</i> (192.168.0.5) and <i>pris</i> (192.168.0.6), to replace
+an older system that was at 192.168.0.7.  The commands:
+
+<blockquote><pre>
+rachael# <b>ifconfig carp0 create</b>
+rachael# <b>ifconfig carp0 vhid 1 pass tyrell carpdev fxp0 \
+&nbsp;&nbsp;&nbsp;&nbsp;192.168.0.7 netmask 255.255.255.0</b>
+</pre></blockquote>
+
+<p>create the carp0 interface and give it a vhid of 1, a password of
+<i>tyrell</i>, and the IP address 192.168.0.7 with mask 255.255.255.0.
+Assign fxp0 as the member interface.
+To make it permanent across reboots, you can create an
+<tt>/etc/hostname.carp0</tt> file that looks like this:
+
+<blockquote><pre>
+inet 192.168.0.7 255.255.255.0 192.168.0.255 vhid 1 pass tyrell carpdev fxp0
+</pre></blockquote>
+
+Note that the broadcast address is specified in that line, in addition
+to the vhid and the password.
+Failing to do this is a common cause of errors, as it is needed as a
+place holder.
+
+<p>
+Do the same on <i>pris</i>. Whichever system brings the CARP interface
+up first will be master (assuming that preempt is disabled; the opposite
+is true when preempt is enabled).
+
+
+<p>
+
+But let's say you're not deploying from scratch.
+<i>Rachael</i> was already in place at the address 192.168.0.7.
+How do you work around that?
+Fortunately, CARP can deal with this situation. You simply assign the
+address to the CARP interface and leave the physical interface specified
+by the `carpdev' keyword without an IP address.
+However, it tends to be cleaner to have an IP for each system--it makes
+individual monitoring and access much simpler.
+
+<p>Let's add another layer of complexity; we want <i>rachael</i> to stay
+master when possible.
+There are several reasons we might want this: hardware differences,
+simple prejudice, "if this system isn't master, there's a problem," or
+knowing the default master without doing scripting to parse and email
+the output of ifconfig.
+
+<p>On <i>rachael</i>, we'll use the sysctl we created above, then edit
+<tt>/etc/sysctl.conf</tt> to make it permanent.
+
+<blockquote><pre>
+rachael# <b>sysctl net.inet.carp.preempt=1</b>
+</pre></blockquote>
+
+<p>We'll do configuration on <i>pris</i>, too:
+
+<blockquote><pre>
+pris# <b>ifconfig carp0 advskew 100</b>
+</pre></blockquote>
+
+<p>This slightly delays <i>pris</i>'s advertisements, meaning
+<i>rachael</i> will be master when alive.
+
+<p>
+Note that if you are using PF on a CARP'd computer, you must pass
+"proto carp" on all involved interfaces, with a line similar to:
+<blockquote><pre>
+pass on fxp0 proto carp keep state
+</pre></blockquote>
+
+<h3>6.11.3 - Load balancing</h3>
+
+<p>Flash forward a few months. Our company of the previous example has
+grown to the point where a single internal Web server is just barely
+managing the load. What to do?  CARP to the rescue.  It's time to try
+load balancing. Create a new CARP interface and group on <i>rachael</i>:
+
+<blockquote><pre>
+rachael# <b>ifconfig carp1 create</b>
+rachael# <b>ifconfig carp1 vhid 2 advskew 100 pass bryant carpdev fxp0 \
+&nbsp;&nbsp;&nbsp;&nbsp;192.168.0.7 netmask 255.255.255.0</b>
+</pre></blockquote>
+
+<p>On <i>pris</i>, we'll create the new group and interface as well, then set
+the "preempt" sysctl:
+
+<blockquote><pre>
+pris# <b>ifconfig carp1 create</b>
+pris# <b>ifconfig carp1 vhid 2 pass bryant carpdev fxp0 \
+&nbsp;&nbsp;&nbsp;&nbsp;192.168.0.7 netmask 255.255.255.0</b>
+pris# <b>sysctl net.inet.carp.preempt=1</b>
+</pre></blockquote>
+
+<p>Now we have two CARP groups with the same IP address.
+Each group is skewed toward a different host, which means <i>rachael</i>
+will stay master of the original group, but <i>pris</i> will take over
+the new one.
+
+<p>All we have to do now is enable the load balancing sysctl we
+discussed previously on both machines:
+
+<blockquote><pre>
+# <b>sysctl net.inet.carp.arpbalance=1</b>
+</pre></blockquote>
+
+<p>While these examples are for a two-machine cluster, the same
+principles apply to more systems.
+Please note, however, that it's not expected that you will achieve
+perfect 50/50 distribution between the two machines--CARP uses a hash of
+the originating IP address to determine which system handles the
+request, rather than by load.
+
+<h3>6.11.4 - More Information on CARP</h3>
+<ul>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=carp&amp;sektion=4">carp(4)</a>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8">ifconfig(8)</a>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=8">sysctl(8)</a>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=3">sysctl(3)</a>
+<li><a href="http://www.countersiege.com/doc/pfsync-carp/">Firewall
+Failover with pfsync and CARP</a> by Ryan McBride
+</ul>
+
+<a name="OpenNTPD"></a>
+<h2>6.12 - Using OpenNTPD</h2>
+Accurate time is important for many computer applications.
+However, many people have noticed that their $5 watch can keep better
+time than their $2000 computer.
+In addition to knowing what time it is, it is also often important to
+synchronize computers so that they all agree on what time it is.
+For some time, <a href="http://www.ntp.org">ntp.org</a> has
+produced a Network Time Protocol
+(<a href="http://www.ietf.org/rfc/rfc1305.txt">RFC1305</a>,
+<a href="http://www.ietf.org/rfc/rfc2030.txt">RFC2030</a>)
+application, available through <a href="../faq15.html#Ports">ports</a>,
+which can be used to synchronize clocks on computers over the Internet.
+However, it is a nontrivial program to set up, difficult code to audit,
+and has a large memory requirement.
+In short, it fills an important role for some people, but it is far
+from a solution for all.
+
+<p>
+<a href="http://www.openntpd.org">OpenNTPD</a> is an attempt to resolve
+some of these problems, making a trivial-to-administer, safe and simple
+NTP compatible way to have accurate time on your computer.
+OpenBSD's
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ntpd&amp;sektion=8">ntpd(8)</a>
+is controlled with an easy to understand configuration file,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ntpd.conf&amp;sektion=5"><tt>/etc/ntpd.conf</tt></a>.
+
+<p>
+Simply activating ntpd(8) through <a href="../faq10.html#rc">rc.conf.local</a>
+will result in your computer's clock slowly moving towards, then keeping
+itself synchronized to, the
+<a href="http://www.pool.ntp.org/">pool.ntp.org</a> servers,
+a collection of publicly available time servers.
+Once your clock is accurately set, ntpd will hold it at a high
+degree of accuracy, however, if your clock is more than a few minutes
+off, it is <i>highly</i> recommended that you bring it to close to
+accurate initially, as it may take days or weeks to bring a very-off
+clock to sync.
+You can do this using the "<tt>-s</tt>" option of ntpd(8) or any other
+way to accurately set your system clock.
+
+<a name="OpenNTPDaccurate"></a>
+<h3>6.12.1 - "But OpenNTPD isn't as accurate as the ntp.org daemon!"</h3>
+That may be true.
+That is not OpenNTPD's
+<a href="http://www.openntpd.org/goals.html">design goal</a>, it is
+intended to be free, simple, reliable and secure.
+If you really need microsecond precision more than the benefits of
+OpenNTPD, feel free to use ntp.org's ntpd, as it will remain available
+through ports and packages.
+There is no plan or desire to have OpenNTPD bloated with every
+imaginable feature.
+
+<a name="OpenNTPDharmful"></a>
+<h3>6.12.2 - "Someone has claimed that OpenNTPD is 'harmful'!"</h3>
+Some people have not understood the goals of OpenNTPD -- a simple,
+secure and easy to maintain way to keep your computer's clock accurate.
+If accurate time keeping is important, a number of users have reported
+better results from OpenNTPD than from ntp.org's ntpd.
+If security is important, OpenNTPD's code is much more readable (and
+thus, auditable) and was written using native OpenBSD function calls
+like
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=strlcpy&amp;sektion=3">strlcpy</a>,
+rather than more portable functions like
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=strcpy&amp;sektion=3">strcpy</a>,
+and written to be secure from the beginning, not "made secure later".
+If having more people using time synchronization is valuable, OpenNTPD
+makes it much easier for larger numbers of people to use it.
+If this is "harmful", we are all for it.
+
+<p>
+There are applications where the ntp.org ntpd is
+more appropriate; however it is felt that for a large majority of the
+users, OpenNTPD is more than sufficient.
+
+<p>
+A more complete response to this by one of the maintainers of OpenNTPD
+can be read
+<a href="http://www.advogato.org/person/dtucker/diary.html?start=52">here</a>.
+
+<a name="OpenNTPDNoServe"></a>
+<h3>6.12.3 - Why can't my other machines synchronize to OpenNTPD?</h3>
+
+ntpd(8) does not listen on any address by default.
+So in order to use it as a server, you have to uncomment the
+"<tt>#listen&nbsp;on&nbsp;*</tt>" line in
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ntpd.conf&amp;sektion=5">/etc/ntpd.conf</a>
+and restart the ntpd(8) daemon.
+Of course, if you wish it to listen on a particular IP address rather
+than all available addresses and interfaces, replace the "*" with
+the desired address.
+
+<p>
+When you have ntpd(8) listening, it may happen that other machines still
+can't synchronize to it!
+A freshly started ntpd(8) daemon (for example, if you just restarted it
+after modifying ntpd.conf) refuses to serve time information to other
+clients until it adjusts its own clock to a reasonable level of
+stability first.
+When ntpd(8) considers its own time information stable, it announces
+it by a "clock now synced" message in <tt>/var/log/daemon</tt>.
+Even if the system clock is pretty accurate in the beginning, it can
+take up to 10 minutes to get in sync, and hours or days if the clock is
+not accurately set at the start.
+
+
+
+<a name="Wireless"></a>
+<h2>6.13 - What are my wireless networking options?</h2>
+OpenBSD has support for a number of wireless chipsets:
+<ul>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=awi&amp;sektion=4">awi(4)</a>
+AMD 802.11 PCnet Mobile.
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=an&amp;sektion=4">an(4)</a>
+Aironet Communications 4500/4800.
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=wi&amp;sektion=4">wi(4)</a>
+Prism2/2.5/3. <sup>(AP)</sup>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=atw&amp;sektion=4">atw(4)</a>
+ADMtek ADM8211.
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ath&amp;sektion=4">ath(4)</a>
+driver for Atheros IEEE 802.11a/b/g. <sup>(AP)</sup>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=iwi&amp;sektion=4">iwi(4)</a>
+Intel PRO/Wireless 2200BG/2225BG/2915ABG IEEE 802.11a/b/g. <sup>(NFF)</sup>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ipw&amp;sektion=4">ipw(4)</a>
+Intel PRO/Wireless 2100 IEEE 802.11b. <sup>(NFF)</sup>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=atu&amp;sektion=4">atu(4)</a>
+Atmel AT76C50x USB IEEE 802.11b.
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ral&amp;sektion=4">ral(4)</a>
+and <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ural&amp;sektion=4">ural(4)</a> [USB]
+Ralink Technology RT25x0 IEEE 802.11a/b/g. <sup>(AP)</sup>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rtw&amp;sektion=4">rtw(4)</a>
+Realtek 8180 IEEE 802.11b. <sup>(AP)</sup>
+
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=acx&amp;sektion=4">acx(4)</a>
+TI ACX100/ACX111. <sup>(NFF) (AP)</sup>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pgt&amp;sektion=4">pgt(4)</a>
+Conexant/Intersil Prism GT Full-MAC. <sup>(NFF) (AP)</sup>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rum&amp;sektion=4">rum(4)</a>
+Ralink Technology RT2501USB. <sup>(AP)</sup>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=wpi&amp;sektion=4">wpi(4)</a>
+Intel PRO/Wireless 3945ABG. <sup>(NFF)</sup>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=uath&amp;sektion=4">uath(4)</a>
+Atheros AR5005UG/AR5005UX USB2.0 (work-in-progress). <sup>(NFF)</sup>
+
+</ul>
+
+<sup>(AP)</sup> indicates card can be used as an access point.<br>
+<sup>(NFF)</sup> indicates chip requires a non-free firmware which can
+not be included with OpenBSD.
+
+<p>
+Adapters based on these chips can be used much like any other network
+adapter to connect an OpenBSD system to an existing wireless network,
+configured using the standard
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8">ifconfig(8)</a>
+(please see the manual pages for precise details).
+Some of these cards can also be used in the
+"Host-Based Access Point" mode, permitting them to be made into the
+wireless access point for your network as part of your firewall.
+
+<p>
+Note that in order to use some of these cards, you will need to acquire
+the firmware files, which the manufacturers refuse to allow
+<a href="faq1.html#ReallyFree">free</a> distribution of, so they can not
+be included with OpenBSD.
+When possible, the man pages linked above include contact information so
+you can contact the right people at the manufacturers to let them know
+what you feel about this, or to let them know what other product you
+have purchased instead.
+
+<p>
+Another option to consider for using your OpenBSD-based firewall to
+provide wireless access is to use a conventional NIC and an external
+bridging Access Point.
+This has the added advantage of letting you easily position the antenna
+where it is most effective, which is often not directly on the back of
+your firewall.
+
+
+<a name="Multipath"></a>
+<h2>6.14 - How can I do equal-cost multipath routing?</h2>
+
+<p>
+Equal-cost multipath routing refers to having multiple routes in
+the routing table for the same network, such as the default route,
+0.0.0.0/0.
+When the kernel is doing a route lookup to determine where to send
+packets destined to that network, it can choose from any of the
+equal-cost routes.
+In most scenarios, multipath routing is used to provide redundant uplink
+connections, e.g., redundant connections to the Internet.
+
+<p>
+The
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=route&amp;sektion=8">route(8)</a>
+command is used to add/change/delete routes in the routing table.
+The <tt>-mpath</tt> argument is used when adding multipath routes.
+
+<blockquote><pre>
+# <b>route add -mpath default 10.130.128.1</b>
+# <b>route add -mpath default 10.132.0.1</b>
+</pre></blockquote>
+
+<p>
+Verify the routes:
+
+<blockquote><pre>
+# <b>netstat -rnf inet | grep default</b>
+default     10.130.128.1      UGS       2      134      -     fxp1
+default     10.132.0.1        UGS       0      172      -     fxp2
+</pre></blockquote>
+
+<p>
+In this example we can see that one default route points to 10.130.128.1
+which is accessible via the fxp1 interface, and the other points
+to 10.132.0.1 which is accessible via fxp2.
+
+<p>
+Since the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mygate&amp;sektion=5"
+>mygate(5)</a> file does not yet support multipath default routes, the
+above commands should be added to the bottom of the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hostname.if&amp;sektion=5"
+>hostname.if(5)</a> files for the fxp1 and fxp2 interfaces.
+The <tt>/etc/mygate</tt> file should then be deleted.
+
+<dl>
+<dt><b>/etc/hostname.fxp1</b></dt>
+<dd><tt>!route add -mpath default 10.130.128.1</tt></dd>
+<dt><b>/etc/hostname.fxp2</b></dt>
+<dd><tt>!route add -mpath default 10.132.0.1</tt></dd>
+</dl>
+
+<p>
+Lastly, don't forget to activate the use of multipath routes by enabling the
+proper sysctl(3) variable.
+
+<blockquote><pre>
+# <b>sysctl net.inet.ip.multipath=1</b>
+# <b>sysctl net.inet6.ip6.multipath=1</b>
+</pre></blockquote>
+
+<p>
+Be sure to edit
+<a
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl.conf&amp;sektion=5"
+>sysctl.conf(5)</a>
+to make the changes permanent.
+
+<p>
+Now try a traceroute to different destinations.
+The kernel will load balance the traffic over each multipath route.
+
+<blockquote><pre>
+# <b>traceroute -n 154.11.0.4</b>
+traceroute to 154.11.0.4 (154.11.0.4), 64 hops max, 60 byte packets
+ 1  10.130.128.1  19.337 ms  18.194 ms  18.849 ms
+ 2  154.11.95.170  17.642 ms  18.176 ms  17.731 ms
+ 3  154.11.5.33  110.486 ms  19.478 ms  100.949 ms
+ 4  154.11.0.4  32.772 ms  33.534 ms  32.835 ms
+
+# <b>traceroute -n 154.11.0.5</b>
+traceroute to 154.11.0.5 (154.11.0.5), 64 hops max, 60 byte packets
+ 1  10.132.0.1  14.175 ms  14.503 ms  14.58 ms
+ 2  154.11.95.38  13.664 ms  13.962 ms  13.445 ms
+ 3  208.38.16.151  13.964 ms  13.347 ms  13.788 ms
+ 4  154.11.0.5  30.177 ms  30.95 ms  30.593 ms
+</pre></blockquote>
+
+<p>
+For more information about how the route is chosen, please refer to
+<a href="http://www.ietf.org/rfc/rfc2992.txt">RFC2992</a>, "Analysis of an
+Equal-Cost Multi-Path Algorithm".
+
+<p>
+It's worth noting that if an interface used by a multipath route goes
+down (i.e., loses carrier), the kernel will still try to
+forward packets using the route that points to that interface.
+This traffic will of course be blackholed and end up going nowhere.
+It's highly recommended to use
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifstated&amp;sektion=8"
+>ifstated(8)</a> to check for unavailable interfaces and adjust the routing
+table accordingly.
+
+
+<p>
+<font color="#0000e0">
+<a href="index.html">[FAQ Index]</a>
+<a href="../faq5.html">[To Section 5 - Building the System from Source]</a>
+<a href="../faq7.html">[To Section 7 - Keyboard and Display Controls]</a>
+</font>
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a>
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>$OpenBSD: faq6.html,v 1.1 2008/04/28 09:28:07 tobias Exp $</small>
+
+</body>
+</html>
+<!--
+Originally [OpenBSD: faq6.html,v 1.266]<br>
+$Translation: faq6.html,v 1.2 2008/04/20 07:55:51 dongsheng Exp $<br>
+-->
