@@ -7,7 +7,7 @@
 <meta name= "description"   content= "the OpenBSD FAQ page">
 <meta name= "keywords"      content= "openbsd,faq">
 <meta name= "distribution"  content= "global">
-<meta name= "copyright"     content= "This document copyright 1998-2007 by OpenBSD.">
+<meta name= "copyright"     content= "This document copyright 1998-2008 by OpenBSD.">
 <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
 </head>
 
@@ -930,9 +930,9 @@ entry point at 0x100120
 [ using 386464 bytes of bsd ELF symbol table ]
 Copyright (c) 1982, 1986, 1989, 1991, 1993       <b><i>&lt;- Kernel</i></b>
         The Regents of the University of California.  All rights reserved.
-Copyright (c) 1995-2007 OpenBSD.  All rights reserved.  http://www.OpenBSD.org
+Copyright (c) 1995-2008 OpenBSD.  All rights reserved.  http://www.OpenBSD.org
 
-OpenBSD 4.2 (GENERIC) #375: Tue Aug 28 10:38:44 MDT 2007
+OpenBSD 4.3 (GENERIC) #698: Wed Mar 12 11:07:05 MDT 2008
     deraadt@i386.openbsd.org:/usr/src/sys/arch/i386/compile/GENERIC
    ...
 </pre></blockquote>
@@ -1021,20 +1021,18 @@ For more information on the i386 boot process, see:
 <h2>14.7 - What are the issues regarding large drives with OpenBSD?</h2>
 
 <p>
-OpenBSD supports an individual file system of up to
-2<sup>31</sup>-1, or 2,147,483,647 sectors, and as each
-sector is 512 bytes, that's a tiny amount less than 1T.
-
-<p>
-There is also a 1T limit on the size of the physical disk, although
-under *some* circumstances, that may not cause you problems up to 2T,
-although this is <b>not</b> guaranteed.
+OpenBSD supports both FFS and FFS2 (also known as UFS and
+UFS2) file systems.
+FFS is the historic OpenBSD file system, FFS2 is new as of 4.3.
+Before looking at the limits of each system, we need to look at some
+more general system limits.
 
 <p>
 Of course, the ability of file system and the abilities of particular
 hardware are two different things.
 A new 250G IDE hard disk may have issues on older (pre >137G
-standards) interfaces, and some very old SCSI adapters have been seen to
+standards) interfaces (though for the most part, they work just fine),
+and some very old SCSI adapters have been seen to
 have problems with more modern drives, and some older BIOSs will hang
 when they encounter a modern sized hard disk.
 You must respect the abilities of your hardware, of course.
@@ -1055,7 +1053,7 @@ It is worth noting that many relatively new computers which support
 larger than 128G drives actually have BIOS limitations of booting 
 only from within the first 128G.
 You can use these systems with large drives, but your root partition
-must be within the first 128G.
+must be within the space supported by the boot ROM.
  
 <p>
 Note that it is possible to install a 40G drive on an old 486 and load
@@ -1081,7 +1079,7 @@ system hung.
 
 <p>
 To get OpenBSD to boot, the boot loaders (biosboot(8) and <tt>/boot</tt>
-in the case of i386) and the kernel (<tt>/bsd</tt>) must be within the
+in the case of i386/amd64) and the kernel (<tt>/bsd</tt>) must be within the
 boot ROM's supported range, and within their own abilities.
 To play it safe, the rule is simple:
 
@@ -1109,13 +1107,57 @@ A rough guideline is the system should have at least 1M of available
 memory for every 1G of disk space to successfully fsck the disk.
 Swap can be used here, but at a very significant performance penalty,
 so severe that it is usually unacceptable, except in special cases. 
+
+<p>
 The time required to fsck the drive may become a problem as the file
 system size expands, but you only have to fsck the disk space that is 
 actually allocated to mounted filesystems.
+This is another reason NOT to allocate all your disk space Just Because
+It Is There.
+Keeping file systems mounted RO or not mounted helps keep them from
+needing to be fsck(8)ed after tripping over the power cord.
+
+<p>
 Don't forget that if you have multiple disks on the system, they could
 all end up being fsck(8)ed after a crash at the same time, so they could
 require more RAM than a single disk.
 
+<p>
+By the time one gets to a 2TB file system with default fragment and
+block sizes, fsck will require 1GB RAM to run, which is the application
+limit under OpenBSD.
+Larger fragments and/or blocks will reduce the number of inodes, and
+allow for larger file systems.
+
+<h3>FFS vs. FFS2</h3>
+Using FFS, OpenBSD supports an individual file system of up to
+2<sup>31</sup>-1, or 2,147,483,647 sectors, and as each sector is 512
+bytes, that's a tiny amount less than 1T.
+FFS2 is capable of much larger file systems, though other limits will be
+reached long before the file system limits will be reached.
+
+<p>
+The boot/installation kernels <i>only support FFS</i>, not FFS2, so key
+system partitions (<tt>/, /usr, /var, /tmp</tt>) should not be FFS2, or
+severe maintenance problems can arise (there should be no reason for
+those partitions to be that large, anyway).
+For this reason, very large partitions should only be used for
+"non-system" partitions, for example, <tt>/home, /var/www/,
+/bigarray</tt>, etc.
+
+<p>
+Before doing upgrades, you will want to mark any FFS2 partitions as
+"noauto" to keep them from being (mis)handled by the install kernel
+(which does not support FFS2 partitions).
+
+<p>
+Note that not all controllers and drivers support large disks.
+For example,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ami&amp;sektion=4">ami(4)</a>
+has a limit of 2TB per logical volume.
+Many have just not been tested yet, for example, as of this writing,
+three are no >1TB IDE or SATA drives available for testing, so we
+can't say for sure everything works perfectly yet.
 
 <a name="InstBoot"></a>
 <h2>14.8 - Installing Bootblocks - i386/amd64 specific</h2>
@@ -1504,7 +1546,7 @@ mode as opposed to read only. Issue the following command:
 
 <li>
 <p>
-Once you have remounted in r/w mode you can continue restoring your
+Once you have re-mounted in r/w mode you can continue restoring your
 other file systems. Example:
 
 <blockquote><pre>
@@ -2371,7 +2413,7 @@ they will get wiped and recreated on a reboot anyway.
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq14.html,v 1.169 2008/04/20 15:40:08 nick Exp $</small>
+<small>$OpenBSD: faq14.html,v 1.170 2008/04/30 21:24:58 nick Exp $</small>
 
 </body>
 </html>
