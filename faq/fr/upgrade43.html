@@ -1,0 +1,648 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>Guide de mise à niveau d'OpenBSD 4.3</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description"   content="OpenBSD Upgrade Process for 4.2 -> 4.3">
+<meta name="keywords"      content="openbsd,faq,upgrade,4.3"> 
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 2008 by OpenBSD">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<a href="../../fr/index.html">
+<img alt="[OpenBSD]" height=30 width=141 src="../../images/smalltitle.gif" border="0">    
+</a>
+<p>
+<font color="#0000e0">
+<a href="upgrade35.html">[3.4 -> 3.5]</a> |
+<a href="upgrade36.html">[3.5 -> 3.6]</a> |
+<a href="upgrade37.html">[3.6 -> 3.7]</a> |
+<a href="upgrade38.html">[3.7 -> 3.8]</a> |
+<a href="upgrade39.html">[3.8 -> 3.9]</a> |
+<a href="upgrade40.html">[3.9 -> 4.0]</a> |
+<a href="upgrade41.html">[4.0 -> 4.1]</a> |
+<a href="upgrade42.html">[4.1 -> 4.2]</a> |
+<a href="index.html">[FAQ Index]</a>
+</font>
+
+<h1><font color="#e00000">Guide de Mise à niveau : 4.2 vers 4.3</font></h1>
+<hr>
+
+<i>Remarque : Les mises à niveau ne sont supportées que d'une release à
+la suivante.
+Ne sautez pas les releases.</i>
+
+<p><i>
+Il est hautement recommandé de lire entièrement la présente page et de
+bien comprendre la procédure de mise à jour avant de l'appliquer.
+Si vous comptez mettre à jour une machine critique ou physiquement
+distante, il est recommandé d'essayer la procédure ci-après sur un
+système local d'abord afin d'en vérifier le succès.
+</i>
+
+<p>
+La mise à niveau est un moyen commode afin d'avoir votre système à jour
+avec la version la plus récente.
+Cependant, les résultats escomptés ne sont pas censés être précisément
+ceux d'une installation de zéro.
+Les fichiers d'anciennes bibliothèques en particulier ne sont pas
+supprimés lors du processus de mise à niveau, car ils pourraient être
+requis par de plus anciennes applications pouvant être ou non mises à
+jour à ce moment précis.
+Si vous voulez VRAIMENT vous débarrasser de ces anciens fichiers, vous
+feriez probablement mieux de réinstaller complètement votre système.
+
+<p>
+Table des matières :
+<ul>
+<li><a href="#before">Avant de mettre à jour</a>
+  <ul>
+  <li><a href="#libexpat">libexpat a été déplacé dans base43.tgz</a>
+  <li><a href="#httpd.conf">Modification de httpd.conf</a>
+  <li><a href="#relayd">hoststated(8) renommé en relayd(8)</a>
+  <li><a href="#carp">Changements de carp(4)</a>
+  <li><a href="#xenocaramove">L'emplacement de l'arbre par défaut de xenocara a changé</a>
+  <li><a href="#rc.conf">rc.conf</a>
+  <li><a href="#kern">Noyau modifié</a>
+  </ul>
+<li><a href="#upgrade">Procédure de mise à jour</a>
+<li><a href="#final">Etapes finales</a>
+  <ul>
+  <li><a href="#etcUpgrade">Mise à jour de <tt>/etc</tt></a>
+  <li><a href="#Kernchk">Vérification du noyau</a>
+  <li><a href="#Pkgup">Mise à jour des paquetages</a>
+  <li><a href="#rmxbase42">Suppression de xbase42.tgz</a>
+  </ul> 
+</ul>
+
+<hr>
+<p>
+<a name="before"></a>
+<h2>Avant de mettre à jour : Les éléments à savoir et dont il faut être
+    conscient</h2>
+Ceci n'est <i>pas</i> une liste complète des modifications qui ont été
+effectuées depuis la version 4.2 jusqu'à la version 4.3, mais plutôt un
+ensemble des éléments importants qui devraient impacter un grand nombre
+d'utilisateurs durant le processus de mise à jour.
+Pour une liste plus exhaustive de ces modifications, veuillez prendre
+connaissance de <a href="../../plus43.html">plus43.html</a> et les
+journaux des modifications CVS.
+
+<a name="libexpat"></a>
+<ul>
+<li><b>libexpat a été déplacé dans base43.tgz</b><br>
+Pour 4.2, libexpat avait été déplacé des ports à xbase42.tgz, ce qui 
+pouvait être très gênant pour les personnes n'ayant aucune autre raison 
+pour installer X.
+Pour 4.3, libexpat a été déplacé de xbase42.tgz à base43.tgz, pour de
+nombreuses applications, il n'y a plus de raison d'installer xbase43.tgz.
+
+<p>
+Cela peut créer un petit problème si vous avez installé xbase42.tgz
+pour avoir libexpat sur votre système 4.2. Vous devez alors le supprimer
+ou bien le mettre à jour.
+Si libexpat était la seule raison pour laquelle vous avez installé
+xbase42.tgz, la suppression des anciens fichiers est probablement
+la meilleur solution. Les détails pour la suppression de xbase42.tgz
+sont <a href="#rmxbase42">fournis</a>.
+
+<p>
+Notez aussi que la construction à partir des ports est toujours 
+uniquement supportée avec une installation complète, incluant
+<i>tout</i> les sets de fichier X.
+
+<p>
+<a name="httpd.conf"></a>
+<li><b>Modification de httpd.conf :</b><br>
+Les <a href="faq15.html">paquetages</a> pour les modules de 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=httpd&amp;sektion=8">httpd(8)</a>
+installent maintenant les fichiers de configurations dans 
+<tt>/var/www/conf/modules.samples</tt>, et amènent l'utilisateur à
+créer les liens symboliques dans <tt>/var/www/conf/modules</tt>.
+Les lignes suivantes doivent être ajoutées à <tt>/var/www/conf/httpd.conf</tt>
+après les directives <tt>LoadModule</tt> (vers la fin de la section 1) :
+<blockquote><pre>
+#
+# Include extra module configuration files
+#
+Include /var/www/conf/modules/*.conf
+</pre></blockquote>
+
+Ceci est dans le fichier <tt>upgrade43.patch</tt>, mais il peut ne pas
+s'appliquer correctement sur un fichier <tt>httpd.conf</tt> hautement
+personnalisé. Vous devez vous assurer que ces lignes soit bien présentent
+sur votre système, autrement les futurs ajouts de paquetages ne
+fonctionneront pas correctement après installation.
+
+<p>
+<a name="relayd"></a>
+<li><b>hoststated(8) renommé en relayd(8) :</b><br>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hoststated&amp;manpath=OpenBSD+4.2&amp;sektion=8">hoststated(8)</a> a été renommé en
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=relayd&amp;sektion=8">relayd(8)</a>.
+Cela nécessitera de renommer l'utilisateur et le groupe 
+<tt>_hoststated</tt> en <tt>_relayd</tt>, ainsi que modifier votre 
+fichier <tt>/etc/pf.conf</tt> et reprendre votre
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hoststated.conf&amp;manpath=OpenBSD+4.2&amp;sektion=5">hoststated.conf(5)</a>
+dans votre fichier
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=relayd.conf&amp;sektion=5">relayd.conf(5)</a>.
+Les instructions de mise à niveau ici installeront un nouveau fichier
+<tt>relayd.conf</tt>, vous devrez le configurer selon vos besoins.
+
+<p>
+<a name="carp"></a>
+<li><b>Changements de carp(4)</b><br>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=carp&amp;sektion=4">carp(4)</a>
+a été modifié pour le rendre plus simple à configurer.
+Si vous utilisez carp avec de la <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=carp&amp;sektion=4#LOAD+BALANCING">répartition de charge</a> 
+ARP ou IP, votre configuration doit être changée en conséquence :
+  <ul>
+  <li> Les interfaces carp(4) multiples partageant une IP ont été remplacées
+  par l'option <tt>carpnodes</tt>.
+
+  <li> <tt>net.inet.carp.arpbalance</tt> 
+  <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=8">sysctl(8)</a>
+  a été remplacé par le mode de répartition <tt>arp</tt>.
+  
+  <li> Les indicateurs <tt>link0, link1</tt>, et <tt>link2</tt> ont été remplacés par
+  les modes de répartitions <tt>ip, ip-stealth</tt> et <tt>ip-unicast</tt>.
+  
+  </ul>
+
+<p>
+<a name="xenocaramove"></a>
+<li><b>L'emplacement de l'arbre par défaut de xenocara a changé :</b><br>
+L'emplacement par défaut de l'arbre des sources de xenocara 
+(<a href="faq11.html">X</a>) est maintenant <tt>/usr/xenocara</tt>.
+Cela est important pour ceux qui <a href="faq5.html#Xbld">construisent
+X à partir des sources</a>.
+Déplacez simplement l'arbre de xenocara :
+<blockquote><pre>
+# <b>mv /usr/src/xenocara /usr</b>
+</pre></blockquote>
+
+<p>
+<a name="rc.conf"></a>
+<li><b>rc.conf :</b><br>
+Contrairement aux versions précédentes du processus, on considère depuis
+la version <a href="upgrade41.html">4.1</a> d'OpenBSD que votre fichier
+<tt>/etc/rc.conf</tt> n'a pas été altéré.
+Si vous avez effectué des modifications dans <tt>/etc/rc.conf</tt>,
+déplacez-les dans <tt>/etc/rc.conf.local</tt>.
+Si vous n'avez PAS de fichier <tt>/etc/rc.conf.local</tt>, il suffit de
+copier votre fichier <tt>/etc/rc.conf</tt> dans
+<tt>/etc/rc.conf.local</tt> et <i>supprimez la dernière ligne du script
+!</i>.
+Autrement, reprenez votre <tt>rc.conf</tt> existant en haut de votre
+<tt>rc.conf.local</tt> et <i>supprimez la dernière ligne</i> avant de
+poursuivre le processus.
+
+<p>
+<a name="kern"></a>
+<li><b>Noyau modifié :</b><br>
+Vérifiez si vous avez apporté des modifications à votre noyau.
+Par exemple, vous avez pu modifier votre périphérique réseau pour
+utiliser un paramètrage différent du paramétrage par défaut à l'aide de
+config(8).
+Notez vos modifications afin que vous puissiez les reproduire avec le
+nouveau noyau 4.3.
+
+</ul>
+
+<p>
+<hr>
+<a name="upgrade"></a>
+<h2>Procédure de mise à jour</h2>
+
+<h3>Mise à niveau avec un noyau d'installation</h3>
+Si vous avez accès à la console système, la manière la plus facile et la
+plus sûre pour effectuer une mise à jour à partir de fichiers binaires
+consiste à démarrer depuis un média d'installation ou du noyau
+<a href="faq4.html#bsd.rd">bsd.rd</a> et de suivre les étapes de mise à
+jour; étapes fortement similaires à celles décrites dans la
+<a href="faq4.html">procédure d'installation</a>. Ensuite, terminez la
+mise à jour en suivant les <a href="#final">étapes finales</a>
+ci-dessous.
+
+<p>
+Une solution simple pour démarrer sur le noyau d'installation est de
+mettre le noyau <i>bsd.rd</i> de la version 4.3 à la racine de votre
+lecteur de démarrage et de dire au chargeur de démarrage d'utiliser ce
+nouveau fichier <i>bsd.rd</i>.
+Sur amd64 et i386, vous pouvez entrer "<tt>boot bsd.rd</tt>" à l'invite
+de commandes <tt>boot&gt;</tt>.
+
+<h3>Mise à niveau sans noyau d'installation</h3>
+<i>Ce n'est pas la solution recommandée. Utilisez le noyau
+d'installation le plus souvent possible !</i>
+
+<p>
+De temps à autre, on pourrait avoir besoin de faire la mise à jour d'une
+machine sans pouvoir utiliser le processus de mise à jour classique.
+Le cas le plus courant est lorsque la machine est distante et que vous
+n'avez pas accès à la console système.
+On peut alors réaliser une mise à niveau depuis les sources :
+
+<ul>
+<li><b>Placez les fichiers d'installation dans un "bon" endroit</b>.
+Assurez vous d'avoir la place suffisante !
+
+<p>
+<li><b>Stopper toutes les applications "insécurisées" de démarrage au
+boot :</b>
+Il y aura un moment ou PF ne sera pas le bienvenu pendant le processus
+de mise à jour, mais vos applications continueront de démarrer et de
+s'arrêter correctement.
+Toute application dépendante de PF pour la sécurité devrait être
+désactivée avant qu'un problème ne se produise, et ne devrait pas être
+réactivée avant que le fonctionnement de PF après la mise à jour ait été
+vérifié.
+Il pourrait également y avoir d'autres applications que vous devriez
+suspendre lors de la mise à jour, arrêtez et désactivez les de la même
+manière.
+
+<p>
+<li><b>Vérification du noyau :</b>
+Bien que <b>la plupart des gens peuvent sauter cette étape</b>, si vous
+aviez un noyau modifié en 4.2 il est probable que vous devrez modifier
+le noyau 4.3 de base. Surtout si vous effectuez une mise à jour à
+distance, maintenant est le bon moment pour vérifier que le nouveau
+noyau fonctionnera après le redémarrage de la machine. Si une
+modification du noyau doit être effectuée, la façon la plus sûre est
+de l'effectuer sur un système 4.3 local.
+Cela peut être aussi simple que de modifier un périphérique spécifique
+avec config(8) ou il peut être nécessaire de recompiler le noyau si
+l'option que vous souhaitez n'est pas incluse dans le noyau GENERIC.
+Consultez la section <a href="faq5.html">FAQ 5 - Construire le Système à
+partir des Sources</a> avant d'envisager une recompilation de votre
+noyau.
+
+<p>
+<li><b>Installez le(s) nouveau(x) noyau(x)</b>
+<blockquote><pre>
+<b>export RELEASEPATH=</b><i>/usr/rel</i>   <i># où mettre les fichiers</i>
+<b>cd ${RELEASEPATH}</b>
+<b>rm /obsd ; ln /bsd /obsd && cp bsd /nbsd && mv /nbsd /bsd</b>
+<b>cp bsd.rd bsd.mp /</b>
+</pre></blockquote>
+
+Notez les étapes additionnelles pour copier par dessus un premier noyau
+: celles-ci sont réalisées afin de s'assurer qu'il y ai toujours une
+copie valide du noyau sur le disque et que le système puisse booter en
+cas de coupure électrique ou de panne du système.
+
+<p>
+<li><b>Installez les nouveaux fichiers <tt>/etc/firmware</tt> :</b>
+parce que certains "firmwares" aient pu être mis à jour, il est possible
+que vous deviez mettre à jour le dossier <tt>/etc/firmware</tt>. Ceci
+concerne les utilisateurs de certains périphériques, bien que tout
+utilisateur devrait considérer cette étape.
+Afin d'extraire les fichiers firmware de <tt>base43.tgz</tt>, tapez en
+étant root les commandes suivantes :
+
+<blockquote><pre>
+<b>cd /</b>
+<b>tar -C / -xzphf ${RELEASEPATH}/base43.tgz ./etc/firmware</b>
+</pre></blockquote>
+
+<p>
+<li><b>Redémarrez votre système avec le nouveau noyau :</b>
+Il peut être tentant de sauter cette étape, mais ceci devrait être fait
+dès à présent, le nouveau noyau lancera d'anciennes applications
+utilisateur (tel que la commande <tt>reboot</tt> ! qui sera importante
+pour la suite) mais souvent un nouveau "userland" ne fonctionnera PAS
+sur un ancien noyau.
+
+<p>
+<li><b>Installez les nouvelles applications du userland.</b>
+<i>Ne PAS installer <tt>etc43.tgz</tt> ni <tt>xetc43.tgz</tt>
+maintenant, car cela écrasera vos fichiers de configuration actuels
+!</i>
+
+<blockquote><pre>
+<b>export RELEASEPATH=</b><i>/usr/rel</i>
+<b>cd ${RELEASEPATH}</b>
+<b>tar -C / -xzphf base43.tgz</b>
+<b>tar -C / -xzphf comp43.tgz</b>
+<b>tar -C / -xzphf game43.tgz</b>
+<b>tar -C / -xzphf man43.tgz</b>
+<b>tar -C / -xzphf misc43.tgz</b>
+<b>tar -C / -xzphf xbase43.tgz</b>
+<b>tar -C / -xzphf xfont43.tgz</b>
+<b>tar -C / -xzphf xserv43.tgz</b>
+<b>tar -C / -xzphf xshare43.tgz</b>
+</pre></blockquote>
+
+Remarque : tous les jeux de fichiers ne devront pas être installés pour
+toutes les applications, cependant, si vous aviez installé originalement
+un jeu de fichiers, vous devrez certainement le mettre à niveau avec le
+nouveau jeu de fichiers.
+
+<p>
+Remarque : les fichiers appartenant à <tt>/etc</tt> sont gérés
+séparément. C'est pourquoi les archives <tt>etc43.tgz</tt> et
+<tt>xetc43.tgz</tt> ne sont PAS ouvertes à cette étape.
+
+<p>
+<li><b>Mettre à jour <tt>/dev</tt>.</b>
+Le nouveau fichier
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=MAKEDEV&amp;sektion=8&amp;arch=i386">MAKEDEV</a>
+sera copié dans /dev par l'installation de <tt>base43.tgz</tt>, vous
+n'avez ainsi qu'à faire ce qui suit :
+<blockquote><pre>
+<b>cd /dev</b>
+<b>./MAKEDEV all</b>
+</pre></blockquote>
+
+<p>
+<li><b>Mise à niveau de <tt>/etc</tt> comme ci-dessous</b>.
+
+<p>
+<li><b>Redémarrez</b>
+</ul>
+
+Pendant ce processus,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sendmail&amp;sektion=8">sendmail(8)</a>
+pourrait produire des messages d'erreur comme :
+<pre>
+        Nov 1 12:47:05 puffy sm-mta[16733]: filesys_update failed: No such
+        file or directory, fs=., avail=-1, blocksize=380204
+</pre>
+Ces messages peuvent être ignorés sans risque, mais vous pourriez
+vouloir arrêter sendmail(8) pendant la mise à niveau.
+Notez que sendmail ne fonctionne pas correctement à ce stade, et devra
+être relancé (c'est une étape du redémarrage) avant qu'un mail puisse 
+être géré correctement.
+
+<p>
+
+<hr>
+<a name="final"></a>
+<h2>Etapes finales</h2>
+
+Que vous mettiez à jour à partir d'un noyau d'installation et en
+utilisant le processus de mise à jour formel, ou en faisant une mise à
+jour binaire "sur place", vous aurez besoin d'effectuer un certain nombre
+d'étapes manuelles. 
+
+<a name="UsersGroups"></a>
+<h3>1. Ajout et modifications des Utilisateurs et des Groupes</h3>
+Des nouveaux utilisateurs sont nécessaires pour
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ospfd&amp;sektion=8">ospf6d</a>,
+et
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=snmpd&amp;sektion=8">snmpd</a>.
+Créez ces utilisateurs et groupes en utilisant
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=useradd&amp;sektion=8">useradd(8)</a>
+<blockquote><pre>
+<b>useradd -u90 -g=uid -c"OSPF6 Daemon" -d/var/empty -s/sbin/nologin _ospf6d
+useradd -u91 -g=uid -c"SNMP Daemon" -d/var/empty -s/sbin/nologin _snmpd</b>
+</pre></blockquote>
+
+Vous aurez également besoin d'utiliser 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vipw&amp;sektion=8">vipw(8)</a>
+pour éditer le fichier des mots de passe et de votre éditeur favori
+pour modifier le fichier <tt>/etc/group</tt>, changez <tt>_hoststated</tt>
+en <tt>_relayd</tt> dans chacun des cas, et modifiez la description dans
+vipw(8) de "HostState Daemon" en "Relay Daemon".
+
+<a name="etcUpgrade"></a>
+<h3>2. Mise à jour de <tt>/etc</tt></h3>
+<p>
+Vous aurez besoin d'extraire les fichiers <tt>etc43.tgz</tt> dans un
+endroit temporaire :
+<blockquote><pre>
+<b>tar -C /tmp -xzphf ${RELEASEPATH}/etc43.tgz</b>
+</pre></blockquote>
+
+
+Les fichiers suivants peuvent être probablement copiés "tels quels" à
+partir de <tt>etc43.tgz</tt> :
+
+<blockquote><pre>
+etc/mail/README
+etc/moduli
+etc/mtree/4.4BSD.dist
+etc/mtree/BSD.local.dist
+etc/mtree/special
+etc/netstart
+etc/ospf6d.conf
+etc/rc
+etc/rc.conf
+etc/relayd.conf
+etc/security
+etc/snmpd.conf
+var/named/etc: root.hint
+</pre></blockquote>
+
+Notez qu'il EST possible de modifier localement ces fichiers. Si vous
+l'avez fait, une fusion manuelle est alors nécessaire.
+Veuillez prêter une attention particulière à <tt>mail/*</tt> si vous
+utilisez autre chose que la configuration Sendmail(8) par défaut.
+
+Voici des lignes à copier/coller pour copier ces fichiers, en supposant
+que vous avez extrait <tt>etc43.tgz</tt> à l'endroit précité :
+
+<blockquote><pre>
+<b>cd /tmp/etc
+cp moduli netstart ospf6d.conf rc rc.conf relayd.conf security snmpd.conf /etc
+cp mtree/* /etc/mtree/
+cp mail/README /etc/mail
+cp ../var/named/etc/root.hint /var/named/etc</b>
+</pre></blockquote>
+
+<p>
+<a name="patchfile"></a>
+Les fichiers suivant ont probablement été modifiés localement, mais
+ils doivent être mise à jour pour 4.3. SI vous n'avez pas modifié
+ces fichiers, vous pouvez copier directement la nouvelle version,
+sinon vous devez fusionner les modifications avec vos fichiers :
+
+<blockquote><pre>
+etc/changelist
+etc/chio.conf
+etc/ftpusers
+etc/mail/aliases
+etc/ssh/sshd_config
+etc/sudoers
+etc/sysctl.conf
+var/named/etc/named-dual.conf
+var/named/etc/named-simple.conf
+var/named/etc/named.conf
+var/www/conf/httpd.conf
+var/www/conf/mime.types
+var/www/htdocs/manual/mod/core.html
+var/www/htdocs/manual/server-wide.html
+</pre></blockquote>
+
+Les modifications apportées à ces fichiers se trouvent dans ce 
+<a href="../upgrade43.patch">fichier correctif</a>.
+Vous pouvez tenter de l'utiliser en exécutant les commandes suivantes
+sous l'identité root :
+<blockquote><pre>
+<b>cd /</b>
+<b>patch -C -p0 &lt; upgrade43.patch</b>
+</pre></blockquote>
+
+Ceci aura pour effet de tester le correctif afin de voir s'il va bien
+s'appliquer à VOTRE système. Si vous voulez l'appliquer, il suffit
+d'omettre l'option "<tt>-C</tt>".
+Il est probable que si vous avez adapté ces fichiers à vos besoins ou si
+vous ne l'avez pas maintenu à jour de manière stricte, ou si vous avez
+mis à jour à partir d'un snapshot de 3.9, le correctif ne passera
+peut-être pas de manière correcte.
+Dans ces cas, vous devrez appliquer manuellement les modifications.
+Veuillez tester ce processus avant de vous y fier pour mettre une
+machine à laquelle vous n'avez pas un accès facile.
+
+<p>
+<b><tt>/etc/ttys</tt></b> a été rendue plus cohérent à travers
+les plates-formes, mais cela rend la mise à jour plus compliquée
+pour ce fichier. Il est recommandé que vous copiez ce nouveau 
+fichier, et d'appliquer les modifications à ce dernier:
+<blockquote><pre>
+<b>mv /etc/ttys /etc/ttys.orig
+cp /tmp/etc/ttys /etc</b>
+</pre></blockquote>
+
+<p>
+Les fichiers suivants comportent des modifications dont vous devez
+prendre connaissance, mais il est peu probable qu'ils puissent être
+directement copiés ou fusionnés (i.e. si vous utilisez pf.conf, prenez
+connaissance de la stratégie de mise à jour suggérée, et décidez si oui
+ou non elle est appropriée dans votre cas).
+
+<blockquote><pre>
+/etc/pf.conf
+</pre></blockquote>
+
+<p>
+Il y a quelques fichiers qui peuvent être supprimés qui ne sont plus
+utilisés dans 4.3 :
+
+<blockquote><pre>
+<b>rm /etc/hoststated.conf /var/named/standard/root.hint</b>
+</pre></blockquote>
+
+
+Enfin, utilisez
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=newaliases&amp;sektion=8">newaliases(8)</a>
+pour mettre à jour la base de données des alias et
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mtree&amp;sektion=8">mtree(8)</a>
+pour créer les éventuels nouveaux répertoires, et modifier le 
+propriétaire et les accès sur <tt>/etc/chio.conf</tt> :
+
+<blockquote><pre>
+<b>newaliases</b>
+<b>mtree -qdef /etc/mtree/4.4BSD.dist -p / -u</b>
+<b>chown root:operator /etc/chio.conf</b>
+<b>chmod 644 /etc/chio.conf</b>
+</pre></blockquote>
+
+<a name="Kernchk"></a>
+<h3>3. Vérification du noyau</h3>
+Remarque : <b>la plupart des gens peuvent sauter cette étape !</b>
+<p>
+Si vous avez suivi les instructions de mise à niveau sans noyau
+d'installation vous aurez déjà accompli cette étape.
+En revanche, si vous utilisez le média d'installation et si vous aviez
+un noyau modifié en 4.2 il est probable que vous devriez modifier le
+noyau 4.3 de base. Cela peut être aussi simple que de modifier un
+périphérique spécifique avec config(8) ou il peut être nécessaire de
+recompiler le noyau si l'option que vous souhaitez n'est pas incluse
+dans le noyau GENERIC.
+Consultez la section <a href="faq5.html">FAQ 5 - Construire le Système à
+partir des Sources</a> avant d'envisager une recompilation de votre
+noyau.
+
+<a name="Pkgup"></a>
+<h3>4. Mise à jour des paquetages</h3>
+Si vous avez installé des paquetages sur votre machine vous devriez les
+mettre à jour après la mise à niveau de votre système de base.
+Attention cependant car de nombreux paquetages nécessiteront une
+manipulation supplémentaire avant et/ou après avoir été mis à jour.
+Référez-vous au guide de mise à niveau de l'application pour de plus
+amples informations.
+
+<p>
+Les paquetages suivants sont connus pour avoir certains problèmes lors
+de la mise à niveau pouvant impacter un grand nombre d'utilisateurs.
+Le fait qu'un paquetage ne soit pas listé ne signifie en rien que sa
+mise à jour sera aisée.
+Vous devez vous renseigner sur les applications que VOUS utilisez.
+
+</ul>
+Les utilitaires de gestion des paquetages ("pkg tools") supportent la
+mise à jour avec la commande <tt>pkg_add -u</tt>.
+Par exemple, pour mettre à jour tous vos paquetages, soyez certains que
+<tt>PKG_PATH</tt> pointe bien vers le répertoire contenant les paquetages
+4.3 sur votre CD ou un miroir FTP proche et utilisez une commande du
+type
+
+<blockquote><pre>
+<b># pkg_add -ui -F update -F updatedepends</b>
+</pre></blockquote>
+
+où <tt>-u</tt> indique le mode mise à jour et <tt>-i</tt> le mode
+interactif, ainsi pkg_add vous demandera ce que vous souhaitez faire
+lorsque celui-ci rencontrera une ambiguïté. Lisez le manuel de
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pkg_add&amp;sektion=1&amp;manpath=OpenBSD+4.2">pkg_add(1)</a>
+et le chapitre de la FAQ sur la <a href="faq15.html#PkgMgmt">gestion
+des paquetages</a> pour de plus amples informations.
+
+<a name="rmxbase42"></a>
+<h3>5. Suppression de xbase42.tgz</h3>
+Si vous avez installé <tt>xbase42.tgz</tt> pour obtenir libexpat
+pour les paquetages qui le nécessitaient, vous n'avez plus besoin
+de cela pour 4.3.
+Vous pouvez soit le supprimer, ou installer <tt>xbase43.tgz</tt>.
+
+<p>
+Si vous souhaitez le supprimer, vous pouvez utiliser les commandes
+suivantes :
+
+<blockquote><pre>
+# <b>mv /usr/X11R6/lib/libexpat.so.* /usr/lib</b>
+# <b>rm -r /usr/X11R6 /etc/X11 /etc/fonts</b>
+</pre></blockquote>
+
+<p>
+Si vous souhaitez installer <tt>xbase43.tgz</tt>, vous devez alors
+supprimer les anciens fichiers de libexpat :
+
+<blockquote><pre>
+# <b>mv /usr/X11R6/lib/libexpat.so.* /usr/lib</b>
+# <b>rm /usr/X11R6/lib/libexpat*</b>
+# <b>rm /usr/X11R6/include/expat*</b>
+</pre></blockquote>
+
+
+<p>
+<font color="#0000e0">
+<a href="upgrade35.html">[3.4 -> 3.5]</a> |
+<a href="upgrade36.html">[3.5 -> 3.6]</a> |
+<a href="upgrade37.html">[3.6 -> 3.7]</a> |
+<a href="upgrade38.html">[3.7 -> 3.8]</a> |
+<a href="upgrade39.html">[3.8 -> 3.9]</a> |
+<a href="upgrade40.html">[3.9 -> 4.0]</a> |
+<a href="upgrade41.html">[4.0 -> 4.1]</a> |
+<a href="upgrade42.html">[4.1 -> 4.2]</a> |
+<a href="index.html">[FAQ Index]</a>
+</font>
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a>
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+<!--
+Originally [OpenBSD: upgrade43.html,v 1.13 ]<br>
+$Translation: upgrade43.html,v 1.1 2008/05/01 23:37:02 gapz Exp $<br>
+-->
+$OpenBSD: upgrade43.html,v 1.1 2008/05/02 07:47:40 tobias Exp $
+</small>
+
+</body>
+</html>
