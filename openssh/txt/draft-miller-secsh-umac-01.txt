@@ -1,0 +1,337 @@
+
+
+
+Network Working Group                                          D. Miller
+Internet-Draft                                                P. Valchev
+Intended status: Standards Track                                 OpenSSH
+Expires: March 6, 2008                                 September 3, 2007
+
+
+          The use of UMAC in the SSH Transport Layer Protocol
+                     draft-miller-secsh-umac-01.txt
+
+Status of this Memo
+
+   By submitting this Internet-Draft, each author represents that any
+   applicable patent or other IPR claims of which he or she is aware
+   have been or will be disclosed, and any of which he or she becomes
+   aware will be disclosed, in accordance with Section 6 of BCP 79.
+
+   Internet-Drafts are working documents of the Internet Engineering
+   Task Force (IETF), its areas, and its working groups.  Note that
+   other groups may also distribute working documents as Internet-
+   Drafts.
+
+   Internet-Drafts are draft documents valid for a maximum of six months
+   and may be updated, replaced, or obsoleted by other documents at any
+   time.  It is inappropriate to use Internet-Drafts as reference
+   material or to cite them other than as "work in progress."
+
+   The list of current Internet-Drafts can be accessed at
+   http://www.ietf.org/ietf/1id-abstracts.txt.
+
+   The list of Internet-Draft Shadow Directories can be accessed at
+   http://www.ietf.org/shadow.html.
+
+   This Internet-Draft will expire on March 6, 2008.
+
+Copyright Notice
+
+   Copyright (C) The IETF Trust (2007).
+
+Abstract
+
+   This memo describes the use of the UMAC Message Authentication Code
+   in the SSH transport protocol.
+
+
+
+
+
+
+
+
+
+Miller & Valchev          Expires March 6, 2008                 [Page 1]
+
+Internet-Draft     UMAC message authentication for SSH    September 2007
+
+
+Table of Contents
+
+   1.  Requirements notation . . . . . . . . . . . . . . . . . . . . . 3
+   2.  Overview  . . . . . . . . . . . . . . . . . . . . . . . . . . . 3
+   3.  MAC calculation . . . . . . . . . . . . . . . . . . . . . . . . 3
+   4.  New MAC methods . . . . . . . . . . . . . . . . . . . . . . . . 4
+     4.1.  umac-32 . . . . . . . . . . . . . . . . . . . . . . . . . . 4
+     4.2.  umac-64 . . . . . . . . . . . . . . . . . . . . . . . . . . 4
+     4.3.  umac-96 . . . . . . . . . . . . . . . . . . . . . . . . . . 4
+     4.4.  umac-128  . . . . . . . . . . . . . . . . . . . . . . . . . 4
+   5.  Security Considerations . . . . . . . . . . . . . . . . . . . . 4
+   6.  IANA Considerations . . . . . . . . . . . . . . . . . . . . . . 5
+   7.  Normative References  . . . . . . . . . . . . . . . . . . . . . 5
+   Authors' Addresses  . . . . . . . . . . . . . . . . . . . . . . . . 5
+   Intellectual Property and Copyright Statements  . . . . . . . . . . 6
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Miller & Valchev          Expires March 6, 2008                 [Page 2]
+
+Internet-Draft     UMAC message authentication for SSH    September 2007
+
+
+1.  Requirements notation
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+   document are to be interpreted as described in [RFC2119].
+
+
+2.  Overview
+
+   SSH [RFC4251] is a popular protocol for secure remote login and data
+   transfer on the Internet.  Among the security properties that SSH
+   offers is integrity of communication against active adversaries.
+   This integrity is provided in the SSH transport protocol [RFC4253]
+   through the use of a per-packet Message Authentication Code (MAC).
+
+   This memo describes the use of the UMAC Message Authentication Code
+   [RFC4418] in the SSH transport protocol.  UMAC offers improved
+   performance over the current HMAC-based MACs supported by SSH.
+   Furthermore, UMAC represents a different cryptographic approach to
+   message authentication to that of HMAC, and its use in SSH would
+   provide a diversity that may be of benefit if HMAC or one of its
+   underlying hash algorithms is found to be vulnerable to a new attack.
+
+   UMAC offers a choice of four authentication tag sizes: 32, 64, 96 and
+   128 bits.  This allows users to trade between fast, compact tags and
+   longer tags that are slower to generate but offer better security.
+   These four tag sizes are represented in the new MAC methods
+   introduced in this memo: "umac-32", "umac-64", "umac-96" and "umac-
+   128".
+
+
+3.  MAC calculation
+
+   Message authentication tags in the SSH transport protocol are
+   specified to be calculated over the packet sequence number followed
+   by the entire unencrypted packet:
+
+           mac = MAC(key, sequence_number || unencrypted_packet)
+
+   However, UMAC accepts a nonce as an explicit input to MAC
+   calculation.  In order for the security proofs that accompany UMAC to
+   apply, this nonce must never be repeated under a given key.  In the
+   context of the SSH protocol, this may be achieved by using the packet
+   sequence number as the nonce.  The sequence number is guaranteed to
+   be unique over the life of the MAC key by the requirement that
+   implementations perform a key re-exchange before the sequence number
+   wraps (section 9.3.3 of [RFC4251]).
+
+
+
+
+Miller & Valchev          Expires March 6, 2008                 [Page 3]
+
+Internet-Draft     UMAC message authentication for SSH    September 2007
+
+
+   To use the sequence number as the MAC nonce, it is encoded into a SSH
+   protocol uint64 (as described in section 5 of [RFC4251]) and it is
+   supplied to the UMAC algorithm instead of prepending it to the packet
+   to be authenticated:
+
+           mac = UMAC(key, sequence_number, unencrypted_packet)
+
+   Where UMAC is one of the UMAC-32, UMAC-64, UMAC-96 or UMAC-128
+   algorithms specified in [RFC4418], section 4.2, using the default
+   underlying block cipher of AES-128.
+
+
+4.  New MAC methods
+
+   This memo introduces four new MAC methods, one for each UMAC
+   authentication tag length specified in [RFC4418]: "umac-32",
+   "umac-64", "umac-96" and "umac-128".
+
+4.1.  umac-32
+
+   Calculate message authentication tags using the UMAC-32 algorithm
+   specified in [RFC4418], section 4.2.
+
+4.2.  umac-64
+
+   Calculate message authentication tags using the UMAC-64 algorithm
+   specified in [RFC4418], section 4.2.
+
+4.3.  umac-96
+
+   Calculate message authentication tags using the UMAC-96 algorithm
+   specified in [RFC4418], section 4.2.
+
+4.4.  umac-128
+
+   Calculate message authentication tags using the UMAC-128 algorithm
+   specified in [RFC4418], section 4.2.
+
+
+5.  Security Considerations
+
+   As mentioned above, it is imperative that implementations perform a
+   re-keying operation before reusing a packet sequence number as a UMAC
+   nonce.  Implementations conforming to [RFC4251] are already required
+   to do this.
+
+
+
+
+
+
+Miller & Valchev          Expires March 6, 2008                 [Page 4]
+
+Internet-Draft     UMAC message authentication for SSH    September 2007
+
+
+6.  IANA Considerations
+
+   IANA must assign the MAC Algorithm Names "umac-32", "umac-64",
+   "umac-96" and "umac-128".
+
+
+7.  Normative References
+
+   [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", BCP 14, RFC 2119, March 1997.
+
+   [RFC4251]  Ylonen, T. and C. Lonvick, "The Secure Shell (SSH)
+              Protocol Architecture", RFC 4251, January 2006.
+
+   [RFC4253]  Ylonen, T. and C. Lonvick, "The Secure Shell (SSH)
+              Transport Layer Protocol", RFC 4253, January 2006.
+
+   [RFC4418]  Krovetz, T., "UMAC: Message Authentication Code using
+              Universal Hashing", RFC 4418, March 2006.
+
+
+Authors' Addresses
+
+   Damien Miller
+   OpenSSH
+
+   Email: djm@openssh.com
+
+
+   Peter Valchev
+   OpenSSH
+
+   Email: pvalchev@openssh.com
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Miller & Valchev          Expires March 6, 2008                 [Page 5]
+
+Internet-Draft     UMAC message authentication for SSH    September 2007
+
+
+Full Copyright Statement
+
+   Copyright (C) The IETF Trust (2007).
+
+   This document is subject to the rights, licenses and restrictions
+   contained in BCP 78, and except as set forth therein, the authors
+   retain all their rights.
+
+   This document and the information contained herein are provided on an
+   "AS IS" basis and THE CONTRIBUTOR, THE ORGANIZATION HE/SHE REPRESENTS
+   OR IS SPONSORED BY (IF ANY), THE INTERNET SOCIETY, THE IETF TRUST AND
+   THE INTERNET ENGINEERING TASK FORCE DISCLAIM ALL WARRANTIES, EXPRESS
+   OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTY THAT THE USE OF
+   THE INFORMATION HEREIN WILL NOT INFRINGE ANY RIGHTS OR ANY IMPLIED
+   WARRANTIES OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+
+
+Intellectual Property
+
+   The IETF takes no position regarding the validity or scope of any
+   Intellectual Property Rights or other rights that might be claimed to
+   pertain to the implementation or use of the technology described in
+   this document or the extent to which any license under such rights
+   might or might not be available; nor does it represent that it has
+   made any independent effort to identify any such rights.  Information
+   on the procedures with respect to rights in RFC documents can be
+   found in BCP 78 and BCP 79.
+
+   Copies of IPR disclosures made to the IETF Secretariat and any
+   assurances of licenses to be made available, or the result of an
+   attempt made to obtain a general license or permission for the use of
+   such proprietary rights by implementers or users of this
+   specification can be obtained from the IETF on-line IPR repository at
+   http://www.ietf.org/ipr.
+
+   The IETF invites any interested party to bring to its attention any
+   copyrights, patents or patent applications, or other proprietary
+   rights that may cover technology that may be required to implement
+   this standard.  Please address the information to the IETF at
+   ietf-ipr@ietf.org.
+
+
+Acknowledgment
+
+   Funding for the RFC Editor function is provided by the IETF
+   Administrative Support Activity (IASA).
+
+
+
+
+
+Miller & Valchev          Expires March 6, 2008                 [Page 6]
+
+
