@@ -5,10 +5,28 @@
 #
 # This archive contains:
 #
+#	anoncvs.shar
 #	Makefile
 #	README
 #	anoncvssh.c
 #
+echo x - anoncvs.shar
+sed 's/^X//' >anoncvs.shar << 'END-of-anoncvs.shar'
+X# This is a shell archive.  Save it in a file, remove anything before
+X# this line, and then unpack it by entering "sh file".  Note, it may
+X# create directories; files and directories will be owned by you and
+X# have default permissions.
+X#
+X# This archive contains:
+X#
+X#	anoncvs.shar
+X#	Makefile
+X#	README
+X#	anoncvssh.c
+X#
+Xecho x - anoncvs.shar
+Xsed 's/^X//' >anoncvs.shar << 'END-of-anoncvs.shar'
+END-of-anoncvs.shar
 echo x - Makefile
 sed 's/^X//' >Makefile << 'END-of-Makefile'
 X#CVSROOT=anoncvs@anoncvs1.usa.openbsd.org:/cvs
@@ -58,6 +76,8 @@ X7) Run sup to retrieve the distribution from the server.
 X
 X8) Once you get the distribution in, set up a cron job to run sup
 X   periodically to keep your server up to date.
+X
+X9) Enabling OpenCVS anoncvs.
 X
 X**********************************************************************
 XSTEP 1) find enough disk space.
@@ -254,6 +274,35 @@ X0 3                   * *  1,3,6  sup -vo /open/anoncvs/sup/ss > /dev/null
 X
 Xanoncvs5.usa.openbsd.org uses this particular set of entries.  A `sup
 X-o' is done every few days because sup is not very robust.
+X
+X**********************************************************************
+XSTEP 9): Enabling OpenCVS anoncvs.
+X
+XThe next step is to enable OpenCVS, which will run on your system next
+Xto the normal GNU cvs server. This will become the default in the
+Xfuture. 
+X
+XFirst off, create a new user account "opencvs" like you did for your
+Xnormal anoncvs user:
+X
+Xopencvs::32766:32766::0:0:Anonymous OpenCVS User:/open/anoncvs:/open/anoncvssh
+X
+XBe sure that the uid and gid are unique for your system, if the ones
+Xabove aren't, pick different values.
+X
+X#define OPENCVS_USER	"opencvs"
+X
+XRecompile anoncvssh.c and install the binary setuid-root in /open/anoncvssh.
+X
+XCompile and install a current /usr/bin/opencvs. 
+X
+XCopy /usr/bin/opencvs to /open/anoncvs/usr/bin/opencvs
+X
+XYou can now use OpenCVS anoncvs by using the correct CVSROOT:
+X
+X	opencvs@anoncvs.openbsd.org:/cvs
+X
+XIf you encounter bugs, send them to joris@openbsd.org
 X
 X**********************************************************************
 XEXAMPLE LAYOUT
@@ -457,18 +506,24 @@ X#define	LOCALROOT	"/cvs"
 X#endif
 X
 X/*
-X * Account and host name to be used when accessing the
-X * CVS repository remotely
+X * Hostname to be used when accessing the remote repository.
 X */
 X#ifndef HOSTNAME
-X#define	HOSTNAME	"anoncvs@anoncvs1.usa.openbsd.org"
+X#define	HOSTNAME	"anoncvs1.usa.openbsd.org"
 X#endif
 X
 X/*
-X * $CVSROOT is created based on HOSTNAME and LOCALROOT above
+X * Username to be used when accessing the remote repository.
+X */
+X#ifndef USERNAME
+X#define USERNAME	"anoncvs"
+X#endif
+X
+X/*
+X * $CVSROOT is created based on USERNAME HOSTNAME and LOCALROOT above
 X */
 X#ifndef CVSROOT
-X#define	CVSROOT		HOSTNAME ":"LOCALROOT
+X#define	CVSROOT		USERNAME "@" HOSTNAME ":"LOCALROOT
 X#endif
 X
 X/*
@@ -498,7 +553,13 @@ X
 X/* Define ANONCVS_USER if you want anoncvssh to complain if invoked by
 X * anyone other than root or ANONCVS_USER.
 X */
-X/* #define ANONCVS_USER "anoncvs" */
+X/* #define ANONCVS_USER USERNAME */
+X
+X/*
+X * If you want to be able to run an alternate OpenCVS binary on your
+X * anoncvs server, define OPENCVS_USER as the user who will invoke it.
+X */
+X#define OPENCVS_USER "opencvs"
 X
 Xint main __P((int, char *[]));
 X
@@ -520,6 +581,9 @@ X	struct passwd *pw;
 X#ifdef DEBUG
 X	int i;
 X#endif /* DEBUG */
+X#if defined(OPENCVS_USER)
+X	int opencvs;
+X#endif
 X
 X	pw = getpwuid(getuid());
 X	if (pw == NULL) {
@@ -559,6 +623,13 @@ X	}
 X	chdir("/");
 X	setuid(pw->pw_uid);
 X
+X#if defined(OPENCVS_USER)
+X	if (!strcmp(pw->pw_name, OPENCVS_USER))
+X		opencvs = 1;
+X	else
+X		opencvs = 0;
+X#endif
+X
 X	/*
 X	 * program now "safe"
 X	 */
@@ -570,7 +641,15 @@ X#ifdef USE_SYSLOG
 X 	        int slen;
 X		struct sockaddr_in my_sa, peer_sa;
 X		char *us, *them;
-X		
+X
+X#if defined(OPENCVS_USER)
+X		if (opencvs == 1) {
+X			fprintf(stderr, "OpenCVS does not support pserver\n");
+X			sleep(10);
+X			exit(1);
+X		}
+X#endif
+X
 X		slen = sizeof(my_sa);
 X		if (getsockname(0, (struct sockaddr *) &my_sa, &slen)
 X		    != 0) {
@@ -616,6 +695,10 @@ X		fprintf(stderr, "\nTo use anonymous CVS install the latest ");
 X		fprintf(stderr,"version of CVS on your local machine.\n");
 X		fprintf(stderr,"Then set your CVSROOT environment variable ");
 X		fprintf(stderr,"to the following value:\n");
+X#if defined(OPENCVS_USER)
+X		fprintf(stderr, "\t%s@%s:%s for OpenCVS\n", OPENCVS_USER,
+X		    HOSTNAME, LOCALROOT);
+X#endif
 X		fprintf(stderr,"\t%s\n\n", CVSROOT);
 X#ifdef DEBUG
 X		fprintf(stderr, "argc = %d\n", argc);
@@ -625,7 +708,18 @@ X#endif /* DEBUG */
 X		sleep(10);
 X		exit(0);
 X	}
-X	execle("/usr/bin/cvs", "cvs", "server", (char *)NULL, env);
+X
+X#if defined(OPENCVS_USER)
+X	if (opencvs == 1) {
+X		execle("/usr/bin/opencvs", "opencvs",
+X		    "server", (char *)NULL, env);
+X	} else {
+X#endif
+X		execle("/usr/bin/cvs", "cvs", "server", (char *)NULL, env);
+X#if defined(OPENCVS_USER)
+X	}
+X#endif
+X
 X	perror("execle: cvs");
 X	fprintf(stderr, "unable to exec CVS server!\n");
 X	exit(1);
