@@ -1,0 +1,268 @@
+OpenSSH 5.1 has just been released. It will be available from the
+mirrors listed at http://www.openssh.com/ shortly.
+
+OpenSSH is a 100% complete SSH protocol version 1.3, 1.5 and 2.0
+implementation and includes sftp client and server support.
+
+We have also recently completed another Internet SSH usage scan, the 
+results of which may be found at http://www.openssh.com/usage.html
+
+Once again, we would like to thank the OpenSSH community for their
+continued support of the project, especially those who contributed
+code or patches, reported bugs, tested snapshots or donated to the
+project. More information on donations may be found at:
+http://www.openssh.com/donations.html
+
+Changes since OpenSSH 5.0
+=========================
+
+Security:
+
+ * sshd(8): Avoid X11 man-in-the-middle attack on HP/UX (and possibly
+   other platforms) when X11UseLocalhost=no
+
+   When attempting to bind(2) to a port that has previously been bound
+   with SO_REUSEADDR set, most operating systems check that either the
+   effective user-id matches the previous bind (common on BSD-derived
+   systems) or that the bind addresses do not overlap (Linux and
+   Solaris).
+
+   Some operating systems, such as HP/UX, do not perform these checks
+   and are vulnerable to an X11 man-in-the-middle attack when the
+   sshd_config(5) option X11UseLocalhost has been set to "no" - an
+   attacker may establish a more-specific bind, which will be used in
+   preference to sshd's wildcard listener.
+
+   Modern BSD operating systems, Linux, OS X and Solaris implement the
+   above checks and are not vulnerable to this attack, nor are systems
+   where the X11UseLocalhost has been left at the default value of
+   "yes".
+
+   Portable OpenSSH 5.1 avoids this problem for all operating systems
+   by not setting SO_REUSEADDR when X11UseLocalhost is set to no.
+
+   This vulnerability was reported by sway2004009 AT hotmail.com.
+
+New features:
+
+ * Introduce experimental SSH Fingerprint ASCII Visualisation to ssh(1)
+   and ssh-keygen(1). Visual fingerprinnt display is controlled by a new
+   ssh_config(5) option "VisualHostKey". The intent is to render
+   SSH host keys in a visual form that is amenable to easy recall and
+   rejection of changed host keys. This technique inspired by the
+   graphical hash visualisation schemes known as "random art[*]", and
+   by Dan Kaminsky's musings at 23C3 in Berlin.
+
+   Fingerprint visualisation in is currently disabled by default, as the
+   algorithm used to generate the random art is still subject to change.
+
+   [*] "Hash Visualization: a New Technique to improve Real-World
+       Security", Perrig A. and Song D., 1999, International Workshop on
+       Cryptographic Techniques and E-Commerce (CrypTEC '99)
+   http://sparrow.ece.cmu.edu/~adrian/projects/validation/validation.pdf
+
+ * sshd_config(5) now supports CIDR address/masklen matching in "Match
+   address" blocks, with a fallback to classic wildcard matching. For 
+   example:
+     Match address 192.0.2.0/24,3ffe:ffff::/32,!10.*
+         PasswordAuthentication yes
+
+ * sshd(8) now supports CIDR matching in ~/.ssh/authorized_keys
+   from="..." restrictions, also with a fallback to classic wildcard
+   matching.
+
+ * Added an extended test mode (-T) to sshd(8) to request that it write
+   its effective configuration to stdout and exit. Extended test mode
+   also supports the specification of connection parameters (username,
+   source address and hostname) to test the application of
+   sshd_config(5) Match rules. 
+
+ * ssh(1) now prints the number of bytes transferred and the overall
+   connection throughput for SSH protocol 2 sessions when in verbose
+   mode (previously these statistics were displayed for protocol 1
+   connections only).
+
+ * sftp-server(8) now supports extension methods statvfs@openssh.com and
+   fstatvfs@openssh.com that implement statvfs(2)-like operations.
+   (bz#1399)
+
+ * sftp(1) now has a "df" command to the sftp client that uses the
+   statvfs@openssh.com to produce a df(1)-like display of filesystem
+   space and inode utilisation (requires statvfs@openssh.com support on
+   the server)
+
+ * Added a MaxSessions option to sshd_config(5) to allow control of the
+   number of multiplexed sessions supported over a single TCP connection.
+   This allows increasing the number of allowed sessions above the
+   previous default of 10, disabling connection multiplexing 
+   (MaxSessions=1) or disallowing login/shell/subsystem sessions
+   entirely (MaxSessions=0).
+
+ * Added a no-more-sessions@openssh.com global request extension that is
+   sent from ssh(1) to sshd(8) when the client knows that it will never
+   request another session (i.e. when session multiplexing is disabled). 
+   This allows a server to disallow further session requests and
+   terminate the session in cases where the client has been hijacked.
+
+ * ssh-keygen(1) now supports the use of the -l option in combination
+   with -F to search for a host in ~/.ssh/known_hosts and display its 
+   fingerprint.
+
+ * ssh-keyscan(1) now defaults to "rsa" (protocol 2) keys, instead of
+   "rsa1".
+
+ * Added an AllowAgentForwarding option to sshd_config(8) to control
+   whether authentication agent forwarding is permitted. Note that this
+   is a loose control, as a client may install their own unofficial
+   forwarder.
+
+ * ssh(1) and sshd(8): avoid unnecessary malloc/copy/free when receiving
+   network data, resulting in a ~10% speedup
+
+ * ssh(1) and sshd(8) will now try additional addresses when connecting
+   to a port forward destination whose DNS name resolves to more than
+   one address. The previous behaviour was to try the only first address
+   and give up if that failed. (bz#383)
+
+ * ssh(1) and sshd(8) now support signalling that channels are
+   half-closed for writing, through a channel protocol extension
+   notification "eow@openssh.com". This allows propagation of closed
+   file descriptors, so that commands such as:
+       "ssh -2 localhost od /bin/ls | true"
+   do not send unnecessary data over the wire. (bz#85)
+
+ * sshd(8): increased the default size of ssh protocol 1 ephemeral keys 
+   from 768 to 1024 bits.
+
+ * When ssh(1) has been requested to fork after authentication
+   ("ssh -f") with ExitOnForwardFailure enabled, delay the fork until
+   after replies for any -R forwards have been seen. Allows for robust
+   detection of -R forward failure when using -f. (bz#92)
+
+ * "Match group" blocks in sshd_config(5) now support negation of
+   groups. E.g. "Match group staff,!guests" (bz#1315)
+
+ * sftp(1) and sftp-server(8) now allow chmod-like operations to set 
+   set[ug]id/sticky bits. (bz#1310)
+
+ * The MaxAuthTries option is now permitted in sshd_config(5) match
+   blocks.
+
+ * Multiplexed ssh(1) sessions now support a subset of the ~ escapes
+   that are available to a primary connection. (bz#1331)
+
+ * ssh(1) connection multiplexing will now fall back to creating a new
+   connection in most error cases. (bz#1439 bz#1329)
+
+ * Added some basic interoperability tests against Twisted Conch.
+
+ * Documented OpenSSH's extensions to and deviations from the published
+   SSH protocols (the PROTOCOL file in the distribution)
+
+ * Documented OpenSSH's ssh-agent protocol (PROTOCOL.agent).
+
+Bug and documentation fixes
+
+ * Make ssh(1) deal more gracefully with channel requests that fail.
+   Previously it would optimistically assume that requests would always 
+   succeed, which could cause hangs if they did not (e.g. when the
+   server runs out of file descriptors). (bz#1384)
+
+ * ssh(1) now reports multiplexing errors via the multiplex slave's
+   stderr where possible (subject to LogLevel in the mux master).
+
+ * ssh(1) and sshd(8) now send terminate protocol banners with CR+LF for
+   protocol 2 to comply with RFC 4253. Previously they were terminated
+   with CR alone. Protocol 1 banners remain CR terminated. (bz#1443)
+
+ * Merged duplicate authentication file checks in sshd(8) and refuse to
+   read authorised_keys and .shosts from non-regular files. (bz#1438)
+
+ * Ensure that sshd(8)'s umask disallows at least group and world write,
+   even if a more permissive one has been inherited. (bz#1433)
+
+ * Suppress the warning message from sshd(8) when changing to a
+   non-existent user home directory after chrooting. (bz#1461)
+
+ * Mention that scp(1) follows symlinks when performing recursive
+   copies. (bz#1466)
+
+ * Prevent sshd(8) from erroneously applying public key restrictions
+   leaned from ~/.ssh/authorized_keys to other authentication methods
+   when public key authentication subsequently fails. (bz#1472)
+
+ * Fix protocol keepalive timeouts - in some cases, keepalive packets
+   were being sent, but the connection was not being closed when the
+   limit for missing replies was exceeded. (bz#1465)
+
+ * Fix ssh(1) sending invalid TTY modes when a TTY was forced (ssh -tt)
+   but stdin was not a TTY. (bz#1199)
+
+ * ssh(1) will now exit with a non-zero exit status if
+   ExitOnForwardFailure was set and forwardings were disabled due to a
+   failed host key check.
+
+ * Fix MaxAuthTries tests to disallow a free authentication try to
+   clients that skipped the protocol 2 "none" authentication method.
+   (part of bz#1432)
+
+ * Make keepalive timeouts apply while synchronously waiting
+   for a packet, particularly during key renegotiation. (bz#1363)
+
+ * sshd(8) has been audited to eliminate fd leaks and calls to fatal()
+   in conditions of file descriptor exhaustion.
+
+Portable OpenSSH-specific bugfixes
+
+ * Avoid a sshd(8) hang-on-exit on Solaris caused by depending on the 
+   success of isatty() on a PTY master (undefined behaviour). Probably 
+   affected other platforms too. (bz#1463)
+
+ * Fixed test for locked accounts on HP/UX with shadowed
+   passwords disabled. (bz#1083)
+
+ * Disable poll() fallback in atomiciov for Tru64. readv
+   doesn't seem to be a comparable object there, which lead to
+   compilation errors. (bz#1386)
+
+ * Fall back to racy rename if link returns EXDEV. (bz#1447)
+
+ * Explicitly handle EWOULDBLOCK wherever we handle EAGAIN, on
+   some platforms (HP nonstop) it is a distinct errno. (bz#1467)
+
+ * Avoid NULL dereferences in ancient sigaction replacement
+   code. (bz#1240)
+
+ * Avoid linking against libgssapi, which despite its name
+   doesn't seem to implement all of GSSAPI. (bz#1276)
+
+ * Use explicit noreturn attribute instead of __dead, fixing
+   compilation problems on Interix. (bz#1112)
+
+ * Added support password expiry on Tru64 SIA systems. (bz#1241)
+
+ * Fixed an UMAC alignment problem that manifested on Itanium 
+   platforms. (bz#1462)
+
+ * The sftp-server(8) manual now describes the requirements for
+   transfer logging in chroot environments. (bz#1488)
+
+ * Strip trailing dot from hostnames when the sshd_config(5)
+   HostbasedUsesNameFromPacketOnly option is set. (bz#1200)
+   
+Checksums:
+==========
+
+ - SHA1 (openssh-5.1.tar.gz) = 1e5b43844ed015e4fbbbe25cfad6f5377c60e759
+ - SHA1 (openssh-5.1p1.tar.gz) = 877ea5b283060fe0160e376ea645e8e168047ff5
+
+Reporting Bugs:
+===============
+
+- Please read http://www.openssh.com/report.html
+  Security bugs should be reported directly to openssh@openssh.com
+
+OpenSSH is brought to you by Markus Friedl, Niels Provos, Theo de Raadt,
+Kevin Steves, Damien Miller, Darren Tucker, Jason McIntyre, Tim Rice and
+Ben Lindstrom.
+
