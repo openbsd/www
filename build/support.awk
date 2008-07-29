@@ -59,6 +59,7 @@ $1 == "X" { fax = substr($0, 3); next }
 $1 == "M" { email = substr($0, 3); next }
 $1 == "U" { url = substr($0, 3); next }
 $1 == "N" { note = substr($0, 3); next }
+$1 == "F" { follow = substr($0, 3); next }
 
 # left over - must be part of note?
 	{
@@ -93,8 +94,12 @@ function dump() {
 			print "FAX: " fax "<br />"
 		if (email != "")
 			print "Email: <a href=\"mailto:" email "\">" email "</a>" "<br />"
+		if (follow != "true")
+			nofollow = " rel=\"nofollow\"";
+		else
+			nofollow = "";
 		if (url != "")
-			print "URL: <a href=\"" url "\">" url "</a>"
+			print "URL: <a href=\"" url "\"" nofollow ">" url "</a>"
 		print "</td>"
 	print "	<td>" note
 	print "</td></tr>"
