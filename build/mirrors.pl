@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.10 2006/10/24 18:08:41 grunk Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.11 2008/09/03 22:36:08 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -114,6 +114,7 @@ sub write_ftplist($$$) {
 			$loc =~ s/&ouml;/o/g ;
 			$loc =~ s/&uuml;/u/g ;
 			$loc =~ s/&eacute;/e/g ;
+			$loc =~ s/&ntilde;/n/g ;
 			(my $url = $mirror->{$type}) =~ s,/$,,;
 			if ((length($url) + 1 + length($loc) <= $MAXWIDTH)
 					&& (length($loc) > $LOCLEN)) {
