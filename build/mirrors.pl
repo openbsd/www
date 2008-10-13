@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.11 2008/09/03 22:36:08 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.12 2008/10/13 19:52:03 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -38,6 +38,14 @@ my $sources = {
 	'openntpd-portable-mid1'=> 'mirrors/ftp.html.mid1',
 	'openntpd-portable-mid2'=> 'mirrors/openntpd-ftp.html.mid2',
 	'openntpd-portable-end'	=> 'mirrors/openntpd-ftp.html.end',
+	'openssh-ftp-head'	=> 'mirrors/openssh-ftp.html.head',
+	'openssh-ftp-mid1'	=> 'mirrors/ftp.html.mid1',
+	'openssh-ftp-mid2'	=> 'mirrors/openntpd-ftp.html.mid2',
+	'openssh-ftp-end'	=> 'mirrors/openssh-ftp.html.end',
+	'openssh-portable-head' => 'mirrors/openssh-portable.html.head',
+	'openssh-portable-mid1' => 'mirrors/openssh-portable.html.mid1',
+	'openssh-portable-mid2' => 'mirrors/openntpd-ftp.html.mid2',
+	'openssh-portable-end'	=> 'mirrors/openssh-ftp.html.end',
 	'anoncvs-head'		=> 'mirrors/anoncvs.html.head',
 	'anoncvs-end'		=> 'mirrors/anoncvs.html.end',
 	'cvsync-head'		=> 'mirrors/cvsync.html.head',
@@ -49,6 +57,8 @@ my $targets = {
 	'openbgpd-ftp'		=> '../openbgpd/ftp.html',
 	'openntpd-ftp'		=> '../openntpd/ftp.html',
 	'openntpd-portable'	=> '../openntpd/portable.html',
+	'openssh-ftp'		=> '../openssh/ftp.html',
+	'openssh-portable'	=> '../openssh/portable.html',
 	'anoncvs'		=> '../anoncvs.html',
 	'cvsync'		=> '../cvsync.html'
 };
@@ -71,7 +81,7 @@ sub read_mirrors ($) {
 			# before pushing, else die
 			push(@mirrors, $record) if (int(keys(%$record)));
 			$record = {};		# new empty one
-		} elsif ($line =~ /^([A-Z]{2})\s+(.*)/) {
+		} elsif ($line =~ /^([A-Z]{2,3})\s+(.*)/) {
 			($record->{$1})
 				and die "dupe $1 in $filename:$lineno";
 			$record->{$1} = $2;	# add key/value pair
@@ -147,10 +157,12 @@ sub _paste_mirrorlist($$$$$$) {
 	my ($fh, $mirrorref, $type, $proj, $version, $links) = @_;
 
 	# indent for first <td> to come
-	print $fh ' ' x 4 if ($type eq 'UF' || $type eq 'UH' || $type eq 'UR');
+	print $fh ' ' x 4 if ($type eq 'UF' || $type eq 'UH' || $type eq 'UR'
+	    || $type eq 'USF' || $type eq 'USH' || $type eq 'USR');
 	for my $lv (1, 2, 3) {
 	foreach my $mirror (sort _by_country @$mirrorref) {
-		if ($type eq 'UF' || $type eq 'UH' || $type eq 'UR') {
+		if ($type eq 'UF' || $type eq 'UH' || $type eq 'UR'
+		    || $type eq 'USF' || $type eq 'USH' || $type eq 'USR') {
 			next if (($lv <= 2) && !defined $mirror->{'LF'});
 			next if ((defined $mirror->{'LF'}) && ($mirror->{'LF'} != $lv));
 		}
@@ -160,13 +172,21 @@ sub _paste_mirrorlist($$$$$$) {
 		}
 		next unless ($mirror->{$type});
 		my $loc = _get_location ($type, $mirror);
-		if ($type eq 'UF' || $type eq 'UH' || $type eq 'UR') {
+		if ($type eq 'UF' || $type eq 'UH' || $type eq 'UR'
+		    || $type eq 'USF' || $type eq 'USH' || $type eq 'USR') {
 			my $url = $mirror->{$type};
 			if ($proj eq 'openbgpd-ftp') {
 				$url .= "OpenBGPD/openbgpd-${version}.tgz";
 			}
 			elsif ($proj eq 'openntpd-ftp') {
 				$url .= "OpenNTPD/openntpd-${version}.tgz";
+			}
+			elsif ($proj eq 'openssh-ftp') {
+				$url .= "openssh-${version}.tar.gz";
+			}
+			elsif ($proj eq 'openssh-portable') {
+				#$url .= "portable/openssh-${version}.tar.gz";
+				$url .= "portable/";
 			}
 			elsif ($proj eq 'openntpd-portable') {
 				$url .= "OpenNTPD/openntpd-${version}.tar.gz";
@@ -265,13 +285,21 @@ sub write_ftphtml($$$$) {
 	open(my $fh, '>', $filename) or die "open $filename: $!";
 	_paste_in($fh, $sources->{"${what}-head"});
 	# produce ftp mirror list
-	_paste_mirrorlist($fh, $mirrorref, 'UF', $what, $ver, 1);
+	if($what eq 'openssh-ftp' || $what eq 'openssh-portable') {
+		_paste_mirrorlist($fh, $mirrorref, 'USF', $what, $ver, 1);
+	} else {
+		_paste_mirrorlist($fh, $mirrorref, 'UF', $what, $ver, 1);
+	}
 	_paste_in($fh, $sources->{"${what}-mid1"});
 	# produce http mirror list
-	_paste_mirrorlist($fh, $mirrorref, 'UH', $what, $ver, 1);
-	_paste_in($fh, $sources->{"${what}-mid2"});
-	# produce rsync mirror list
-	_paste_mirrorlist($fh, $mirrorref, 'UR', $what, $ver, 0);
+	if($what eq 'openssh-ftp' || $what eq 'openssh-portable') {
+		_paste_mirrorlist($fh, $mirrorref, 'USH', $what, $ver, 1);
+	} else {
+		_paste_mirrorlist($fh, $mirrorref, 'UH', $what, $ver, 1);
+		_paste_in($fh, $sources->{"${what}-mid2"});
+		# produce rsync mirror list, not for OpenSSH
+		_paste_mirrorlist($fh, $mirrorref, 'UR', $what, $ver, 0);
+	}
 	_paste_in($fh, $sources->{"${what}-end"});
 	close($fh) or die "close $filename: $!";
 }
@@ -311,7 +339,8 @@ sub _get_location($$) {
 	my $m = shift;
 
 	my $location = "";
-	if ($type eq 'UF' || $type eq 'UH' || $type eq 'UR') {
+	if ($type eq 'UF' || $type eq 'UH' || $type eq 'UR' ||
+	    $type eq 'USF' || $type eq 'USH') {
 		# first/second level mirrors have different title
 		if ((defined $m->{'LF'}) && ($m->{'LF'} == 1)) {
 			$location = "Master Fanout Site ($m->{'GC'})";
@@ -355,7 +384,8 @@ if (@ARGV == 2) {
 	if ($cmd eq 'ftplist') {
 		write_ftplist($targets->{'ftplist'}, $ver, \@mirrors);
 	} elsif ($cmd eq 'openbsd-ftp' || $cmd eq 'openbgpd-ftp' ||
-		 $cmd eq 'openntpd-ftp' || $cmd eq 'openntpd-portable') {
+		 $cmd eq 'openntpd-ftp' || $cmd eq 'openntpd-portable' ||
+		 $cmd eq 'openssh-ftp' || $cmd eq 'openssh-portable') {
 		write_ftphtml($cmd, $targets->{"$cmd"}, $ver, \@mirrors);
 	} elsif ($cmd eq 'anoncvs' || $cmd eq 'cvsync') {
 		write_cvshtml($cmd, $targets->{"$cmd"}, $ver, \@mirrors);
