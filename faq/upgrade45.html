@@ -8,7 +8,7 @@
 <meta name="description"   content="OpenBSD Upgrade Process for 4.4 -> 4.5">
 <meta name="keywords"      content="openbsd,faq,upgrade,4.5">
 <meta name="distribution"  content="global">
-<meta name="copyright"     content="This document copyright 2008 by OpenBSD">
+<meta name="copyright"     content="This document copyright 2009 by OpenBSD">
 </head>
 
 <body bgcolor="#ffffff" text="#000000">
@@ -91,9 +91,23 @@ between 4.4 and 4.5, but rather some of the important things that will
 impact a large number of users in the upgrade process.
 For a more complete list of changes, see
 <a href="../plus45.html">plus45.html</a> and the CVS change logs.
-
-<a name="newsysmerge"></a>
 <ul>
+
+<li><b>New file install/reboot sequence (non-install kernel
+process)</b><br>
+Previous upgrade processes used a process of install kernel,
+reboot, install userland.
+For OpenBSD 4.5, we suggest a different process -- install
+everything, THEN reboot.
+This must be done very carefully, otherwise one could end up with a
+system where the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=reboot&amp;sektion=1">reboot(1)</a>
+command is inoperable.
+Understand and follow the directions below before doing your upgrade
+remotely
+
+<p>
+<a name="newsysmerge"></a>
 <li><b>New
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysmerge&amp;sektion=8">sysmerge(8)</a>
 utility:</b><br>
@@ -205,14 +219,13 @@ One can usually do this by carefully following this process:
 Make sure you have sufficient space!
 
 <p>
-<li><b>Stop any "insecure" applications from starting at boot:</b>
-There will be a time when PF will be unlikely to be running during this
-upgrade process, but your applications may still start and run properly.
-Any application dependent upon PF for security should be disabled 
-before this happens, and should not be re-enabled until proper PF
-operation is verified after upgrade.
+<li><b>Stop any appropriate applications:</b>
+During this process, all the userland applications will be replaced but
+may not be runnable, and strange things may happen as a result.
+If this is a concern to you, shut down any applications that may
+be impacted.
 There may be other applications which you wish to keep from running
-during the upgrade, stop and disable them as well.
+immediately after the upgrade, stop and disable them as well.
 
 <p>
 <li><b>Check the kernel:</b>
@@ -226,7 +239,7 @@ This can be as simple as modifying a specific device using config(8),
 or it can involve a recompilation if the option you need is not included
 in the GENERIC kernel.
 Please consult <a href="faq5.html">FAQ 5 - Building the system from source</a>
-before considering to recompile your kernel.
+before deciding to recompile your kernel.
 
 <p>
 <li><b>Install new kernel(s)</b>
@@ -249,41 +262,24 @@ that the system can boot from should there be a really badly timed power
 outage or system crash.
 
 <p>
-<li><b>Install new <tt>/etc/firmware</tt> files and other critical
-utilities:</b>
-Some uploaded "firmware" files may have been updated, so
-you may need to update the files in the <tt>/etc/firmware</tt> directory.
-This will impact users of only a few devices, though all users can use
-this step without harm.
-To make sure your network is fully functional on reboot, the new kernel
-will need updated <tt>ifconfig</tt> and <tt>pfctl</tt> utilities to be
-configured properly after the reboot in the next step.
-Again, it's something that all users can do without harm, but if you are
-performing your remote upgrade over a <tt>pppoe(4)</tt> connection this
-step can be crucial.
-To extract the firmware files and utilies from <tt>base45.tgz</tt>,
-use the following as root:
+<li><b>Save yourself a copy of the old reboot(1) command:</b>
+You are still running the old kernel, it is possible the new reboot
+command will not run on the old kernel.
 
 <blockquote><pre>
-<b>tar -C / -xzphf ${RELEASEPATH}/base45.tgz ./etc/firmware ./sbin/ifconfig ./sbin/pfctl</b>
+<b>cp /sbin/reboot /sbin/oreboot</b>
 </pre></blockquote>
-
-<p>
-<li><b>Reboot on the new kernel:</b>
-This might be a tempting step to skip, but it should be done now, as
-usually, the new kernel will run old userland apps (such as the soon to
-be important <tt>reboot</tt>!), but often a new userland will NOT
-work on the old kernel.
 
 <p>
 <li><b>Install new userland applications.</b>
 <i>Do NOT install <tt>etc45.tgz</tt> and <tt>xetc45.tgz</tt> now, because
 that will overwrite your current configuration files!</i>
+Note that we are installing base45.tgz LAST, because it will include a new
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tar&amp;sektion=1">tar(1)</a>
+utility, which may or may not run on the old kernel.
+We reboot immediately, as the system is probably barely runnable now.
 
 <blockquote><pre>
-<b>export RELEASEPATH=</b><i>/usr/rel</i>
-<b>cd ${RELEASEPATH}</b>
-<b>tar -C / -xzphf base45.tgz</b>
 <b>tar -C / -xzphf comp45.tgz</b>
 <b>tar -C / -xzphf game45.tgz</b>
 <b>tar -C / -xzphf man45.tgz</b>
@@ -292,48 +288,31 @@ that will overwrite your current configuration files!</i>
 <b>tar -C / -xzphf xfont45.tgz</b>
 <b>tar -C / -xzphf xserv45.tgz</b>
 <b>tar -C / -xzphf xshare45.tgz</b>
+<b>tar -C / -xzphf base45.tgz</b> # Install last!
+<b>/sbin/oreboot</b>
 </pre></blockquote>
 
-Note: not all file sets will need to be installed for all applications,
+Not all file sets will need to be installed for all applications,
 however if you installed a file set originally, you should certainly
 upgrade it with the new file set now.
 
 <p>
-Note: the files in <tt>/etc</tt> are handled separately below, so
+Again, the files in <tt>/etc</tt> are handled separately below, so
 <tt>etc45.tgz</tt> and <tt>xetc45.tgz</tt> are NOT unpacked here.
 
+
 <p>
-<li><b>Upgrade <tt>/dev</tt>.</b>
+<li><b>After reboot completes, upgrade <tt>/dev</tt>.</b>
 The new 
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=MAKEDEV&amp;sektion=8&amp;arch=i386">MAKEDEV</a>
-file will be copied to /dev by the installation of
+file was copied to /dev by the installation of
 <tt>base45.tgz</tt>, so you simply need to do the following:
 <blockquote><pre>
 <b>cd /dev</b>
 <b>./MAKEDEV all</b>
 </pre></blockquote>
 
-<p>
-<li><b>Upgrade <tt>/etc</tt> as below</b>.
-
-<p>
-<li><b>Reboot</b>
 </ul>
-
-During this process,
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sendmail&amp;sektion=8">sendmail(8)</a>
-may produce some error messages like the following:
-<pre>
-    Nov 1 12:47:05 puffy sm-mta[16733]: filesys_update failed: No such file or dire
-    ctory, fs=., avail=-1, blocksize=380204
-</pre>
-These messages can be safely ignored for the moment, or you may wish to
-halt sendmail(8) during the upgrade process.
-Note that sendmail is not working properly at this point, and will need
-to be restarted (as part of the reboot) before mail is expected to be
-handled properly.
-
-<p>
 
 <hr>
 <a name="final"></a>
@@ -600,7 +579,7 @@ chapter of the FAQ for more information.
 <a href="index.html"><img height="24" width="24" src="../images/back.gif" border="0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: upgrade45.html,v 1.2 2008/12/28 03:12:46 nick Exp $</small>
+<small>$OpenBSD: upgrade45.html,v 1.3 2009/01/22 12:23:53 nick Exp $</small>
 
 </body>
 </html>
