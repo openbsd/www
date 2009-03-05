@@ -7,7 +7,7 @@
 <meta name= "description"   content= "the OpenBSD FAQ page">
 <meta name= "keywords"      content= "openbsd,faq">
 <meta name= "distribution"  content= "global">
-<meta name= "copyright"     content= "This document copyright 1998-2008 by OpenBSD.">
+<meta name= "copyright"     content= "This document copyright 1998-2009 by OpenBSD.">
 <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
 </head>
 
@@ -30,7 +30,7 @@
 <li><a href="#disklabel"  >14.1 - Using OpenBSD's disklabel(8)</a>
 <li><a href="#fdisk"      >14.2 - Using OpenBSD's fdisk(8)</a>
 <li><a href="#NewDisk"    >14.3 - Adding extra disks in OpenBSD</a>
-<li><a href="#SwapFile"   >14.4 - How to swap to a file</a>
+<li><a href="#Swap"       >14.4 - How is swap handled?</a>
 <li><a href="#SoftUpdates">14.5 - Soft Updates</a>
 <li><a href="#Boot386"    >14.6 - How does OpenBSD/i386 boot?</a>
 <li><a href="#LargeDrive" >14.7 - What are the issues regarding large
@@ -602,9 +602,56 @@ the files are there!
 
 
 <a name="SwapFile"></a>
-<h2>14.4 - How to swap to a file</h2>
+<a name="Swap"></a>
+<h2>14.4 - How is swap handled?</h2>
+
+<h3>14.4.1 - About swap</h3>
+Historically, all kinds of rules have been tossed about to guide
+administrators on how much swap to configure on their machines.
+The problem, of course, is there are few "normal" application.
 
 <p>
+Many types of systems may be appropriately configured with no swap
+at all.
+For example, firewalls should not swap in normal operation.
+Machines with flash storage generally should not swap.
+If your firewall is flash based, you may benefit (slightly) by
+not allocating a swap partition, though in most other cases,
+a swap partition won't actually hurt anything; most disks have
+more than enough space to allocate a little to swap.
+
+<p>
+There are all kinds of tips about optimizing swap (where on the disk,
+separate disks, etc.), but if you find yourself in a situation where
+optimizing swap is an issue, you probably need more RAM.
+In general, the best optimization for swap is to not need it.
+
+<p>
+In OpenBSD, swap is managed with the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=swapctl&amp;sektion=8">swapctl(8)</a>
+program, which adds, removes, lists and prioritizes swap devices and
+files.
+
+
+<h3>14.4.2 - Swapping to a partition</h3>
+<p>
+On OpenBSD, the 'b' partition of the boot drive is used by default and
+automatically for swap.
+No configuration is needed for this to take place.
+If you do not wish to use swap on the boot disk, do not define a
+"b" partition.
+If you wish to use swap on other partitions or on other disks, you
+need to define these partitions in <tt>/etc/fstab</tt> with lines
+something like:
+
+<blockquote><pre>
+/dev/sd3b none swap sw 0 0
+/dev/sd3d none swap sw 0 0
+</pre></blockquote>
+
+
+<h3>14.4.3 - Swapping to a file</h2>
+
 (Note: if you are looking to swap to a file because you are getting
 &quot;virtual memory exhausted&quot; errors, you should try raising
 the per-process limits first with 
@@ -613,15 +660,15 @@ or
 sh's <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ulimit&amp;sektion=1">ulimit(1)</a>.)
 
 <p>
-Swapping to a file doesn't require a custom built kernel, although that
-can still be done, this faq will show you how to add swap space both
-ways.
-
-<h3>Swapping to a file. </h3>
+Sometimes, your initial guess about how much swap you need proves to
+be wrong, and you have to add additional swap space, occasionally in
+a hurry (as in, "Geez, at the rate it is burning swap, we'll be wedged
+in five minutes").
+If you find yourself in this position, adding swap space as a file on
+an existing file system can be a quick fix.
 
 <p>
-Swapping to a file is the easiest and quickest way to get extra swap space
-setup.  The file must not reside on a filesystem which has SoftUpdates
+The file must not reside on a filesystem which has SoftUpdates
 enabled (they are disabled by default).  To start out, you can see how
 much swap you currently have and how much you are using with the
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=swapctl&amp;sektion=8">swapctl(8)</a>
@@ -639,7 +686,7 @@ current statistics. In the above example there is only one device named
 &quot;swap_device&quot;. This is the predefined area on disk that is
 used for swapping. (Shows up as partition b when viewing disklabels) As
 you can also see in the above example, that device isn't getting much
-use at the moment. But for the purposes of this document, we will act as
+use at the moment, but for the purposes of this document, we will act as
 if an extra 32M is needed.
 
 <p>
@@ -647,7 +694,7 @@ The first step to setting up a file as a swap device is to create the
 file. It's best to do this with the
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dd&amp;sektion=1">dd(1)</a>
 utility. Here is an example of creating the file <i>/var/swap</i> that
-is 32M large.
+is 32M in size.
 
 <blockquote><pre>
 $ <b>sudo dd if=/dev/zero of=/var/swap bs=1k count=32768</b>
@@ -687,66 +734,6 @@ swap device configured.
 $ <b>cat /etc/fstab</b>
 /dev/wd0a / ffs rw 1 1
 /var/swap /var/swap swap sw 0 0
-</pre></blockquote>
-
-<h3>Swapping via a vnode device</h3>
-
-<p>
-This is a more permanent solution to adding more swap space. To swap to
-a file permanently, first make a kernel with vnd0c as swap. If you have
-wd0a as root filesystem, wd0b is the previous swap, use this line in the
-kernel configuration file (refer to compiling a new kernel if in doubt):
-
-<blockquote><pre>
-config          bsd     root on wd0a swap on wd0b and vnd0c dumps on wd0b
-</pre></blockquote>
-
-<p>
-After this is done, the file which will be used for swapping needs to be
-created. You should do this by using the same command as in the above
-examples.
-
-<blockquote><pre>
-$ <b>sudo dd if=/dev/zero of=/var/swap bs=1k count=32768</b>
-32768+0 records in
-32768+0 records out
-33554432 bytes transferred in 20 secs (1677721 bytes/sec)
-</pre></blockquote>
-
-<p>
-Now your file is in place, you need to add the file to your
-<i>/etc/fstab</i>. Here is a sample line to boot with this device as
-swap on boot.
-
-<blockquote><pre>
-$ <b>cat /etc/fstab</b>
-/dev/wd0a / ffs rw 1 1
-/dev/vnd0c none swap sw 0 0 
-</pre></blockquote>
-
-<p>
-At this point your computer needs to be rebooted so that the kernel
-changes can take place. Once this has been done it's time to configure
-the device as swap. To do this you will use
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vnconfig&amp;sektion=8">vnconfig(8)</a>.
-
-<blockquote><pre>
-$ <b>sudo vnconfig -c -v vnd0 /var/swap</b>
-vnd0: 33554432 bytes on /var/swap
-</pre></blockquote>
-
-<p>
-Now for the last step, turning on swapping to that device. We will do
-this just like in the above examples, using swapctl(8). Then we will
-check to see if it was correctly added to our list of swap devices.
-
-<blockquote><pre>
-$ <b>sudo swapctl -a /dev/vnd0c</b>
-$ <b>swapctl -l</b>
-Device      512-blocks     Used    Avail Capacity  Priority
-swap_device      65520        8    65512     0%    0
-/dev/vnd0c       65536        0    65536     0%    0
-Total           131056        8   131048     0%
 </pre></blockquote>
 
 
@@ -2531,7 +2518,7 @@ they will get wiped and recreated on a reboot anyway.
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq14.html,v 1.183 2009/02/26 08:38:53 sobrado Exp $</small>
+<small>$OpenBSD: faq14.html,v 1.184 2009/03/05 01:21:12 nick Exp $</small>
 
 </body>
 </html>
