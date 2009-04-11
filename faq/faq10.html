@@ -8,7 +8,7 @@
 <meta name= "description"   content= "the OpenBSD FAQ page">
 <meta name= "keywords"      content= "openbsd,faq">
 <meta name= "distribution"  content= "global">
-<meta name= "copyright"     content= "This document copyright 1998-2007 by OpenBSD.">
+<meta name= "copyright"     content= "This document copyright 1998-2009 by OpenBSD.">
 </head>
 
 <body bgcolor= "#ffffff" text= "#000000">
@@ -47,6 +47,13 @@
 <li><a href="#httpdchroot"   >10.16 - Tell me about chroot(2) Apache?</a>
 <li><a href="#rootshell"     >10.17 -  Can I change the root shell?</a>
 <li><a href="#ksh"           >10.18 - What else can I do with ksh?</a>
+<li><a href="#Dir"           >10.19 - Directory services</a>
+<ul>
+  <li><a href="#Dir.available" >10.19.1 - Which directory services are available?</a>
+  <li><a href="#YP_secure"     >10.19.2 - YP security considerations</a>
+  <li><a href="#YP_server"     >10.19.3 - Setting up a YP server</a>
+  <li><a href="#YP_client"     >10.19.4 - Setting up a YP client</a>
+</ul>
 </ul>
 
 <hr>
@@ -1637,6 +1644,384 @@ to give an overly verbose but somewhat useful prompt.
 
 
 <p>
+<a name="Dir"></a>
+<h2>10.19 - Directory services</h2>
+
+<p>
+OpenBSD can be used for both servers and clients of databases containing
+user credentials, group information and other network-related data.
+
+<p>
+<a name="Dir.available"></a>
+<h3>10.19.1 - Which directory services are available?</h3>
+
+<p>
+Of course, you could use various directory services on OpenBSD.
+But YP is the only one that can be accessed directly using standard
+C-library functions like
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=getpwent&sektion=3"
+>getpwent(3)</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=getgrent&sektion=3"
+>getgrent(3)</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=gethostbyname&sektion=3"
+>gethostbyname(3)</a> and so on.
+Thus, if you keep your data in a YP database, you do not need
+to copy it to local configuration files like
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=master.passwd&sektion=5"
+>master.passwd(5)</a> before you can use it,
+for example to authenticate system users.
+
+<p>
+YP is a directory service compatible with
+Sun Microsystems NIS (Network Information System).
+See
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=yp&sektion=8">yp(8)</a>
+for an overview of the available manual pages.
+Be careful, some operating systems contain directory services bearing
+similar names but all the same being incompatible, for example NIS+.
+
+<p>
+To use other directory services except YP, you either need to populate local
+configuration files from the directory, or you need a YP frontend to
+the directory.
+For example, you can use the <tt>sysutils/login_ldap</tt> port
+when you choose the former, while the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ypldap&sektion=8"
+>ypldap(8)</a> daemon provides the latter.
+
+<p>
+For some applications, simply synchronizing a small number of configuration
+files among a group of machines using tools like
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=cron&sektion=8"
+>cron(8)</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=scp&sektion=1"
+>scp(1)</a> or <tt>rsync</tt> (available from ports) constitutes an easy
+and robust alternative to a full-blown directory service.
+
+<a name="YP_secure"></a> 
+<h3>10.19.2 - YP security considerations</h3>
+
+<p>
+For compatibility reasons, all security features built into the OpenBSD
+implementation of YP are switched <em>off</em> by default.
+Even when they are all switched on, the NIS protocol is still
+inherently insecure for two reasons:
+All data, including sensitive data like password hashes,
+is transmitted unencrypted across the network, and neither the client
+nor the server can reliably verify each other's identity.
+
+<p>
+Thus, before setting up any YP server, you should consider whether
+these inherent security flaws are acceptable in your context.
+In particular, YP is inadequate if potential attackers have physical
+access to your network.
+Anybody gaining root access to any computer connected to your network
+segments carrying YP traffic can bind your YP domain and retrieve its data.
+In some cases, passing YP traffic through SSL or IPSec tunnels
+might be an option, or you might consider combining YP with
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=kerberos&sektion=8"
+>kerberos(8)</a> authentication.
+
+<a name="YP_server"></a> 
+<h3>10.19.3 - Setting up a YP server</h3>
+
+A YP server serves a group of clients called a "domain".
+You should first select a domain name; it can be an arbitrary string
+and need not be related in any way to DNS domain names.
+Choosing a random name like "Eepoo5vi" can marginally improve security,
+though the effect is mostly in security by obscurity.
+In case you need to maintain several distinct YP domains,
+it's probably better to choose descriptive names like "sales",
+"marketing" and "research" in order to forestall system administration
+errors caused by obscurity.
+Also note that some versions of SunOS require using the host's DNS
+domain name, so your choice might be restricted in a network including
+such hosts.
+
+<ol>
+<li><p>
+Use the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=domainname&sektion=1"
+>domainname(1)</a> utility to set the domain name, and put it into the file
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=defaultdomain&sektion=5"
+>defaultdomain(5)</a> to have it automatically set at system startup time. 
+
+<blockquote><pre>
+echo "puffynet" > /etc/defaultdomain
+domainname `cat /etc/defaultdomain`
+</pre></blockquote>
+
+<li><p>
+Decide where to store the source files to generate your YP maps from.
+Usually, the default location <tt>/etc</tt> is <em>not</em> appropriate:
+As a rule, you do not need all accounts and groups existing on the server
+on all your client hosts.
+In particular, not serving the root account and thus keeping root's
+password hash confidential is often beneficial to security.
+The only inconvenience caused by changing the source directory
+is that you will not be able to add, remove and modify users and groups
+in the YP domain using utilities like
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=user&sektion=8"
+>user(8)</a> and
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=group&sektion=8"
+>group(8)</a>.
+Instead, you will have to edit the configuration files with a text editor.
+
+<p>
+To define the source directory, edit the file <tt>/var/yp/Makefile.yp</tt>
+and change the <tt>DIR</tt> variable, e.g.
+
+<blockquote><pre>
+DIR=/etc/yp/src/puffynet
+</pre></blockquote>
+
+If all your YP clients run OpenBSD or FreeBSD, exclude the encrypted
+passwords from the <tt>passwd</tt> maps by setting <tt>UNSECURE=""</tt> in
+<tt>/var/yp/Makefile.yp</tt>.
+
+<p>
+A backup of the original template <tt>Makefile.yp</tt> is placed at
+<tt>/var/yp/Makefile.yp.dist</tt> at system install time,
+in case you need to recover a vanilla configuration.
+
+<li><p>
+Create the source directory and populate it with the configuration files
+you need.  See
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=Makefile.yp&sektion=8"
+>Makefile.yp(8)</a> to learn which YP maps require which source files.
+For the format of the individual configuration files, refer to
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=passwd&sektion=5"
+>passwd(5)</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=group&group=5"
+>group(5)</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hosts&sektion=5"
+>hosts(5)</a> and so on, and look at the examples in <tt>/etc</tt>.
+
+<li><p>
+Initialise the YP server using the interactive command
+
+<blockquote><pre>
+ypinit -m
+</pre></blockquote>
+
+At this point, it is not necessary to specify slave servers yet.
+To add slave servers, you can rerun
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ypinit&sektion=8"
+>ypinit(8)</a> later, using the <tt>-u</tt> option.
+Setting up at least one slave server for each domain is useful
+to avoid service interruptions, should the master server ever go down
+or lose network connectivity, in particular since client processes
+trying to access YP maps block indefinitely until they receive the
+requested information.  Thus, YP service interruptions typically render
+the client hosts completely unusable until YP is back to service.
+
+<p>
+Note that changes made to <tt>/var/yp/Makefile.yp</tt> after running
+<tt>ypinit -m</tt> have no effect because <tt>ypinit -m</tt>
+copies the template to <tt>/var/yp/`domainname`/Makefile</tt>.
+While most of the database files in <tt>/var/yp/`domainname`</tt>
+can easily be recreated using this new Makefile, there is one exception:
+The file <tt>ypservers.db</tt>, listing all YP master and slave servers
+associated with the domain, is created directly from <tt>ypinit -m</tt>
+and modified exclusively by <tt>ypinit -u</tt>.
+Thus, take special care never to damage that particular file,
+lest you have to regenerate it manually using
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=makedbm&sektion=8"
+>makedbm(8)</a>,
+or reinitialise the server by rerunning <tt>ypinit -m</tt>.
+
+<li><p>
+YP uses
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rpc&sektion=3"
+>rpc(3)</a> (remote procedure calls) to communicate with clients,
+so it is necessary to enable
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=portmap&sektion=8"
+>portmap(8)</a>.
+To do so, edit
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rc.conf.local&sektion=8"
+>rc.conf.local(8)</a> and set <tt>portmap=YES</tt>.
+This will start the portmapper on next boot.
+You can avoid rebooting by also starting it manually:
+
+<blockquote><pre>
+echo "portmap=YES" >> /etc/rc.conf.local
+portmap
+</pre></blockquote>
+
+<li><p>
+Consider using either the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=securenet&sektion=5"
+>securenet(5)</a> or the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ypserv.acl&sektion=5"
+>ypserv.acl(5)</a> security feature of the YP server daemon.
+But be aware that both of these only provide IP based access control.
+Thus, they only help as long as potential attackers have neither physical
+access to the hardware of the network segments carrying your YP traffic
+nor root access to any host connected to those network segments.
+
+<li><p>
+Finally, start the YP server daemon:
+
+<blockquote><pre>
+ypserv
+</pre></blockquote>
+
+It will automatically be restarted at boot time as long as the directory
+<tt>/var/yp/`domainname`</tt> continues to exist.
+
+<li><p>
+To test the new server, consider making it its own client,
+following the instructions in the first part of the next section.
+In case you don't want the server to use its own maps, you can
+disable the client part after the test with the following commands:
+
+<blockquote><pre>
+pkill ypbind
+rm -rf /var/yp/binding
+</pre></blockquote>
+
+<li><p>
+If you wish to allow users to change their passwords from client machines,
+then you must enable
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=yppasswdd&sektion=8"
+>yppasswdd(8)</a>:
+
+<blockquote><pre>
+echo 'yppasswdd_flags="-d /etc/yp/src/puffynet"' >> /etc/rc.conf.local
+rpc.yppasswdd
+</pre></blockquote>
+
+In case you left the source directory at the default <tt>/etc</tt>,
+just use <tt>yppasswdd_flags=""</tt>.
+
+<li><p>
+Remember that each time you change a file sourced by a YP map,
+you must regenerate your YP maps.
+
+<blockquote><pre>
+cd /var/yp
+make
+</pre></blockquote>
+</ol>
+
+<a name="YP_client"></a> 
+<h3>10.19.4 - Setting up a YP client</h3>
+
+Setting up a YP client involves two distinct parts.
+First, you must get the YP client daemon running,
+binding your client host to a YP server.
+Completing the following steps will allow you to retrieve data
+from the YP server, but that data will not yet be used by the system:
+
+<ol>
+<li><p>
+Like on the server, you must set the domain name and enable the portmapper:
+
+<blockquote><pre>
+echo "puffynet" > /etc/defaultdomain
+domainname `cat /etc/defaultdomain`
+echo "portmap=YES" >> /etc/rc.conf.local
+portmap
+</pre></blockquote>
+
+<li><p>
+It is recommended to provide a list of YP servers in the configuration
+file <tt>/etc/yp/`domainname`</tt>.
+Otherwise, the YP client daemon will use network broadcasts to find
+YP servers for its domain.
+Explicitly specifying the servers is both more robust and marginally
+less open to attack.
+If you have not set up any slave servers, just put the host name
+of the master server into <tt>/etc/yp/`domainname`</tt>.
+
+<li><p>
+The YP client daemon is called
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ypbind&sektion=8"
+>ypbind(8)</a>.
+Starting it manually will create the directory <tt>/var/yp/binding</tt>,
+such that it will be automatically restarted at boot time.
+
+<blockquote><pre>
+ypbind
+</pre></blockquote>
+
+<li><p>
+If all went well you should be able to query the YP server using
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ypcat&sektion=1"
+>ypcat(1)</a> and see your passwd map returned.
+
+<blockquote><pre>
+ypcat passwd
+bob:*:5001:5000:Bob Nuggets:/home/bob:/usr/local/bin/zsh
+...
+</pre></blockquote>
+
+Other useful tools for debugging your YP setup include
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ypmatch&sektion=1"
+>ypmatch(1)</a> and
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=yptest&sektion=8"
+>yptest(8)</a>.
+</ol>
+
+The second part of configuring a YP client
+involves editing local configuration files
+such that certain YP maps get used by various system facilities.
+Not all servers serve all standard maps supported by the operating system,
+some servers serve additional non-standard maps,
+and you are by no means compelled to use all those maps.
+Which of the available maps shall or shall not be used,
+and for which purposes they shall be used, is fully at the discretion
+of the client host's system administrator.
+
+<p>
+For a list of standard YP maps and their standard usage, see
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=Makefile.yp&sektion=8"
+>Makefile.yp(8)</a>.
+The most common use cases include:
+
+<ul>
+<li><p>
+If you want to include all user accounts from the YP domain,
+append the default YP marker to the master password file and rebuild
+the password database:
+
+<blockquote><pre>
+echo '+:*::::::::' >> /etc/master.passwd
+pwd_mkdb /etc/master.passwd
+</pre></blockquote>
+
+For details on selective inclusion and exclusion of user accounts, see
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=passwd&sektion=5"
+>passwd(5)</a>.
+To test whether inclusion actually works, use the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=id&sektion=1"
+>id(1)</a> utility.
+
+<li><p>
+If you want to include all groups from the YP domain,
+append the default YP marker to the group file:
+
+<blockquote><pre>
+echo '+:*::' >> /etc/group
+</pre></blockquote>
+
+For details on selective group inclusion, see
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=group&sektion=5"
+>group(5)</a>.
+
+<li><p>
+If you are distributing hostnames via YP, you should now review
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=resolv.conf&sektion=5"
+>resolv.conf(5)</a> and check that the name service lookup order is correct.
+Most users will require a line like this:
+
+<blockquote><pre>
+lookup files yp bind
+</pre></blockquote>
+</ul>
+
+
+<p>
 <font color= "#0000e0">
 <a href= "index.html">[FAQ Index]</a>
 <a href= "faq9.html">[To Section 9 - Migrating to OpenBSD]</a>
@@ -1648,6 +2033,6 @@ to give an overly verbose but somewhat useful prompt.
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq10.html,v 1.140 2008/11/12 02:59:41 nick Exp $</small>
+<small>$OpenBSD: faq10.html,v 1.141 2009/04/11 10:57:25 schwarze Exp $</small>
 </body>
 </html>
