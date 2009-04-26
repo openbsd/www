@@ -1,0 +1,236 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Таблицы</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-type" content="text/html; charset=UTF8">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+</head>
+
+<!--
+Copyright (c) 2003, 2004 Joel Knight <enabled@myrealbox.com>
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<a href="../../index.html">
+<img alt="[OpenBSD]" height=30 width=141 src="../../images/smalltitle.gif" border="0">
+</a>
+<p>
+[<a href="macros.html">Предыдущая: Списки и Макросы</a>]
+[<a href="index.html">Содержание</a>]
+[<a href="filter.html">Следующая: Фильтрация пакетов</a>]
+
+<p>
+<h1><font color="#e00000">PF: Таблицы</font></h1>
+
+<hr>
+
+<h3>Содержание</h3>
+<ul>
+<li><a href="#intro">Вступление</a>
+<li><a href="#config">Настройка</a>
+<li><a href="#manip">Управление через <tt>pfctl</tt></a>
+<li><a href="#addr">Указание адресов</a>
+<li><a href="#match">Соответствие адресов</a>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Вступление</h2>
+Таблицы используются для хранения групп IPv4 и/или IPv6 адресов.
+Поиск по таблице осуществляется очень быстро и потребляет меньше памяти и
+процессорного времени, чем поиск по <a href="macros.html#lists">спискам</a>.
+По этой причина, таблица является идеальным местом для хранения больших
+групп адресов, поскольку поиск по таблице содержащей 50,000 адресов 
+занимает не много больше времени, чем поиск по таблице содержащей 50 адресов.
+Таблицы могут использоваться в следующих случаях:
+<ul>
+<li>исходные и/или адреса назначения в правилах
+<a href="filter.html">фильтрации</a>, <a href="scrub.html">скраб</a>,
+<a href="nat.html">NAT</a>, и <a href="rdr.html">переадресации</a>.
+<li>преобразуемые адреса в правилах <a href="nat.html">NAT</a>.
+<li>переадресуемые адреса в правилах <a href="rdr.html">переадресации</a>.
+<li>адреса назначения в опциях <tt>route-to</tt>, <tt>reply-to</tt>, и
+<tt>dup-to</tt>.
+</ul>
+
+<p>
+Таблицы создаются либо в файле
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+4.4"
+><tt>pf.conf</tt></a>, либо с помощью
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+4.4"
+>pfctl(8)</a>.
+
+<a name="config"></a>
+<h2>Настройка</h2>
+В <tt>pf.conf</tt>, таблицы создаются с помощью директивы <tt>table</tt>.
+Следующие атрибуты могут быть определены для каждой таблицы:
+<ul>
+<li><tt>const</tt> - содержание таблицы не может быть изменено, после того,
+как таблица была создана. Когда этот атрибут не указан,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+4.4"
+>pfctl(8)</a> может быть использован для добавления или удаления адресов из таблицы,
+в любое время, даже при
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=securelevel&amp;sektion=7"
+>securelevel(7)</a> равному двум или больше.
+<li><tt>persist</tt> - заставляет ядро держать таблицу в памяти, даже
+когда к ней не применено никаких правил. Без этого атрибута, ядро
+автоматически удалит таблицу, когда последнее правило ссылающееся 
+на таблицу будет очищено.
+</ul>
+
+<p>
+Пример:
+<blockquote>
+<tt>
+table &lt;goodguys&gt; { 192.0.2.0/24 }<br>
+table &lt;rfc1918&gt; const { 192.168.0.0/16, 172.16.0.0/12, \<br>
+&nbsp;&nbsp;&nbsp;10.0.0.0/8 }<br>
+table &lt;spammers&gt; persist<br>
+<br>
+block in on fxp0 from { &lt;rfc1918&gt;, &lt;spammers&gt; } to any<br>
+pass&nbsp; in on fxp0 from &lt;goodguys&gt; to any<br>
+</tt>
+</blockquote>
+
+<p>
+Адреса так же могут быть заданы используя модификатор отрицания (или "не"):
+<blockquote>
+<tt>
+table &lt;goodguys&gt; { 192.0.2.0/24, !192.0.2.5 }
+</tt>
+</blockquote>
+
+<p>
+Таблица <tt>goodguys</tt> будет соответствовать всем адресам в сети
+192.0.2.0/24 кроме 192.0.2.5.
+
+<p>
+Обратите внимание, что название таблицы всегда должно быть заключено в треугольные &lt; &gt; скобки.
+
+<p>
+Таблицы так же могут быть заполнены из текстовых файлов, содержащих список IP
+адресов и сетей:
+<blockquote>
+<tt>
+table &lt;spammers&gt; persist file "/etc/spammers"<br>
+<br>
+block in on fxp0 from &lt;spammers&gt; to any<br>
+</tt>
+</blockquote>
+
+<p>
+Файл <tt>/etc/spammers</tt> будет содержать список IP адресов
+и/или <a href="http://public.pacbell.net/dedicated/cidr.html">CIDR</a> 
+блоки сетей, по одному в каждой строке.
+Любые строки начинающиеся с <tt>#</tt> будут читаться, как комментарий и игнорироваться.
+
+<a name="manip"></a>
+<h2>Упраление через <tt>pfctl</tt></h2>
+Редактирование таблицы может происходить на лету, используя
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+4.4"
+>pfctl(8)</a>. Например для
+добавление записей в таблицу &lt;spammers&gt;, созданную выше:
+<blockquote>
+<tt># pfctl -t spammers -T add 218.70.0.0/16</tt>
+</blockquote>
+
+<p>
+Так же эта команда создаст таблицу &lt;spammers&gt; если она ещё не
+существует. Для вывода списка адресов в таблице:
+<blockquote>
+<tt># pfctl -t spammers -T show</tt>
+</blockquote>
+Аргумент <tt>-v</tt> также может быть использован с аргументом <tt>-Tshow</tt> для
+отображения статистики для каждой записи в таблице. Для удаления
+адресов из таблицы:
+<blockquote>
+<tt>
+# pfctl -t spammers -T delete 218.70.0.0/16
+</tt>
+</blockquote>
+
+<p>
+Для получения более поднобной информации по управлению таблицами через <tt>pfctl</tt>,
+читайте страницу руководства
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+4.4"
+>pfctl(8)</a>.
+
+<a name="addr"></a>
+<h2>Указание адресов</h2>
+Помимо указания IP адресов, хосты могут быть указаны через их имена(hostname).
+Когда имя резолвится в IP адрес, IPv4 и IPv6 адреса кладутся в таблицу.
+IP адреса так же могут быть заполнены в таблицу указанием точного названия
+интерфейса. Таблица будет содержать все IP адреса принадлежащие интерфейсу
+или машине(включая loopback адреса).<br>
+<br>
+Одно ограничение, адреса  <tt>0.0.0.0/0</tt> и
+<tt>0/0</tt> не будут работать в таблице.
+Альтернативой является жёсткое указание в коде этих адресов, или использовать
+<a href="macros.html#macros">макросы</a>.
+
+<a name="match"></a>
+<h2>Соответствие адресов</h2>
+При поиске адресов в таблице, вернётся соответствующая запись.
+Это позволяет создавать такие таблицы, как:
+<blockquote>
+<tt>
+table &lt;goodguys&gt; { 172.16.0.0/16, !172.16.1.0/24, 172.16.1.100 }<br>
+<br>
+block in on dc0 all<br>
+pass &nbsp;in on dc0 from &lt;goodguys&gt; to any<br>
+</tt>
+</blockquote>
+
+<p>
+Исходные адреса любых пакетов входящих через интерфейс <tt>dc0</tt>
+будут сравниваться с таблицей <tt>&lt;goodguys&gt;</tt>:
+<ul>
+<li>172.16.50.5 - входит в блок адресов 172.16.0.0/16; пакет соответствует
+таблице и будет пропущен
+<li>172.16.1.25 - входит в блок адресов !172.16.1.0/24; пакет соответвует
+записе в таблице, но запись отрицательная (используется модификатор "!");
+пакет не соответствует таблице и будет блокирован
+<li>172.16.1.100 - соответсвует записе 172.16.1.100; пакет соответствует
+таблице и будет пропущен
+<li>10.1.4.55 - не соответствует таблице и будет блокирован
+</ul>
+
+<p>
+[<a href="macros.html">Предыдущая: Списки и Макросы</a>]
+[<a href="index.html">Содержание</a>]
+[<a href="filter.html">Следующая: Фильтрация пакетов</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<!--
+Originally [OpenBSD: tables.html,v 1.24 ]<br>
+$Translation: tables.html,v 1.1 2009/04/09 15:26:19 vladimir Exp $<br>
+-->
+<small>$OpenBSD: tables.html,v 1.1 2009/04/26 15:44:20 tobias Exp $</small>
+
+</body>
+</html> 

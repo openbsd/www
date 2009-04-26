@@ -1,0 +1,193 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Списки и Макросы</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=UTF8">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+</head>
+
+<!--
+Copyright (c) 2003, Nick Holland <nick@openbsd.org>
+Copyright (c) 2003, 2004, Joel Knight <enabled@myrealbox.com>
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<a href="../../index.html">
+<img alt="[OpenBSD]" height=30 width=141 src="../../images/smalltitle.gif" border="0">
+</a>
+<p>
+[<a href="config.html">Предыдущая: В начале</a>]
+[<a href="index.html">Содержание</a>]
+[<a href="tables.html">Следующая: Таблицы</a>]
+
+<h1><font color="#e00000">PF: Списки и Макросы</font></h1>
+<hr>
+
+<h3>Содержание</h3>
+<ul>
+<li><a href="#lists">Списки</a>
+<li><a href="#macros">Макросы</a>
+</ul>
+
+<hr>
+
+<a name="lists"></a>
+<h2>Списки</h2>
+Список позволяет задавать несколько похожих критериев в правиле.
+Например, названия протоколов, номера портов, адреса, и т.д.
+Так, взамен написания по одному правилу для каждого IP адреса, который 
+должен быть заблокирован, может быть написано одно единственное правило, с указанием
+IP адресов в списке. Списки обозначаются указанием пунктов, заключенных
+в <tt>{ }</tt> скобки.
+
+<p>
+Когда
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+4.4"
+>pfctl(8)</a> встречает список, во время загруки правил, он
+создаёт несколько правил, по одному для каждого пункта в списке. Например:
+<blockquote>
+<tt>
+block out on fxp0 from { 192.168.0.1, 10.5.32.6 } to any
+</tt>
+</blockquote>
+
+<p>
+будет развёрнуто в:
+<blockquote>
+<tt>
+block out on fxp0 from 192.168.0.1 to any<br>
+block out on fxp0 from 10.5.32.6 to any
+</tt>
+</blockquote>
+
+<p>
+Списки могут быть использованы в пределах всего правила, и не ограничиваются
+использованием только в правилах фильтрации.
+<blockquote>
+<tt>
+rdr on fxp0 proto tcp from any to any port { 22 80 } -&gt; \<br>
+&nbsp;&nbsp;&nbsp;192.168.0.6<br>
+block out on fxp0 proto { tcp udp } from { 192.168.0.1, \<br> 
+&nbsp;&nbsp;&nbsp;10.5.32.6 } to any port { ssh telnet }
+</tt>
+</blockquote>
+
+<p>
+Обратите внимание, что запятая между пунктами списка не обязательна.
+
+<p>
+Списки могут содержать вложенные списки:
+
+<blockquote>
+<tt>
+trusted = "{ 192.168.1.2 192.168.5.36 }"<br>
+pass in inet proto tcp from { 10.10.0.0/24 $trusted } to port 22
+</tt>
+</blockquote>
+
+<p>
+Остерегайтесь кострукций, подобных нижеуказанной и прозванных
+"отицательные конструкции", которая содержит распространённую ошибку:
+<blockquote>
+<tt>
+pass in on fxp0 from { 10.0.0.0/8, !10.1.2.3 }
+</tt>
+</blockquote>
+
+<p>
+Многие читают правило, как 
+"все адреса с 10.0.0.0/8, за исключением адреса 10.1.2.3",
+в то время как правило разворачивается в:
+<blockquote>
+<tt>
+pass in on fxp0 from 10.0.0.0/8<br>
+pass in on fxp0 from !10.1.2.3
+</tt>
+</blockquote>
+
+<p>
+что соответствует любым возможным адресам. Вместо этого,
+должны быть использованы <a href="tables.html">таблицы</a>.
+
+<a name="macros"></a>
+<h2>Макросы</h2>
+Макросы это определяемые пользователем переменные, которые могут содержать
+IP адреса, номера портов, названия интерфейсов, и т.д. Макросы уменьшают
+запутанность правил PF и могут сделать поддержку правил более проще.
+
+<p>
+Имена макросов должны начинаться с буквы и могут содержать цифры, буквы и
+символы подчёркивания. Имена макросов не могут содержать такие слова, как
+ <tt>pass</tt>, <tt>out</tt>, или <tt>queue</tt>.
+<blockquote>
+<tt>
+ext_if = "fxp0"<br>
+<br>
+block in on $ext_if from any to any<br>
+</tt>
+</blockquote>
+
+<p>
+Это правило создаст макрос, под названием <tt>ext_if</tt>. Когда обращаются к макросу,
+после того, как он был создан, перед его именем стоит знак <tt>$</tt>.
+
+<p>
+Так же макросы могут развёртываться в списки
+<blockquote>
+<tt>
+friends = "{ 192.168.1.1, 10.0.2.5, 192.168.43.53 }"
+</tt>
+</blockquote>
+
+<p>
+Макросы могут быть заданы рекурсивно.
+Используется следующий синтаксис:
+<blockquote>
+<tt>
+host1      = "192.168.1.1"<br>
+host2      = "192.168.1.2"<br>
+all_hosts  = "{" $host1 $host2 "}"<br>
+</tt>
+</blockquote>
+
+<p>
+Макрос <tt>$all_hosts</tt> теперь развёртывается в 192.168.1.1, 192.168.1.2.
+
+<p>
+[<a href="config.html">Предыдущая: В начале</a>]
+[<a href="index.html">Содержание</a>]
+[<a href="tables.html">Следующая: Таблицы</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<!--
+Originally [OpenBSD: macros.html,v 1.23 ]<br>
+$Translation: macros.html,v 1.1 2009/04/09 13:12:55 vladimir Exp $<br>
+-->
+<small>$OpenBSD: macros.html,v 1.1 2009/04/26 15:44:20 tobias Exp $</small>
+
+</body>
+</html> 

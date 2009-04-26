@@ -8,7 +8,7 @@
 <meta name= "description"   content= "the OpenBSD FAQ page">
 <meta name= "keywords"      content= "openbsd,faq">
 <meta name= "distribution"  content= "global">
-<meta name= "copyright"     content= "This document copyright 1998-2007 by OpenBSD.">
+<meta name= "copyright"     content= "This document copyright 1998-2009 by OpenBSD.">
 </head>
 
 <body bgcolor= "#ffffff" text= "#000000">
@@ -47,6 +47,13 @@
 <li><a href="#httpdchroot"   >10.16 - Vertel me eens over chroot(2) Apache?</a>
 <li><a href="#rootshell"     >10.17 - Kan ik de root shell wijzigen?</a>
 <li><a href="#ksh"           >10.18 - Wat kan ik nog doen met ksh?</a>
+<li><a href="#Dir"           >10.19 - Directory diensten</a>
+<ul>
+  <li><a href="#Dir.available" >10.19.1 - Welke directory diensten zijn beschikbaar?</a>
+  <li><a href="#YP_secure"     >10.19.2 - YP veiligheidsoverwegingen</a>
+  <li><a href="#YP_server"     >10.19.3 - Het opzetten van een YP-server</a>
+  <li><a href="#YP_client"     >10.19.4 - Het opzetten van een YP-client</a>
+</ul>
 </ul>
 
 <hr>
@@ -1684,6 +1691,399 @@ om een heel uitgebreide maar ietwat nuttige prompt te geven.
 
 
 <p>
+<a name="Dir"></a>
+<h2>10.19 - Directory diensten</h2>
+
+<p>
+OpenBSD kan worden gebruikt als server en client van databases met
+gegevens van gebruikers, informatie van groepen en andere netwerk gerelateerde
+gegevens.
+
+<p>
+<a name="Dir.available"></a>
+<h3>10.19.1 - Welke directory diensten zijn beschikbaar?</h3>
+
+<p>
+U kunt uiteraard diverse directory diensten gebruiken onder OpenBSD.
+Maar YP is de enige die direct toegankelijk is met standaard functies
+uit de C-library zoals
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=getpwent&sektion=3"
+>getpwent(3)</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=getgrent&sektion=3"
+>getgrent(3)</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=gethostbyname&sektion=3"
+>gethostbyname(3)</a> enzovoorts.
+Dus als u uw gegevens in een YP database bewaart, dan hoeft u uw lokale
+configuratiebestandens als
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=master.passwd&sektion=5"
+>master.passwd(5)</a> niet te kopiëren om ze te kunnen gebruiken,
+bijvoorbeeld om systeemgebruikers te authenticeren.
+
+<p>
+YP is een directory dienst die compatibel is met
+Sun Microsystems NIS (Network Information System).
+Zie
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=yp&sektion=8">yp(8)</a>
+voor een overzicht van de beschikbare manual pagina's.
+Pas op, sommige besturingssystemen bevatten directory diensten die vergelijkbare
+namen hebben, maar toch incompatibel zijn, bijvoorbeeld NIS+.
+
+<p>
+Om andere directory diensten dan YP te gebruiken, moet u ofwel de lokale
+configuratiebestanden vullen vanuit de directory, ofwel heeft u een YP
+front-end nodig voor de directory.
+U kunt bijvoorbeeld de <tt>sysutils/login_ldap</tt> port gebruiken als u
+voor het eerste kiest, terwijl de
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ypldap&sektion=8"
+>ypldap(8)</a> daemon voorziet in het laatste.
+
+<p>
+Voor eenvoudige toepassingen biedt het simpelweg synchroniseren van een klein
+aantal configuratiebestanden tussen een groep machines met hulpmiddelen als
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=cron&sektion=8"
+>cron(8)</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=scp&sektion=1"
+>scp(1)</a> of <tt>rsync</tt> (beschikbaar vanuit ports) een makkelijk
+en robuust alternatief voor een volledige directory dienst.
+
+<a name="YP_secure"></a> 
+<h3>10.19.2 - YP veiligheidsoverwegingen</h3>
+
+<p>
+Om redenen van compatibiliteit zijn alle veiligheidsaspecten van de
+YP-implementatie van OpenBSD standaard <em>uitgeschakeld</em>.
+Zelfs als ze zijn ingeschakeld is het NIS-prototol nog steeds inherent
+onveilig om de volgende redenen:
+Alle gegevens, inclusief gevoelige gegevens zoals hashes van wachtwoorden,
+wordt niet-versleuteld over het netwerk verzonden en noch de client, noch
+de server kunnen betrouwbaar elkaars identiteit verifiëren.
+
+<p>
+Overweeg dus voordat u een YP-server opzet of deze inherente zwakheden op het
+gebied van veiligheid acceptabel zijn in uw omgeving.
+In het bijzonder geldt dat YP niet adequaat is als potentiële hackers
+fysieke toegang tot uw netwerk hebben.
+Iedereen die root-toegang heeft tot een computer die is verbonden met
+uw netwerksegment met YP-verkeer kan aan uw YP-domein verbinden en de gegevens
+verkrijgen.
+In sommige gevallen kan het een optie zijn om het YP-verkeer door SSL of
+IPSec tunnels te leiden of u kunt overwegen om YP te combineren met
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=kerberos&sektion=8"
+>kerberos(8)</a> authenticatie.
+
+<a name="YP_server"></a> 
+<h3>10.19.3 - Het opzetten van een YP-server</h3>
+
+Een YP-server bedient een groep clients die een "domein" worden genoemd.
+U moet als eerste een domeinnaam kiezen; dat kan een arbitraire string
+zijn en hoeft geen relatie te hebben met DNS domeinnamen.
+Een willekeurige naam als "Eepoo5vi" kan de veiligheid marginaal verbeteren,
+maar het effect zit hem vooral in veiligheid door obscuriteit.
+Indien u meerdere afzonderlijke YP-domeinen moet onderhouden, dan is het
+waarschijnlijk beter om beschrijvende namen te kiezen zoals "verkoop",
+"marketing" en "onderzoek" om beheersfouten te voorkomen, veroorzaakt
+door obscuriteit.
+Merk tevens op dat sommige versies van SunOS vereisen dat u de DNS
+domeinnaam van de host gebruikt, dus uw keuze kan beperkt zijn in een
+netwerk met dergelijke hosts.
+
+<ol>
+<li><p>
+Gebruik het
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=domainname&sektion=1"
+>domainname(1)</a> commando om de domeinnaam in te stellen en zet deze in
+het bestand
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=defaultdomain&sektion=5"
+>defaultdomain(5)</a> om deze automatisch in te stellen bij het starten van
+het systeem.
+
+<blockquote><pre>
+echo "puffynet" > /etc/defaultdomain
+domainname `cat /etc/defaultdomain`
+</pre></blockquote>
+
+<li><p>
+Beslis waar u de bronbestanden wilt bewaren om uw YP-gegevens uit te genereren.
+In het algemeen is de standaardlocatie <tt>/etc</tt> <em>niet</em> geschikt:
+in de regel heeft u niet alle accounts en groepen die op uw server bestaan
+op alle clients nodig.
+Het niet beschikbaar stellen van het root-account en dus de hash van het
+root-wachtwoord vertrouwelijk houden is in het bijzonder bevorderlijk voor de
+veiligheid.
+Het enige ongemak van het wijzigen van de bron-directory is dat u gebruikers
+en groepen in het YP-domein niet kunt toevoegen, verwijderen en aanpassen met
+commando's als
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=user&sektion=8"
+>user(8)</a> en
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=group&sektion=8"
+>group(8)</a>.
+In plaats daarvan moet u de configuratiebestanden bewerken met een teksteditor.
+
+<p>
+Om de brondirectory te definiëren, bewerkt u het bestand
+<tt>/var/yp/Makefile.yp</tt> en past u de <tt>DIR</tt> variabele aan, bijv.
+
+<blockquote><pre>
+DIR=/etc/yp/src/puffynet
+</pre></blockquote>
+
+Als al uw YP-clients OpenBSD of FreeBSD draaien, sluit versleutelde
+wachtwoorden van de <tt>passwd</tt>-maps dan uit door <tt>UNSECURE=""</tt> te
+zetten in <tt>/var/yp/Makefile.yp</tt>.
+
+<p>
+Een backup van het originele sjabloon <tt>Makefile.yp</tt> wordt in
+<tt>/var/yp/Makefile.yp.dist</tt> gezet op het moment van systeeminstallatie,
+voor het geval u een maagdelijke configuratie moet herstellen.
+
+<li><p>
+Maak een brondirectory en vul deze met de configuratiebestanden die
+u nodig heeft.  Zie
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=Makefile.yp&sektion=8"
+>Makefile.yp(8)</a> om te leren welke YP-maps welke bronbestanden nodig hebben.
+Zie
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=passwd&sektion=5"
+>passwd(5)</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=group&group=5"
+>group(5)</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hosts&sektion=5"
+>hosts(5)</a> enzovoorts,
+voor het formaat van de individuele configuratiebestanden en kijk naar
+de voorbeelden in <tt>/etc</tt>.
+
+<li><p>
+Initialiseer de YP-server met het interactieve commando
+
+<blockquote><pre>
+ypinit -m
+</pre></blockquote>
+
+Op dit moment is het nog niet nodig om slave servers op te geven.  Om slave
+servers toe te voegen kunt U
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ypinit&sektion=8"
+>ypinit(8)</a> op een later moment opnieuw draaien, met de <tt>-u</tt> optie.
+Het opzetten van ten minste één slave server per domein is nuttig om
+onderbrekingen van de dienst te vermijden, mocht de master server ooit plat
+gaan of de verbinding met het netwerk verliezen, vooral omdat clientprocessen
+die YP-maps proberen te benaderen oneindig lang blokkeren totdat ze de
+gevraagde informatie ontvangen.  Onderbrekingen in de YP-dienst zorgen er dus
+voor dat de client-machines volledig onbruikbaar zijn totdat YP weer
+in de lucht is.
+
+<p>
+Merk op dat veranderingen in <tt>/var/yp/Makefile.yp</tt> na het draaien van
+<tt>ypinit -m</tt> geen effect hebben omdat <tt>ypinit -m</tt> het sjabloon
+naar <tt>/var/yp/`domainname`/Makefile</tt> kopieert.
+Hoewel de meeste database-bestanden in <tt>/var/yp/`domainname`</tt>
+gemakkelijk opnieuw aangemaakt kunnen worden met deze nieuwe Makefile, is er
+één uitzondering:  Het bestand <tt>ypservers.db</tt>, met alle YP master en
+slave servers die met het domein zijn geassocieerd, wordt rechtstreeds vanuit
+<tt>ypinit -m</tt> gecreeerd en kan exclusief door <tt>ypinit -u</tt> worden
+gewijzigd.
+Let er dus bijzonder goed op om dit bestand nooit te beschadigen, anders moet
+u het opnieuw handmatig  genereren middels
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=makedbm&sektion=8"
+>makedbm(8)</a>,
+of door de server opnieuw te initialiseren door <tt>ypinit -m</tt> opnieuw
+te draaien.
+
+<li><p>
+YP gebruikt
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rpc&sektion=3"
+>rpc(3)</a> (remote procedure calls) om met de clients te communiceren
+dus het is noodzakelijk om
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=portmap&sektion=8"
+>portmap(8)</a> in te schakelen.
+Om dit te doen bewerkt u
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rc.conf.local&sektion=8"
+>rc.conf.local(8)</a> en zet <tt>portmap=YES</tt>.
+Dit start de portmapper bij de volgende herstart.
+U kunt een herstart vermijden door het handmatig te starten:
+
+<blockquote><pre>
+echo "portmap=YES" >> /etc/rc.conf.local
+portmap
+</pre></blockquote>
+
+<li><p>
+Overweeg om ofwel de
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=securenet&sektion=5"
+>securenet(5)</a> of de
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ypserv.acl&sektion=5"
+>ypserv.acl(5)</a> veiligheidsfunctie van de YP-server daemon te gebruiken.
+Maar wees ervan bewust dat beide slechts toegangscontrole op basis van IP
+bieden.
+Ze helpen dus alleen als potentiële aanvallers geen fysieke toegang tot de
+hardware van het netwerksegment met uw YP-verkeer hebben en geen root-toegang
+hebben op geen enkele host die met deze netwerksegmenten zijn verbonden.
+
+<li><p>
+Start tenslotte de YP-server daemon:
+
+<blockquote><pre>
+ypserv
+</pre></blockquote>
+
+Deze zal automatisch herstart worden bij het booten zolang de directory
+<tt>/var/yp/`domainname`</tt> blijft bestaan.
+
+<li><p>
+Om de nieuwe server te testen kunt u overwegen om deze z'n eigen client te
+maken, door de instructies in het eerste deel van de volgende sectie te volgen.
+Indien u niet wilt dat de server zijn eigen maps gebruikt, kunt u het deel
+van de client uitschakelen na de test met de volgende commando's:
+
+<blockquote><pre>
+pkill ypbind
+rm -rf /var/yp/binding
+</pre></blockquote>
+
+<li><p>
+Als u wilt toestaan dat gebruikers hun eigen wachtwoord wijzigen vanaf client
+machines, dan moet u
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=yppasswdd&sektion=8"
+>yppasswdd(8)</a> inschakelen:
+
+<blockquote><pre>
+echo 'yppasswdd_flags="-d /etc/yp/src/puffynet"' >> /etc/rc.conf.local
+rpc.yppasswdd
+</pre></blockquote>
+
+Indien u de brondirectory op de standaard <tt>/etc</tt> heeft laten staan,
+gebruik dan slechts <tt>yppasswdd_flags=""</tt>.
+
+<li><p>
+Denk eraan dat u uw YP-maps iedere keer moet regenereren als u een bestand
+aanpast dat als bron dient voor een YP-map.
+
+<blockquote><pre>
+cd /var/yp
+make
+</pre></blockquote>
+</ol>
+
+<a name="YP_client"></a> 
+<h3>10.19.4 - Het opzetten van een YP-client</h3>
+
+Het opzetten van een YP-client omvat twee afzonderlijke delen.
+Ten eerste moet u de YP-client daemon zien te starten, die uw client verbindt
+met een YP-server.
+Het completeren van de volgende stappen stelt u in staat om de gegevens van
+de YP-server te halen, maar die data zal nog niet worden gebruikt door
+het systeem:
+
+<ol>
+<li><p>
+Net als op de server moet u de domeinnaam instellen en de portmapper
+inschakelen:
+
+<blockquote><pre>
+echo "puffynet" > /etc/defaultdomain
+domainname `cat /etc/defaultdomain`
+echo "portmap=YES" >> /etc/rc.conf.local
+portmap
+</pre></blockquote>
+
+<li><p>
+Het wordt aanbevolen om een lijst van YP-servers in het configuratiebestand
+<tt>/etc/yp/`domainname`</tt> te zetten.
+Zo niet, dan zal de YP-client daemon netwerk broadcasts gebruiken om YP-servers
+voor zijn domein te vinden.
+Het expliciet opgeven van servers is zowel meer robuust als marginaal minder
+gevoelig voor aanvallen.
+Als u nog geen slave servers heeft opgezet, vul dan slechts de hostname
+van de master server in in <tt>/etc/yp/`domainname`</tt>.
+
+<li><p>
+De YP-client daemon is genaamd
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ypbind&sektion=8"
+>ypbind(8)</a>.
+Door deze handmatig te starten wordt de directory <tt>/var/yp/binding</tt>
+aangemaakt, zodat deze automatisch wordt herstart bij het opstarten.
+
+<blockquote><pre>
+ypbind
+</pre></blockquote>
+
+<li><p>
+Als alles goed is gegaan dan zou u de YP-server moeten kunnen bevragen met
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ypcat&sektion=1"
+>ypcat(1)</a> en zou u uw password-map terug moeten krijgen.
+
+<blockquote><pre>
+ypcat passwd
+bob:*:5001:5000:Bob Nuggets:/home/bob:/usr/local/bin/zsh
+...
+</pre></blockquote>
+
+Andere nuttige hulpmiddelen om uw YP-opzet te ontdoen van fouten zijn
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ypmatch&sektion=1"
+>ypmatch(1)</a> en
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=yptest&sektion=8"
+>yptest(8)</a>.
+</ol>
+
+Het tweede deel van het configureren van een YP-client betreft het
+aanpassen van lokale configuratiebestanden zodat bepaalde YP-maps
+worden gebruikt door de diverse systeemfaciliteiten.
+Niet alle server serveren alle standaard maps die worden ondersteund door het
+besturingssysteem, sommige servers serveren alleen additionele niet-standaard
+maps en u wordt in geen geval gedwongen om alle maps te gebruiken.
+Welke van de beschikbare maps u moet gebruiken en voor welk doel, wordt
+volledig bepaald door de systeembeheerder van de client.
+
+<p>
+Zie
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=Makefile.yp&sektion=8"
+>Makefile.yp(8)</a>.
+voor een lijst van standaard YP-maps en hun standaard gebruik.
+De meest voorkomende gevallen zijn:
+
+<ul>
+<li><p>
+Als u alle gebruikersaccounts van het YP-domein wilt invoegen, voeg
+dan het standaard YP-merkteken toe aan het master password-bestand and
+maak de password-database opnieuw aan:
+
+<blockquote><pre>
+echo '+:*::::::::' >> /etc/master.passwd
+pwd_mkdb /etc/master.passwd
+</pre></blockquote>
+
+Zie
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=passwd&sektion=5"
+>passwd(5)</a> voor details over het selektief opnemen of uitsluiten van
+gebruikersaccounts.
+Gebruik het
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=id&sektion=1"
+>id(1)</a> commande om te testen of het opnemen echt werkt.
+
+<li><p>
+Als u alle groepen van het YP-domein wilt opnemen, voeg het standaard
+YP-merkteken dan toe aan het group-bestand:
+
+<blockquote><pre>
+echo '+:*::' >> /etc/group
+</pre></blockquote>
+
+Zie
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=group&sektion=5"
+>group(5)</a> voor details over het selektief opnemen van groepen.
+
+<li><p>
+Als u hostnamen distribueert via YP, dan zou u nu naar
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=resolv.conf&sektion=5"
+>resolv.conf(5)</a> moet kijken en controleren of de volgorde van
+het gebruik van de name service correct is.
+De meeste gebruikers hebben een regel als volgt nodig:
+
+<blockquote><pre>
+lookup file yp bind
+</pre></blockquote>
+</ul>
+
+
+<p>
 <font color= "#0000e0">
 <a href= "index.html">[FAQ Index]</a>
 <a href= "faq9.html">[Naar Sectie 9 - Migreren naar OpenBSD]</a>
@@ -1697,10 +2097,10 @@ om een heel uitgebreide maar ietwat nuttige prompt te geven.
 <br>
 <small>
 <!--
-Originally [OpenBSD: faq10.html,v 1.140 ]<br>
-$Translation: faq10.html,v 1.34 2008/12/23 18:38:29 maurice Exp $<br>
+Originally [OpenBSD: faq10.html,v 1.142 ]<br>
+$Translation: faq10.html,v 1.35 2009/04/15 21:43:28 maurice Exp $<br>
 -->
-$OpenBSD: faq10.html,v 1.30 2009/01/07 21:24:44 tobias Exp $
+$OpenBSD: faq10.html,v 1.31 2009/04/26 15:44:20 tobias Exp $
 </small>
 </body>
 </html>
