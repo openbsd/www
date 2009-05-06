@@ -51,6 +51,7 @@ ftp: mirrors.pl mirrors.dat mirrors/ftp.html.{end,head,mid1,mid2} \
 	perl mirrors.pl openntpd-portable ${OPENNTPD_PORTABLE_VERSION}
 	perl mirrors.pl openssh-ftp ${OPENSSH_VERSION}
 	perl mirrors.pl openssh-portable ${OPENSSH_PORTABLE_VERSION}
+	perl mirrors.pl ftplist ${STABLE_VERSION}
 
 anoncvs: mirrors.pl mirrors.dat mirrors/anoncvs.html.{end,head}
 	perl mirrors.pl anoncvs ${STABLE_VERSION}
