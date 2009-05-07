@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.12 2008/10/13 19:52:03 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.13 2009/05/07 15:48:43 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -102,9 +102,9 @@ sub read_mirrors ($) {
 sub write_ftplist($$$) {
 	my ($filename, $ver, $mirrorref) = @_;
 
-	my $MAXWIDTH = 72;
-	my $URLLEN = 54;
-	my $LOCLEN = $MAXWIDTH - $URLLEN - 1;
+	# ftplist is displayed in the installer (with the protocol stripped
+	# off) with cat -n, so 71 char max after removing the protocol.
+	my $MAXWIDTH = 71 + length("ftp://");
 
 	open(my $fh, '>', $filename) or die "open $filename: $!";
 
@@ -126,13 +126,12 @@ sub write_ftplist($$$) {
 			$loc =~ s/&eacute;/e/g ;
 			$loc =~ s/&ntilde;/n/g ;
 			(my $url = $mirror->{$type}) =~ s,/$,,;
-			if ((length($url) + 1 + length($loc) <= $MAXWIDTH)
-					&& (length($loc) > $LOCLEN)) {
-				my $lr = $URLLEN - length($url) + $LOCLEN;
-				printf $fh "%s %" . $lr . "s\n", $url, $loc;
-			} else {
-				printf $fh "%-". $URLLEN ."s %s\n", $url, $loc;
+			my $pad = $MAXWIDTH - length($url) - 1;
+			# + 4 for aesthetics; force some whitespace
+			if (length($url) + length($loc) + 4 > $MAXWIDTH) {
+				die "Entry for $url too long";
 			}
+			printf $fh "%s %" . $pad . "s\n", $url, $loc;
 		}
 	}
 	}
