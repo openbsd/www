@@ -89,6 +89,7 @@ COMMENT-s1 for the first package, COMMENT-s2 for the second package,
 PLIST-s1, PLIST-s2, DESCR-s1, DESCR-s2.
 You need to write those COMMENT-s1 and COMMENT-s2 in the Makefile, and to
 split your PLIST into two parts, and to create DESCR-s1/DESCR-s2.
+You will also need to specify separate PKGNAMES for all subpackages.
 </p>
 It is a good idea to start with the minimal framework work required:
 just copy the existing description and comments, because you will have
@@ -103,6 +104,7 @@ relegated to a specific subpackage.
 Assuming everything works, you're mostly done. Just pick reasonable names for
 the various packages, and fill in the comments and descriptions. 
 The end-user will be able to just install the package(s) they want.  
+</p>
 But wait. What about the build, you say ?  Well, having a lot of dependencies 
 during build is not a 
 problem. Most packages are built by the OpenBSD team using special build
@@ -125,6 +127,7 @@ separate subpackage (MULTI_PACKAGES=-core -x11), you could create a
 pseudo flavor no_x11 that avoids building the -x11 subpackage.  
 The crucial point is that this flavor should NOT affect the -core package
 in any way.
+</p>
 You would end up with a Makefile that looks something like this:
 <pre>
 CATEGORIES = app
@@ -154,6 +157,54 @@ MULTI_PACKAGES += -x11
 
 Notice that you only have to write a very small conditional section in the
 Makefile: the system doesn't care at all that you define extra variables.
+
+<h2>Interdependencies between subpackages</h2>
+MULTI_PACKAGE setups used to be asymetric, with a -main subpackage and other
+subpackages, with the -main subpackage always built, and other subpackages
+possibly depending upon it. The current situation is totally symetric: any
+subpackage can depend on any other. The infrastructure has specific provisions
+to avoid looping indefinitely.
+</p>
+
+Specific attention must be provided to library inter-dependencies: they cannot
+be specified as WANTLIB, since WANTLIB do not contain any marker that says
+which package they come from. Rather, they must be specified as LIB_DEPENDS.
+Normal LIB_DEPENDS are checked at the start of build, and during packaging.
+If a LIB_DEPENDS specifies one of the subpackages currently being built,
+then the infrastructure will detect this and only check the dependency
+at packaging time (and thus packages may be created in a specific order to
+satisfy interdependencies).
+</p>
+The infrastructure provides specific variables to help in writing 
+inter-dependencies: BUILD_PKGPATH contains the PKGPATH used during building
+the current packages, taking flavors and pseudo-flavors into account.
+It is highly recommanded to use this variable instead of rolling your own:
+failure to do so will often trigger rebuilds in interesting flavors situations.
+
+For instance:
+<pre>
+...
+FLAVORS = a b
+FLAVOR ?= 
+MULTI_PACKAGES = -p1 -p2
+LIB_DEPENDS-p1 = foo::some/pkgpath,-p2
+...
+</pre>
+If you go on and build in some/pkgpath with FLAVOR=a, then creating the
+subpackage for -p1 will trigger a rebuild with FLAVOR=''.
+You would write
+<pre>
+LIB_DEPENDS-p1 = foo:${BUILD_PKGPATH},-p2
+</pre>
+instead.
+</p>
+There is also a BASE_PKGPATH variable, which does not take pseudo-flavors
+into account. This variable has limited applicability: it corresponds to
+a transition between old MULTI_PACKAGES and newer ones, where the old
+"main" subpackage did not have any marker in its pkgpath, and thus the
+corresponding package needs a @pkgpath ${BASE_PKGPATH} in its packing-list.
+(In general, pseudo-flavors are build information, and should not make their
+way into packages and packing-lists).
 
 <h2>True FLAVORS, and PKGNAMES</h2>
 There are some cases where configuration options are too invasive, and you
@@ -195,6 +246,28 @@ CONFIGURE_ARGS += --enable-crypto
 .endif
 </pre>
 
-<br><small>$OpenBSD: packaging.html,v 1.1 2009/06/07 14:53:05 espie Exp $</small>
+As mentioned in the documentation, all package names have the same structure:
+stem-version-flavor_extension.
+
+</p>
+By default, packages with the same stem do conflict, and update paths will
+look at candidates with the same stem.  The right package will be the one
+coming from the exact same PKGPATH, or matching @pkgpath annotation in
+the packing-list.
+</p>
+Usually, MULTI_PACKAGES should not conflict, so they must have different
+names (and the infrastructure has no way to build those names). On the other
+hand, flavors should conflict, and thus have the same name. The flavor
+information should end at the end of the package name, except for 
+pseudo-flavors, which do not change the way a package is built.
+</p>
+As far as dependencies go, by default, specifying a PKGPATH will just
+create a stem-* dependency, meaning any package with the right stem will
+match the dependency. By default, any flavor will match. If only specific
+flavors are desired, you must include them in your specification, e.g.,
+stem-*-flavor.  If some flavors are unwanted, you can remove them from
+matching packages, e.g., stem-*-!flavor.
+
+<br><small>$OpenBSD: packaging.html,v 1.2 2009/06/09 10:37:42 espie Exp $</small>
  </body>
 </html>
