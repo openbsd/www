@@ -782,7 +782,91 @@ ddb{1}>
 <p>
 Herhaal de "<tt>machine ddb x</tt>" gevolgd door "<tt>trace</tt>" voor elke
 processor in uw machine.
+<p>
 
+<h3>Hoe meer informatie te verzamelen van een kernel crash.</h3><p>
+Een typische kernel crash op OpenBSD zou er zo uit kunnen zien:
+(dingen om op te letten zijn vet gemarkeerd)<p>
+
+<table border=0 width="90%"><tr><td nowrap bgcolor="#EEEEEE"><pre>
+kernel: page fault trap, code=0
+Stopped at    <b>_pf_route+0x263</b>:        mov     0x40(%edi),%edx
+ddb&gt;
+</pre></td></tr></table><p>
+
+Het eerste commando om te typen op de ddb> prompt is "trace"
+(zie <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ddb">ddb(4)</a>
+voor de details):<p>
+<table border=0 width="90%"><tr><td nowrap bgcolor="#EEEEEE"><pre>
+ddb&gt; trace
+<b>_pf_route</b>(e28cb7e4,e28bc978,2,1fad,d0b8b120) at <b>_pf_route+0x263</b>
+_pf_test(2,1f4ad,e28cb7e4,b4c1) at _pf_test+0x706
+_pf_route(e28cbb00,e28bc978,2,d0a65440,d0b8b120) at _pf_route+0x207
+_pf_test(2,d0a65440,e28cbb00,d023c282) at _pf_test+0x706
+_ip_output(d0b6a200,0,0,0,0) at _ip_output+0xb67
+_icmp_send(d0b6a200,0,1,a012) at _icmp_send+0x57
+_icmp_reflect(d0b6a200,0,1,0,3) at _icmp_reflect+0x26b
+_icmp_input(d0b6a200,14,0,0,d0b6a200) at _icmp_input+0x42c
+_ipv4_input(d0b6a200,e289f140,d0a489e0,e289f140) at _ipv4_input+0x6eb
+_ipintr(10,10,e289f140,e289f140,e28cbd38) at _ipintr+0x8d
+Bad frame pointer: 0xe28cbcac
+ddb&gt; 
+</pre></td></tr></table><p>
+
+Dit vertelt ons welke functie calls hebben geleid tot de crash.<p>
+
+Om de exacte regel C-code te achterhalen die de crash veroorzaakte, kunt u
+het volgende doen:<br>
+Vind het bron-bestand waarin de crashende functie is gedefinieerd.
+In dit voorbeeld zou dat pf_route() zijn in sys/net/pf.c.
+Hercompileer dat bron-bestand met debug informatie:<p>
+
+<table border=0 width="90%"><tr><td nowrap bgcolor="#EEEEEE"><pre>
+# cd /usr/src/sys/arch/$(uname -m)/compile/GENERIC/
+# rm pf.o
+# make -n pf.o | sed "s/$/ -g/" | sh -s
+</pre></td></tr></table><p>
+Gebruik vervolgens
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=objdump">objdump(1)</a>
+om de disassembly te verkrijgen:<p>
+<table border=0 width="90%"><tr><td nowrap bgcolor="#EEEEEE"><pre>
+# objdump --line --disassemble --reloc pf.o &gt;pf.dis
+</pre></td></tr></table><p>
+
+Zoek in de uitvoer naar de functienaam (pf_route in ons voorbeeld):<p>
+<table border=0 width="90%"><tr><td nowrap bgcolor="#EEEEEE"><pre>
+# grep "&lt;_pf_route&gt;:" pf.dis
+0000<b>7d88</b> &lt;_pf_route&gt;:
+</pre></td></tr></table><p>
+
+Neem dit eerste hexadecimale nummer en tel er de offset van de 'Stopped at'
+regel bij op:
+<b>0x7d88</b> + <b>0x263</b> == <b>0x7feb</b>.<br>
+Scroll naar beneden naar deze regel
+(de assembler instructie zou overeen moeten komen met degene die werd
+genoemd in de 'Stopped at' regel),
+en dan naar boven naar de dichtsbijzijnde regel C-code:<p>
+<table border=0 width="90%"><tr><td nowrap bgcolor="#EEEEEE"><pre>
+# more pf.dis
+/usr/src/sys/arch/i386/compile/GENERIC/../../../../net/pf.c:<b>3872</b>
+    7fe7:       0f b7 43 02             movzwl 0x2(%ebx),%eax
+    <b>7feb</b>:       8b 57 40                mov    0x40(%edi),%edx
+    7fee:       39 d0                   cmp    %edx,%eax
+    7ff0:       0f 87 92 00 00 00       ja     8088 &lt;_pf_route+0x300&gt;
+</pre></td></tr></table><p>
+
+Het is dus precies regel <b>3872</b> van pf.c die crasht:<p>
+<table border=0 width="90%"><tr><td nowrap bgcolor="#EEEEEE"><pre>
+# cat -n pf.c | head -n 3872 | tail -n 1
+3872          if ((u_int16_t)ip-&gt;ip_len &lt;= ifp-&gt;if_mtu) {
+</pre></td></tr></table><p>
+
+Merk op dat de kernel die de crash-uitvoer produceerde en het object-bestand
+voor objdump gecompileerd moeten zijn vanaf precies hetzelfde bron-bestand,
+anders komen de offsets niet overeen.<p>
+
+Als u zowel de ddb> trace uitvoer en het relevante deel van de objdump
+aanlevert, dan is dat zeer hulpzaam.
 
 <p>
 <font color="#0000e0">
@@ -798,10 +882,10 @@ processor in uw machine.
 <br>
 <small>
 <!--
-Originally [OpenBSD: faq2.html,v 1.99 ]<br>
-$Translation: faq2.html,v 1.25 2009/05/01 15:08:15 maurice Exp $<br>
+Originally [OpenBSD: faq2.html,v 1.100 ]<br>
+$Translation: faq2.html,v 1.27 2009/06/06 21:30:57 maurice Exp $<br>
 -->
-$OpenBSD: faq2.html,v 1.25 2009/05/02 17:33:49 tobias Exp $
+$OpenBSD: faq2.html,v 1.26 2009/06/13 08:31:49 ajacoutot Exp $
 </small>
 
 </body>

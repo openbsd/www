@@ -809,7 +809,93 @@ ddb{1}>
 <p>
 Repita o "<tt>machine ddb x</tt>" seguido por "<tt>trace</tt>"
 para cada processador em sua máquina.
+<p>
 
+<h3>Como reunir mais informações de um travamento de kernel.</h3><p>
+Um típico travamento de kernel pode se parecer com isto:
+(as coisas para serem olhadas estão marcadas com a fonte em negrito)<p>
+
+<table border=0 width="90%"><tr><td nowrap bgcolor="#EEEEEE"><pre>
+kernel: page fault trap, code=0
+Stopped at    <b>_pf_route+0x263</b>:        mov     0x40(%edi),%edx
+ddb&gt;
+</pre></td></tr></table><p>
+
+O primeiro comando para ser executado a partir do prompt ddb> é o
+"trace"
+(veja <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ddb">ddb(4)</a>
+para mais detalhes):<p>
+<table border=0 width="90%"><tr><td nowrap bgcolor="#EEEEEE"><pre>
+ddb&gt; trace
+<b>_pf_route</b>(e28cb7e4,e28bc978,2,1fad,d0b8b120) at <b>_pf_route+0x263</b>
+_pf_test(2,1f4ad,e28cb7e4,b4c1) at _pf_test+0x706
+_pf_route(e28cbb00,e28bc978,2,d0a65440,d0b8b120) at _pf_route+0x207
+_pf_test(2,d0a65440,e28cbb00,d023c282) at _pf_test+0x706
+_ip_output(d0b6a200,0,0,0,0) at _ip_output+0xb67
+_icmp_send(d0b6a200,0,1,a012) at _icmp_send+0x57
+_icmp_reflect(d0b6a200,0,1,0,3) at _icmp_reflect+0x26b
+_icmp_input(d0b6a200,14,0,0,d0b6a200) at _icmp_input+0x42c
+_ipv4_input(d0b6a200,e289f140,d0a489e0,e289f140) at _ipv4_input+0x6eb
+_ipintr(10,10,e289f140,e289f140,e28cbd38) at _ipintr+0x8d
+Bad frame pointer: 0xe28cbcac
+ddb&gt; 
+</pre></td></tr></table><p>
+
+Isso nos diz qual chamada de função levou ao travamento.<p>
+
+Para encontrar a linha específica de código fonte em C que causou o
+travamento, você pode fazer o seguinte:<br>
+Encontre o arquivo de código fonte onde a função que causou o travamento
+está definida.
+Neste exemplo, ela seria pf_route() em sys/net/pf.c.
+Recompile este arquivo de código fonte com informações de depuração:<p>
+
+<table border=0 width="90%"><tr><td nowrap bgcolor="#EEEEEE"><pre>
+# cd /usr/src/sys/arch/$(uname -m)/compile/GENERIC/
+# rm pf.o
+# make -n pf.o | sed "s/$/ -g/" | sh -s
+</pre></td></tr></table><p>
+Então utilize o
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=objdump">
+objdump(1)</a> para obter o objeto desmontado ("disassembly"):<p>
+<table border=0 width="90%"><tr><td nowrap bgcolor="#EEEEEE"><pre>
+# objdump --line --disassemble --reloc pf.o &gt;pf.dis
+</pre></td></tr></table><p>
+
+Na saída, utilize o grep para encontrar o nome da função (pf_route, no
+nosso exemplo):<p>
+<table border=0 width="90%"><tr><td nowrap bgcolor="#EEEEEE"><pre>
+# grep "&lt;_pf_route&gt;:" pf.dis
+0000<b>7d88</b> &lt;_pf_route&gt;:
+</pre></td></tr></table><p>
+
+Pegue esse primeiro número hexadecimal e adicione o "offset" da linha
+'Stopped at':
+<b>0x7d88</b> + <b>0x263</b> == <b>0x7feb</b>.<br>
+Role para baixo até aquela linha (a instrução "assembler" deve casar
+aquela delimitada na linha 'Stopped at'), então levante até o número
+de linha mais próximo do código fonte em C:<p>
+<table border=0 width="90%"><tr><td nowrap bgcolor="#EEEEEE"><pre>
+# more pf.dis
+/usr/src/sys/arch/i386/compile/GENERIC/../../../../net/pf.c:<b>3872</b>
+    7fe7:       0f b7 43 02             movzwl 0x2(%ebx),%eax
+    <b>7feb</b>:       8b 57 40                mov    0x40(%edi),%edx
+    7fee:       39 d0                   cmp    %edx,%eax
+    7ff0:       0f 87 92 00 00 00       ja     8088 &lt;_pf_route+0x300&gt;
+</pre></td></tr></table><p>
+
+Portanto, é precisamente a linha <b>3872</b> do pf.c que trava:<p>
+<table border=0 width="90%"><tr><td nowrap bgcolor="#EEEEEE"><pre>
+# cat -n pf.c | head -n 3872 | tail -n 1
+3872          if ((u_int16_t)ip-&gt;ip_len &lt;= ifp-&gt;if_mtu) {
+</pre></td></tr></table><p>
+
+Note que o kernel que produziu a saída do travamento e o arquivo objeto
+para o objdump devem ser compilados a partir do mesmo arquivo de código
+fonte, caso contrário os offsets não casarão.<p>
+
+Se você fornecer tanto a saída do trace do ddb> e a seção relevante do
+objdump, isso será muito útil.
 
 <p>
 <font color="#0000e0">
@@ -825,10 +911,10 @@ para cada processador em sua máquina.
 <br>
 <small>
 <!--
-Originally [OpenBSD: faq2.html,v 1.99 ]<br>
-$Translation: faq2.html,v 1.4 2009/05/12 00:31:16 alan Exp $<br>
+Originally [OpenBSD: faq2.html,v 1.100 ]<br>
+$Translation: faq2.html,v 1.5 2009/06/07 11:12:40 alan Exp $<br>
 -->
-$OpenBSD: faq2.html,v 1.2 2009/05/16 08:59:12 ajacoutot Exp $
+$OpenBSD: faq2.html,v 1.3 2009/06/13 08:31:49 ajacoutot Exp $
 </small>
 
 </body>
