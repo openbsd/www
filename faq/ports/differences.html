@@ -1,0 +1,462 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>5 - Differences from other BSD Projects</title>
+<link rev= "made" href="mailto:www@openbsd.org">
+<meta name= "resource-type" content= "document">
+<meta name= "description"   content= "Differences with other BSD porting systems.">
+<meta name= "keywords"      content= "openbsd,ports">
+<meta name= "distribution"  content= "global">
+<meta name="copyright" content="This document copyright 2000 by OpenBSD.">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+</head>
+
+<!--
+Copyright (c) 2005-2009 XXX
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+
+<body bgcolor= "#ffffff" text= "#000000">
+
+<a href="../../index.html">
+<img alt="[OpenBSD]" height=30 width=141 src="../../images/smalltitle.gif" border="0">
+</a>
+
+<p>
+<font color= "#0000e0">
+<a href="testing.html">[To Section 4 - Port Testing Guide]</a>
+</font>
+
+<h1><font color="#e00000">5 - Differences from other BSD Projects</font></h1><hr>
+
+<h3>Table of Contents</h3>
+<ul>
+  <li><a href="#Differences"   >5.1 - Important differences from other BSD Projects</a>
+  <li><a href="#Extra"         >5.2 - Extra Support</a>
+  <li><a href="#Generic"       >5.3 - Generic infrastructure issues</a>
+  <li><a href="#Make"          >5.4 - Using make properly</a>
+  <li><a href="#Fetch"         >5.5 - Fetching sources</a>
+  <li><a href="#wrkdir"        >5.6 - The <code>WRKDIR</code> infrastructure</a>
+  <li><a href="#Fake"          >5.7 - Faking ports</a>
+  <ul>
+  <li><a href="#Introduction"  >5.7.1 - Introduction</a>
+  <li><a href="#Advantages"    >5.7.2 - Advantages</a>
+  <li><a href="#How"           >5.7.3 - How to do it</a>
+  <li><a href="#Pitfalls"      >5.7.4 - Pitfalls</a>
+  </ul>
+  <li><a href="#Tools"         >5.8 - Packaging tools</a>
+  <li><a href="#Flavors"       >5.9 - Flavors</a>
+</ul>
+
+<hr>
+
+<a name="Differences"></a>
+<h2>5.1 - Important differences from other BSD projects</h2>
+
+<p>
+NetBSD uses the term <em>ports</em> for architecture-dependent
+issues. Their ports structure is called <em>pkgsrc</em> instead. 
+</p>
+
+<a name="Extra"></a>
+<h2>5.2 - Extra support</h2>
+
+The porting infrastructure includes several scripts that facilitate
+the creation of new ports:
+<dl>
+<dt>build/resolve-lib
+    <dd>invoked through <code>make lib-depends-check</code>, to verify
+    shared libraries dependencies.
+<dt>build/update-patches
+    <dd>invoked through <code>make update-patches</code>, which should
+    <strong>always be used to regenerate patches.</strong>
+<dt>install/make-plist
+    <dd>invoked through <code>make update-plist</code>. This takes care
+    of most of the finest points of crafting accurate packing-lists.
+    OpenBSD packing-lists are significantly different from those of other
+    BSD projects, in part because the package tools have been completely
+    rewritten.
+</dl>
+
+<a name="Generic"></a>
+<h2>5.3 - Generic infrastructure issues</h2>
+
+<p>
+OpenBSD's <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=make&amp;sektion=1&amp;">make(1)</a>
+supports <code>${VAR:U}</code> and <code>${VAR:L}</code> to transform a
+variable's value into uppercase or lowercase. Accordingly, make tests
+should be coded in a case-independent way, e.g., 
+</p>
+
+<pre>
+	.if ${NEED_XXX:L} == "yes"
+	do stuff if yes
+	.else
+	do other stuff
+	.endif
+</pre>
+
+<p>
+In theory, all boolean variables recognized by
+<code>bsd.port.mk</code> should always be defined, so that code like
+<code>defined(USE_FOO)</code> should not be necessary, and
+<code>${USE_FOO:L} != "no"</code> ought to work.
+</p>
+
+<p>
+The main <code>bsd.port.mk</code> file has been heavily
+streamlined and fixed. In particular, it is parallel-make ready.
+The <code>scripts/{pre,do,post}-*</code> feature has been lost in
+the process. To replace that feature, invoke the script manually
+from the Makefile. 
+</p>
+
+<a name="Make"></a>
+<h2>5.4 - Using make properly</h2>
+
+<p>
+Note that, if you invoke make as <code>make VAR=value</code>, the
+assignment will <em>override</em> whatever value VAR may get from the
+Makefile. So, many Makefile patches are not necessary, it is
+much better to set MAKE_FLAGS correctly, to decrease the
+maintenance burden. 
+</p>
+
+<a name="Fetch"></a>
+<h2>5.5 - Fetching sources</h2>
+
+<p>
+There are two kinds of source archives: DISTFILES and PATCHFILES.
+OpenBSD processes them in a uniform way, and retrieves everything
+from MASTER_SITES by default. There are <strong>no</strong> 
+PATCH_SITES nor PATCH_SITES_SUBDIR.
+</p>
+
+<p>
+If all files to fetch don't come from the same set of sites,
+OpenBSD allows the extension filename:0 to filename:9, in which
+case it will use MASTER_SITES0 to MASTER_SITES9 to retrieve the
+file.
+</p>
+
+<p>
+Some architectures may need specific distfiles. In the past, this
+has caused trouble where mirroring distfiles was concerned. OpenBSD
+supports a third set of files: SUPDISTFILES. Those will be
+considered only for creating checksums and mirroring purposes. Note
+that SUPDISTFILES may have an overlap with DISTFILES or PATCHFILES.
+For instance, 
+</p>
+
+<pre>
+	DISTFILES=foo-1.0.tgz
+	.if ${ARCH} == "i386"
+	DISTFILES+=foo-i386.tgz
+	.elif ${ARCHI} == "sparc"
+	DISTFILES+=foo-sparc.tgz
+	.endif
+	SUPDISTFILES=foo-i386.tgz foo-sparc.tgz
+</pre>
+
+<a name="wrkdir"></a>
+<h2>5.6 - The <code>WRKDIR</code> infrastructure</h2>
+
+<p>
+We don't want ports that use <code>NO_WRKDIR</code>. All OpenBSD
+ports must have a work directory. Naming details of those work
+directories should not be a porter's concerns. If you need to find
+out about such a name, ask the Makefile: <code>cd that_ports_dir
+&amp;&amp; make show=WRKDIR</code> will yield that port's
+idea of <code>WRKDIR</code>.
+</p>
+
+<p>
+The main reason behind that prohibition is that OpenBSD's
+<code>bsd.port.mk</code> acts like a real Makefile, with dependencies.
+The <code>fetch</code> stage depends upon the distfiles and
+patchfiles, all other stages depend on real files living in the
+working directory (cookies), so they can't exist without a working
+directory.
+
+<p>
+If the DISTFILES extraction is special, set 
+
+<p>
+<pre>
+EXTRACT_ONLY=
+</pre> 
+
+<p>
+and do the extraction in <code>post-extract.</code>
+
+<p>
+<dl>
+<dt>WRKDIR</dt>
+
+<dd>The port working directory, where it puts its own
+cookies.</dd>
+
+<dt>WRKDIST</dt>
+
+<dd>Subdirectory of WRKDIR where the port actually unpacks.
+It is also the base directory for patch. Other BSD currently don't
+have the WRKDIST/WRKSRC distinction and have only
+WRKSRC.</dd>
+
+<dt>WRKSRC</dt>
+
+<dd>Subdirectory of WRKDIST where the actual source
+lives.</dd>
+
+<dt>WRKBUILD</dt>
+
+<dd>Subdirectory of WRKDIR where the port configure and build
+will occur. Other BSD don't have the WRKBUILD/WRKSRC distinction.
+Programs based on autoconf (mostly) can usually set SEPARATE_BUILD
+to let the port build happen in a WRKBUILD distinct from
+WRKSRC.</dd>
+
+<dt>WRKCONF</dt>
+
+<dd>Subdirectory of WRKDIR where configure scripts should be run.
+Defaults to WRKBUILD, which is correct 99% of the time.</dd>
+
+<dt>WRKINST</dt>
+
+<dd>Directory where the port will be installed before being
+packaged (see Faking ports below).</dd>
+</dl>
+
+<p>
+<em>Note that NO_WRKSUBDIR has been removed: its functionality can be
+achieved by setting WRKDIST=$(WRKDIR) instead. </em>
+</p>
+
+<a name="Fake"></a>
+<h2>5.7 - Faking ports</h2>
+
+<a name="Introduction"></a>
+<h3>5.7.1 - Introduction</h3>
+
+<p>
+After a build is complete, other BSDs proceed to install a
+port, then build a package from the installed port.
+OpenBSD uses faked installation instead. 
+</p>
+
+<ul>
+<li>An OpenBSD port is configured and built normally (e.g., to
+install under <code>PREFIX</code>, usually
+<code>/usr/local</code>).</li>
+
+<li>But it's told to install elsewhere, namely under WRKINST, which
+is usually a subdirectory of WRKDIR.</li>
+
+<li>Then the false installation is packaged, using the -B option of
+pkg_create.</li>
+
+<li>Finally, the resulting package can be installed, using
+pkg_add.</li>
+</ul>
+
+<a name="Advantages"></a>
+<h3>5.7.2 - Advantages</h3>
+
+<ul>
+<li>For a package builder, it means that most ports don't have to
+actually be installed, which removes a large number of potential
+compromises and general nastiness from badly installed ports. It
+also allows building several conflicting packages on the same
+machine. Finally, it allows building a new set of untested packages
+without hosing a correct installation.</li>
+
+<li>For a port writer, it greatly simplifies the task of finding
+problems in packing lists, since the fake area of installation is
+empty before the port gets installed. Also, if a port installs too
+many files, it is no longer necessary to tweak the port
+installation: it is enough not to record the extraneous files in
+the packing list.</li>
+
+<li>For the end user, it improves the quality of packages: since
+the final port is installed using pkg_add, the end user gets <em>
+exactly</em> the same software that was prepared on the porter's
+machine.</li>
+</ul>
+
+<a name="How"></a>
+<h3>5.7.3 - How to do it</h3>
+
+<p>
+The targets invoked for <code>make fake</code> are the usual
+install targets, except for a few differences: 
+</p>
+
+<ul>
+<li>FAKE_FLAGS is used instead of MAKE_FLAGS. By default,
+FAKE_FLAGS sets DESTDIR=${WRKINST}.</li>
+
+<li>FAKE_TARGET is used instead of INSTALL_TARGET.</li>
+
+<li>The {pre,do,post}-install fragments are invoked with TRUEPREFIX
+set to $(PREFIX), PREFIX set to $(WRKINST)$(PREFIX), and DESTDIR
+set to $(WRKINST).</li>
+</ul>
+
+<p>
+Ports using imake should work as is, since the imake fragments are
+configured to use DESTDIR. Similarly, recent GNU configure ports
+should need no change.
+</p>
+
+<p>
+Another good technique is a `late binding' trick: configure the
+ports to use a prefix of $(DESTDIR)/usr/local, so that the
+resulting Makefile has 
+</p>
+
+<pre>
+prefix=$(DESTDIR)/usr/local
+</pre>
+
+<p>
+set. When the port gets built, since DESTDIR is set to nothing,
+/usr/local is used. And the fake install will put everything into
+WRKINST/usr/local (e.g., for GNU configure, use 
+<code>CONFIGURE_STYLE= gnu dest</code>).
+</p>
+
+<a name="Pitfalls"></a>
+<h3>5.7.4 - Pitfalls</h3>
+
+<ul>
+<li>Some ports are inconsistent in their DESTDIR processing: most
+of the port is happy with DESTDIR set, except for one or two
+offenders. Patch the problem away.</li>
+
+<li>Be careful to distinguish between the actual location where the
+port is installed, and the location recorded in the configuration
+files of the package. This is very easy to overlook, but easy to
+fix using TRUEPREFIX.</li>
+
+<li>Absolute symlinks always need to be tweaked. Luckily, 
+<code>bsd.port.mk</code> will notice problems in that area.</li>
+
+<li>A few ports don't want to leave $(DESTDIR) alone at the
+configure stage. A post-configure fragment that tweaks all
+Makefiles to add the DESTDIR is needed.</li>
+
+<li>Very seldom, a port will resist all reasonable attempts to use
+FAKE. A brute force approach should work: use pre-fake to link or
+copy everything the port wants to find in the WRKINST area, then
+perform the install under chroot.</li>
+</ul>
+
+<a name="Tools"></a>
+<h2>5.8 - Packaging tools</h2>
+
+<p>
+The package tools know about quite a few file types, and can do a lot
+of things automatically: in most cases <code>@exec</code> commands or
+<code>INSTALL</code> scripts are unneeded.<br>
+<em>Note that all unneeded scripts should be banned, as they have
+scalability issues. It is much easier to debug one single package 
+infrastructure than to modify hundreds of scripts to handle new problems.
+</em><br>
+For instance:
+</p>
+
+<ul>
+<li><code>@exec ldconfig</code> is not needed, as shared libraries are
+annotated with <code>@lib libfoo.so.1.0</code> and <code>ldconfig</code>
+runs only when needed, and handles chroot gracefully.</li>
+<li><code>@exec install-info</code> is not needed, as info documentation
+files are annotated with <code>@info file.info</code>. This also takes
+care of multiple info files, and removes the need for 
+<code>makeinfo --no-split</code>.</li>
+<li>fonts get integrated automatically thanks to <code>@font</code> and 
+<code>@fontdir</code>.</li>
+<li>New users and groups get handled with <code>@newuser</code> and
+<code>@newgroup</code> instead of installation scripts. They also get
+created early enough so that further package extraction can use them.</li>
+<li>Configuration files are handled through <code>@sample</code> instead
+of installation scripts.</li>
+</ul>
+
+<p>
+Refer to 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pkg_create&amp;sektion=1&amp;format=html">pkg_create(1)</a>
+for more details.  In most cases,
+<code>make update-plist</code> will write a very good approximation of
+a complete packing-list, and will carry hand-made tweaks from one version 
+to the next.
+</p>
+
+<a name="Flavors"></a>
+<h2>5.9 - Flavors</h2>
+
+<p>
+Options have been rationalized as flavors, so that package building
+can be consistent. A port with options should set FLAVORS to the
+list of all options that make sense for that port (e.g.,
+FLAVORS=foo bar zoinx), then use FLAVOR to test what options have
+actually been selected (e.g., FLAVOR=zoinx foo).
+<code>bsd.port.mk</code> provides some support: 
+</p>
+
+<ul>
+<li>The PKGNAME is tweaked to include dash separated options (e.g.,
+package-foo-zoinx).</li>
+
+<li>The WRKDIR is tweaked so that distinct flavors can be built
+concurrently without colliding.</li>
+
+<li>Constructs of the form %%flavor%% will trigger the inclusion of
+PFRAG.flavor. The %%SHARED%% construct triggers the inclusion of
+PFRAG.shared.</li>
+
+<li>bsd.port.subdir.mk understands the extension
+SUBDIR=directory,opt1,opt2 to say `build port in directory with
+FLAVOR=opt1 opt2.'</li>
+</ul>
+
+<p>
+Checking that a given flavor has been selected is as simple as:
+</p>
+
+<pre>
+.if ${FLAVOR:L:Mzoinx}
+</pre>
+
+There is an extra extension, known as MULTI_PACKAGES.
+Generally speaking, MULTI_PACKAGES and FLAVORS are orthogonal
+mechanisms. Together, they account for OpenBSD ports tree being
+somewhat smaller than the other BSD, as they allow one single
+port directory to build lots of distinct packages. 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bsd.port.mk&amp;sektion=5&amp;format=html">bsd.port.mk(5)</a>
+has a full section devoted to FLAVORS AND MULTI_PACKAGES.
+
+<p>
+  
+<font color= "#0000e0">
+<a href="../index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a>
+<a href="testing.html">[To Section 4 - Port Testing Guide]</a>
+</font>
+
+<hr>
+
+<small>$OpenBSD: differences.html,v 1.1.1.1 2009/06/18 16:20:42 sthen Exp $</small>
+
+</body>
+</html>
