@@ -1,0 +1,174 @@
+--- etc/changelist	Sat Feb 28 16:29:26 2009
++++ tmp/etc/changelist	Mon Jul  6 18:17:57 2009
+@@ -63,8 +63,11 @@
+ /etc/mail/mailertable
+ /etc/mail/relay-domains
+++/etc/mail/secrets
+ /etc/mail/sendmail.cf
++/etc/mail/smtpd.conf
+ /etc/mail/spamd.conf
+ /etc/mail/submit.cf
+ /etc/mail/trusted-users
++/etc/mail/virtual
+ /etc/mail/virtusertable
+ /etc/mailer.conf
+--- etc/ftpusers	Sat Feb 28 16:29:26 2009
++++ tmp/etc/ftpusers	Mon Jul  6 18:17:57 2009
+@@ -47,2 +47,4 @@
+ _ypldap
+ _btd
++_smtpd
++_rwalld
+--- etc/login.conf	Sat Feb 28 16:29:27 2009
++++ tmp/etc/login.conf	Mon Jul  6 18:17:58 2009
+@@ -43,6 +43,6 @@
+ 	:datasize-max=512M:\
+ 	:datasize-cur=512M:\
+-	:maxproc-max=128:\
+-	:maxproc-cur=64:\
++	:maxproc-max=256:\
++	:maxproc-cur=128:\
+ 	:openfiles-cur=128:\
+ 	:stacksize-cur=4M:\
+@@ -72,5 +72,5 @@
+ 	:datasize-cur=512M:\
+ 	:datasize-max=infinity:\
+-	:maxproc-max=256:\
++	:maxproc-max=512:\
+ 	:maxproc-cur=128:\
+ 	:ignorenologin:\
+--- etc/sudoers	Sat Feb 28 16:29:39 2009
++++ tmp/etc/sudoers	Mon Jul  6 18:18:13 2009
+@@ -17,8 +17,8 @@
+ 
+ # Defaults specification
+-Defaults env_keep +="DESTDIR FETCH_CMD FLAVOR FTPMODE GROUP MAKE MULTI_PACKAGES"
+-Defaults env_keep +="OKAY_FILES OWNER PKG_DBDIR PKG_DESTDIR PKG_CACHE PKG_PATH"
+-Defaults env_keep +="PKG_TMPDIR PORTSDIR RELEASEDIR SUBPACKAGE WRKOBJDIR"
+-Defaults env_keep +="SSH_AUTH_SOCK EDITOR VISUAL SHARED_ONLY"
++Defaults env_keep +="DESTDIR EDITOR FETCH_CMD FLAVOR FTPMODE GROUP MAKE"
++Defaults env_keep +="MULTI_PACKAGES NOMAN OKAY_FILES OWNER PKG_CACHE PKG_DBDIR"
++Defaults env_keep +="PKG_DESTDIR PKG_PATH PKG_TMPDIR PORTSDIR RELEASEDIR"
++Defaults env_keep +="SHARED_ONLY SSH_AUTH_SOCK SUBPACKAGE VISUAL WRKOBJDIR"
+ 
+ # Uncomment to disable the lecture the first time you run sudo
+--- etc/sysctl.conf	Sat Feb 28 16:29:27 2009
++++ tmp/etc/sysctl.conf	Mon Jul  6 18:17:58 2009
+@@ -8,4 +8,6 @@
+ #net.inet.ip.mforwarding=1	# 1=Permit forwarding (routing) of IPv4 multicast packets
+ #net.inet.ip.multipath=1	# 1=Enable IP multipath routing
++#net.inet.icmp.rediraccept=1	# 1=Accept ICMP redirects
++#net.inet6.icmp6.rediraccept=0	# 0=Don't accept IPv6 ICMP redirects
+ #net.inet6.ip6.forwarding=1	# 1=Permit forwarding (routing) of IPv6 packets
+ #net.inet6.ip6.mforwarding=1	# 1=Permit forwarding (routing) of IPv6 multicast packets
+--- etc/mail/aliases	Sat Feb 28 16:29:38 2009
++++ tmp/etc/mail/aliases	Mon Jul  6 18:18:12 2009
+@@ -47,4 +47,6 @@
+ _rtadvd: /dev/null
+ _rusersd: /dev/null
++_rwalld: /dev/null
++_smtpd: /dev/null
+ _snmpd: /dev/null
+ _spamd: /dev/null
+--- etc/skel/.login	Sat Feb 28 16:29:27 2009
++++ tmp/etc/skel/.login	Mon Jul  6 18:17:59 2009
+@@ -4,5 +4,9 @@
+ 
+ if ( ! $?TERMCAP ) then
+-	tset -Q '-mdialup:?vt100' $TERM
++	if ( $?XTERM_VERSION ) then
++		tset -IQ '-munknown:?vt220' $TERM
++	else
++		tset -Q '-munknown:?vt220' $TERM
++	endif
+ endif
+ 
+--- etc/skel/.mailrc	Sat Feb 28 16:29:27 2009
++++ tmp/etc/skel/.mailrc	Mon Jul  6 18:17:59 2009
+@@ -1,2 +1,3 @@
+ set ask
++set crt
+ ignore message-id received date fcc status resent-date resent-message-id resent-from in-reply-to
+--- root/.login	Sat Feb 28 16:29:27 2009
++++ tmp/root/.login	Mon Jul  6 18:17:59 2009
+@@ -3,12 +3,16 @@
+ # csh login file
+ 
+-set tterm='?'$TERM
+-set noglob
+-onintr finish
+-eval `tset -s -Q $tterm`
+-finish:
+-unset noglob
+-unset tterm
+-onintr
++if ( -x /usr/bin/tset ) then
++	set noglob histchars=""
++	onintr finish
++	if ( $?XTERM_VERSION ) then
++		eval `tset -IsQ '-munknown:?vt220' $TERM`
++	else
++		eval `tset -sQ '-munknown:?vt220' $TERM`
++	endif
++	finish:
++	unset noglob histchars
++	onintr
++endif
+ 
+ if ( `logname` == `whoami` ) then
+--- root/.profile	Sat Feb 28 16:29:27 2009
++++ tmp/root/.profile	Mon Jul  6 18:17:59 2009
+@@ -10,4 +10,8 @@
+ 
+ if [ -x /usr/bin/tset ]; then
+-	eval `/usr/bin/tset -sQ \?$TERM`
++	if [ X"$XTERM_VERSION" = X"" ]; then
++		eval `/usr/bin/tset -sQ '-munknown:?vt220' $TERM`
++	else
++		eval `/usr/bin/tset -IsQ '-munknown:?vt220' $TERM`
++	fi
+ fi
+--- var/cron/tabs/root	Sat Feb 28 16:29:27 2009
++++ tmp/var/cron/tabs/root	Mon Jul  6 18:17:58 2009
+@@ -18,6 +18,6 @@
+ #
+ # do daily/weekly/monthly maintenance
+-30	1	*	*	*	umask 077; /bin/sh /etc/daily 2>&1 | tee /var/log/daily.out | mail -s "`/bin/hostname` daily output" root
+-30	3	*	*	6	umask 077; /bin/sh /etc/weekly 2>&1 | tee /var/log/weekly.out | mail -s "`/bin/hostname` weekly output" root
+-30	5	1	*	*	umask 077; /bin/sh /etc/monthly 2>&1 | tee /var/log/monthly.out | mail -s "`/bin/hostname` monthly output" root
++30	1	*	*	*	/bin/sh /etc/daily
++30	3	*	*	6	/bin/sh /etc/weekly
++30	5	1	*	*	/bin/sh /etc/monthly
+ #0	*	*	*	*	/usr/libexec/spamd-setup
+--- var/www/conf/httpd.conf	Sat Feb 28 16:29:32 2009
++++ tmp/var/www/conf/httpd.conf	Mon Jul  6 18:18:05 2009
+@@ -170,5 +170,5 @@
+ #
+ # MaxFOOPerChild: these directives set the current and hard rlimits for
+-# the child processes. Attempts to exceed them will cause the the OS to
++# the child processes. Attempts to exceed them will cause the OS to
+ # take appropriate action. See the setrlimit(2) and signal(3).
+ #
+@@ -851,12 +851,15 @@
+ #
+ # Allow server status reports, with the URL of http://servername/server-status
+-# Change the ".your_domain.com" to match your domain to enable.
++# Change the ".your_domain.com" to match your domain to enable. By default we
++# allow server-status requests from 127.0.0.1 to make apachectl's status and
++# fullstatus commands work.
+ #
+-#<Location /server-status>
+-#    SetHandler server-status
+-#    Order deny,allow
+-#    Deny from all
+-#    Allow from .your_domain.com
+-#</Location>
++<Location /server-status>
++    SetHandler server-status
++    Order deny,allow
++    Deny from all
++    Allow from 127.0.0.1
++#   Allow from .your_domain.com
++</Location>
+ 
+ #
