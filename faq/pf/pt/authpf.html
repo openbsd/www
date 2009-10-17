@@ -1,7 +1,7 @@
 <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
 <html>
 <head>
-<title>PF: Authpf: Shell de Usuário para Autenticação em Gateways</title>
+<title>PF: Authpf: Shell de Usuário para Gateways de Autenticação</title>
 <link rev="made" href="mailto:www@openbsd.org">
 <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
 <meta name="resource-type" content="document">
@@ -40,8 +40,8 @@ please, use a max of 72 chars per line -->
 [<a href="carp.html">Próximo: Redundância de Firewall com CARP
 e pfsync</a>]
 
-<h1><font color="#e00000">PF: Authpf: Shell de Usuário para Autenticação
-em Gateways</font></h1>
+<h1><font color="#e00000">PF: Authpf: Shell de Usuário para Gateways
+de Autenticação</font></h1>
 
 <hr>
 
@@ -50,15 +50,19 @@ em Gateways</font></h1>
 <li><a href="#intro">Introdução</a>
 <li><a href="#config">Configuração</a>
 	<ul>
-        <li><a href="#enable">Habilitando o Authpf</a>
-	<li><a href="#linkmain">Linkando Authpf no Conjunto de Regras</a>
-	<li><a href="#loadrules">Configurando Regras Carregadas</a>
-	<li><a href="#acl">Listas de Controle de Acesso (ACL)</a>
-        <li><a href="#message">Mostrando uma Mensagem de Login</a>
-	<li><a href="#shell">Definindo Authpf como Shell do Usuário</a>
+        <li><a href="#enable">Habilitação do Authpf</a>
+	<li><a href="#linkmain">Ligando o Authpf ao
+            Conjunto de Regras Principal</a>
+	<li><a href="#loadrules">Configuração de Regras Carregadas</a>
+	<li><a href="#acl">Listas de Controle de Acesso</a>
+        <li><a href="#message">Mostrando uma Mensagem de
+            Início de Sessão</a>
+	<li><a href="#shell">Definindo o Authpf como um
+            Shell do Usuário</a>
 	</ul>
-<li><a href="#loginclass">Criando uma Classe de Login authpf</a>
-<li><a href="#wholog">Verificando Quem está Logado</a>
+<li><a href="#loginclass">Criação de uma Classe de Início de Sessão
+    authpf</a>
+<li><a href="#wholog">Verificando Quem está em Sessão</a>
 <li><a href="#example">Exemplo</a>
 </ul>
 
@@ -67,107 +71,111 @@ em Gateways</font></h1>
 <a name="intro"></a>
 <h2>Introdução</h2>
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=authpf&amp;sektion=8&amp;manpath=OpenBSD+4.5"
->Authpf(8)</a> é um shell para autenticação em gateways.
+>Authpf(8)</a> é um shell de usuário para gateways de autenticação.
 Um gateway de autenticação é como um gateway de rede normal (também
 conhecido como um roteador), exceto pelo fato dos usuários precisarem
-primeiro se autenticar no gateway antes de poderem passar por ele.
-Quando um shell de usuário é definido como <tt>/usr/sbin/authpf</tt>
-(ou seja, ao invés de definir o shell como
+primeiro se autenticar no gateway antes de poderem passar tráfego por
+ele. Quando um shell de usuário é definido como
+<tt>/usr/sbin/authpf</tt> (ou seja, em vez de definir o shell como
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ksh&amp;sektion=1"
 >ksh(1)</a>,
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=csh&amp;sektion=1"
->csh(1)</a>, etc.) e esse usuário loga por SSH, o authpf fará as
-alterações necessárias nas regras ativas do
+>csh(1)</a>, etc.), e esse usuário inicia sessão por SSH, o authpf faz as
+alterações necessárias no conjunto de regras ativas do
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+4.5"
 >pf(4)</a> para permitir que o tráfego do usuário passe pelas regras de
 filtragem e/ou seja alterado usando Tradução do Endereço de Rede (NAT)
-ou Redirecionamento. Uma vez que o usuário fizer logout ou sua sessão
-for desconectada, o authpf removerá quaisquer regras carregadas para o
-usuário e derrubará quaisquer conexões mantidas pela tabela de estado
-que o usuário possa ter aberto. Por isso a habilidade do usuário de
-passar tráfego através do gateway somente existe enquanto sua conexão
-SSH estiver ativa.
+ou redirecionamento. Assim que o usuário encerrar a sessão ou sua sessão
+for desconectada, o authpf remove quaisquer regras carregadas para o
+usuário e derruba quaisquer conexões, com o estado mantido na
+tabela de estados, que o usuário possa ter aberto. Por isso a habilidade
+do usuário de passar tráfego através do gateway somente existe enquanto
+sua conexão SSH estiver ativa.
 
 <p>
-Authpf carrega regras de filtragem/NAT de usuários em uma única
+O authpf carrega regras de filtragem/NAT de usuários em uma única
 <a href="anchors.html">âncora</a>.
-A âncora é nomeada combinando o nome de usuário UNIX e o identificador
-de processo do authpf em um formato "<tt>username(PID)</tt>".
+A âncora é nomeada combinando o nome de usuário UNIX e o ID de processo
+(PID, "Process ID") do authpf em um formato
+"<tt>nome_de_usuário(PID)</tt>".
 Cada âncora de usuário é guardada dentro da âncora <tt>authpf</tt>, a
 qual é ancorada no conjunto de regras principal.
 O "caminho da âncora totalmente qualificado" então torna-se:
 
 <blockquote>
 <tt>
-<i>main_ruleset</i>/authpf/<i>username</i>(<i>PID</i>)
+<i>conjunto_de_regras_principal</i>/authpf/<i>nome_de_usuário</i>(<i>PID</i>)
 </tt>
 </blockquote>
 
 <p>
-As regras que o authpf carrega podem ser configuradas em uma base por
-usuário ou global.
+As regras que o authpf carrega podem ser configuradas por usuário ou
+globalmente.
 
 <p>
 Exemplos de uso do authpf incluem:
 <ul>
-<li>Exigir autenticação do usuário antes de permitir acesso à Internet.
+<li>Exigir a autenticação do usuário antes de permitir o acesso
+    à Internet.
 <li>Garantir a certos usuários -- como administradores -- acesso
     à partes restritas da rede.
-<li>Permitir apenas a usuários conhecidos acessarem o restante da
-    rede ou Internet em um segmento de rede sem fio.
-<li>Permitir a trabalhadores em casa, viajantes, etc., acesso a recursos
-    na rede da empresa. Usuários fora do escritório não apenas
-    podem acessar a rede da empresa, mas também podem ser redirecionados
-    para recursos em particular (por exemplo, seu próprio desktop)
-    baseado no nome de usuário com que ele se autenticar.
+<li>Permitir o acesso ao restante da rede ou à Internet em um segmento
+    de rede sem fio apenas a usuários conhecidos.
+<li>Permitir o acesso de pessoas que trabalham em casa, viajantes, etc.,
+    aos recursos na rede da empresa. Usuários fora do escritório não
+    apenas podem acessar a rede da empresa, mas também podem ser
+    redirecionados para recursos em particular (por exemplo, seu próprio
+    desktop) baseando-se no nome de usuário com que eles se autenticam.
 <li>Em lugares como bibliotecas ou outros estabelecimentos com
     terminais públicos para Internet, o PF pode ser configurado para
-    permitir acesso limitado a usuários visitantes. Authpf pode então
-    ser utilizado para prover acesso completo a usuários registrados.
+    permitir acesso limitado para visitantes. O authpf pode então ser
+    utilizado para prover acesso completo a usuários registrados.
 </ul>
 
 <p>
-Authpf loga o nome de usuário e endereço IP de cada usuário que se
-autentica, bem como horário de início e fim de sua sessão de login, via
+O authpf registra o nome de usuário e endereço IP de cada usuário que se
+autentica, bem como o horário de início e fim de sua sessão, via
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=syslogd&amp;sektion=8"
 >syslogd(8)</a>. Utilizando essa informação, um administrador pode
-determinar quem se logou e quando, e também pode calcular o tráfego
-utilizado por cada usuário, podendo fazer cobrança com base nesses
-dados.
+determinar quem estava em sessão e quando, e também pode calcular o
+tráfego utilizado por cada usuário, podendo fazer cobranças com base
+nesses dados.
 
 <a name="config"></a>
 <h2>Configuração</h2>
 Os passos básicos necessários para configurar o authpf são descritos
 aqui.
-Para um descrição completa da configuração do authpf, por favor
+Para uma descrição completa da configuração do authpf, por favor
 consulte a
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=authpf&amp;sektion=8&amp;manpath=OpenBSD+4.5"
 >página de manual do authpf</a>.
 
 <a name="enable"></a>
-<h3>Habilitando o Authpf</h3>
+<h3>Habilitação do Authpf</h3>
 
 <p>
-Authpf não rodará se o arquivo de configuração
+O authpf não é executado se o arquivo de configuração
 <tt>/etc/authpf/authpf.conf</tt> não estiver presente.
-Mesmo se o arquivo for vazio (tamanho zero), deve estar presente
-ou o authpf será encerrado imediatamente após um usuário se
+Mesmo se o arquivo estiver vazio (tamanho zero), deve estar presente
+ou o authpf termina sua execução imediatamente após um usuário se
 autenticar com sucesso.
 
 <p>
-As seguintes diretivas de configuração podem ser colocadas
-no <tt>authpf.conf</tt>:
+As seguintes diretivas de configuração podem ser colocadas no
+<tt>authpf.conf</tt>:
 
 <ul>
-<li><tt>anchor=<i>nome</i></tt> - Usa o nome especificado de
-    <a href="anchors.html">âncora</a> em vez de "authpf".
-<li><tt>table=<i>nome</i></tt> - Usa o nome especificado de
-    <a href="tables.html">tabela</a> em vez de "authpf_users".
+<li><tt>anchor=<i>nome</i></tt> - Usa o nome de
+    <a href="anchors.html">âncora</a> especificado em vez de
+    "authpf".
+<li><tt>table=<i>nome</i></tt> - Usa o nome de
+    <a href="tables.html">tabela</a> especificado em vez de
+    "authpf_users".
 </ul>
 
 <a name="linkmain"></a>
-<h3>Linkando Authpf nas Regras Principais</h3>
-Authpf é linkado no conjunto de regras principais utilizando-se de
+<h3>Ligando o Authpf ao Conjunto de Regras Principal</h3>
+O authpf é ligado ao conjunto de regras principal utilizando-se de
 regras <tt>anchor</tt>:
 <blockquote>
 <tt>
@@ -179,16 +187,16 @@ anchor "authpf/*"<br>
 </blockquote>
 
 <p>
-Sempre que regras <tt>anchor</tt> são colocadas dentro do conjunto de
-regras, é onde o PF sairá do conjunto de regras principal para avaliar
-as regras do authpf. Não é necessário que todas as quatro regras
+O lugar onde regras <tt>anchor</tt> são colocadas dentro do conjunto de
+regras é onde o PF sai do conjunto de regras principal para avaliar as
+regras do authpf. Não é necessário que todas as quatro regras
 <tt>anchor</tt> estejam presentes; por exemplo, caso o authpf não seja
 configurado para carregar regras <tt>nat</tt>, a regra
 <tt>nat-anchor</tt> pode ser omitida.
 
 <a name="loadrules"></a>
-<h3>Configurando as Regras a Carregar</h3>
-Authpf carrega suas regras de um destes arquivos:
+<h3>Configuração de Regras Carregadas</h3>
+O authpf carrega suas regras a partir de um destes arquivos:
 <ul>
 <li><tt>/etc/authpf/users/$USER/authpf.rules</tt>
 <li><tt>/etc/authpf/authpf.rules</tt>
@@ -197,33 +205,33 @@ Authpf carrega suas regras de um destes arquivos:
 <p>
 O primeiro arquivo contém regras que são carregadas apenas quando o
 usuário <tt>$USER</tt> (que é substituído pelo nome do usuário)
-se loga. A configuração de regras por usuário é utilizada quando um
-usuário em específico -- como um administrador -- exige um conjunto
-de regras diferente do padrão. O segundo arquivo contém as regras
-padrão que são carregadas por quaisquer usuários que não possuam seu
-próprio arquivo <tt>authpf.rules</tt>. Se o arquivo específico do
-usuário existir, sobrescreve as regras do arquivo padrão. Pelo menos
-um dos arquivos deve existir, caso contrário o authpf não funcionará.
+inicia sessão. A configuração de regras por usuário é utilizada quando
+um usuário em específico -- como um administrador -- exige um conjunto
+de regras diferente do padrão. O segundo arquivo contém as regras padrão
+que são carregadas para quaisquer usuários que não possuam seu próprio
+arquivo <tt>authpf.rules</tt>. Se o arquivo específico do usuário
+existir, ele sobrescreve as regras do arquivo padrão. Pelo menos
+um dos arquivos deve existir, caso contrário o authpf não funciona.
 
 <p>
-Regras de filtragem e tradução de endereço possuem a mesma sintaxe
-como em qualquer regra PF, com uma exceção: o Authpf permite o uso de
+Regras de filtragem e tradução possuem a mesma sintaxe como em qualquer
+outro conjunto de regras PF, com uma exceção: o authpf permite o uso de
 duas macros predefinidas:
 <ul>
-<li><tt>$user_ip</tt> - o endereço IP do usuário logado
-<li><tt>$user_id</tt> - o nome de usuário do cliente logado
+<li><tt>$user_ip</tt> - o endereço IP do usuário em sessão
+<li><tt>$user_id</tt> - o nome de usuário do usuário em sessão
 </ul>
 
 <p>
-É prática recomendada o uso da macro <tt>$user_ip</tt> para permitir
+É prática recomendada usar a macro <tt>$user_ip</tt> para permitir
 tráfego através do gateway vindo apenas do computador do usuário
 autenticado.
 
 <p>
-Em adição à macro <tt>$user_ip</tt>, o authpf fará uso da tabela
-<tt>authpf_users</tt> (se existir) para armazenar o endereço IP de
-todos os usuários autenticados. Tenha certeza de definir a tabela antes
-de usá-la:
+Em adição à macro <tt>$user_ip</tt>, o authpf faz uso da tabela
+<tt>authpf_users</tt> (se existir) para armazenar o endereço IP de todos
+os usuários autenticados. Tenha certeza de definir a tabela antes de
+usá-la:
 
 <blockquote>
 <tt>
@@ -238,34 +246,34 @@ Essa tabela somente deve ser usada em regras que se pretende aplicar
 a todos os usuários autenticados.
 
 <a name="acl"></a>
-<h3>Listas de Controle de Acesso (ACL)</h3>
+<h3>Listas de Controle de Acesso</h3>
 Usuários podem ser impedidos de usar o authpf criando-se um arquivo no
-diretório <tt>/etc/authpf/banned/</tt> e nomeando-o com o nome do
+diretório <tt>/etc/authpf/banned/</tt> e nomeando-o com o nome de
 usuário que deve ter o acesso negado. O conteúdo desse arquivo será
 mostrado ao usuário antes que authpf o desconecte. Isso fornece uma
 maneira simples de notificar o usuário do porquê que seu acesso não
-é permitido e a quem contactar para ter o acesso liberado novamente.
+é permitido e a quem contatar para ter o acesso liberado novamente.
 
 <p>
-De outro modo, é possível também permitir acesso apenas a usuários
-específicos colocando seus nomes no arquivo
+De outro modo, é possível também permitir o acesso apenas a usuários
+específicos colocando seus nomes de usuário no arquivo
 <tt>/etc/authpf/authpf.allow</tt>. Se o arquivo
-<tt>/etc/authpf/authpf.allow</tt> não existir ou seu conteúdo for um
-"<tt>*</tt>", então authpf dará acesso a qualquer usuário que
-conseguir se autenticar via SSH, desde que não tenha sido explicitamente
-banido.
+<tt>/etc/authpf/authpf.allow</tt> não existe ou seu conteúdo for um
+"<tt>*</tt>", então o authpf permite o acesso a qualquer usuário que
+conseguir iniciar sessão via SSH, desde que não tenha sido
+explicitamente banido.
 
 <p>
-Caso o authpf não consiga determinar se um usuário tem ou não
-permissão de acesso, mostrará uma breve mensagem e então
-desconectará o usuário. Uma entrada em <tt>/etc/authpf/banned/</tt>
-sempre sobrescreve entradas em <tt>/etc/authpf/authpf.allow</tt>.
+Caso o authpf não consiga determinar se um nome de usuário tem ou não
+permissão de acesso, ele mostra uma breve mensagem e então
+desconecta o usuário. Uma entrada em <tt>/etc/authpf/banned/</tt>
+sempre sobrescreve uma entrada em <tt>/etc/authpf/authpf.allow</tt>.
 
 <a name="message"></a>
-<h3>Mostrando uma Mensagem de Login</h3>
+<h3>Mostrando uma Mensagem de Início de Sessão</h3>
 
 <p>
-Sempre que um usuário se autentica com sucesso ao authpf, uma saudação
+Sempre que um usuário se autentica com sucesso no authpf, uma saudação
 que indica que o usuário está autenticado é mostrada.
 
 <blockquote>
@@ -275,22 +283,22 @@ Hello charlie. You are authenticated from host "64.59.56.140"
 </blockquote>
 
 <p>
-Essa mensagem pode ser acrescentada colocando uma mensagem customizada
-no <tt>/etc/authpf/authpf.message</tt>.
+Essa mensagem pode ser suplementada colocando-se uma mensagem
+personalizada no <tt>/etc/authpf/authpf.message</tt>.
 O conteúdo desse arquivo será mostrado depois da mensagem de bem-vindo
 padrão.
 
 <a name="shell"></a>
-<h3>Definindo Authpf como um Shell de usuário</h3>
-Para o authpf funcionar, ele deve ser definido como shell de login do
-usuário. Quando o usuário se autenticar ao
+<h3>Definindo o Authpf como um Shell do Usuário</h3>
+Para o authpf funcionar, ele deve ser definido como shell de início de
+sessão do usuário. Quando o usuário se autenticar no
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sshd&amp;sektion=8"
 >sshd(8)</a>, o authpf será executado como o shell do usuário.
 Ele então verifica se o usuário tem permissão de usar o authpf, carrega
 as regras do arquivo apropriado, etc.
 
 <p>
-Existem algumas formas de se definir o authpf como shell de usuário:
+Existem algumas formas de se definir o authpf como um shell do usuário:
 <ol>
 <li>Manualmente para cada usuário, usando
     <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=chsh&amp;sektion=1"
@@ -301,40 +309,40 @@ Existem algumas formas de se definir o authpf como shell de usuário:
     >useradd(8)</a>,
     <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=usermod&amp;sektion=8"
     >usermod(8)</a>, etc.
-<li>Colocando usuários numa classe de login e alterando a opção
-    <tt>shell</tt> da classe em
+<li>Colocando usuários em uma classe de início de sessão e alterando
+    a opção <tt>shell</tt> da classe em
     <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=login.conf&amp;sektion=5"
     ><tt>/etc/login.conf</tt></a>.
 </ol>
 
 <a name="loginclass"></a>
-<h2>Criando uma Classe de Login authpf</h2>
-Quanto estiver usando o authpf em um sistema que tiver contas de
-usuários regulares e contas de usuários authpf, pode ser útil usar
-uma classe de login separada para os usuários authpf.
-Isso permite certas mudanças para aquelas contas serem feitas
-em uma base global e também permite políticas diferentes serem
-colocadas em contas regulares e contas authpf.
-Alguns exemplos de como as políticas podem ser configuradas:
+<h2>Criação de uma Classe de Início de Sessão authpf</h2>
+Ao utilizar o authpf em um sistema que tem contas de usuários normais
+e contas de usuários authpf, pode ser útil usar uma
+classe de início de sessão separada para os usuários authpf.
+Isso permite que certas mudanças àquelas contas sejam feitas
+globalmente, e também permite que políticas diferentes sejam
+colocadas em contas normais e contas authpf.
+Alguns exemplos de quais políticas podem ser configuradas:
 
 <ul>
-<li><b>shell</b> - Especifica um shell de login de usuário.
+<li><b>shell</b> - Especifica um shell de início de sessão do usuário.
     Isso pode ser usado para forçar o shell do usuário para
-    <tt>authpf</tt>, indiferente da entrada da base de dados
+    <tt>authpf</tt>, independente da entrada no banco de dados
     <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=passwd&amp;sektion=5"
     >passwd(5)</a>.
 <li><b>welcome</b> - Especifica qual arquivo
     <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=motd&amp;sektion=5"
-    >motd(5)</a> mostrar quando um usuário fizer login.
+    >motd(5)</a> mostrar quando um usuário iniciar sessão.
     Isso é útil para mostrar mensagens que são relevantes somente para
     usuários authpf.
 </ul>
 
 <p>
-Classes de login são criadas no arquivo
+Classes de início de sessão são criadas no arquivo
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=login.conf&amp;sektion=5"
 >login.conf(5)</a>.
-O OpenBSD possui uma classe de login definida como:
+O OpenBSD possui uma classe de início de sessão definida como:
 
 <blockquote>
 <tt>
@@ -346,40 +354,42 @@ authpf:\<br>
 </blockquote>
 
 <p>
-Os usuários são designados para uma classe de login editando o campo
-<tt>class</tt> da base de dados passwd(5) do usuário.
+Os usuários são designados para uma classe de início de sessão através
+da edição do campo <tt>class</tt> da entrada do usuário no
+banco de dados passwd(5).
 Uma maneira de se fazer isso é com o comando
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=chsh&amp;sektion=1"
 >chsh(1)</a>.
 
 
 <a name="wholog"></a>
-<h2>Verificando Quem está Logado</h2>
-Assim que um usuário se loga e o authpf ajusta as regras PF, ele também
-altera o título do processo para mostrar o nome e endereço IP do
-usuário logado:
+<h2>Verificando Quem está em Sessão</h2>
+Assim que um usuário inicia sessão e o authpf ajusta as regras PF,
+ele também altera o título do processo para mostrar o nome e o
+endereço IP do usuário em sessão:
 <pre>
     # ps -ax | grep authpf
     23664 p0  Is+     0:00.11 -authpf: charlie@192.168.1.3 (authpf)
 </pre>
 
 <p>
-Aqui o usuário <tt>charlie</tt> se logou da máquina 192.168.1.3.
-Enviando um sinal SIGTERM ao processo authpf, o usuário pode ser
-forçado a sair. Authpf removerá quaisquer regras inseridas para
-o usuário e derrubará todas conexões mantidas na tabela de estado
-que esse usuário tiver aberto.
+Aqui o usuário <tt>charlie</tt> iniciou sessão a partir da máquina
+192.168.1.3.
+Ao enviar um sinal SIGTERM ao processo authpf, o usuário pode ser
+forçado a encerrar sua sessão. O authpf remove quaisquer regras
+inseridas para o usuário e derruba todas conexões, com o estado mantido
+na tabela de estados, que esse usuário tiver aberto.
 <pre>
     # kill -TERM 23664
 </pre>
 
 <a name="example"></a>
 <h2>Exemplo</h2>
-O authpf está sendo usado num gateway OpenBSD para autenticar
-usuários numa rede sem fio que é parte de uma grande rede num
-campus. Uma vez autenticado o usuário, assumindo que não esteja na
+O authpf está sendo usado em um gateway OpenBSD para autenticar usuários
+em uma rede sem fio que é parte de uma grande rede em um campus.
+Assim que o usuário tiver se autenticado, assumindo que não esteja na
 lista de banidos, ele terá permissão de abrir conexões SSH e navegar na
-web (incluindo web sites seguros), além de poder acessar os servidores
+Web (incluindo sítios Web seguros), além de poder acessar os servidores
 DNS do campus.
 
 <p>
@@ -400,7 +410,7 @@ pass in quick on $wifi_if proto tcp from $user_ip to port { ssh, http, \
 
 <p>
 O usuário administrativo <tt>charlie</tt> deve ter acesso aos
-servidores SMTP e POP3, além de poder navegar na web e usar
+servidores SMTP e POP3, além de poder navegar na Web e usar
 SSH. As regras a seguir estão definidas no arquivo
 <tt>/etc/authpf/users/charlie/authpf.rules</tt>:<br>
 <br>
@@ -423,8 +433,8 @@ pass in quick on $wifi_if proto tcp from $user_ip to port { ssh, http, \
 </table>
 
 <p>
-As regras principais -- localizadas em <tt>/etc/pf.conf</tt> --
-são configuradas a seguir:<br>
+O conjunto de regras principal -- localizado em <tt>/etc/pf.conf</tt> --
+é configurado a seguir:<br>
 <br>
 
 <table border=0 width="650">
@@ -458,29 +468,30 @@ anchor "authpf/*" in on $wifi_if
 </table>
 
 <p>
-As regras são bem simples e fazem o seguinte:
+O conjunto de regras é bem simples e faz o seguinte:
 <ul>
-<li>Bloquear tudo (negar por padrão).
-<li>Permitir tráfego TCP, UDP e ICMP vindo da rede sem fio e
-    saindo pela interface externa e do próprio gateway.
-<li>Permitir tráfego SSH entrante vindo da rede sem fio e
-    destinado ao próprio gateway. Essa regra deve existir para que
-    os usuários possam logar.
-<li>Permite requisições DNS, vindas de todos os usuários authpf
-    autenticados, para servidores DNS do campus.
-<li>É criada uma âncora "authpf" para tráfego vindo na interface de
-    rede sem fio.
+<li>Bloqueia tudo (negar por padrão).
+<li>Permite tráfego TCP, UDP e ICMP saindo na interface externa,
+    vindo da rede sem fio e do próprio gateway.
+<li>Permite tráfego SSH de entrada vindo da rede sem fio e
+    destinado ao próprio gateway. Essa regra é necessária para
+    permitir que os usuários possam iniciar sessão.
+<li>Permite requisições DNS de entrada vindas de todos os usuários
+    authpf autenticados para servidores DNS do campus.
+<li>Cria uma âncora "authpf" para tráfego de entrada vindo pela
+    interface da rede sem fio.
 </ul>
 
 <p>
-A idéia por trás das regras principais é bloquear tudo e permitir a
-passagem de menos tráfego possível. O tráfego saindo pela interface
-externa é liberado, mas é bloqueado pela política negar por padrão
-a entrada na interface sem fio. Uma vez autenticado, o tráfego do
-usuário é permitido atravessar a interface sem fio e seguir através
-do gateway para o resto da rede. A palavra-chave <tt>quick</tt> é
-usada de forma que o PF não precise avaliar cada regra quando uma nova
-conexão atravessa o gateway.
+A ideia por trás do conjunto de regras principal é bloquear tudo e
+permitir a passagem da menor quantidade possível de tráfego.
+O tráfego saindo pela interface externa é liberado, mas é bloqueada pela
+política negar por padrão a entrada na interface sem fio.
+Uma vez autenticado, é permitido ao tráfego do usuário atravessar a
+interface sem fio e seguir através do gateway para o resto da rede.
+A palavra-chave <tt>quick</tt> é usada de forma que o PF não precise
+avaliar cada conjunto de regras nomeado quando uma nova conexão
+atravessa o gateway.
 
 <p>
 [<a href="ftp.html">Anterior: Problemas com FTP</a>]
@@ -496,9 +507,9 @@ e pfsync</a>]
 <small>
 <!--
 Originally [OpenBSD: authpf.html,v 1.25 ]<br>
-$Translation: authpf.html,v 1.12 2009/05/10 17:44:16 alan Exp $<br>
+$Translation: authpf.html,v 1.13 2009/10/13 19:12:27 alan Exp $<br>
 -->
-$OpenBSD: authpf.html,v 1.12 2009/05/16 08:59:12 ajacoutot Exp $
+$OpenBSD: authpf.html,v 1.13 2009/10/17 15:58:26 ajacoutot Exp $
 </small>
 
 </body>

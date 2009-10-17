@@ -1,7 +1,7 @@
 <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
 <html>
 <head>
-<title>PF: Fila de Pacotes e Priorização</title>
+<title>PF: Enfileiramento de Pacotes e Priorização</title>
 <link rev="made" href="mailto:www@openbsd.org">
 <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
 <meta name="resource-type" content="document">
@@ -40,7 +40,7 @@ please, use a max of 72 chars per line -->
 [<a href="pools.html">Próximo: Grupos de Endereços e Balanceamento de Carga</a>]
 
 <p>
-<h1><font color="#e00000">PF: Fila de Pacotes e Priorização</font></h1>
+<h1><font color="#e00000">PF: Enfileiramento de Pacotes e Priorização</font></h1>
 
 
 <hr>
@@ -48,17 +48,17 @@ please, use a max of 72 chars per line -->
 <h3>Conteúdo</h3>
 <ul>
 <li><a href="#queueing">Enfileiramento</a>
-<li><a href="#sched">Organizadores</a>
+<li><a href="#sched">Agendadores</a>
 	<ul>
-	<li><a href="#cbq">Filas Baseadas em Classe</a>
-	<li><a href="#priq">Fila de Prioridade</a>
-	<li><a href="#red">Random Early Detection</a>
-	<li><a href="#ecn">Explicit Congestion Notification</a>
+	<li><a href="#cbq">Enfileiramento Baseado em Classe</a>
+	<li><a href="#priq">Enfileiramento por Prioridade</a>
+	<li><a href="#red">Detecção Antecipada Aleatória</a>
+	<li><a href="#ecn">Notificação de Congestionamento Explícita</a>
 	</ul>
-<li><a href="#altq">Configurando Filas</a>
-<li><a href="#assign">Atribuindo Tráfego a uma Fila</a>
-<li><a href="#example1">Exemplo #1: Rede Pequena, doméstica</a>
-<li><a href="#example2">Exemplo #2: Rede Empresarial</a>
+<li><a href="#altq">Configuração de Enfileiramento</a>
+<li><a href="#assign">Atribuição de Tráfego a uma Fila</a>
+<li><a href="#example1">Exemplo 1: Rede Pequena, doméstica</a>
+<li><a href="#example2">Exemplo 2: Rede Empresarial</a>
 </ul>
 
 <hr>
@@ -67,333 +67,351 @@ please, use a max of 72 chars per line -->
 <h2>Enfileiramento</h2>
 <p>
 Enfileirar algo é armazená-lo em algum lugar, de maneira organizada,
-enquanto aguarda processamento. Numa rede de computadores, quando
-pacotes de dados são enviados por um host, eles entram numa fila
+enquanto aguarda processamento. Em uma rede de computadores, quando
+pacotes de dados são enviados por uma máquina eles entram em uma fila
 onde aguardam processamento pelo sistema operacional. O sistema
-operacional decide qual fila e quais pacotes nessa fila devem ser
-processados. A ordem em que o sistema operacional escolhe os
-pacotes a processar pode afetar o desempenho da rede. Por exemplo,
-imagine um usuário executando duas aplicações de rede:
+operacional decide qual fila e qual(is) pacote(s) nessa fila deve(m)
+ser processado(s). A ordem em que o sistema operacional escolhe os
+pacotes para processar pode afetar o desempenho da rede. Por exemplo,
+imagine um usuário executando dois aplicativos de rede:
 SSH e FTP. Em condições ideais, os pacotes SSH devem ser processados
 antes dos pacotes FTP por causa da natureza sensível do tempo no SSH;
-quando uma tecla é acionada num cliente SSH, uma resposta imediata é
+quando uma tecla é acionada em um cliente SSH, uma resposta imediata é
 esperada, mas uma transferência FTP sendo atrasada por alguns segundos
-extra, muito dificilmente será percebida. Mas o que acontece se o
+extras muito dificilmente será percebida. Mas o que acontece se o
 roteador manipulando essas conexões processar um grande número de
 pacotes da conexão FTP antes de processar a conexão SSH? Pacotes
 da conexão SSH permanecerão na fila (ou possivelmente serão
 descartados pelo roteador caso a fila não seja grande o suficiente
-para manter todos os pacotes) e a sessão SSH parecerá muito lenta
-e com atrasos. Modificando a estratégia de enfileiramento utilizada,
-a largura de banda pode ser compartilhada entre diferentes aplicações,
+para manter todos os pacotes) e a sessão SSH parecerá latente
+ou muito lenta. Ao modificar a estratégia de enfileiramento utilizada,
+a largura de banda pode ser compartilhada entre diferentes aplicativos,
 usuários e computadores.
 
 <p>
-Perceba que o enfileiramento é útil somente para pacotes <i>saindo</i>.
-Quando o pacote chega entrando numa interface, já é tarde demais para
-ser enfileirado -- ele já consumiu largura de banda ao chegar na
-interface que o recebeu. A única solução é habilitar enfileiramento
-no roteador adjacente ou, se o host que recebeu o pacote está
-funcionando como roteador, habilitar enfileiramento na interface
-interna onde os pacotes saem do mesmo.
+Perceba que o enfileiramento é útil somente para pacotes que estão
+<i>saindo</i>.
+Quando o pacote chega na direção de entrada em uma interface, já é tarde
+demais para ser enfileirado -- ele já consumiu largura de banda ao
+chegar na interface que o recebeu.
+A única solução é habilitar enfileiramento no roteador adjacente ou, se
+a máquina que recebeu o pacote está funcionando como roteador, habilitar
+enfileiramento na interface interna por onde os pacotes saem dele.
 
 <a name="sched"></a>
-<h2>Organizadores</h2>
-O organizador ("scheduler") é que decide quais filas processar e em que
-ordem. Por padrão o OpenBSD usa um organizador FIFO
-("First In First Out").
+<h2>Agendadores</h2>
+O agendador ("scheduler") é que decide quais filas processar e em que
+ordem. Por padrão o OpenBSD usa um agendador do tipo
+"Primeiro a entrar, Primeiro a Sair" (FIFO, "First In First Out").
 Uma fila FIFO funciona como um caixa de supermercado -- o primeiro item
 na fila é o primeiro a ser processado. Conforme novos pacotes chegam,
 vão sendo colocados no fim da fila. Caso a fila fique cheia, e aqui
-a analogia com o supermercado termina, novos pacotes vão sendo
-descartados. Isso é conhecido como tail-drop.
+a analogia com o supermercado termina, novos pacotes que estão chegando
+são descartados. Isso é conhecido como "tail-drop".
 
 <p>
-OpenBSD suporta mais dois organizadores:
+OpenBSD suporta mais dois agendadores:
 <ul>
-<li>Filas Baseadas em Classe
-<li>Fila de Prioridade
+<li>Enfileiramento Baseado em Classe
+<li>Enfileiramento por Prioridade
 </ul>
 
 <a name="cbq"></a>
-<h3>Filas Baseadas em Classe</h3>
-Filas Baseadas em Classe ou "Class Based Queuing" (CBQ) é um algoritmo
-de enfileiramento que divide a largura de banda entre múltiplas filas
-ou classes. Cada fila tem seu tráfego atribuído com base em endereço
-de origem ou destino, número de porta, protocolo, etc. Uma fila pode
-opcionalmente ser configurada para emprestar banda de sua fila pai,
-caso ela não esteja utilizando sua largura total. As filas também
-recebem uma prioridade de forma que as que contém tráfego interativo
-como SSH, podem ter seus pacotes processados antes de filas contendo
-tráfego normal, como FTP.
+<h3>Enfileiramento Baseado em Classe</h3>
+O Enfileiramento Baseado em Classe (CBQ, "Class Based Queueing") é um
+algoritmo de enfileiramento que divide a largura de banda entre
+múltiplas filas ou classes. Cada fila então recebe a atribuição de
+tráfego com base no endereço de origem ou destino, número de porta,
+protocolo, etc. Uma fila pode opcionalmente ser configurada para
+emprestar largura de banda de sua fila pai, caso esta não esteja
+utilizando sua largura total. As filas também recebem uma prioridade,
+de modo que as que contêm tráfego interativo, como SSH, podem ter seus
+pacotes processados antes de filas que contêm tráfego intenso, como FTP.
 
 <p>
 Filas CBQ são organizadas de forma hierárquica. No topo da hierarquia
-está a fila raiz que define a quantidade total de banda disponível.
-As outras filas são criadas sob a fila raiz, cada uma delas pode
+está a fila raiz que define a quantidade total de largura de banda
+disponível.
+As filas filhas são criadas sob a fila raiz, cada uma delas pode
 receber parte da largura de banda da fila raiz. Por exemplo, filas
-podem ser definidas assim:
+podem ser definidas da seguinte maneira:
 <dl>
-<dd>Root Queue (2Mbps)
+<dd>Fila Raiz (2Mbps)
 	<dl>
-	<dd>Queue A (1Mbps)
-	<dd>Queue B (500Kbps)
-	<dd>Queue C (500Kbps)
+	<dd>Fila A (1Mbps)
+	<dd>Fila B (500Kbps)
+	<dd>Fila C (500Kbps)
 	</dl>
 </dl>
 
 <p>
-Nesse caso, a largura de banda total disponível está definida para
-2 megabits por segundo (Mbps). Essa banda é então dividida entre
-outras três filas.
+Nesse caso, a largura de banda total disponível está definida como
+2 megabits por segundo (Mbps). Essa largura de banda é então dividida
+entre outras três filas filhas.
 
 <p>
 A hierarquia pode ser expandida definindo-se filas dentro de filas.
-Para dividir a banda igualmente entre diferentes usuários e ainda
-classificar seu tráfego de forma que certos protocolos não ocupem
-a banda de outros, uma estrutura parecida com esta pode ser definida:
+Para dividir a largura de banda igualmente entre diferentes usuários e
+ainda classificar seu tráfego de forma que certos protocolos não ocupem
+a largura de banda de outros, uma estrutura de enfileiramento parecida
+com esta pode ser definida:
 <dl>
-<dd>Root Queue (2Mbps)
+<dd>Fila Raiz (2Mbps)
 	<dl>
-	<dd>UserA (1Mbps)
+	<dd>UsuárioA (1Mbps)
 		<dl>
 		<dd>ssh (50Kbps)
-		<dd>bulk (950Kbps)
+		<dd>tráfego intenso (950Kbps)
 		</dl>
-	<dd>UserB (1Mbps)
+	<dd>UsuárioB (1Mbps)
 		<dl>
-		<dd>audio (250Kbps)
-		<dd>bulk (750Kbps)
+		<dd>áudio (250Kbps)
+		<dd>tráfego intenso (750Kbps)
 			<dl>
 			<dd>http (100Kbps)
-			<dd>other (650Kbps)
+			<dd>outro (650Kbps)
 			</dl>
 		</dl>
 	</dl>
 </dl>
 
 <p>
-Perceba que a cada nível a soma do total de banda vinculado a cada fila
-nunca é maior que o valor da banda da fila raiz.
+Perceba que a cada nível a soma do total da largura de banda vinculada
+a cada fila nunca é maior que o valor da largura de banda da fila raiz.
 
 <p>
-Uma fila pode ser configurada para emprestar banda de sua fila pai
-caso as outras filas dentro da fila pai não estejam usando sua porção
-e a banda esteja disponível. Considere a configuração a seguir:
+Uma fila pode ser configurada para emprestar largura de banda de sua
+fila pai caso as outras filas dentro da fila pai não estejam usando
+sua porção e a largura de banda esteja disponível. Considere a
+configuração de enfileiramento a seguir:
 <dl>
-<dd>Root Queue (2Mbps)
+<dd>Fila Raiz (2Mbps)
 	<dl>
-	<dd>UserA (1Mbps)
+	<dd>UsuárioA (1Mbps)
 		<dl>
 		<dd>ssh (100Kbps)
-		<dd>ftp (900Kbps, borrow)
+		<dd>ftp (900Kbps, toma emprestado largura de banda)
 		</dl>
-	<dd>UserB (1Mbps)
+	<dd>UsuárioB (1Mbps)
 	</dl>
 </dl>
 
 <p>
 Se o tráfego na fila <tt>ftp</tt> exceder os 900Kbps e o tráfego na fila
-<tt>UserA</tt> for menor que 1Mbps (porque a fila <tt>ssh</tt> está
-usando menos que 100Kbps), a fila <tt>ftp</tt> irá emprestar banda de
-<tt>UserA</tt>. Dessa forma a fila <tt>ftp</tt> pode usar mais banda do
-que foi definido a princípio quando necessário. Quando o tráfego na fila
-<tt>ssh</tt> aumenta, a banda emprestada é devolvida.
+<tt>UsuárioA</tt> for menor que 1Mbps (porque a fila <tt>ssh</tt> está
+usando menos que 100Kbps), a fila <tt>ftp</tt> empresta a
+largura de banda excedente de <tt>UsuárioA</tt>.
+Dessa forma a fila <tt>ftp</tt> pode usar mais largura de banda do que
+foi definido a princípio quando necessário. Quando o tráfego na
+fila <tt>ssh</tt> aumenta, a largura de banda emprestada é devolvida.
 
 <p>
 CBQ atribui a cada fila um nível de prioridade. Filas com prioridade
-alta tem preferência sobre outras com menor prioridade em caso de
-congestionamento, contanto que estejam contidas na mesma fila pai (em
-outras palavras, contanto que estejam no mesmo nível na hierarquia).
-Filas com a mesma prioridade são processadas em sequência (round-robin).
+alta têm preferência sobre outras com menor prioridade em caso de
+congestionamento, contanto que ambas as filas estejam contidas na mesma
+fila pai (em outras palavras, contanto que estejam no mesmo ramo na
+hierarquia).
+Filas com a mesma prioridade são processadas pelo método round robin.
 Por exemplo:
 <dl>
-<dd>Root Queue (2Mbps)
+<dd>Fila Raiz (2Mbps)
 	<dl>
-	<dd>UserA (1Mbps, priority 1)
+	<dd>UsuárioA (1Mbps, prioridade 1)
 		<dl>
-		<dd>ssh (100Kbps, priority 5)
-		<dd>ftp (900Kbps, priority 3)
+		<dd>ssh (100Kbps, prioridade 5)
+		<dd>ftp (900Kbps, prioridade 3)
 		</dl>
-	<dd>UserB (1Mbps, priority 1)
+	<dd>UsuárioB (1Mbps, prioridade 1)
 	</dl>
 </dl>
 
 <p>
-O CBQ irá processar as filas <tt>UserA</tt> e <tt>UserB</tt>
-em sequência -- nenhuma fila será preferida sobre a outra. Enquanto a
-fila <tt>UserA</tt> está sendo processada, o CBQ também irá processar
-suas subfilas. Nesse caso, a fila <tt>ssh</tt> tem prioridade maior e
-terá tratamento preferencial sobre a fila <tt>ftp</tt> caso a rede
+O CBQ processa as filas <tt>UsuárioA</tt> e <tt>UsuárioB</tt> através
+do método round robin -- nenhuma fila será preferida sobre a outra.
+Enquanto a fila <tt>UsuárioA</tt> está sendo processada, o CBQ também
+processa suas filas filhas.
+Nesse caso, a fila <tt>ssh</tt> tem prioridade maior
+e terá tratamento preferencial sobre a fila <tt>ftp</tt> caso a rede
 fique congestionada. Perceba como as filas <tt>ssh</tt> e <tt>ftp</tt>
-não têm suas prioridades comparadas às filas <tt>UserA</tt> e
-<tt>UserB</tt> pelo fato de elas não estarem no mesmo nível na
+não têm suas prioridades comparadas às filas <tt>UsuárioA</tt> e
+<tt>UsuárioB</tt> pelo fato de elas não estarem no mesmo ramo na
 hierarquia.
 
 <p>
 Para um estudo mais detalhado sobre a teoria por trás do CBQ, por
-favor consulte
+favor consulte as
 <a href="http://www.icir.org/floyd/cbq.html">Referências sobre CBQ</a>.
 
 <a name="priq"></a>
-<h3>Fila de Prioridade</h3>
-Fila de Prioridade ou "Priority Queuing" (PRIQ) designa várias filas
-numa interface de rede com cada uma tendo um único nível de prioridade.
-Uma fila com alta prioridade é <i>sempre</i> processada na frente
-de uma fila com prioridade menor.
-Se duas ou mais filas estiverem atribuídas à mesma prioridade, então
-essas filas serão processadas de modo round-robin.
+<h3>Enfileiramento por Prioridade</h3>
+No Enfileiramento por Prioridade (PRIQ, "Priority Queueing") várias
+filas são atribuídas a uma interface de rede, com cada fila tendo um
+único nível de prioridade.
+Uma fila com prioridade mais alta <i>sempre</i> é processada na frente
+de uma fila com prioridade mais baixa.
+Se duas ou mais filas possuem a mesma prioridade, então essas filas
+são processadas pelo método round robin.
 
 <p>
-A estrutura de enfileiramento no PRIQ é simples -- você não pode
+A estrutura de enfileiramento no PRIQ é plana -- você não pode
 definir filas dentro de filas. A fila raiz é definida, onde é
-configurado o total de banda disponível, então subfilas são
+configurado o total de largura de banda disponível, então subfilas são
 definidas sob a raiz. Considere o exemplo a seguir:
 <dl>
-<dd>Root Queue (2Mbps)
+<dd>Fila Raiz (2Mbps)
 	<dl>
-	<dd>Queue A (priority 1)
-	<dd>Queue B (priority 2)
-	<dd>Queue C (priority 3)
+	<dd>Fila A (prioridade 1)
+	<dd>Fila B (prioridade 2)
+	<dd>Fila C (prioridade 3)
 	</dl>
 </dl>
 
 <p>
-A fila raiz é definida possuindo 2Mbps de largura de banda disponível
+A fila raiz é definida como tendo 2Mbps de largura de banda disponível
 e três subfilas são definidas. A fila com maior prioridade (o maior
-número na prioridade) é servida primeiro. Quando todos os pacotes nessa
+número de prioridade) é servida primeiro. Quando todos os pacotes nessa
 fila são processados, ou caso a fila esteja vazia, PRIQ vai para a
-próxima fila com prioridade mais alta. Dentro da fila, os pacotes são
-processados num sistema FIFO (First In First Out).
+próxima fila com prioridade mais alta. Dentro de uma fila, os pacotes
+são processados através do método "Primeiro a entrar, Primeiro a Sair"
+(FIFO, "First In First Out").
 
 <p>
-É importante notar quando estiver usando PRIQ que você deve planejar
+É importante notar que quando estiver usando PRIQ você deve planejar
 suas filas com muito cuidado. Como PRIQ <i>sempre</i> processa a fila
-com prioridade mais alta primeiro, é possível que uma fila com alta
+com prioridade mais alta por primeiro, é possível que uma fila com alta
 prioridade faça com que pacotes destinados a outra fila com prioridade
 menor atrasem muito ou até mesmo sejam descartados caso a fila preferida
-esteja recebendo pacotes constantemente.
+esteja recebendo um fluxo constante de pacotes.
 
 <a name="red"></a>
-<h3>Random Early Detection</h3>
-"Random Early Detection" (RED) é um algoritmo para evitar
-congestionamento. Seu trabalho é evitar congestionamento na rede
-certificando-se de que a fila nunca fique cheia. Ele realiza a tarefa
-calculando continuamente o tamanho médio da fila e comparando-a com
-dois valores, um valor mínimo e um valor máximo. Se o tamanho médio
-da fila estiver abaixo do valor mínimo, então nenhum pacote será
-descartado. Se a média estiver acima do valor máximo, então <i>todos</i>
-os pacotes que chegarem serão descartados. Se a média estiver entre os
-dois valores então os pacotes são descartados baseando-se no cálculo da
-probabilidade obtido do tamanho médio da fila. Em outras palavras,
-conforme o tamanho médio da fila se aproxima do valor máximo, mais
-pacotes são descartados. Ao descartar pacotes, RED escolhe
-aleatoriamente de quais conexões ele irá descartá-los.
-Conexões usando grandes porções da largura de banda têm maior
+<h3>Detecção Antecipada Aleatória</h3>
+Detecção Antecipada Aleatória (RED, "Random Early Detection") é um
+algoritmo para se evitar congestionamento.
+Seu trabalho é evitar congestionamento na rede certificando-se de que a
+fila não fique cheia. Ele realiza a tarefa calculando continuamente o
+comprimento (tamanho) médio da fila e comparando-o com dois valores,
+um valor mínimo e um valor máximo.
+Se o tamanho médio da fila estiver abaixo do valor mínimo, então nenhum
+pacote é descartado.
+Se a média estiver acima do valor máximo, então <i>todos</i> os pacotes
+que estão chegando são descartados.
+Se o tamanho médio estiver entre os dois valores, então os pacotes são
+descartados baseando-se no cálculo de probabilidade obtido a partir
+do tamanho médio da fila. Em outras palavras, conforme o tamanho médio
+da fila se aproxima do valor máximo, mais e mais pacotes são
+descartados. Ao descartar pacotes, RED escolhe aleatoriamente de quais
+conexões ele irá descartá-los.
+Conexões que utilizam grandes porções da largura de banda têm maior
 probabilidade de terem seus pacotes descartados.
 
 <p>
 O RED é útil porque evita uma situação conhecida como sincronização
-global e pode acomodar aumentos repentinos no tráfego.
+global e porque pode acomodar aumentos repentinos no tráfego.
 Sincronização global refere-se a uma queda na capacidade de
 transferência devido aos pacotes descartados de várias conexões ao
-mesmo tempo. Por exemplo, caso o congestionamento ocorra num roteador
-transmitindo tráfego para 10 conexões FTP e pacotes de todas (ou quase
-todas) as conexões são descartados (como é o caso com enfileiramento
-FIFO), a capacidade média de transferência cairá severamente.
+mesmo tempo. Por exemplo, caso o congestionamento ocorra em um roteador
+que está transmitindo tráfego para 10 conexões FTP, e pacotes de todas
+(ou quase todas) as conexões são descartados (como é o caso com
+enfileiramento FIFO), a capacidade média de transferência cai
+severamente.
 Essa não é uma situação ideal porque faz com que todas as conexões FTP
-reduzam sua taxa de transferência e também significa que a rede não é
-mais utilizada em todo seu potencial.
+reduzam sua taxa de transferência, e também significa que a rede não
+está mais sendo utilizada em todo seu potencial.
 RED evita esse cenário escolhendo aleatoriamente quais conexões terão
-pacotes descartados ao invés de escolher todas elas.
-Conexões usando muita largura de banda tem chances maiores de terem seus
-pacotes descartados. Dessa forma, conexões que ocupam muita banda serão
-evitadas, o congestionamento será evitado, e sérias perdas nas taxas de
-transferência não ocorrerão. Além disso, RED pode responder a aumentos
-repentinos no tráfego pelo fato de começar a descartar pacotes
-<i>antes</i> da fila ficar cheia. Quando o tráfego inesperado chegar,
-existirá espaço suficiente na fila para armazenar os novos pacotes.
+pacotes descartados em vez de escolher todas elas.
+Conexões que utilizam muita largura de banda têm chances maiores de
+terem seus pacotes descartados. Dessa forma, conexões que ocupam muita
+largura de banda são evitadas, o congestionamento é evitado, e
+sérias perdas nas taxas de transferência não ocorrem.
+Além disso, RED pode responder a aumentos repentinos no tráfego pelo
+fato de começar a descartar pacotes <i>antes</i> da fila ficar cheia.
+Quando o tráfego inesperado chegar, existe espaço suficiente
+na fila para armazenar os novos pacotes.
 
 <p>
 RED deve ser usado apenas quando o protocolo de transporte for capaz
 de responder a indicadores de congestionamento da rede. Na maioria
 dos casos isso significa que RED deve ser usado para enfileirar
-tráfego TCP e nunca tráfego UDP ou ICMP.
+tráfego TCP e não tráfego UDP ou ICMP.
 
 <p>
 Para uma discussão mais detalhada sobre a teoria por trás do RED, por
-favor consulte
+favor consulte as
 <a href="http://www.icir.org/floyd/red.html">Referências sobre RED</a>.
 
 <a name="ecn"></a>
-<h3>Explicit Congestion Notification</h3>
-"Explicit Congestion Notification" (ECN) trabalha em conjunto com RED
-para notificar dois hosts comunicando-se pela rede de quaisquer
+<h3>Notificação de Congestionamento Explícita</h3>
+A Notificação de Congestionamento Explícita
+(ECN, "Explicit Congestion Notification") trabalha em conjunto com RED
+para notificar duas máquinas, comunicando-se pela rede, de quaisquer
 congestionamentos no caminho de comunicação. Para fazer isso, RED
-insere um marcador (flag) no cabeçalho do pacote ao invés de
-descartá-lo. Supondo que o host enviando dados tem suporte a ECN, ele
-pode identificar essa marcação e reduzir seu tráfego de acordo.
+insere um sinalizador no cabeçalho do pacote em vez de descartá-lo.
+Supondo que a máquina que está enviando dados tem suporte a ECN, ela
+pode ler esse sinalizador e reduzir seu tráfego de rede de acordo.
 
 <p>
 Para mais informações sobre ECN, por favor consulte a
 <a href="http://www.rfc-editor.org/rfc/rfc3168.txt">RFC 3168</a>.
 
 <a name="altq"></a>
-<h2>Configurando Filas</h2>
-Desde o OpenBSD 3.0, a implementação de filas
+<h2>Configuração de Enfileiramento</h2>
+Desde o OpenBSD 3.0 a implementação de enfileiramento
 <a href="http://www.csl.sony.co.jp/person/kjc/kjc/software.html#ALTQ"
->Alternate Queueing (ALTQ)</a> se tornou parte do sistema base. Desde
-o OpenBSD 3.3, ALTQ foi integrado ao PF.
-A implementação ALTQ do OpenBSD suporta os organizadores
-Class Based Queueing (CBQ) e Priority Queueing (PRIQ). Ele também
-suporta Random Early Detection (RED) e Explicit Congestion
-Notification (ECN).
+>"Alternate Queueing" (ALTQ)</a> é parte do sistema base.
+A partir do OpenBSD 3.3, ALTQ foi integrado ao PF.
+A implementação ALTQ do OpenBSD suporta os agendadores de
+Enfileiramento Baseado em Classe (CBQ) e
+Enfileiramento por Prioridade (PRIQ).
+Ela também suporta Detecção Antecipada Aleatória (RED) e
+Notificação de Congestionamento Explícita (ECN).
 
 <p>
-Pelo fato de ALTQ ter sido integrado ao PF, o PF deve estar habilitado
-para que o sistema funcione. Instruções de como habilitar o PF podem ser
-encontradas em <a href="config.html#activate">Começando</a>.
+Pelo fato do ALTQ ter sido integrado ao PF, o PF deve estar habilitado
+para que o enfileiramento funcione. Instruções sobre como habilitar o PF
+podem ser encontradas em
+<a href="config.html#activate">Primeiros Passos</a>.
 
 <p>
-Filas são configuradas no arquivo <tt>
+O enfileiramento é configurado no arquivo <tt>
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+4.5"
->pf.conf</a></tt>. Existem dois tipos de diretivas utilizadas
-para configuração de filas:
+>pf.conf</a></tt>. Existem dois tipos de diretivas que são utilizadas
+para configurar o enfileiramento:
 <ul>
-<li><tt>altq on</tt> - habilita enfileiramento na interface, define qual
-    organizador (scheduler) usar e cria a fila raiz
-<li><tt>queue</tt> - define as propriedades da subfila
+<li><tt>altq on</tt> - habilita o enfileiramento em uma interface,
+    define qual agendador usar e cria a fila raiz
+<li><tt>queue</tt> - define as propriedades da fila filha
 </ul>
 
 <p>
 A sintaxe para a diretiva <tt>altq on</tt> é:
 <blockquote>
 <tt>
-altq on <i>interface scheduler</i> bandwidth <i>bw</i> qlimit
-<i>qlim</i> \<br>
-&nbsp;&nbsp;&nbsp;tbrsize <i>size</i> queue { <i>queue_list</i> }
+altq on <i>interface agendador</i> bandwidth <i>larg_de_banda</i> qlimit
+<i>lim_da_fila</i> \<br>
+&nbsp;&nbsp;&nbsp;tbrsize <i>tamanho</i> queue { <i>lista_de_filas</i> }
 </tt>
 </blockquote>
 
 <ul>
 <li><tt><i>interface</i></tt> - a interface de rede onde o
     enfileiramento deve ser ativado.
-<li><tt><i>scheduler</i></tt> - o organizador a ser utilizado. Valores
-    possíveis são <tt>cbq</tt> e <tt>priq</tt>. Somente um organizador
+<li><tt><i>agendador</i></tt> - o agendador a ser utilizado. Valores
+    possíveis são <tt>cbq</tt> e <tt>priq</tt>. Somente um agendador
     por vez pode estar ativo na interface.
-<li><tt><i>bw</i></tt> - o valor total de banda disponível para o
-    organizador. Isso pode ser especificado como um valor absoluto
-    utilizando os sufixos <tt>b</tt>, <tt>Kb</tt>, <tt>Mb</tt>, e
-    <tt>Gb</tt> para representar bits, kilobits, megabits, e gigabits
-    por segundo, respectivamente, ou como uma porcentagem da banda na
-    <tt><i>interface</i></tt>.
-<li><tt><i>qlim</i></tt> - o número máximo de pacotes que podem ser
-    armazenados na fila. Esse parâmetro é opcional. O padrão é 50.
-<li><tt><i>size</i></tt> - o tamanho do regulador token bucket em bytes.
-    Caso não seja especificado, o tamanho é definido baseando-se na
+<li><tt><i>larg_de_banda</i></tt> - o valor total de largura de banda
+    disponível para o agendador. Isso pode ser especificado como um
+    valor absoluto utilizando os sufixos <tt>b</tt>, <tt>Kb</tt>,
+    <tt>Mb</tt> e <tt>Gb</tt> para representar bits, kilobits, megabits
+    e gigabits por segundo, respectivamente, ou como uma percentagem de
     largura de banda da <tt><i>interface</i></tt>.
-<li><tt><i>queue_list</i></tt> - uma lista de subfilas a serem criadas
-    sob a fila raiz.
+<li><tt><i>lim_da_fila</i></tt> - o número máximo de pacotes que
+    podem ser armazenados na fila. Esse parâmetro é opcional.
+    O padrão é 50.
+<li><tt><i>tamanho</i></tt> - o tamanho do regulador "token bucket" em
+    bytes. Caso não seja especificado, o tamanho é definido baseando-se
+    na largura de banda da <tt><i>interface</i></tt>.
+<li><tt><i>lista_de_filas</i></tt> - uma lista de filas filhas a serem
+    criadas sob a fila raiz.
 </ul>
 
 <p>
@@ -403,69 +421,71 @@ Por exemplo:
 altq on fxp0 cbq bandwidth 2Mb queue { std, ssh, ftp }
 </tt>
 </blockquote>
-Isso habilitará o CBQ na interface <tt>fxp0</tt>. A largura de banda
-total disponível é configurada para 2Mbps. Três subfilas são definidas:
+Isso habilita o CBQ na interface <tt>fxp0</tt>. A largura de banda
+total disponível é configurada para 2Mbps. Três filas filhas são
+definidas:
 <tt>std</tt>, <tt>ssh</tt> e <tt>ftp</tt>.
 
 <p>
 A sintaxe para a diretiva <tt>queue</tt> é:
 <blockquote>
 <tt>
-queue <i>name</i> [on <i>interface</i>] bandwidth <i>bw</i> [priority
-<i>pri</i>] [qlimit <i>qlim</i>] \<br>
-&nbsp;&nbsp;&nbsp;<i>scheduler</i> ( <i>sched_options</i> )
-{ <i>queue_list</i> }
+queue <i>nome</i> [on <i>interface</i>] bandwidth <i>lar_de_banda</i> [priority
+<i>prio</i>] [qlimit <i>lim_da_fila</i>] \<br>
+&nbsp;&nbsp;&nbsp;<i>agendador</i> ( <i>opções_do_agendador</i> )
+{ <i>lista_de_filas</i> }
 </tt>
 </blockquote>
 
 <ul>
-<li><tt><i>name</i></tt> - o nome da fila. Esse nome deve ser um dos
-    nomes de filas definidos na diretiva <tt>altq on</tt>
-<tt><i>queue_list</i></tt>. Para o <tt>cbq</tt>, também pode ser
-    nome de fila definido numa diretiva <tt><i>queue_list</i></tt>,
-    numa <tt>queue</tt> anterior. Nomes de filas não devem ser mais
-    longos que 15 caracteres.
+<li><tt><i>nome</i></tt> - o nome da fila. Esse nome deve ser um dos
+    nomes de filas definidos na <tt><i>lista_de_filas</i></tt>
+    da diretiva <tt>altq on</tt>. Para o <tt>cbq</tt>, também pode ser
+    um nome de fila definido em uma <tt><i>lista_de_filas</i></tt>
+    da diretiva <tt>queue</tt> anterior. Nomes de filas não devem ser
+    mais longos que 15 caracteres.
 <li><tt><i>interface</i></tt> - a interface de rede onde a fila é
-    válida. Esse valor é opcional, e quando não especificado,
-    tornará a fila válida em todas as interfaces.
-<li><tt><i>bw</i></tt> - a quantidade total de banda disponível
-    para a fila. Pode ser especificado como um valor absoluto ou usando
-    sufixos <tt>b</tt>, <tt>Kb</tt>, <tt>Mb</tt>, e <tt>Gb</tt>,
-    representando bits, kilobits, megabits, e gigabits por segundo,
-    respectivamente, ou um valor em porcentagem da fila principal.
-    Esse parâmetro só é aplicável quando usar o organizador
-    <tt>cbq</tt>. Se não for especificado, o padrão é 100% da banda
-    da fila pai.
-<li><tt><i>pri</i></tt> - a prioridade da fila. Para o <tt>cbq</tt>,
-    a faixa de prioridade varia de 0 a 7; e para <tt>priq</tt>,
-    a faixa vai de 0 a 15. Prioridade 0 é a mais baixa. Quando não
+    válida. Esse valor é opcional, e quando não especificado
+    torna a fila válida em todas as interfaces.
+<li><tt><i>larg_de_banda</i></tt> - a quantidade total de
+    largura de banda disponível para a fila. Pode ser especificado como
+    um valor absoluto ou usando sufixos <tt>b</tt>, <tt>Kb</tt>,
+    <tt>Mb</tt> e <tt>Gb</tt> para representar bits, kilobits, megabits
+    e gigabits por segundo, respectivamente, ou um valor em percentagem
+    da largura de banda da fila pai. Esse parâmetro só é aplicável ao
+    usar o agendador <tt>cbq</tt>. Se não for especificado, o padrão é
+    100% da largura de banda da fila pai.
+<li><tt><i>prio</i></tt> - a prioridade da fila. Para o <tt>cbq</tt>
+    a faixa de prioridade varia de 0 a 7; e para <tt>priq</tt>
+    a faixa vai de 0 a 15. A prioridade 0 é a mais baixa. Quando não
     especificada, o valor padrão de 1 é usado.
-<li><tt><i>qlim</i></tt> - o número máximo de pacotes que podem ser
-    armazenados na fila. Quando não for especificado, o padrão 50 é
-    usado.
-<li><tt><i>scheduler</i></tt> - o organizador utilizado, <tt>cbq</tt>
+<li><tt><i>lim_da_fila</i></tt> - o número máximo de pacotes que
+    podem ser armazenados na fila. Quando não for especificado, o padrão
+    de 50 é usado.
+<li><tt><i>agendador</i></tt> - o agendador utilizado, <tt>cbq</tt>
     ou <tt>priq</tt>. Deve ser o mesmo da fila raiz.
-<li><tt><i>sched_options</i></tt> - outras opções podem ser passadas
-    para controlar o comportamento do organizador:
+<li><tt><i>opções_do_agendador</i></tt> - outras opções podem ser
+    passadas para controlar o comportamento do agendador:
 	<ul>
 	<li><tt>default</tt> - define uma fila padrão onde os pacotes
-	    que não casarem com nenhuma outra fila serão armazenados.
-	    Exatamente uma fila padrão é necessária.
-	<li><tt>red</tt> - habilita Random Early Detection (RED) na
-            fila.
-	<li><tt>rio</tt> - habilita RED com IN/OUT. Nesse modo, RED
-	    manterá múltiplos valores médios da fila e múltiplos
+	    que não corresponderam a nenhuma outra fila serão
+            enfileirados. Exatamente uma fila padrão é necessária.
+	<li><tt>red</tt> - habilita a
+            Detecção Antecipada Aleatória (RED) na fila.
+	<li><tt>rio</tt> - habilita RED com "IN/OUT". Nesse modo, RED
+	    mantém múltiplos comprimentos médios de fila e múltiplos
 	    valores de comparação, um para cada nível de
 	    Qualidade de Serviço IP.
-	<li><tt>ecn</tt> - habilita Explicit Congestion Notification
-	    (ECN) na fila. <tt>Ecn</tt> implica <tt>red</tt>.
-	<li><tt>borrow</tt> - a fila pode emprestar banda de sua fila
-	    pai. Essa opção só pode ser utilizada com o organizador
-            <tt>cbq</tt>.
+	<li><tt>ecn</tt> - habilita a
+            Notificação de Congestionamento Explícita (ECN) na fila.
+            <tt>Ecn</tt> implica <tt>red</tt>.
+	<li><tt>borrow</tt> - a fila pode emprestar largura de banda de
+            sua fila pai. Essa opção só pode ser utilizada com o
+            agendador <tt>cbq</tt>.
 	</ul>
-<li><tt><i>queue_list</i></tt> - uma lista de subfilas a serem criadas
-    dentro dessa fila. Uma <tt><i>queue_list</i></tt> pode ser definida
-    apenas quando o organizador utilizado for <tt>cbq</tt>.
+<li><tt><i>lista_de_filas</i></tt> - uma lista de filas filhas a serem
+    criadas dentro dessa fila. Uma <tt><i>lista_de_filas</i></tt> pode
+    ser definida apenas quando o agendador utilizado for o <tt>cbq</tt>.
 </ul>
 
 <p>
@@ -481,27 +501,31 @@ queue ftp bandwidth 500Kb priority 3 cbq(borrow red)<br>
 </blockquote>
 
 <p>
-Aqui os parâmetros das subfilas, previamente definidas, são
+Aqui os parâmetros das filas filhas, previamente definidas, são
 configurados.
-A fila <tt>std</tt> possui largura de banda de 50% da fila raiz
-(ou 1Mbps) e está configurada como a fila padrão. A fila <tt>ssh</tt>
-possui 25% da banda da fila raiz (500kb) e também contém duas filas
-<tt>ssh_login</tt> e <tt>ssh_bulk</tt>. A fila <tt>ssh_login</tt>
-tem prioridade maior que <tt>ssh_bulk</tt> e ambas tem ECN habilitado.
-A banda atribuída à fila <tt>ftp</tt> é de 500Kbps com prioridade 3. Ela
-também pode tomar banda emprestada quando estiver disponível e também
-tem RED habilitado.
+A fila <tt>std</tt> possui largura de banda de 50% da largura de banda
+da fila raiz (ou 1Mbps) e está configurada como a fila padrão.
+A fila <tt>ssh</tt> possui 25% da largura de banda da fila raiz (500kb)
+e também contém duas filas filhas,
+<tt>ssh_login</tt> e <tt>ssh_bulk</tt>.
+A fila <tt>ssh_login</tt> tem prioridade maior que a <tt>ssh_bulk</tt>,
+e ambas tem ECN habilitado.
+A largura de banda atribuída à fila <tt>ftp</tt> é de 500Kbps, com a
+prioridade 3. Ela também pode tomar largura de banda emprestada quando
+estiver disponível, e também tem RED habilitado.
 
 <p>
-<b>NOTA:</b> Cada definição de fila tem sua banda especificada.
-Sem especificar a banda, o PF dará à fila 100% da banda da fila pai.
-Nessa situação, que causará um erro quando as regras são carregadas,
-já que existe uma fila com 100% da banda, nenhuma outra fila pode
-ser definida nesse nível, já que não existe banda livre para
-alocar.
+<b>NOTA:</b> Cada definição de fila filha tem sua largura de banda
+especificada.
+Sem especificar a largura de banda, o PF dá à fila 100% da
+largura de banda da fila pai.
+Nessa situação, que causaria um erro quando as regras fossem carregadas,
+pois se já existe uma fila com 100% da largura de banda, nenhuma outra
+fila pode ser definida nesse nível, já que não existe largura de banda
+livre para ser alocada.
 
 <a name="assign"></a>
-<h3>Atribuindo Tráfego a uma Fila</h3>
+<h3>Atribuição de Tráfego a uma Fila</h3>
 <p>
 Para atribuir tráfego a uma fila, a palavra-chave <tt>queue</tt> é usada
 em conjunto com as <a href="filter.html">regras de filtragem</a> do PF.
@@ -512,20 +536,20 @@ linha como:
 </blockquote>
 
 <p>
-Pacotes que casarem com essa regra podem ser enviados para uma fila
+Pacotes que corresponderam àquela regra podem ser atribuídos a uma fila
 específica através do uso da palavra-chave <tt>queue</tt>:
 <blockquote>
 <tt>pass out on fxp0 from any to any port 22 queue ssh</tt>
 </blockquote>
 
 <p>
-Ao usar a palavra <tt>queue</tt> com diretivas <tt>block</tt>, quaisquer
-pacotes TCP RST ou ICMP Unreachable resultantes serão enviados à fila
-especificada.
+Ao usar a palavra-chave <tt>queue</tt> com diretivas <tt>block</tt>,
+quaisquer pacotes TCP RST ou ICMP de Inalcançável resultantes serão
+atribuídos à fila especificada.
 
 <p>
-Note que as designações de filas podem ocorrer numa interface diferente
-da definida na diretiva <tt>altq on</tt>:
+Note que as designações de filas podem ocorrer em uma
+interface diferente da definida na diretiva <tt>altq on</tt>:
 <blockquote>
 <tt>
 altq on fxp0 cbq bandwidth 2Mb queue { std, ftp }<br>
@@ -537,54 +561,56 @@ pass in on dc0 from any to any port 21 queue ftp<br>
 </blockquote>
 
 <p>
-Enfileiramento está habilitado em <tt>fxp0</tt>, mas a designação
+O enfileiramento está habilitado em <tt>fxp0</tt>, mas a designação
 acontece em <tt>dc0</tt>.
-Se os pacotes que casam com a regra <tt>pass</tt> sairem pela
-interface <tt>fxp0</tt>, serão enfileirados na fila <tt>ftp</tt>.
+Se os pacotes que correspondem à regra <tt>pass</tt> sairem pela
+interface <tt>fxp0</tt>, eles serão enfileirados na fila <tt>ftp</tt>.
 Esse tipo de enfileiramento pode ser muito útil em roteadores.
 
 <p>
-Normalmente, apenas um nome de fila é informado com a palavra-chave
+Normalmente apenas um nome de fila é informado com a palavra-chave
 <tt>queue</tt>, mas caso um segundo nome seja especificado, a fila será
 usada para pacotes com um
-<a href="http://www.rfc-editor.org/rfc/rfc791.txt">Type of Service
-(ToS)</a> com pouco atraso e para pacotes TCP ACK sem payload de dados.
-Um bom exemplo disso pode ser obtido utilizando SSH. Sessões de login
-SSH irão definir o ToS para low-delay enquanto que sessões SCP e SFTP
-não.
-O PF pode usar essas informações para enfileirar pacotes pertencentes a
-uma conexão de login numa fila diferente dos pacotes que não forem de
-conexões de login. Isso pode ser útil para priorizar os pacotes das
-conexões de login sobre pacotes de transferênca de arquivos.
+<a href="http://www.rfc-editor.org/rfc/rfc791.txt">Tipo de Serviço</a>
+(ToS, "Type of Service") de baixo atraso e para pacotes TCP ACK sem
+carga útil de dados.
+Um bom exemplo disso é encontrado ao utilizar o SSH. Inícios de sessão
+SSH definem o ToS para baixo atraso enquanto que sessões SCP e SFTP
+não. O PF pode usar essas informações para enfileirar pacotes
+pertencentes a uma conexão de início de sessão em uma fila diferente dos
+pacotes que não forem de conexões de início de sessão.
+Isso pode ser útil para priorizar os pacotes das
+conexões de início de sessão sobre pacotes de transferência de arquivos.
 <blockquote>
 <tt>pass out on fxp0 from any to any port 22 queue(ssh_bulk, ssh_login)</tt>
 </blockquote>
 
 <p>
-Isso envia pacotes pertencentes à conexões de login SSH para a fila
-<tt>ssh_login</tt> e pacotes pertencentes à conexões SCP e SFTP
-para a fila <tt>ssh_bulk</tt>. Conexões de login SSH terão seus pacotes
-processados antes dos pacotes SCP e SFTP, porque a fila
-<tt>ssh_login</tt> tem prioridade maior.
+Isso atribui pacotes pertencentes à conexões de início de sessão SSH
+para a fila <tt>ssh_login</tt>, e pacotes pertencentes à conexões SCP e
+SFTP para a fila <tt>ssh_bulk</tt>. Conexões de início de sessão SSH
+terão seus pacotes processados antes dos pacotes SCP e SFTP porque a
+fila <tt>ssh_login</tt> tem uma prioridade maior.
 
 <p>
 Atribuir pacotes TCP ACK a uma fila de alta prioridade é útil em
 conexões assimétricas, isto é, conexões que possuem taxas de upload e
-download diferentes, como conexões ADSL, por exemplo. Numa conexão ADSL,
-se o canal de upload estiver sendo utilizado em sua capacidade máxima e
-um download é iniciado, o download irá sofrer, porque os pacotes TCP ACK
-que devem ser enviados entrarão num congestionamento quando tentarem
-passar pelo canal de upload. Testes têm mostrado que para atingir os
-melhores resultados, a largura de banda na fila de upload deve ser
-configurada para um valor menor do que a conexão realmente é capaz.
-Por exemplo, se uma conexão ADSL tem uma taxa máxima de upload de
-640Kbps, configurar a <tt>bandwidth</tt> da fila raiz para um valor
-como 600Kb deve resultar numa melhora de desempenho. Tentativas e
-erros mostrarão a melhor configuração de <tt>bandwidth</tt>.
+download diferentes, como conexões ADSL, por exemplo. Em uma conexão
+ADSL, se o canal de upload estiver sendo utilizado em sua capacidade
+máxima e um download é iniciado, o download sofre porque os
+pacotes TCP ACK que devem ser enviados entram em um congestionamento
+quando tentam passar pelo canal de upload. Testes têm mostrado que para
+atingir os melhores resultados a largura de banda na fila de upload
+deve ser configurada para um valor menor do que a conexão realmente é
+capaz. Por exemplo, se uma conexão ADSL tem uma taxa máxima de upload
+de 640Kbps, configurar a <tt>bandwidth</tt> (largura de banda) da
+fila raiz para um valor como 600Kb deve resultar em uma melhora de
+desempenho. Tentativas e erros mostram a melhor configuração de
+<tt>bandwidth</tt>.
 
 <p>
-Ao utilizar a palavra-chave <tt>queue</tt> com regras que <tt>mantém o
-estado (keep state)</tt>, como:
+Ao utilizar a palavra-chave <tt>queue</tt> com regras
+<tt>keep state</tt> (que mantêm o estado), como:
 <blockquote>
 <tt>
 pass in on fxp0 proto tcp from any to any port 22 flags S/SA \<br>
@@ -593,15 +619,16 @@ pass in on fxp0 proto tcp from any to any port 22 flags S/SA \<br>
 </blockquote>
 
 <p>
-O PF gravará uma entrada para a fila na tabela de estado, de forma que
-pacotes saindo pela <tt>fxp0</tt> que casam com a conexão stateful
+O PF grava uma entrada para a fila na tabela de estados, de forma que
+pacotes saindo pela <tt>fxp0</tt> que correspondam à conexão "stateful"
 serão enviados para a fila <tt>ssh</tt>. Perceba que apesar da
-palavra-chave <tt>queue</tt> estar sendo utilizada numa regra filtrando
-tráfego entrante, o objetivo é especificar uma fila para o tráfego que
-sai; a regra acima não enfileira pacotes entrantes.
+palavra-chave <tt>queue</tt> estar sendo utilizada em uma regra
+que está filtrando tráfego de entrada, o objetivo é especificar uma
+fila para o tráfego de saída correspondente; a regra acima não enfileira
+pacotes que estão chegando.
 
 <a name="example1"></a>
-<h2>Exemplo #1: Rede Pequena, doméstica</h2>
+<h2>Exemplo 1: Rede Pequena, doméstica</h2>
 <pre>
 
     [ Alice ]    [ Charlie ]
@@ -613,74 +640,74 @@ sai; a regra acima não enfileira pacotes entrantes.
 </pre>
 
 <p>
-Nesse exemplo, o OpenBSD está sendo usado num gateway de Internet para
+Nesse exemplo o OpenBSD está sendo usado em um gateway de Internet para
 uma pequena rede doméstica com três estações de trabalho. O gateway faz
 filtragem de pacotes e NAT. A conexão com a Internet é via linha ADSL
-rodando a 2Mbps de download e 640Kbps de upload.
+funcionando a 2Mbps de download e 640Kbps de upload.
 
 <p>
-A política de filas para essa rede:
+A política de enfileiramento para essa rede:
 <ul>
 <li>Reservar 80Kbps de largura de banda de download para Bob, para
-    que ele possa jogar online sem sofrer atrasos por causa dos
+    que ele possa jogar online sem sofrer latência por causa dos
     downloads de Alice ou Charlie. Permitir a Bob usar mais de 80Kbps
     quando houver disponibilidade.
-<li>Tráfego SSH interativo e mensagem instantânea terão maior prioridade
-    do que o tráfego comum.
+<li>Tráfego de SSH interativo e mensagem instantânea terão maior
+    prioridade do que o tráfego comum.
 <li>Consultas e respostas DNS terão a segunda maior prioridade.
 <li>Pacotes TCP ACK saindo terão maior prioridade que qualquer
     outro tráfego de saída.
 </ul>
 
 <p>
-Abaixo segue o conjunto de regras adequado à política da rede. Perceba
+Abaixo o conjunto de regras adequado à política da rede. Perceba
 que somente diretivas <tt>pf.conf</tt> que se aplicam diretamente à
 política descrita acima estão presentes;
 <a href="nat.html"><tt>nat</tt></a>,
-<a href="rdr.html"><tt>rdr</tt></a>, <a href="options.html">options</a>,
+<a href="rdr.html"><tt>rdr</tt></a>, <a href="options.html">opções</a>,
 etc., não são mostradas.
 
 <p>
 <table border="0" width="650">
 <tr><td nowrap bgcolor="#EEEEEE">
 <pre>
-# Habilita enfileiramento na interface externa para controlar o tráfego
-# indo para Internet. Usa o organizador priq para controlar somente
-# prioridades. Define largura de banda para 610Kbps para obter melhor
-# desempenho na fila TCP ACK.
+# Habilita o enfileiramento na interface externa para controlar o
+# tráfego indo para Internet. Usa o agendador priq para controlar
+# somente as prioridades. Define a largura de banda como 610Kbps para
+# obter o melhor desempenho da fila TCP ACK.
 
 altq on fxp0 priq bandwidth 610Kb queue { std_out, ssh_im_out, dns_out, \
 	tcp_ack_out }
 
-# Define os parâmetros para as subfilas.
-# std_out      - a fila padrão. Qualquer regra abaixo que não
-#                especifique explicitamente uma fila, terá seu tráfego
-#		 inserido nessa fila.
+# Define os parâmetros para as filas filhas.
+# std_out      - a fila padrão. Qualquer regra de filtragem abaixo que
+#                não especifique explicitamente uma fila terá seu
+#		 tráfego adicionado a essa fila.
 # ssh_im_out   - SSH interativo e tráfego de várias mensagens
 #                instantâneas.
 # dns_out      - pesquisas DNS.
-# tcp_ack_out  - pacotes TCP ACK sem payload de dados.
+# tcp_ack_out  - pacotes TCP ACK sem carga útil de dados.
 
 queue std_out     priq(default)
 queue ssh_im_out  priority 4 priq(red)
 queue dns_out     priority 5
 queue tcp_ack_out priority 6
 
-# Habilita enfileiramento na interface interna para controlar tráfego
-# vindo da Internet. Usa o organizador cbq para controlar a banda.
-# Largura de banda máxima é 2Mbps.
+# Habilita o enfileiramento na interface interna para controlar o tráfego
+# vindo da Internet. Usa o agendador cbq para controlar a largura de banda.
+# A largura de banda máxima é 2Mbps.
 
 altq on dc0 cbq bandwidth 2Mb queue { std_in, ssh_im_in, dns_in, bob_in }
 
-# Define os parâmetros para as subfilas.
+# Define os parâmetros para as filas filhas.
 # std_in      - a fila padrão. Qualquer regra de filtragem abaixo que
 #		não especifique explicitamente uma fila terá seu
-#		tráfego inserido nessa fila.
+#		tráfego adicionado a essa fila.
 # ssh_im_in   - SSH interativo e tráfego de várias mensagens
 #               instantâneas.
 # dns_in      - respostas DNS.
-# bob_in      - banda reservada para a estação de trabalho de Bob.
-#		Permitir a ele emprestar banda dos outros.
+# bob_in      - largura de banda reservada para a estação de trabalho de
+#		Bob. Permitir a ele emprestar banda dos outros.
 
 queue std_in    bandwidth 1.6Mb cbq(default)
 queue ssh_im_in bandwidth 200Kb priority 4
@@ -688,7 +715,7 @@ queue dns_in    bandwidth 120Kb priority 5
 queue bob_in    bandwidth 80Kb cbq(borrow)
 
 
-# ... na seção de filtragem do pf.conf ...
+# ... Na seção de filtragem do pf.conf ...
 
 alice         = "192.168.0.2"
 bob           = "192.168.0.3"
@@ -697,10 +724,10 @@ local_net     = "192.168.0.0/24"
 ssh_ports     = "{ 22 2022 }"
 im_ports      = "{ 1863 5190 5222 }"
 
-# Regras de filtragem para entrada em fxp0
+# Regras de filtragem para o tráfego de entrada em fxp0
 block in on fxp0 all
 
-# Regras de filtragem para saída em fxp0
+# Regras de filtragem para o tráfego de saída em fxp0
 block out on fxp0 all
 pass  out on fxp0 inet proto tcp from (fxp0) to any flags S/SA \
 	keep state queue(std_out, tcp_ack_out)
@@ -712,11 +739,11 @@ pass  out on fxp0 inet proto tcp from (fxp0) to any port $ssh_ports \
 pass  out on fxp0 inet proto tcp from (fxp0) to any port $im_ports \
 	flags S/SA keep state queue(ssh_im_out, tcp_ack_out)
 
-# Regras de filtragem de entrada em dc0
+# Regras de filtragem para o tráfego de entrada em dc0
 block in on dc0 all
 pass  in on dc0 from $local_net
 
-# Regras de filtragem de saída em dc0
+# Regras de filtragem para o tráfego de saída em dc0
 block out on dc0 all
 pass  out on dc0 from any to $local_net
 pass  out on dc0 proto { tcp udp } from any port domain to $local_net \
@@ -731,12 +758,12 @@ pass  out on dc0 from any to $bob queue bob_in
 </table>
 
 <a name="example2"></a>
-<h2>Exemplo #2: Rede Empresarial</h2>
+<h2>Exemplo 2: Rede Empresarial</h2>
 <pre>
 
-  ( IT Dept )  [ Boss's PC ]
-       |          |                                   T1
-     --+----+-----+---------- dc0 [ OpenBSD ] fxp0 -------- ( Internet )
+  ( Dep. de TI ) [ PC do Chefe ]
+       |           |                                  T1
+     --+----+------+--------- dc0 [ OpenBSD ] fxp0 -------- ( Internet )
             |                         fxp1
          [ COMP1 ]    [ WWW ]         /
                          |           /
@@ -745,24 +772,24 @@ pass  out on dc0 from any to $bob queue bob_in
 </pre>
 
 <p>
-Nesse exemplo, a máquina OpenBSD funciona como firewall para a rede
+Nesse exemplo a máquina OpenBSD funciona como firewall para a rede
 de uma empresa. A empresa roda um servidor WWW na porção DMZ de sua
-rede, onde os clientes fazem upload de seus websites via FTP. O
-departamento de TI possui sua própria subrede conectada na rede
-principal, e o chefe tem um PC em sua mesa que é usado para ler email
-e navegar na Internet. A conexão com a Internet é via um linha T1
-rodando a 1.5Mbps em ambas as direções. Todos os outros segmentos de
-rede utilizam Fast Ethernet (100Mbps).
+rede, onde os clientes fazem upload de seus sítios Web via FTP. O
+departamento de TI possui sua própria sub-rede conectada na rede
+principal, e o chefe tem um PC em sua mesa que é usado para acessar o
+correio eletrônico e navegar na Internet. A conexão com a Internet é
+via linha T1 funcionando a 1.5Mbps em ambas as direções.
+Todos os outros segmentos de rede utilizam Fast Ethernet (100Mbps).
 
 <p>
-O administrador de rede decidiu pela seguinte política:
+O administrador da rede decidiu pela seguinte política:
 <ul>
-<li>Limitar todo o tráfego entre o servidor WWW e a internet para
+<li>Limitar todo o tráfego entre o servidor WWW e a Internet para
     500Kbps em ambas as direções.
        <ul>
        <li>Distribuir 250Kbps para tráfego HTTP.
-       <li>Distribuir 250Kbps para "outro" tráfego (ou seja,
-	   tráfego não-HTTP)
+       <li>Distribuir 250Kbps para "outro tipo" de tráfego (ou seja,
+	   tráfego não-HTTP).
        <li>Permitir a qualquer fila emprestar totalmente os 500Kbps.
        <li>Dar alta prioridade ao tráfego entre o servidor WWW
 	   e a Internet do que outro tráfego entre o servidor WWW
@@ -770,37 +797,39 @@ O administrador de rede decidiu pela seguinte política:
        </ul>
 <li>O tráfego entre o servidor WWW e a rede interna pode usar
     totalmente os 100Mbps que a rede oferece.
-<li>Reservar 500Kbps para o Departamento de TI para que eles
+<li>Reservar 500Kbps para a rede do Departamento de TI para que eles
     possam baixar as últimas atualizações de software em tempo hábil.
     Eles devem ser capazes de utilizar mais do que 500Kbps caso haja
     disponibilidade.
 <li>Dar alta prioridade ao tráfego entre o PC do chefe e a
-    Internet do que outro tráfego indo/vindo da Internet.
+    Internet do que outro tráfego indo à/vindo da Internet.
 </ul>
 
 <p>
-Abaixo estão as regras que fazem a política dessa rede. Perceba
+Abaixo o conjunto de regras adequado à política da rede. Perceba
 que somente diretivas <tt>pf.conf</tt> que se aplicam diretamente à
 política descrita acima estão presentes;
 <a href="nat.html"><tt>nat</tt></a>,
-<a href="rdr.html"><tt>rdr</tt></a>, <a href="options.html">options</a>,
+<a href="rdr.html"><tt>rdr</tt></a>, <a href="options.html">opções</a>,
 etc., não são mostradas.
 
 <p>
 <table border="0" width="650">
 <tr><td nowrap bgcolor="#EEEEEE">
 <pre>
-# Habilita enfileiramento na interface externa para pacotes saindo
-# para a Internet. Usa cbq para que o uso da banda por cada fila possa
-# ser controlado. A largura máxima para tráfego saindo é de 1.5Mbps.
+# Habilita o enfileiramento na interface externa para enfileirar pacotes
+# saindo para a Internet. Usa o agendador cbq de modo que o uso da
+# largura de banda por cada fila possa ser controlado.
+# A largura de banda máxima para tráfego de saída é de 1.5Mbps.
 
 altq on fxp0 cbq bandwidth 1.5Mb queue { std_ext, www_ext, boss_ext }
 
-# Define os parâmetros para as subfilas.
-# std_ext        - a fila padrão. Também para o tráfego saindo via fxp0.
-# www_ext        - fila para tráfego WWW do servidor.
+# Define os parâmetros para as filas filhas.
+# std_ext        - a fila padrão. Também é a fila padrão para o tráfego
+#                  de saída em fxp0.
+# www_ext        - fila contêiner para as filas do servidor WWW.
 #                  Limitada a 500Kbps.
-#   www_ext_http - fila para tráfego WWW do servidor; alta prioridade.
+#   www_ext_http - tráfego http do servidor WWW; alta prioridade.
 #   www_ext_misc - todo o tráfego diferente de http do servidor WWW.
 # boss_ext       - tráfego vindo do computador do chefe.
 
@@ -811,20 +840,23 @@ queue www_ext        bandwidth 500Kb { www_ext_http, www_ext_misc }
   queue www_ext_misc bandwidth 50% priority 1 cbq(borrow)
 queue boss_ext       bandwidth 500Kb priority 3 cbq(borrow)
 
-# Habilita enfileiramento na interface interna para controlar tráfego
-# vindo da internet para DMZ. Usa cbq para controlar a banda em cada
-# fila. Esta interface está configurada para largura máxima de banda.
-# Tráfego vindo da DMZ poderá usar toda a banda enquanto tráfego vindo
-# da Internet será limitado a 1.0Mbps (porque 0.5Mbps (500Kbps) está
-# alocado para fxp1).
+# Habilita o enfileiramento na interface interna para controlar o
+# tráfego vindo da internet ou DMZ. Usa o agendador cbq para controlar a
+# largura de banda de cada fila. Esta interface está configurada para a
+# largura máxima de banda. Tráfego vindo da DMZ pode usar toda a
+# largura de banda, enquanto tráfego vindo da Internet é limitado a
+# 1.0Mbps (porque 0.5Mbps (500Kbps) está alocado para fxp1).
 
 altq on dc0 cbq bandwidth 100% queue { net_int, www_int }
 
-# Define os parâmetros para as subfilas.
-# net_int    - fila para tráfego vindo da Internet. Banda de 1.0Mbps.
-#   std_int  - a fila padrão. Padrão também para tráfego saindo via dc0.
-#   it_int   - tráfego para a rede do TI; reservar 500Kbps.
-#   boss_int - tráfego para o PC do chefe, designar alta prioridade.
+# Define os parâmetros para as filas filhas.
+# net_int    - fila contêiner para o tráfego da Internet.
+#              Largura de banda de 1.0Mbps.
+#   std_int  - a fila padrão. Também é a fila padrão para o tráfego
+#              de saída em dc0.
+#   it_int   - tráfego para a rede do departamento de TI; reserva
+#              a eles 500Kbps.
+#   boss_int - tráfego para o PC do chefe, designa alta prioridade.
 # www_int    - tráfego do servidor WWW na DMZ; velocidade máxima.
 
 queue net_int    bandwidth 1.0Mb { std_int, it_int, boss_int }
@@ -833,18 +865,18 @@ queue net_int    bandwidth 1.0Mb { std_int, it_int, boss_int }
   queue boss_int bandwidth 250Kb priority 3 cbq(borrow)
 queue www_int    bandwidth 99Mb cbq(red borrow)
 
-# Habilitar enfileiramento na interface da DMZ para controlar tráfego
+# Habilita o enfileiramento na interface da DMZ para controlar o tráfego
 # destinado ao servidor WWW. cbq será utilizado nesta interface já que
-# o controle preciso se faz necessário. A banda nesta interface está
-# configurada para sua capacidade máxima. O tráfego da rede interna
-# poderá utilizar toda a banda, enquanto o tráfego da Internet será
-# limitado a 500Kbps.
+# o controle preciso se faz necessário. A largura de banda nesta
+# interface está configurada para o máximo. O tráfego da rede interna
+# é capaz de utilizar toda a largura de banda, enquanto o tráfego da
+# Internet é limitado a 500Kbps.
 
 altq on fxp1 cbq bandwidth 100% queue { internal_dmz, net_dmz }
 
-# Define os parâmetros para as subfilas.
+# Define os parâmetros para as filas filhas.
 # internal_dmz   - tráfego da rede interna.
-# net_dmz        - tráfego da Internet.
+# net_dmz        - fila contêiner para o tráfego da Internet.
 #   net_dmz_http - tráfego http; alta prioridade.
 #   net_dmz_misc - todo tráfego não-http. Essa também é a fila padrão.
 
@@ -854,7 +886,7 @@ queue net_dmz        bandwidth 500Kb { net_dmz_http, net_dmz_misc }
   queue net_dmz_misc bandwidth 50% priority 1 cbq(default borrow)
 
 
-# ... na seção de filtragem do pf.conf ...
+# ... Na seção de filtragem do pf.conf ...
 
 main_net  = "192.168.0.0/24"
 it_net    = "192.168.1.0/24"
@@ -867,31 +899,31 @@ wwwserv   = "10.0.0.100"
 # Negar por padrão
 block on { fxp0, fxp1, dc0 } all
 
-# Regras de filtragem para entrada em fxp0
+# Regras de filtragem para o tráfego de entrada em fxp0
 pass in on fxp0 proto tcp from any to $wwwserv port { 21, \
 	&gt; 49151 } flags S/SA keep state queue www_ext_misc
 pass in on fxp0 proto tcp from any to $wwwserv port 80 \
 	flags S/SA keep state queue www_ext_http
 
-# Regras de filtragem para saída em fxp0
+# Regras de filtragem para o tráfego de saída em fxp0
 pass out on fxp0 from $int_nets to any keep state
 pass out on fxp0 from $boss to any keep state queue boss_ext
 
-# Regras de filtragem para entrada em dc0
+# Regras de filtragem para o tráfego de entrada em dc0
 pass in on dc0 from $int_nets to any keep state
 pass in on dc0 from $it_net to any queue it_int
 pass in on dc0 from $boss to any queue boss_int
 pass in on dc0 proto tcp from $int_nets to $wwwserv port { 21, 80, \
 	&gt; 49151 } flags S/SA keep state queue www_int
 
-# Regras de filtragem para saída em dc0
+# Regras de filtragem para o tráfego de saída em dc0
 pass out on dc0 from dc0 to $int_nets
 
-# Regras de filtragem para entrada em fxp1
+# Regras de filtragem para o tráfego de entrada em fxp1
 pass in on fxp1 proto { tcp, udp } from $wwwserv to any port 53 \
 	keep state
 
-# Regras de filtragem para saída em fxp1
+# Regras de filtragem para o tráfego de saída em fxp1
 pass out on fxp1 proto tcp from any to $wwwserv port { 21, \
 	&gt; 49151 } flags S/SA keep state queue net_dmz_misc
 pass out on fxp1 proto tcp from any to $wwwserv port 80 \
@@ -915,9 +947,9 @@ pass out on fxp1 proto tcp from $int_nets to $wwwserv port { 80, \
 <small>
 <!--
 Originally [OpenBSD: queueing.html,v 1.37 ]<br>
-$Translation: queueing.html,v 1.12 2009/05/10 17:44:16 alan Exp $<br>
+$Translation: queueing.html,v 1.13 2009/10/13 19:12:28 alan Exp $<br>
 -->
-$OpenBSD: queueing.html,v 1.12 2009/05/16 08:59:12 ajacoutot Exp $
+$OpenBSD: queueing.html,v 1.13 2009/10/17 15:58:26 ajacoutot Exp $
 </small>
 
 </body>
