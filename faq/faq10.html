@@ -1739,6 +1739,8 @@ might be an option, or you might consider combining YP with
 <a name="YP_server"></a> 
 <h3>10.19.3 - Setting up a YP server</h3>
 
+<ol>
+<li><p>
 A YP server serves a group of clients called a "domain".
 You should first select a domain name; it can be an arbitrary string
 and need not be related in any way to DNS domain names.
@@ -1752,8 +1754,7 @@ Also note that some versions of SunOS require using the host's DNS
 domain name, so your choice might be restricted in a network including
 such hosts.
 
-<ol>
-<li><p>
+<p>
 Use the
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=domainname&amp;sektion=1"
 >domainname(1)</a> utility to set the domain name, and put it into the file
@@ -1766,12 +1767,31 @@ domainname `cat /etc/defaultdomain`
 </pre></blockquote>
 
 <li><p>
+Initialise the YP server using the interactive command
+
+<blockquote><pre>
+ypinit -m
+</pre></blockquote>
+
+At this point, it is not necessary to specify slave servers yet.
+To add slave servers, you can rerun
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ypinit&amp;sektion=8"
+>ypinit(8)</a> later, using the <tt>-u</tt> option.
+
+Setting up at least one slave server for each domain is useful
+to avoid service interruptions, should the master server ever go down
+or lose network connectivity, in particular since client processes
+trying to access YP maps block indefinitely until they receive the
+requested information.  Thus, YP service interruptions typically render
+the client hosts completely unusable until YP is back to service.
+
+<li><p>
 Decide where to store the source files to generate your YP maps from.
-Usually, the default location <tt>/etc</tt> is <em>not</em> appropriate:
-As a rule, you do not need all accounts and groups existing on the server
-on all your client hosts.
-In particular, not serving the root account and thus keeping root's
-password hash confidential is often beneficial to security.
+Keeping the server configuration separate from the served configuration
+helps to control which information will be served and which won't,
+so the default <tt>/etc</tt> often isn't the best choice.
+
+<p>
 The only inconvenience caused by changing the source directory
 is that you will not be able to add, remove and modify users and groups
 in the YP domain using utilities like
@@ -1782,21 +1802,40 @@ in the YP domain using utilities like
 Instead, you will have to edit the configuration files with a text editor.
 
 <p>
-To define the source directory, edit the file <tt>/var/yp/Makefile.yp</tt>
+To define the source directory, edit the file
+<tt>/var/yp/`domainname`/Makefile</tt>
 and change the <tt>DIR</tt> variable, e.g.
 
 <blockquote><pre>
 DIR=/etc/yp/src/puffynet
 </pre></blockquote>
 
-If all your YP clients run OpenBSD or FreeBSD, exclude the encrypted
-passwords from the <tt>passwd</tt> maps by setting <tt>UNSECURE=""</tt> in
-<tt>/var/yp/Makefile.yp</tt>.
+<li><p>
+Consider customizing other variables in
+<tt>/var/yp/`domainname`/Makefile</tt>.  See
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=Makefile.yp&amp;sektion=8"
+>Makefile.yp(8)</a> for details.
 
 <p>
-A backup of the original template <tt>Makefile.yp</tt> is placed at
-<tt>/var/yp/Makefile.yp.dist</tt> at system install time,
-in case you need to recover a vanilla configuration.
+For example, even in case you use the default source directory <tt>/etc</tt>,
+you do not usually need all accounts and groups existing on the server on all
+your client hosts.  In particular, not serving the root account and thus
+keeping root's password hash confidential is often beneficial to security.
+Review the values of <tt>MINUID</tt>, <tt>MAXUID</tt>, <tt>MINGID</tt>
+and <tt>MAXGID</tt> and adjust them to you needs.
+
+<p>
+If all your YP clients run OpenBSD or FreeBSD, exclude the encrypted
+passwords from the <tt>passwd</tt> maps by setting <tt>UNSECURE=""</tt> in
+<tt>/var/yp/`domainname`/Makefile</tt>.
+
+<p>
+The former practice of editing the template file <tt>/var/yp/Makefile.yp</tt>
+is no longer recommended.  Changes to that file affect all domains initialized
+after the change, but do not affect domains initialized before the change,
+so this is error-prone either way: You both risk that the intended changes
+do not take effect, and you risk to forget about them and have them affect
+other domains later which they were never intended for.
 
 <li><p>
 Create the source directory and populate it with the configuration files
@@ -1812,37 +1851,17 @@ For the format of the individual configuration files, refer to
 >hosts(5)</a> and so on, and look at the examples in <tt>/etc</tt>.
 
 <li><p>
-Initialise the YP server using the interactive command
+Create the initial version of your YP maps using the commands
 
 <blockquote><pre>
-ypinit -m
+cd /var/yp
+make
 </pre></blockquote>
 
-At this point, it is not necessary to specify slave servers yet.
-To add slave servers, you can rerun
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ypinit&amp;sektion=8"
->ypinit(8)</a> later, using the <tt>-u</tt> option.
-Setting up at least one slave server for each domain is useful
-to avoid service interruptions, should the master server ever go down
-or lose network connectivity, in particular since client processes
-trying to access YP maps block indefinitely until they receive the
-requested information.  Thus, YP service interruptions typically render
-the client hosts completely unusable until YP is back to service.
-
-<p>
-Note that changes made to <tt>/var/yp/Makefile.yp</tt> after running
-<tt>ypinit -m</tt> have no effect because <tt>ypinit -m</tt>
-copies the template to <tt>/var/yp/`domainname`/Makefile</tt>.
-While most of the database files in <tt>/var/yp/`domainname`</tt>
-can easily be recreated using this new Makefile, there is one exception:
-The file <tt>ypservers.db</tt>, listing all YP master and slave servers
-associated with the domain, is created directly from <tt>ypinit -m</tt>
-and modified exclusively by <tt>ypinit -u</tt>.
-Thus, take special care never to damage that particular file,
-lest you have to regenerate it manually using
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=makedbm&amp;sektion=8"
->makedbm(8)</a>,
-or reinitialise the server by rerunning <tt>ypinit -m</tt>.
+Do not worry about error messages from
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=yppush&amp;sektion=8"
+>yppush(8)</a> right now.
+The YP server is not yet running.
 
 <li><p>
 YP uses
@@ -1916,6 +1935,16 @@ you must regenerate your YP maps.
 cd /var/yp
 make
 </pre></blockquote>
+
+This updates all database files in <tt>/var/yp/`domainname`</tt>, with
+one exception:  The file <tt>ypservers.db</tt>, listing all YP master
+and slave servers associated with the domain, is created directly
+from <tt>ypinit -m</tt> and modified exclusively by <tt>ypinit -u</tt>.
+Thus, take special care never to damage that particular file,
+lest you have to regenerate it manually using
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=makedbm&amp;sektion=8"
+>makedbm(8)</a>,
+or reinitialise the server by rerunning <tt>ypinit -m</tt>.
 </ol>
 
 <a name="YP_client"></a> 
@@ -2047,6 +2076,6 @@ lookup file yp bind
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq10.html,v 1.146 2009/10/16 19:07:37 nick Exp $</small>
+<small>$OpenBSD: faq10.html,v 1.147 2009/11/04 00:31:54 schwarze Exp $</small>
 </body>
 </html>
