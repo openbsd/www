@@ -1787,6 +1787,8 @@ IPSec tunnels te leiden of u kunt overwegen om YP te combineren met
 <a name="YP_server"></a> 
 <h3>10.19.3 - Het opzetten van een YP-server</h3>
 
+<ol>
+<li><p>
 Een YP-server bedient een groep clients die een "domein" worden genoemd.
 U moet als eerste een domeinnaam kiezen; dat kan een arbitraire string
 zijn en hoeft geen relatie te hebben met DNS domeinnamen.
@@ -1800,8 +1802,7 @@ Merk tevens op dat sommige versies van SunOS vereisen dat u de DNS
 domeinnaam van de host gebruikt, dus uw keuze kan beperkt zijn in een
 netwerk met dergelijke hosts.
 
-<ol>
-<li><p>
+<p>
 Gebruik het
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=domainname&amp;sektion=1"
 >domainname(1)</a> commando om de domeinnaam in te stellen en zet deze in
@@ -1816,13 +1817,32 @@ domainname `cat /etc/defaultdomain`
 </pre></blockquote>
 
 <li><p>
-Beslis waar u de bronbestanden wilt bewaren om uw YP-gegevens uit te genereren.
-In het algemeen is de standaardlocatie <tt>/etc</tt> <em>niet</em> geschikt:
-in de regel heeft u niet alle accounts en groepen die op uw server bestaan
-op alle clients nodig.
-Het niet beschikbaar stellen van het root-account en dus de hash van het
-root-wachtwoord vertrouwelijk houden is in het bijzonder bevorderlijk voor de
-veiligheid.
+Initialiseer de YP-server met het interactieve commando
+
+<blockquote><pre>
+ypinit -m
+</pre></blockquote>
+
+Op dit punt is het nog niet nodig om slave-servers te specificeren.
+Om slave-servers toe te voegen kunt u
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ypinit&amp;sektion=8"
+>ypinit(8)</a> later opnieuw draaien met de <tt>-u</tt> optie.
+
+Het opzetten van ten minste één slave-server voor ieder domain is zinvol
+om onderbrekingen van de service te voorkomen, mocht de master-server ooit
+plat gaan of de verbinding met het netwerk verliezen, in het bijzonder omdat
+client-processen die YP-maps willen benaderen oneindig lang kunnen
+blokkeren totdat ze de gevraagde informatie hebben ontvangen.  Daarom zorgen
+onderbrekingen in de YP-service typisch voor vrijwel onbruikbare clients
+totdat YP weer in de lucht is.
+
+<li><p>
+Beslis waar u de bronbestanden wilt bewaren om uw YP-maps uit te genereren.
+Het gescheiden houden van de configuratie van de server van de te serveren
+configuratie helpt om te controleren welke informatie gedeeld wordt en welke
+niet, dus de standaard <tt>/etc</tt> is vaak niet de beste keuze.
+
+<p>
 Het enige ongemak van het wijzigen van de bron-directory is dat u gebruikers
 en groepen in het YP-domein niet kunt toevoegen, verwijderen en aanpassen met
 commando's als
@@ -1834,20 +1854,41 @@ In plaats daarvan moet u de configuratiebestanden bewerken met een teksteditor.
 
 <p>
 Om de brondirectory te definiëren, bewerkt u het bestand
-<tt>/var/yp/Makefile.yp</tt> en past u de <tt>DIR</tt> variabele aan, bijv.
+<tt>/var/yp/`domainname`/Makefile</tt>
+en past u de <tt>DIR</tt> variabele aan, bijv.
 
 <blockquote><pre>
 DIR=/etc/yp/src/puffynet
 </pre></blockquote>
 
-Als al uw YP-clients OpenBSD of FreeBSD draaien, sluit versleutelde
-wachtwoorden van de <tt>passwd</tt>-maps dan uit door <tt>UNSECURE=""</tt> te
-zetten in <tt>/var/yp/Makefile.yp</tt>.
+<li><p>
+Overweeg om andere variabelen in
+<tt>/var/yp/`domainname`/Makefile</tt> aan te passen.  Zie
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=Makefile.yp&amp;sektion=8"
+>Makefile.yp(8)</a> voor details.
 
 <p>
-Een backup van het originele sjabloon <tt>Makefile.yp</tt> wordt in
-<tt>/var/yp/Makefile.yp.dist</tt> gezet op het moment van systeeminstallatie,
-voor het geval u een maagdelijke configuratie moet herstellen.
+Zelfs als u bijvoorbeeld de standaard brondirectory <tt>/etc</tt> gebruikt,
+dan heeft u meestal niet alle accounts en groepen die op de server
+bestaan nodig op de client-machines.  In het bijzonder komt het de veiligheid
+ten goede om het root-account niet aan te bieden en daarmee de hash van
+het root-wachtwoord vertrouwlijk te houden.
+Bekijk de waarden van <tt>MINUID</tt>, <tt>MAXUID</tt>, <tt>MINGID</tt>
+en <tt>MAXGID</tt> en pas ze naar behoefte aan.
+
+<p>
+Als al uw YP-clients OpenBSD of FreeBSD draaien, sluit versleutelde
+wachtwoorden van de <tt>passwd</tt>-maps dan uit door <tt>UNSECURE=""</tt> te
+zetten in <tt>/var/yp/`domainname`/Makefile</tt>.
+
+<p>
+De voormalige praktijk om het sjabloonbestand <tt>/var/yp/Makefile.yp</tt>
+te bewerken wordt niet langer aangeraden.  Wijzigingen in dat bestand
+hebben invloed op alle naderhand geïnitialiseerde domeinen, maar niet op
+domeinen die voor de wijziging geïnitialiseerd zijn, dus dit is foutgevoelig
+in twee richtingen: U riskeert zowel dat de bedoelde wijzigingen geen effect
+hebben als dat u de wijzigingen vergeet zodat ze effect hebben op andere
+domeinen waar ze nooit voor bedoeld waren.
 
 <li><p>
 Maak een brondirectory en vul deze met de configuratiebestanden die
@@ -1865,40 +1906,17 @@ voor het formaat van de individuele configuratiebestanden en kijk naar
 de voorbeelden in <tt>/etc</tt>.
 
 <li><p>
-Initialiseer de YP-server met het interactieve commando
+Creëer de initiële versies van uw YP-maps met de commando's
 
 <blockquote><pre>
-ypinit -m
+cd /var/yp
+make
 </pre></blockquote>
 
-Op dit moment is het nog niet nodig om slave servers op te geven.  Om slave
-servers toe te voegen kunt U
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ypinit&amp;sektion=8"
->ypinit(8)</a> op een later moment opnieuw draaien, met de <tt>-u</tt> optie.
-Het opzetten van ten minste één slave server per domein is nuttig om
-onderbrekingen van de dienst te vermijden, mocht de master server ooit plat
-gaan of de verbinding met het netwerk verliezen, vooral omdat clientprocessen
-die YP-maps proberen te benaderen oneindig lang blokkeren totdat ze de
-gevraagde informatie ontvangen.  Onderbrekingen in de YP-dienst zorgen er dus
-voor dat de client-machines volledig onbruikbaar zijn totdat YP weer
-in de lucht is.
-
-<p>
-Merk op dat veranderingen in <tt>/var/yp/Makefile.yp</tt> na het draaien van
-<tt>ypinit -m</tt> geen effect hebben omdat <tt>ypinit -m</tt> het sjabloon
-naar <tt>/var/yp/`domainname`/Makefile</tt> kopieert.
-Hoewel de meeste database-bestanden in <tt>/var/yp/`domainname`</tt>
-gemakkelijk opnieuw aangemaakt kunnen worden met deze nieuwe Makefile, is er
-één uitzondering:  Het bestand <tt>ypservers.db</tt>, met alle YP master en
-slave servers die met het domein zijn geassocieerd, wordt rechtstreeds vanuit
-<tt>ypinit -m</tt> gecreeerd en kan exclusief door <tt>ypinit -u</tt> worden
-gewijzigd.
-Let er dus bijzonder goed op om dit bestand nooit te beschadigen, anders moet
-u het opnieuw handmatig  genereren middels
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=makedbm&amp;sektion=8"
->makedbm(8)</a>,
-of door de server opnieuw te initialiseren door <tt>ypinit -m</tt> opnieuw
-te draaien.
+Maak u op dit moment niet druk om foutmeldingen van
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=yppush&amp;sektion=8"
+>yppush(8)</a>.
+De YP-server draait nog niet.
 
 <li><p>
 YP gebruikt
@@ -1973,6 +1991,17 @@ aanpast dat als bron dient voor een YP-map.
 cd /var/yp
 make
 </pre></blockquote>
+
+Dit ververst alle databasebestanden in <tt>/var/yp/`domainname`</tt>, met
+één uitzondering: Het bestand <tt>ypservers.db</tt>, met alle YP-master
+en slave servers die zijn geassocieerd met het domein, wordt rechtstreeks
+vanuit <tt>ypinit -m</tt> gecreëerd en wordt alleen gewijzigd door
+<tt>ypinit -u</tt>.
+Zorg er dus goed voor dat u dit bijzondere bestand nooit beschadigt, anders
+moet u het opnieuw genereren met
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=makedbm&amp;sektion=8"
+>makedbm(8)</a>,
+of de server herinitialiseren door <tt>ypinit -m</tt> opnieuw te draaien.
 </ol>
 
 <a name="YP_client"></a> 
@@ -2110,10 +2139,10 @@ lookup file yp bind
 <br>
 <small>
 <!--
-Originally [OpenBSD: faq10.html,v 1.146 ]<br>
-$Translation: faq10.html,v 1.41 2009/10/17 06:33:18 maurice Exp $<br>
+Originally [OpenBSD: faq10.html,v 1.147 ]<br>
+$Translation: faq10.html,v 1.42 2009/11/04 17:34:51 maurice Exp $<br>
 -->
-$OpenBSD: faq10.html,v 1.35 2009/10/17 15:58:26 ajacoutot Exp $
+$OpenBSD: faq10.html,v 1.36 2009/11/04 18:08:57 ajacoutot Exp $
 </small>
 </body>
 </html>
