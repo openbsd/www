@@ -1851,7 +1851,9 @@ authentification
 
 <a name="YP_server"></a> 
 <h3>10.19.3 - Configurer un serveur YP</h3>
-	
+
+<ol>
+<li><p>	
 Un serveur YP sert un groupe de clients appelé un "domaine".
 Vous devez d'abord choisir un nom de domaine; cela peut-être une chaine
 arbitraire et ne doit pas avoir de lien avec les noms de domaines DNS.
@@ -1865,8 +1867,7 @@ Il faut aussi remarquer que certaines versions de SunOS doivent utiliser le
 nom de domaine DNS de l'hôte, donc votre choix est plutôt restreint dans un
 réseau incluant de tels hôtes.
 
-<ol>
-<li><p>
+<p>
 Utilisez l'utilitaire
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=domainname&amp;sektion=1">domainname(1)</a> 
 pour configurer le nom de domaine et le mettre dans le fichier
@@ -1879,14 +1880,33 @@ domainname `cat /etc/defaultdomain`
 </pre></blockquote>
 
 <li><p>
+Initialiser le serveur YP en utilisant la commande intéractive :
+
+<blockquote><pre>
+ypinit -m
+</pre></blockquote>
+
+A ce stade, il n'est plus nécessaire de spécifier les serveurs esclaves.
+Pour ajouter des serveurs esclaves, vous pourrez relancer
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ypinit&amp;sektion=8"
+>ypinit(8)</a> plus tard, en utilisant l'option <tt>-u</tt>.
+Configurer au moins un serveur esclave pour chaque domaine est utile pour
+éviter les interruptions de service, le serveur maître pourrait s'arrêter ou
+perdre sa connectivité réseau, en particulier les processus clients
+essaieront d'accéder aux blocs de tables YP indéfiniment tant qu'ils ne
+reçevront pas les informations demandées. Donc, les interruptions de service
+YP rendront typiquement les hôtes clients complétement inutilisables tant
+que le service YP n'est pas de retour.
+
+<li><p>
 Il faut décider ou stocker les fichiers sources pour générer vos tables YP
 initiales.
-Habituellement, l'endroit par défaut <tt>/etc</tt> n'est <em>pas</em>
-approprié :
-Comme règle, vous n'avez pas besoin de tous les comptes et groupes existants
-sur le serveur pour tous vos hôtes clients.
-En particulier, ne pas fournir le compte root et donc garder le hash du mot
-de passe root confidentiel est plutôt bénéfique pour la sécurité.
+Garder distincte la configuration du serveur de la configuration du service
+aide à contrôler quelle information sera donnée de celle qui ne le sera pas,
+donc le répertoire par défaut <tt>/etc</tt> n'est pas souvent le meilleur
+choix.
+
+<p>
 Le seul inconvénient causé par le changement de répertoire source est que
 vous ne pourrez plus ajouter, supprimer ou modifier des utilisateurs et des
 groupes dans le domaine YP en utilisant des utilitaires comme
@@ -1897,21 +1917,42 @@ A la place, vous devrez éditer les fichiers de configuration avec un éditeur
 de texte.
 
 <p>
-Pour définir le répertoire source, éditez le fichier <tt>/var/yp/Makefile.yp</tt>
+Pour définir le répertoire source, éditez le fichier 
+<tt>/var/yp/`domainname`/Makefile.yp</tt>
 et modifiez la variable <tt>DIR</tt>, par exemple :
 
 <blockquote><pre>
 DIR=/etc/yp/src/puffynet
 </pre></blockquote>
 
-Si tous vos clients YP utilisent OpenBSD ou FreeBSD, excluez les mots de
-passe chiffrés de la table <tt>passwd</tt> en configurant <tt>UNSECURE=""</tt> 
-dans <tt>/var/yp/Makefile.yp</tt>.
+<li><p>
+Considérez la possibilité de personnalisation d'autres variables dans
+<tt>/var/yp/`domainname`/Makefile</tt>. Regardez
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=Makefile.yp&amp;sektion=8"
+>Makefile.yp(8)</a> pour plus de détails.
 
 <p>
-Une sauvegarde du modèle original de <tt>Makefile.yp</tt> est placée dans
-<tt>/var/yp/Makefile.yp.dist</tt> au moment de l'installation du système,
-dans le cas ou vous auriez besoin de retrouver une configuration initiale.
+Par exemple, même dans le cas ou vous utilisez le répertoire source par
+défaut <tt>/etc</tt>, vous n'avez généralement pas besoin de tous les
+comptes et groupes existants sur le serveur pour tous les hôtes clients.
+En particulier, ne pas fournir de compte root et garder le hash du compte
+root confidentiel est souvent bénéfique pour la sécurité.
+Etudiez les valeurs des variables <tt>MINUID</tt>, <tt>MAXUID</tt>,
+<tt>MINGID</tt> et <tt>MAXGID</tt> et ajustez les selon vos besoins.
+
+<p>
+Si tous vos clients YP utilisent OpenBSD ou FreeBSD, excluez les mots de
+passe chiffrés de la table <tt>passwd</tt> en configurant <tt>UNSECURE=""</tt> 
+dans <tt>/var/yp/`domainname`/Makefile.yp</tt>.
+
+<p>
+La pratique courante d'éditer le fichier modèle <tt>/var/yp/Makefile.yp</tt>
+n'est plus recommandé. Les changements dans ce fichier affectent tous les
+domaines initialisés aprés le changement, mais n'affecte pas les domaines
+initialisés avant le changement, il s'agit donc d'erreurs de toute façon :
+vous risquez que les changements attendus ne soient pas pris en compte, et
+vous risquez de les oublier et qu'ils affectent d'autres domaines plus tard
+alors que cela n'était pas voulu. 
 
 <li><p>
 Créez le répertoire source et le remplir avec les fichiers de configuration
@@ -1925,39 +1966,17 @@ Pour le format de fichier de configuration individuel, consultez
 voir plus, et regardez les exemple dans <tt>/etc</tt>.
 
 <li><p>
-Initialisez le serveur YP en utilisant la commande interactive
+Créez la version initiale de votre table YP en utilisant les commandes
 
 <blockquote><pre>
-ypinit -m
+cd /var/yp
+make
 </pre></blockquote>
 
-A cet instant, il n'est pas encore nécessaire de spécifier les serveurs
-esclaves.
-Pour ajouter des serveurs esclaves, vous devez re-exécuter
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ypinit&amp;sektion=8">ypinit(8)</a> 
-plus tard, en utilisant l'option <tt>-u</tt>.
-Configurer au moins un serveur esclave pour chaque domaine est utile pour
-éviter les interruptions de service, le serveur maître pourrait s'arrêter ou
-perdre sa connectivité réseau, en particulier les processus clients
-essaieront d'accéder aux blocs de tables YP indéfiniment tant qu'ils ne
-reçevront pas les informations demandées. Donc, les interruptions de service
-YP rendront typiquement les hôtes clients complétement inutilisables tant
-que le service YP n'est pas de retour. 
-
-<p>
-Il faut remarquer que les changements fait dans <tt>/var/yp/Makefile.yp</tt> 
-après avoir exécuté <tt>ypinit -m</tt> n'ont aucun effet parce que <tt>ypinit -m</tt>
-copie le modèle de <tt>/var/yp/`domainname`/Makefile</tt>.
-Bien que le la plupart des fichiers de la base de données dans <tt>/var/yp/`domainname`</tt>
-peuvent être facilement recrées en utilisant ce nouveau Makefile, il y a une
-exception :
-Le fichier <tt>ypservers.db</tt>, affichant tous les serveurs YP maîtres et
-esclaves associés au domaine, est crée directement de <tt>ypinit -m</tt>
-et modifié exclusivement par <tt>ypinit -u</tt>.
-Donc, il faut prendre un soin particulier à ne jamais endommager ce fichier
-en particulier, sinon vous devrez le regénérer manuellement en utilisant
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=makedbm&amp;sektion=8">makedbm(8)</a>,
-ou en reinitialisant le serveur en re-exécutant <tt>ypinit -m</tt>.
+Ne vous inquiétez pas des messages d'erreurs de 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=yppush&amp;sektion=8"
+>yppush(8)</a> maintenant.
+Le serveur YP ne fonctionne pas encore.
 
 <li><p>
 YP utilise les
@@ -2029,6 +2048,17 @@ table YP, vous devez regénérer vos tables YP.
 cd /var/yp
 make
 </pre></blockquote>
+</ol>
+
+Cela va mettre à jour tous les fichiers de bases de données dans <tt>/var/yp/`domainname`</tt>,
+avec une exception : le fichier <tt>ypservers.db</tt>, contenant tous les 
+serveurs YP maitres et esclaves associés avec le domaine, qui est crée
+directement avec <tt>ypinit -m</tt> et modifié exclusivement par <tt>ypinit -u</tt>.
+Donc, donnez une attention particuliére pour ne jamais endommager ce
+fichier, vous pourrez le régénerer manuellement en utilisant
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=makedbm&amp;sektion=8"
+>makedbm(8)</a>,
+ou en réinitialisant le serveur en réexecutant <tt>ypinit -m</tt>.
 </ol>
 
 <a name="YP_client"></a> 
@@ -2159,10 +2189,10 @@ lookup file yp bind
 <a href="mailto:www@openbsd.org">www@openbsd.org</a> <br>
 <small>
 <!--
-Originally [OpenBSD: faq10.html,v 1.146 ]<br>
-$Translation: faq10.html,v 1.75 2009/10/19 19:33:33 benoit Exp $<br>
+Originally [OpenBSD: faq10.html,v 1.147 ]<br>
+$Translation: faq10.html,v 1.76 2009/11/05 09:09:28 benoit Exp $<br>
 -->
-$OpenBSD: faq10.html,v 1.70 2009/10/20 20:44:41 ajacoutot Exp $
+$OpenBSD: faq10.html,v 1.71 2009/11/07 07:32:54 ajacoutot Exp $
 </small>
 </body>
 </html>

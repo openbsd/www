@@ -1861,6 +1861,8 @@ uma opção, ou você pode considerar a combinação de YP com autenticação
 <a name="YP_server"></a> 
 <h3>10.19.3 - Configuração de um servidor YP</h3>
 
+<ol>
+<li><p>
 Um servidor YP serve um grupo de clientes chamado de um "domínio".
 Você primeiro deve selecionar um nome de domínio; ele pode ser uma
 string arbitrária e não precisa estar relacionado em nenhuma forma com
@@ -1876,15 +1878,14 @@ Também note que algumas versões do SunOS requerem o uso do nome de
 domínio DNS da máquina, então sua escolha pode ser restrita em uma rede
 que inclui tais máquinas.
 
-<ol>
-<li><p>
-    Use o utilitário
-    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=domainname&amp;sektion=1"
-    >domainname(1)</a> para definir um nome de domínio, e coloque-o no
-    arquivo
-    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=defaultdomain&amp;sektion=5"
-    >defaultdomain(5)</a> para defini-lo automaticamente durante a
-    inicialização do sistema.
+<p>
+Use o utilitário
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=domainname&amp;sektion=1"
+>domainname(1)</a> para definir um nome de domínio, e coloque-o no
+arquivo
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=defaultdomain&amp;sektion=5"
+>defaultdomain(5)</a> para defini-lo automaticamente durante a
+inicialização do sistema.
 
 <blockquote><pre>
 echo "puffynet" > /etc/defaultdomain
@@ -1892,15 +1893,37 @@ domainname `cat /etc/defaultdomain`
 </pre></blockquote>
 
 <li><p>
+    Inicialize o servidor YP usando o comando interativo
+
+<blockquote><pre>
+ypinit -m
+</pre></blockquote>
+
+    Neste ponto ainda não é necessário especificar os servidores
+    escravos.
+    Para adicionar servidores escravos, você deve executar novamente o
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ypinit&amp;sektion=8"
+    >ypinit(8)</a> usando a opção <tt>-u</tt>.
+
+    Configurar ao menos um servidor escravo para cada domínio é útil
+    para evitar as interrupções de serviço, pois o servidor mestre pode
+    desligar-se ou perder a conectividade de rede; em particular, os
+    processos clientes tentando acessar os mapas YP ficarão bloqueados
+    indefinidamente até que eles recebam a informação requerida. Assim,
+    interrupções de serviço YP tipicamente fazem com que as máquinas
+    clientes fiquem inutilizáveis até que o serviço YP volte a
+    funcionar.
+
+<li><p>
     Decida onde guardar os arquivos fonte usados para gerar seus mapas
-    YP. Normalmente, a localização padrão <tt>/etc</tt> <em>não</em> é
-    apropriada:
-    Como uma regra, você não precisa que todas as contas e grupos
-    que existem no servidor também existam nas máquinas clientes.
-    Em particular, não servir a conta root e, assim, manter a dispersão
-    da senha do root confidencial é, frequentemente, benéfico para a
-    segurança.
-    A única inconveniência causada por mudar o diretório de origem é
+    YP.
+    Manter a configuração do servidor separada da configuração servida
+    ajuda a controlar quais informações serão servidas e quais não
+    serão, então o <tt>/etc</tt> padrão na maioria das vezes não é
+    a melhor escolha.
+
+    <p>
+    A única inconveniência causada por mudar o diretório fonte é
     que você não será capaz de adicionar, remover e modificar usuários
     e grupos no domínio YP usando utilitários como
     <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=user&amp;sektion=8"
@@ -1911,22 +1934,47 @@ domainname `cat /etc/defaultdomain`
     editor de texto.
 
     <p>
-    Para definir um diretório de origem, edite o arquivo
-    <tt>/var/yp/Makefile.yp</tt> e mude a variável
-    <tt>DIR</tt>; por exemplo
+    Para definir o diretório fonte, edite o arquivo
+    <tt>/var/yp/`domainname`/Makefile</tt>
+    e mude a variável <tt>DIR</tt>; por exemplo
 
 <blockquote><pre>
 DIR=/etc/yp/src/puffynet
 </pre></blockquote>
 
-    Se todos os seus clientes YP usam OpenBSD ou FreeBSD, exclua as
-    senhas encriptadas dos mapas <tt>passwd</tt> definindo
-    <tt>UNSECURE=""</tt> em <tt>/var/yp/Makefile.yp</tt>.
+<li><p>
+    Considere a personalização de outras variáveis em
+    <tt>/var/yp/`domainname`/Makefile</tt>. Veja
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=Makefile.yp&amp;sektion=8"
+    >Makefile.yp(8)</a> para obter mais detalhes.
 
     <p>
-    Um backup do modelo original <tt>Makefile.yp</tt> é colocado em
-    <tt>/var/yp/Makefile.yp.dist</tt> no momento da instalação do
-    sistema, no caso de você precisar recuperar uma configuração básica.
+    Por exemplo, mesmo no caso de você utilizar o diretório fonte
+    padrão, <tt>/etc</tt>, você usualmente não precisa ter todas as
+    contas e grupos existentes no servidor em todas as suas máquinas
+    cliente.
+    Em particular, não servir a conta do root e, assim, manter a
+    dispersão da senha do root confidencial é, frequentemente,
+    benéfico para a segurança.
+    Revise os valores de <tt>MINUID</tt>, <tt>MAXUID</tt>,
+    <tt>MINGID</tt> e <tt>MAXGID</tt> e ajuste-os de acordo com as suas
+    necessidades.
+
+    <p>
+    Se todos os seus clientes YP usam OpenBSD ou FreeBSD, exclua as
+    senhas encriptadas dos mapas <tt>passwd</tt> definindo
+    <tt>UNSECURE=""</tt> em
+    <tt>/var/yp/`domainname`/Makefile</tt>.
+
+    <p>
+    A prática anterior de editar o arquivo modelo
+    <tt>/var/yp/Makefile.yp</tt> não é mais recomendada. Mudanças
+    naquele arquivo afetam todos os domínios inicializados após a
+    mudança, mas não afetam domínios inicializados antes da mudança,
+    dessa forma essa prática é propensa a erros:
+    você tem o risco de que as mudanças não tenham efeito, e o risco
+    de esquecê-las e delas afetarem outros domínios mais tarde, para
+    os quais essas mudanças nunca foram pretendidas.
 
 <li><p>
     Crie o diretório fonte e popule-o com os arquivos de configuração
@@ -1943,44 +1991,17 @@ DIR=/etc/yp/src/puffynet
     >hosts(5)</a> e outros, e olhe nos exemplos em <tt>/etc</tt>.
 
 <li><p>
-    Inicialize o servidor YP usando o comando interativo
+    Crie a versão inicial dos seus mapas YP utilizando os comandos
 
 <blockquote><pre>
-ypinit -m
+cd /var/yp
+make
 </pre></blockquote>
 
-    Neste ponto, ainda não é necessário especificar os servidores
-    escravos.
-    Para adicionar servidores escravos, você deve executar novamente o
-    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ypinit&amp;sektion=8"
-    >ypinit(8)</a>, usando a opção <tt>-u</tt>.
-    Configurar ao menos um servidor escravo para cada domínio é útil
-    para evitar as interrupções de serviço, pois o servidor mestre pode
-    desligar-se ou perder a conectividade de rede; em particular, os
-    processos clientes tentando acessar os mapas YP ficarão bloqueados
-    indefinidamente até que eles recebam a informação requerida. Assim,
-    interrupções de serviço YP tipicamente fazem com que as máquinas
-    clientes fiquem inutilizáveis até que o serviço YP volte a
-    funcionar.
-
-    <p>
-    Note que mudanças feitas no <tt>/var/yp/Makefile.yp</tt> após a
-    execução do <tt>ypinit -m</tt> não têm efeito porque
-    <tt>ypinit -m</tt> copiou o modelo de
-    <tt>/var/yp/`domainname`/Makefile</tt>.
-    Enquanto a maior parte dos arquivos de banco de dados em
-    <tt>/var/yp/`domainname`</tt> podem facilmente ser recriados usando
-    esse novo Makefile, existe uma exceção:
-    o arquivo <tt>ypservers.db</tt>, que lista todos os servidores
-    mestres e escravos associados ao domínio, é criado diretamente
-    com <tt>ypinit -m</tt> e modificado exclusivamente pelo
-    <tt>ypinit -u</tt>.
-    Dessa forma, tome um cuidado especial para nuncar danificar aquele
-    arquivo em particular, para que você não tenha que gerá-lo novamente
-    usando
-    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=makedbm&amp;sektion=8"
-    >makedbm(8)</a>,
-    ou reinicializar o servidor executando novamente <tt>ypinit -m</tt>.
+    Não se preocupe com as mensagens de erro do
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=yppush&amp;sektion=8"
+    >yppush(8)</a> por enquanto.
+    O servidor YP não está em execução ainda.
 
 <li><p>
     YP utiliza o
@@ -2057,6 +2078,20 @@ Caso você deixe o diretório fonte no <tt>/etc</tt> padrão, use apenas
 cd /var/yp
 make
 </pre></blockquote>
+
+    Isso atualiza todos os arquivos de banco de dados em
+    <tt>/var/yp/`domainname`</tt>, com uma exceção:
+    o arquivo <tt>ypservers.db</tt>, que lista todos os servidores YP,
+    mestres e escravos, associados ao domínio, é criado diretamente com
+    <tt>ypinit -m</tt> e modificado exclusivamente por
+    <tt>ypinit -u</tt>.
+    Portanto, tome um cuidado especial para nunca danificar aquele
+    arquivo em particular, para que você não tenha que regerá-lo
+    manualmente utilizando o
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=makedbm&amp;sektion=8"
+    >makedbm(8)</a>,
+    ou tenha que reinicializar o servidor executando novamente
+    <tt>ypinit -m</tt>.
 </ol>
 
 <a name="YP_client"></a> 
@@ -2198,10 +2233,10 @@ lookup file yp bind
 <br>
 <small>
 <!--
-Originally [OpenBSD: faq10.html,v 1.146 ]<br>
-$Translation: faq10.html,v 1.9 2009/10/21 19:25:52 alan Exp $<br>
+Originally [OpenBSD: faq10.html,v 1.147 ]<br>
+$Translation: faq10.html,v 1.10 2009/11/05 12:07:16 alan Exp $<br>
 -->
-$OpenBSD: faq10.html,v 1.8 2009/10/26 20:27:01 ajacoutot Exp $
+$OpenBSD: faq10.html,v 1.9 2009/11/07 07:32:54 ajacoutot Exp $
 </small>
 </body>
 </html>
