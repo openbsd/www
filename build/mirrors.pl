@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.13 2009/05/07 15:48:43 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.14 2009/11/18 21:17:35 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -49,10 +49,14 @@ my $sources = {
 	'anoncvs-head'		=> 'mirrors/anoncvs.html.head',
 	'anoncvs-end'		=> 'mirrors/anoncvs.html.end',
 	'cvsync-head'		=> 'mirrors/cvsync.html.head',
-	'cvsync-end'		=> 'mirrors/cvsync.html.end'
+	'cvsync-end'		=> 'mirrors/cvsync.html.end',
+	'mirrors-head'		=> 'mirrors/mirrors-notes.head',
+	'mirrors-end'		=> 'mirrors/mirrors-notes.end'
 };
 my $targets = {
 	'ftplist'		=> '../ftplist',
+	'mirrors'		=> '/usr/src/distrib/notes/mirrors',
+	'mirror_list'		=> '../mirror_list',
 	'openbsd-ftp'		=> '../ftp.html',
 	'openbgpd-ftp'		=> '../openbgpd/ftp.html',
 	'openntpd-ftp'		=> '../openntpd/ftp.html',
@@ -134,6 +138,79 @@ sub write_ftplist($$$) {
 			printf $fh "%s %" . $pad . "s\n", $url, $loc;
 		}
 	}
+	}
+
+	close($fh) or die "close $filename: $!";
+}
+
+# writes out the ftplist in mirmon format
+sub write_mirrors($$) {
+	my ($filename, $mirrorref) = @_;
+
+	open(my $fh, '>', $filename) or die "open $filename: $!";
+	_paste_in($fh, $sources->{"mirrors-head"});
+
+	for my $lv (1, 2, 3) {
+		printf $fh "Main server in Canada:\n" if ($lv == 1);
+		printf $fh "\n2nd level mirrors:\n" if ($lv == 2);
+		for my $type ('UF') {
+			my $oldcountry='';
+			foreach my $mirror (sort _by_country @$mirrorref) {
+				next if (($lv <= 2) &&
+				    (! defined $mirror->{'LF'}));
+				next if ((defined $mirror->{'LF'})
+				    && ($mirror->{'LF'} != $lv));
+				next unless ($mirror->{$type});
+				if($lv > 2 && $mirror->{'GC'} ne $oldcountry) {
+					printf $fh "\n%s:\n", $mirror->{'GC'};
+					$oldcountry=$mirror->{'GC'};
+				}
+				(my $url = $mirror->{$type}) =~ s,/$,,;
+				my $loc;
+				if ($lv == 2) {
+					$loc = _get_location ('mirlist1', $mirror);
+				} else {
+					$loc = _get_location ('mirlist2', $mirror);
+				}
+				$loc =~ s/&auml;/a/g ;
+				$loc =~ s/&ouml;/o/g ;
+				$loc =~ s/&uuml;/u/g ;
+				$loc =~ s/&eacute;/e/g ;
+				$loc =~ s/&ntilde;/n/g ;
+				printf $fh "    %s%s\n", $url, $loc ? ' ('.$loc.')' : '';
+			}
+		}
+	}
+
+	_paste_in($fh, $sources->{"mirrors-end"});
+	close($fh) or die "close $filename: $!";
+}
+
+
+# writes out the ftplist in mirmon format
+sub write_mirror_list($$) {
+	my ($filename, $mirrorref) = @_;
+
+	open(my $fh, '>', $filename) or die "open $filename: $!";
+
+	for my $lv (1, 2, 3) {
+		for my $type ('UF', 'UH') {
+			foreach my $mirror (sort _by_country @$mirrorref) {
+				next if (($lv <= 2) &&
+				    (! defined $mirror->{'LF'}));
+				next if ((defined $mirror->{'LF'})
+				    && ($mirror->{'LF'} != $lv));
+				next unless ($mirror->{$type});
+				(my $url = $mirror->{$type}) =~ s,/$,,;
+				my $loc = '';
+				if (defined $mirror->{'GZ'}) {
+					$loc .= "$mirror->{'GZ'}";
+				} else {
+					warn('no GZ for '.$mirror->{$type});
+				}
+				printf $fh "%s %s\n", $loc, $mirror->{$type};
+			}
+		}
 	}
 
 	close($fh) or die "close $filename: $!";
@@ -359,11 +436,19 @@ sub _get_location($$) {
 			$location .= ')' if ($m->{'GT'});
 		}
 	}
-	elsif ($type eq 'AH' || $type eq 'VH') {
-		$location .= "$m->{'GI'}, " if ($m->{'GI'});
-		$location .= "$m->{'GT'}, " if ($m->{'GT'});
-		$location .= "$m->{'GS'}, " if ($m->{'GS'});
-		$location .= "$m->{'GC'}" if ($m->{'GC'});
+	else {
+		if ($type eq 'AH' || $type eq 'VH') {
+			$location .= "$m->{'GI'}, " if ($m->{'GI'});
+		}
+		if ($type eq 'AH' || $type eq 'VH' || $type =~ /^mirlist/) {
+			$location .= "$m->{'GT'}, " if ($m->{'GT'});
+			$location .= "$m->{'GS'}, " if ($m->{'GS'});
+		}
+		if ($type eq 'AH' || $type eq 'VH' || $type eq 'mirlist1') {
+			$location .= "$m->{'GC'}" if ($m->{'GC'});
+		}
+		$location =~ s/, , /, /g;
+		$location =~ s/, $//g;
 	}
 
 	return $location;
@@ -382,6 +467,8 @@ if (@ARGV == 2) {
 
 	if ($cmd eq 'ftplist') {
 		write_ftplist($targets->{'ftplist'}, $ver, \@mirrors);
+		write_mirrors($targets->{'mirrors'}, \@mirrors);
+		write_mirror_list($targets->{'mirror_list'}, \@mirrors);
 	} elsif ($cmd eq 'openbsd-ftp' || $cmd eq 'openbgpd-ftp' ||
 		 $cmd eq 'openntpd-ftp' || $cmd eq 'openntpd-portable' ||
 		 $cmd eq 'openssh-ftp' || $cmd eq 'openssh-portable') {
