@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.16 2010/01/22 22:00:35 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.17 2010/01/22 22:17:27 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -263,11 +263,13 @@ sub _paste_mirrorlist($$$$$$) {
 					$mirror->{'ME'}, $mirror->{'MN'}
 				if ($mirror->{'ME'} && $mirror->{'MN'});
 			if ($mirror->{'CE'}) {
+				my $f = '';
+				$f .= '_1h' if ($mirror->{'CE'} == 1);
 				if ($mirror->{'CF'}) {
-					printf $fh $format{'updated_from'},
+					printf $fh $format{'updated_from'.$f},
 					$mirror->{'CE'}, $mirror->{'CF'};
 				} else {
-					printf $fh $format{'updated'},
+					printf $fh $format{'updated'.$f},
 					$mirror->{'CE'};
 				}
 				print $fh "<br>\n";
