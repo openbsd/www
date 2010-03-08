@@ -1,0 +1,196 @@
+
+OpenSSH 5.4 has just been released. It will be available from the
+mirrors listed at http://www.openssh.com/ shortly.
+
+OpenSSH is a 100% complete SSH protocol version 1.3, 1.5 and 2.0
+implementation and includes sftp client and server support.
+
+Once again, we would like to thank the OpenSSH community for their
+continued support of the project, especially those who contributed code
+or patches, reported bugs, tested snapshots or donated to the project.
+More information on donations may be found at:
+http://www.openssh.com/donations.html
+
+This is a major feature and bugfix release.
+
+Changes since OpenSSH 5.3
+=========================
+
+Features:
+
+ * After a transition period of about 10 years, this release disables
+   SSH protocol 1 by default. Clients and servers that need to use the
+   legacy protocol must explicitly enable it in ssh_config / sshd_config
+   or on the command-line.
+
+ * Remove the libsectok/OpenSC-based smartcard code and add support for
+   PKCS#11 tokens. This support is automatically enabled on all
+   platforms that support dlopen(3) and was inspired by patches written
+   by Alon Bar-Lev. Details in the ssh(1) and ssh-add(1) manpages.
+
+ * Add support for certificate authentication of users and hosts using a
+   new, minimal OpenSSH certificate format (not X.509). Certificates
+   contain a public key, identity information and some validity
+   constraints and are signed with a standard SSH public key using
+   ssh-keygen(1). CA keys may be marked as trusted in authorized_keys
+   or via a TrustedUserCAKeys option in sshd_config(5) (for user
+   authentication), or in known_hosts (for host authentication).
+
+   Documentation for certificate support may be found in ssh-keygen(1),
+   sshd(8) and ssh(1) and a description of the protocol extensions in
+   PROTOCOL.certkeys.
+
+ * Added a 'netcat mode' to ssh(1): "ssh -W host:port ..." This connects
+   stdio on the client to a single port forward on the server. This
+   allows, for example, using ssh as a ProxyCommand to route connections
+   via intermediate servers. bz#1618
+
+ * Add the ability to revoke keys in sshd(8) and ssh(1). User keys may
+   be revoked using a new sshd_config(5) option "RevokedKeys". Host keys
+   are revoked through known_hosts (details in the sshd(8) man page).
+   Revoked keys cannot be used for user or host authentication and will
+   trigger a warning if used.
+
+ * Rewrite the ssh(1) multiplexing support to support non-blocking
+   operation of the mux master, improve the resilience of the master to
+   malformed messages sent to it by the slave and add support for
+   requesting port- forwardings via the multiplex protocol. The new
+   stdio-to-local forward mode ("ssh -W host:port ...") is also
+   supported. The revised multiplexing protocol is documented in the
+   file PROTOCOL.mux in the source distribution.
+
+ * Add a 'read-only' mode to sftp-server(8) that disables open in write
+   mode and all other fs-modifying protocol methods. bz#430
+
+ * Allow setting an explicit umask on the sftp-server(8) commandline to
+   override whatever default the user has. bz#1229
+
+ * Many improvements to the sftp(1) client, many of which were
+   implemented by Carlos Silva through the Google Summer of Code
+   program:
+   - Support the "-h" (human-readable units) flag for ls
+   - Implement tab-completion of commands, local and remote filenames
+   - Support most of scp(1)'s commandline arguments in sftp(1), as a
+     first step towards making sftp(1) a drop-in replacement for scp(1).
+     Note that the rarely-used "-P sftp_server_path" option has been
+     moved to "-D sftp_server_path" to make way for "-P port" to match
+     scp(1).
+   - Add recursive transfer support for get/put and on the commandline
+
+ * New RSA keys will be generated with a public exponent of RSA_F4 ==
+   (2**16)+1 == 65537 instead of the previous value 35.
+
+ * Passphrase-protected SSH protocol 2 private keys are now protected
+   with AES-128 instead of 3DES. This applied to newly-generated keys
+   as well as keys that are reencrypted (e.g. by changing their
+   passphrase).
+
+Bugfixes:
+
+ * When using ChrootDirectory, make sure we test for the existence of
+   the user's shell inside the chroot and not outside (bz#1679)
+ * Cache user and group name lookups in sftp-server using
+   user_from_[ug]id(3) to improve performance on hosts where these
+   operations are slow (e.g. NIS or LDAP). bz#1495
+ * Fix problem that prevented passphrase reading from being interrupted
+   in some circumstances; bz#1590
+ * Ignore and log any Protocol 1 keys where the claimed size is not
+   equal to the actual size.
+ * Make HostBased authentication work with a ProxyCommand. bz#1569
+ * Avoid run-time failures when specifying hostkeys via a relative
+   path by prepending the current working directory in these cases.
+   bz#1290
+ * Do not prompt for a passphrase if we fail to open a keyfile, and log
+   the reason why the open failed to debug. bz#1693
+ * Document that the PubkeyAuthentication directive is allowed in a
+   sshd_config(5) Match block. bz#1577
+ * When converting keys, truncate key comments at 72 chars as per
+   RFC4716. bz#1630
+ * Do not allow logins if /etc/nologin exists but is not readable by the
+   user logging in.
+ * Output a debug log if sshd(8) can't open an existing authorized_keys.
+   bz#1694
+ * Quell tc[gs]etattr warnings when forcing a tty (ssh -tt), since we
+   usually don't actually have a tty to read/set; bz#1686
+ * Prevent sftp from crashing when given a "-" without a command.
+   Also, allow whitespace to follow a "-". bz#1691
+ * After sshd receives a SIGHUP, ignore subsequent HUPs while sshd
+   re-execs itself. Prevents two HUPs in quick succession from resulting
+   in sshd dying. bz#1692
+ * Clarify in sshd_config(5) that StrictModes does not apply to
+   ChrootDirectory. Permissions and ownership are always checked when
+   chrooting. bz#1532
+ * Set close-on-exec on various descriptors so they don't get leaked to
+   child processes. bz#1643
+ * Fix very rare race condition in x11/agent channel allocation: don't
+   read after the end of the select read/write fdset and make sure a
+   reused FD is not touched before the pre-handlers are called.
+ * Fix incorrect exit status when multiplexing and channel ID 0 is
+   recycled. bz#1570
+ * Fail with an error when an attempt is made to connect to a server
+   with ForceCommand=internal-sftp with a shell session (i.e. not a
+   subsystem session). Avoids stuck client when attempting to ssh to
+   such a service. bz#1606:
+ * Warn but do not fail if stat()ing the subsystem binary fails. This
+   helps with chrootdirectory+forcecommand=sftp-server and restricted
+   shells. bz #1599
+ * Change "Connecting to host..." message to "Connected to host."
+   and delay it until after the sftp protocol connection has been
+   established. Avoids confusing sequence of messages when the
+   underlying ssh connection experiences problems. bz#1588
+ * Use the HostKeyAlias rather than the hostname specified on the
+   commandline when prompting for passwords. bz#1039
+ * Correct off-by-one in percent_expand(): we would fatal() when trying
+   to expand EXPAND_MAX_KEYS, allowing only EXPAND_MAX_KEYS-1 to
+   actually work. Note that nothing in OpenSSH actually uses close to
+   this limit at present. bz#1607
+ * Fix passing of empty options from scp(1) and sftp(1) to the
+   underlying ssh(1). Also add support for the stop option "--".
+ * Fix an incorrect magic number and typo in PROTOCOL; bz#1688
+ * Don't escape backslashes when displaying the SSH2 banner. bz#1533
+ * Don't unnecessarily dup() the in and out fds for sftp-server. bz#1566
+ * Force use of the correct hash function for random-art signature
+   display as it was inheriting the wrong one when bubblebabble
+   signatures were activated. bz#1611
+ * Do not fall back to adding keys without constraints (ssh-add -c /
+   -t ...) when the agent refuses the constrained add request. bz#1612
+ * Fix a race condition in ssh-agent that could result in a wedged or
+   spinning agent. bz#1633
+ * Flush stdio before exec() to ensure that everying (motd
+   in particular) has made it out before the streams go away. bz#1596
+ * Set FD_CLOEXEC on in/out sockets in sshd(8). bz#1706
+
+Portable OpenSSH Bugfixes:
+
+ * Use system's kerberos principal name on AIX if it's available.
+   bz#1583
+ * Disable OOM-killing of the listening sshd on Linux. bz#1470
+ * Use pkg-config for opensc config if it's available. bz#1160
+ * Unbreak Redhat spec to allow building without askpass. bz#1677
+ * If PidFile is set in sshd_config, use it in SMF init file. bz#1628
+ * Print error and usage() when ssh-rand-helper is passed command-
+   line arguments as none are supported. bz#1568
+ * Add missing setsockopt() to set IPV6_V6ONLY for local forwarding
+   with GatwayPorts=yes. bz#1648
+ * Make GNOME 2 askpass dialog desktop-modal. bz#1645
+ * If SELinux is enabled set the security context to "sftpd_t" before
+   running the internal sftp server. bz#1637
+ * Correctly check libselinux for necessary SELinux functions; bz#1713
+ * Unbreak builds on Redhat using the supplied openssh.spec; bz#1731
+
+Checksums:
+==========
+
+ - SHA1 (openssh-5.4.tar.gz) = XXX
+ - SHA1 (openssh-5.4p1.tar.gz) = XXX
+
+Reporting Bugs:
+===============
+
+- Please read http://www.openssh.com/report.html
+  Security bugs should be reported directly to openssh@openssh.com
+
+OpenSSH is brought to you by Markus Friedl, Niels Provos, Theo de Raadt,
+Kevin Steves, Damien Miller, Darren Tucker, Jason McIntyre, Tim Rice and
+Ben Lindstrom.
+
