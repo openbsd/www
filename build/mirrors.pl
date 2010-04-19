@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.18 2010/04/19 20:04:25 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.19 2010/04/19 20:11:44 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -15,9 +15,7 @@ $format{'location'}	= 'Location: %s.';
 $format{'maintainer'}	= 'Maintained by <a href="mailto:%s">%s</a>.';
 $format{'proto'}	= 'Protocols: %s.';
 $format{'updated'}	= 'Updated every %s hours.';
-$format{'updated_1h'}	= 'Updated hourly.';
 $format{'updated_from'}	= 'Updated every %s hours from %s.';
-$format{'updated_from_1h'} = 'Updated hourly from %s.';
 $format{'fingerprints'}	= 'SSH fingerprints:';
 $format{'cvsroot'}	= '<strong>CVSROOT=%s@%s:%s</strong>';
 
@@ -263,16 +261,16 @@ sub _paste_mirrorlist($$$$$$) {
 					$mirror->{'ME'}, $mirror->{'MN'}
 				if ($mirror->{'ME'} && $mirror->{'MN'});
 			if ($mirror->{'CE'}) {
-				my $f = '';
-				$f .= '_1h' if ($mirror->{'CE'} == 1);
+				my $f;
 				if ($mirror->{'CF'}) {
-					printf $fh $format{'updated_from'.$f},
+					$f = sprintf $format{'updated_from'},
 					$mirror->{'CE'}, $mirror->{'CF'};
 				} else {
-					printf $fh $format{'updated'.$f},
+					$f = sprintf $format{'updated'},
 					$mirror->{'CE'};
 				}
-				print $fh "<br>\n";
+				$f =~ s/every 1 hours/hourly/;
+				print $fh $f."<br>\n";
 			}
 			print $fh "<p>\n";
 		}
