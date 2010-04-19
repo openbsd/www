@@ -70,6 +70,10 @@ Table of Contents:
 <li><a href="#before">Before upgrading</a>
   <ul>
   <li><a href="#hmac-sha2">IPsec HMAC-SHA2 incompatibility</a>
+  <li><a href="#newPFnat">pf(4) NAT syntax change</a>
+  <li><a href="#newPFrouteto">pf(4) route-to/reply-to syntax change</a>
+  <li><a href="#bridge">brconfig(8)/bridgename.if(5) replaced by ifconfig(8)/hostname.if(5)</a>
+  <li><a href="#softraid">Advance warning: Softraid metadata change (for 4.8)</a>
   <li><a href="#newInstReboot">New install/reboot sequence</a>
   <li><a href="#newsysmerge">New sysmerge tool</a>
   <li><a href="#rc.conf">rc.conf</a>
@@ -98,8 +102,8 @@ For a more complete list of changes, see
 <a href="../plus47.html">plus47.html</a> and the CVS change logs.
 
 <ul>
-<a name="hmac-sha2"></a>
-<li><b>IPsec HMAC-SHA2 incompatibility:</b><br>
+<li><a name="hmac-sha2"></a>
+<b>IPsec HMAC-SHA2 incompatibility:</b><br>
 Two bugs in IPsec/HMAC-SHA2 were fixed, resulting in an incompatibility
 with the HMAC-SHA-256/384/512 hash algorithms with previous versions of
 OpenBSD and other IPsec implementations sharing the bugs. 
@@ -109,8 +113,87 @@ Upgrade both sides together, or switch to another authentication
 algorithm during the transition.
 
 <p>
-<a name="newInstReboot"></a>
-<li><b>New file install/reboot sequence (non-install kernel
+<li><a name="newPFnat"></a>
+<b>pf(4) NAT syntax change</b><br>
+As described in more detail in
+<a href="http://marc.info/?l=openbsd-misc&amp;m=125181847818600&amp;w=2">this
+mailing list post</a>, PF's separate nat/rdr/binat (translation) rules
+have been replaced with actions on regular match/filter rules.
+Simple rulesets may be converted like this:<p>
+
+<pre>   nat on $ext_if from 10/8 -&gt; ($ext_if)
+   rdr on $ext_if to ($ext_if) -&gt; 1.2.3.4</pre>
+becomes<br>
+<pre>   match out on $ext_if from 10/8 nat-to ($ext_if)
+   match in on $ext_if to ($ext_if) rdr-to 1.2.3.4</pre><p>
+
+and...
+
+<pre>   binat on $ext_if from $web_serv_int to any -&gt; $web_serv_ext</pre>
+becomes<br>
+<pre>   match on $ext_if from $web_serv_int to any binat-to $web_serv_ext</pre>
+
+nat-anchor and/or rdr-anchor lines, e.g. for
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=relayd">relayd(8)</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy">ftp-proxy(8)</a>
+and <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tftp-proxy">tftp-proxy(8)</a>,
+are no longer used and should be removed from
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf">pf.conf(5)</a>,
+leaving only the anchor lines. Translation rules relating to these and
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=spamd">spamd(8)</a>  
+will need to be adjusted as appropriate.<p>
+
+N.B.: Previously, translation rules had "stop at first match" behaviour,
+with binat being evaluated first, followed by nat/rdr depending on direction
+of the packet. Now the filter rules are subject to the usual "last match"
+behaviour, so care must be taken with rule ordering when converting.
+
+<p>
+<li><a name="newPFrouteto"></a>
+<b>pf(4) route-to/reply-to syntax change</b>
+The route-to, reply-to, dup-to and fastroute options in pf.conf
+move to filteropts;
+<pre>
+   pass in on $ext_if route-to (em1 192.168.1.1) from 10.1.1.1
+   pass in on $ext_if reply-to (em1 192.168.1.1) to 10.1.1.1
+</pre>
+becomes<br>
+<pre>
+   pass in on $ext_if from 10.1.1.1 route-to (em1 192.168.1.1)
+   pass in on $ext_if to 10.1.1.1 reply-to (em1 192.168.1.1)
+</pre>
+
+<p>
+<li><a name="bridge"></a>
+<b>brconfig(8)/bridgename.if(5) replaced by ifconfig(8)/hostname.if(5)</b><br>
+The functionality of
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=brconfig">brconfig(8)</a>
+has been integrated into
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig">ifconfig(8)</a>.
+Since the <tt>priority</tt> argument to set the spanning tree priority     
+on a bridge conflicts with the existing ifconfig(8) interface priority,
+it has been renamed to <tt>spanpriority</tt>.
+<p>
+Existing /etc/bridgename.bridge* files should be replaced with
+/etc/hostname.bridge* files; if you use <tt>priority</tt>, replace
+it with <tt>spanpriority</tt>.
+
+<p>
+<li><a name="softraid"></a>
+<b>(Advance warning) Softraid metadata change:</b><br>
+The metadata format used by
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=softraid&amp;sektion=4">softraid(4)</a>
+has changed AFTER 4.7.
+This WILL NOT impact your 4.6->4.7 upgrade, but will require a rebuild of
+softraid(4) volumes for the 4.7 to 4.8 upgrade.
+If you are doing a new softraid install, using a snapshot now is highly
+recommended.
+If you are upgrading an existing softraid install, start planning how
+to rebuild those volumes when you later do the 4.7 to 4.8 upgrade.
+
+<p>
+<li><a name="newInstReboot"></a>
+<b>New file install/reboot sequence (non-install kernel
 process)</b><br>
 Previous upgrade processes used a process of install kernel,
 reboot, install userland.
@@ -123,10 +206,9 @@ command is inoperable.
 Understand and follow the directions below before doing your upgrade
 remotely
 
-
 <p>
-<a name="newsysmerge"></a>
-<li><b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysmerge&amp;sektion=8">sysmerge(8)</a>
+<li><a name="newsysmerge"></a>
+<b><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysmerge&amp;sektion=8">sysmerge(8)</a>
 utility:</b><br>
 OpenBSD now includes the
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysmerge&amp;sektion=8">sysmerge(8)</a>
@@ -209,7 +291,6 @@ to upgrade is to boot from install media or
 which are very similar to the <a href="faq4.html">install process</a>.
 
 <p>
-
 Afterwards, complete the upgrade by following the <a href="#final">final
 steps</a> as detailed below.
 
@@ -317,7 +398,6 @@ upgrade it with the new file set now.
 Again, the files in <tt>/etc</tt> are handled separately below, so
 <tt>etc47.tgz</tt> and <tt>xetc47.tgz</tt> are NOT unpacked here.
 
-
 <p>
 <li><b>After reboot completes, upgrade <tt>/dev</tt>.</b>
 The new 
@@ -388,6 +468,14 @@ Here are copy/paste lines for copying these files, assuming you unpacked
 </pre></blockquote>
 
 <p>
+(YP servers only) <b>yp Makefile upgrade:</b>
+Manually merge the changes of <tt>/var/yp/Makefile.yp</tt> (installed as
+part of base47.tgz) into the Makefiles for any domains,
+<tt>/var/yp/*/Makefile</tt>.
+Practically speaking, this means copying <tt>/var/yp/Makefile.yp</tt> to each
+domain Makefile and re-applying domain options within that file.
+
+
 <a name="patchfile"></a>
 <h3>3a.  Merging locally changed files via a patch file</h3>
 
@@ -457,6 +545,7 @@ create any new directories:
 <b>newaliases</b>
 <b>mtree -qdef /etc/mtree/4.4BSD.dist -p / -u</b>
 </pre></blockquote>
+
 
 <a name="sysmerge"></a>
 <h3>3b. Merging locally changed files via sysmerge(8)</h3>
@@ -564,7 +653,6 @@ You must do some homework on the applications YOU use.
 <li><b>postgresql:</b> You must dump your databases before upgrading and
 reload them after.
 
-
 <li><b>kqemu:</b> Must be kept in sync with the kernel. pkg_delete prior
 to the upgrade, then pkg_add the new package once the upgrade has been
 completed.
@@ -601,6 +689,14 @@ some ambiguity. Read the
 manual page and the <a href="faq15.html#PkgMgmt">package management</a>
 chapter of the FAQ for more information.
 
+<p>
+Two packages now come with perl 5.10.1 in base.
+If you have installed these packages, delete them now:
+<blockquote><pre>
+<b>pkg_delete p5-parent p5-Parse-CPAN-Meta</b>
+</pre></blockquote>
+
+
 
 <p>
 <font color="#0000e0">
@@ -626,7 +722,7 @@ chapter of the FAQ for more information.
 <a href="index.html"><img height="24" width="24" src="../images/back.gif" border="0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: upgrade47.html,v 1.5 2010/04/19 00:21:58 nick Exp $</small>
+<small>$OpenBSD: upgrade47.html,v 1.6 2010/04/19 01:45:40 nick Exp $</small>
 
 </body>
 </html>
