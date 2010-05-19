@@ -63,17 +63,16 @@ please, use a max of 72 chars per line -->
 <h2>Introduction</h2>
 An address pool is a supply of two or more addresses whose use is shared
 among a group of users. An address pool can be specified as the
-redirection address in <a href="rdr.html"><tt>rdr</tt></a> rules, as the
-translation address in <a href="nat.html"><tt>nat</tt></a> rules, and as
-the target address in <tt>route-to</tt>, <tt>reply-to</tt>, and
-<tt>dup-to</tt> <a href="filter.html">filter</a> options.
+target address in <tt>nat-to</tt>, <tt>rdr-to</tt>,<tt>route-to</tt>,
+<tt>reply-to</tt>, and <tt>dup-to</tt> <a href="filter.html">filter</a>
+options.
 
 <p>
 There are four methods for using an address pool:
 <ul>
 <li><tt>bitmask</tt> - grafts the network portion of the pool
 address over top of the address that is being modified (source address
-for <tt>nat</tt> rules, destination address for <tt>rdr</tt> rules).
+for <tt>nat-to</tt> rules, destination address for <tt>rdr-to</tt> rules).
 Example: if the address pool is 192.0.2.1/24 and the address being 
 modified is 10.0.0.50, then the resulting address will be 192.0.2.50. If
 the address pool is 192.0.2.1/25 and the address being modified is
@@ -85,7 +84,7 @@ given source address is always mapped to the same pool address.
 The key that is fed to the hashing algorithm can optionally be specified
 after the <tt>source-hash</tt> keyword in hex format or as a string. By
 default,
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+4.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+4.7"
 >pfctl(8)</a> will generate a random key every time the ruleset is
 loaded. 
 <li><tt>round-robin</tt> - loops through the address pool in
@@ -110,7 +109,7 @@ address is always mapped to the same redirection address.
 <a name="nat"></a>
 <h2>NAT Address Pool</h2>
 An address pool can be used as the translation address in 
-<a href="nat.html"><tt>nat</tt></a> rules. Connections will have their
+<a href="nat.html"><tt>nat-to</tt></a> rules. Connections will have their
 source address translated to an address from the pool based on the
 method chosen. This can be useful in situations where PF is performing
 NAT for a very large network. Since the number of NATed connections per
@@ -123,7 +122,7 @@ outgoing packets. For each outgoing connection PF will rotate through
 the addresses in a round-robin manner.
 <blockquote>
 <tt>
-nat on $ext_if inet -&gt; { 192.0.2.5, 192.0.2.10 }
+match out on $ext_if inet nat-to { 192.0.2.5, 192.0.2.10 }
 </tt>
 </blockquote>
 
@@ -139,12 +138,12 @@ address. To do this, the address pool must be a
 network block.
 <blockquote>
 <tt>
-nat on $ext_if inet -&gt; 192.0.2.4/31 source-hash
+match out on $ext_if inet nat-to 192.0.2.4/31 source-hash
 </tt>
 </blockquote>
 
 <p>
-This <tt>nat</tt> rule uses the address pool 192.0.2.4/31 (192.0.2.4 -
+This rule uses the address pool 192.0.2.4/31 (192.0.2.4 -
 192.0.2.5) as the translation address for outgoing packets. Each
 internal address will always be translated to the same translation
 address because of the <tt>source-hash</tt> keyword.
@@ -158,7 +157,7 @@ server farm:
 <tt>
 web_servers = "{ 10.0.0.10, 10.0.0.11, 10.0.0.13 }"<br>
 <br>
-rdr on $ext_if proto tcp to port 80 -&gt; $web_servers \<br>
+match in on $ext_if proto tcp to port 80 rdr-to $web_servers \<br>
 &nbsp;&nbsp;&nbsp;&nbsp;round-robin sticky-address
 </tt>
 </blockquote>
@@ -201,9 +200,9 @@ ext_if2 = "fxp1"<br>
 ext_gw1 = "68.146.224.1"<br>
 ext_gw2 = "142.59.76.1"<br>
 <br>
-pass in on $int_if route-to \<br>
-&nbsp;&nbsp;&nbsp;{ ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) } round-robin \<br>
-&nbsp;&nbsp;&nbsp;from $lan_net to any
+pass in on $int_if from $lan_net \
+&nbsp;&nbsp;&nbsp;route-to { ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) } \
+&nbsp;&nbsp;&nbsp;round-robin
 </tt>
 </blockquote>
 
@@ -211,11 +210,10 @@ pass in on $int_if route-to \<br>
 The <tt>route-to</tt> option is used on traffic coming <i>in</i> on the
 <i>internal</i> interface to specify the outgoing network interfaces
 that traffic will be balanced across along with their respective
-gateways. Note that the <tt>route-to</tt> option must be present on
-<i>each</i> filter rule that traffic is to be balanced for.  Return
-packets will be routed back to the same external interface that they
-exited (this is done by the ISPs) and will be routed back to the
-internal network normally.
+gateways.
+Note that the <tt>route-to</tt> option must be present on
+<i>each</i> filter rule that traffic is to be balanced for
+(it cannot be used with <tt>match</tt> rules).
 
 <p>
 To ensure that packets with a source address belonging to
@@ -224,10 +222,10 @@ for <tt>$ext_if2</tt> and <tt>$ext_gw2</tt>), the following two lines
 should be included in the ruleset:
 <blockquote>
 <tt>
-pass out on $ext_if1 route-to ($ext_if2 $ext_gw2) from $ext_if2 \<br>
-&nbsp;&nbsp;&nbsp;to any<br>
-pass out on $ext_if2 route-to ($ext_if1 $ext_gw1) from $ext_if1 \<br>
-&nbsp;&nbsp;&nbsp;to any 
+pass out on $ext_if1 from $ext_if2 \<br>
+&nbsp;&nbsp;&nbsp;route-to ($ext_if2 $ext_gw2)<br>
+pass out on $ext_if2 from $ext_if1 \<br>
+&nbsp;&nbsp;&nbsp;route-to ($ext_if1 $ext_gw1) 
 </tt>
 </blockquote>
 
@@ -235,8 +233,8 @@ pass out on $ext_if2 route-to ($ext_if1 $ext_gw1) from $ext_if1 \<br>
 Finally, NAT can also be used on each outgoing interface:
 <blockquote>
 <tt>
-nat on $ext_if1 from $lan_net -&gt; ($ext_if1)<br>
-nat on $ext_if2 from $lan_net -&gt; ($ext_if2)
+match out on $ext_if1 from $lan_net nat-to ($ext_if1)<br>
+match out on $ext_if2 from $lan_net nat-to ($ext_if2)
 </tt>
 </blockquote>
 
@@ -257,8 +255,8 @@ ext_gw1 = "68.146.224.1"
 ext_gw2 = "142.59.76.1"
 
 #  nat outgoing connections on each internet interface
-nat on $ext_if1 from $lan_net -&gt; ($ext_if1)
-nat on $ext_if2 from $lan_net -&gt; ($ext_if2)
+match out on $ext_if1 from $lan_net nat-to ($ext_if1)
+match out on $ext_if2 from $lan_net nat-to ($ext_if2)
 
 #  default deny
 block in
@@ -269,13 +267,13 @@ pass out on $int_if to $lan_net
 #  pass in quick any packets destined for the gateway itself
 pass in quick on $int_if from $lan_net to $int_if
 #  load balance outgoing traffic from internal network. 
-pass in on $int_if route-to \
-    { ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) } round-robin \
-    from $lan_net
+pass in on $int_if from $lan_net \
+    route-to { ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) } \
+    round-robin
 #  keep https traffic on a single connection; some web applications,
 #  especially "secure" ones, don't allow it to change mid-session
-pass in on $int_if route-to ($ext_if1 $ext_gw1) \
-    proto tcp from $lan_net to port https
+pass in on $int_if proto tcp from $lan_net to port https \
+    route-to ($ext_if1 $ext_gw1)
 
 #  general "pass out" rules for external interfaces
 pass out on $ext_if1
@@ -283,8 +281,8 @@ pass out on $ext_if2
 
 #  route packets from any IPs on $ext_if1 to $ext_gw1 and the same for
 #  $ext_if2 and $ext_gw2
-pass out on $ext_if1 route-to ($ext_if2 $ext_gw2) from $ext_if2
-pass out on $ext_if2 route-to ($ext_if1 $ext_gw1) from $ext_if1
+pass out on $ext_if1 from $ext_if2 route-to ($ext_if2 $ext_gw2)
+pass out on $ext_if2 from $ext_if1 route-to ($ext_if1 $ext_gw1) 
 </pre>
 </td></tr>
 </table>
@@ -299,7 +297,7 @@ pass out on $ext_if2 route-to ($ext_if1 $ext_gw1) from $ext_if1
 <a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a> 
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: pools.html,v 1.25 2009/12/15 00:56:01 sthen Exp $</small>
+<small>$OpenBSD: pools.html,v 1.26 2010/05/19 13:25:16 sthen Exp $</small>
 
 </body>
 </html> 

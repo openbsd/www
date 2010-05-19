@@ -86,7 +86,7 @@ For instance:
 <blockquote>
 <tt>
 name = "INTERNAL_NET"<br>
-pass in on $int_if all tag $name keep state
+pass in on $int_if all tag $name
 </tt>
 </blockquote>
 
@@ -124,10 +124,9 @@ In OpenBSD 4.0 and earlier, tag names are limited to 15 characters.
 Take the following ruleset as an example.
 <blockquote>
 <tt>
-(1) pass in on $int_if tag INT_NET keep state<br>
-(2) pass in quick on $int_if proto tcp to port 80 tag \<br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;INT_NET_HTTP keep state<br>
-(3) pass in quick on $int_if from 192.168.1.5 keep state
+(1) pass in on $int_if tag INT_NET<br>
+(2) pass in quick on $int_if proto tcp to port 80 tag INT_NET_HTTP<br>
+(3) pass in quick on $int_if from 192.168.1.5
 </tt>
 </blockquote>
 
@@ -149,17 +148,12 @@ and is not removed unless a subsequently matching rule specifies a tag
 (this is the "stickiness" of a tag).
 </ul>
 
-<p>
-In addition to applying tags with filter rules, the <tt>nat</tt>,
-<tt>rdr</tt>, and <tt>binat</tt> translation rules can also apply tags
-to packets by using the <tt>tag</tt> keyword.
-
 <a name="check"></a>
 <h2>Checking for Applied Tags</h2>
 To check for previously applied tags, use the <tt>tagged</tt> keyword:
 <blockquote>
 <tt>
-pass out on $ext_if tagged INT_NET keep state
+pass out on $ext_if tagged INT_NET
 </tt>
 </blockquote>
 
@@ -169,13 +163,9 @@ Outgoing packets on <tt>$ext_if</tt> must be tagged with the
 can also be done by using the <tt>!</tt> operator:
 <blockquote>
 <tt>
-pass out on $ext_if ! tagged WIFI_NET keep state
+pass out on $ext_if ! tagged WIFI_NET
 </tt>
 </blockquote>
-
-<p>
-Translation rules (<tt>nat</tt>/<tt>rdr</tt>/<tt>binat</tt>) can also
-use the <tt>tagged</tt> keyword to match packets.
 
 <a name="policy"></a>
 <h2>Policy Filtering</h2>
@@ -204,18 +194,16 @@ The item in parenthesis indicates the tag that will be used for that
 policy item.
 
 <p>
-Filter and translation rules now need to be written to classify packets
-into the policy.
+Rules now need to be written to classify packets into the policy.
 <blockquote>
 <tt>
-rdr on $ext_if proto tcp from &lt;spamd&gt; to port smtp \<br>
-&nbsp;&nbsp;&nbsp;tag SPAMD -&gt; 127.0.0.1 port 8025<br>
-nat on $ext_if tag LAN_INET_NAT tagged LAN_INET -&gt; ($ext_if)<br>
-<br>
 block all<br>
-pass in on $int_if from $int_net tag LAN_INET keep state<br>
-pass in on $int_if from $int_net to $dmz_net tag LAN_DMZ keep state<br>
-pass in on $ext_if proto tcp to $www_server port 80 tag INET_DMZ keep state
+pass out on $ext_if tag LAN_INET_NAT tagged LAN_INET nat-to ($ext_if)<br>
+pass in on $int_if from $int_net tag LAN_INET<br>
+pass in on $int_if from $int_net to $dmz_net tag LAN_DMZ<br>
+pass in on $ext_if proto tcp to $www_server port 80 tag INET_DMZ
+pass in on $ext_if proto tcp from &lt;spamd&gt; to port smtp \<br>
+&nbsp;&nbsp;&nbsp;tag SPAMD rdr-to 127.0.0.1 port 8025<br>
 </tt>
 </blockquote>
 
@@ -223,10 +211,10 @@ pass in on $ext_if proto tcp to $www_server port 80 tag INET_DMZ keep state
 Now the rules that define the policy are set.
 <blockquote>
 <tt>
-pass in &nbsp;quick on $ext_if tagged SPAMD keep state<br>
-pass out quick on $ext_if tagged LAN_INET_NAT keep state<br>
-pass out quick on $dmz_if tagged LAN_DMZ keep state<br>
-pass out quick on $dmz_if tagged INET_DMZ keep state
+pass in &nbsp;quick on $ext_if tagged SPAMD<br>
+pass out quick on $ext_if tagged LAN_INET_NAT<br>
+pass out quick on $dmz_if tagged LAN_DMZ<br>
+pass out quick on $dmz_if tagged INET_DMZ
 </tt>
 </blockquote>
 
@@ -241,7 +229,7 @@ so:
 mail_server = "192.168.0.10"<br>
 ...<br>
 pass in on $ext_if proto tcp to $mail_server port { smtp, pop3 } \<br>
-&nbsp;&nbsp;&nbsp;tag INET_DMZ keep state
+&nbsp;&nbsp;&nbsp;tag INET_DMZ
 </tt>
 </blockquote>
 
@@ -266,22 +254,19 @@ table &lt;spamd&gt; persist file "/etc/spammers"
 
 # classification -- classify packets based on the defined firewall
 # policy.
-rdr on $ext_if proto tcp from &lt;spamd&gt; to port smtp \
-    tag SPAMD -&gt; 127.0.0.1 port 8025
-nat on $ext_if tag LAN_INET_NAT tagged LAN_INET -&gt; ($ext_if)
-
 block all
-pass in on $int_if from $int_net tag LAN_INET keep state
-pass in on $int_if from $int_net to $dmz_net tag LAN_DMZ keep state
-pass in on $ext_if proto tcp to $www_server port 80 tag INET_DMZ keep state 
-pass in on $ext_if proto tcp to $mail_server port { smtp, pop3 } \
-    tag INET_DMZ keep state 
+pass out on $ext_if tag LAN_INET_NAT tagged LAN_INET nat-to ($ext_if)<br>
+pass in on $int_if from $int_net tag LAN_INET<br>
+pass in on $int_if from $int_net to $dmz_net tag LAN_DMZ<br>
+pass in on $ext_if proto tcp to $www_server port 80 tag INET_DMZ
+pass in on $ext_if proto tcp from &lt;spamd&gt; to port smtp \<br>
+&nbsp;&nbsp;&nbsp;tag SPAMD rdr-to 127.0.0.1 port 8025<br>
 
 # policy enforcement -- pass/block based on the defined firewall policy.
-pass in  quick on $ext_if tagged SPAMD keep state
-pass out quick on $ext_if tagged LAN_INET_NAT keep state
-pass out quick on $dmz_if tagged LAN_DMZ keep state
-pass out quick on $dmz_if tagged INET_DMZ keep state 
+pass in  quick on $ext_if tagged SPAMD
+pass out quick on $ext_if tagged LAN_INET_NAT
+pass out quick on $dmz_if tagged LAN_DMZ
+pass out quick on $dmz_if tagged INET_DMZ
 </pre>
 </td></tr>
 </table>
@@ -295,11 +280,11 @@ tagging/filtering is also acting as a
 By creating bridge(4) filter rules that use the <tt>tag</tt> keyword, PF
 can be made to filter based on the source or destination MAC address.
 Bridge(4) rules are created using the
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=brconfig&amp;sektion=8"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8"
 >brconfig(8)</a> command. Example:
 <blockquote>
 <tt>
-# brconfig bridge0 rule pass in on fxp0 src 0:de:ad:be:ef:0 \<br>
+# ifconfig bridge0 rule pass in on fxp0 src 0:de:ad:be:ef:0 \<br>
 &nbsp;&nbsp;&nbsp;tag USER1
 </tt>
 </blockquote>
@@ -322,7 +307,7 @@ pass in on fxp0 tagged USER1
 <a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a> 
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: tagging.html,v 1.18 2007/05/07 01:27:19 joel Exp $</small>
+<small>$OpenBSD: tagging.html,v 1.19 2010/05/19 13:25:16 sthen Exp $</small>
 
 </body>
 </html> 

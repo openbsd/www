@@ -62,6 +62,7 @@ please, use a max of 72 chars per line -->
 <hr>
 
 <a name="intro"></a>
+<a name="filter"></a>
 <h2>Introduction</h2>
 When you have NAT running in your office you have the entire Internet
 available to all your machines.  What if you have a machine behind the
@@ -73,7 +74,7 @@ a machine behind the NAT gateway.
 Let's look at an example:
 <blockquote>
 <tt>
-rdr on tl0 proto tcp from any to any port 80 -&gt; 192.168.1.20
+pass in on tl0 proto tcp from any to any port 80 rdr-to 192.168.1.20
 </tt>
 </blockquote>
 
@@ -89,8 +90,8 @@ to have access to the web server at port 80, you can restrict them
 here:
 <blockquote>
 <tt>
-rdr on tl0 proto tcp from 27.146.49.0/24 to any port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.20
+pass in on tl0 proto tcp from 27.146.49.0/24 to any port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.20
 </tt>
 </blockquote>
 
@@ -103,12 +104,12 @@ port and IP address on the gateway as long as you know the IP address
 they will be connecting from:
 <blockquote>
 <tt>
-rdr on tl0 proto tcp from 27.146.49.14 to any port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.20<br>
-rdr on tl0 proto tcp from 16.114.4.89 to any port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.22<br>
-rdr on tl0 proto tcp from 24.2.74.178 to any port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.23
+pass in on tl0 proto tcp from 27.146.49.14 to any port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.20<br>
+pass in on tl0 proto tcp from 16.114.4.89 to any port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.22<br>
+pass in on tl0 proto tcp from 24.2.74.178 to any port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.23
 </tt>
 </blockquote>
 
@@ -116,12 +117,12 @@ rdr on tl0 proto tcp from 24.2.74.178 to any port 80 -&gt; \<br>
 A range of ports can also be redirected within the same rule:
 <blockquote>
 <tt>
-rdr on tl0 proto tcp from any to any port 5000:5500 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.20<br>
-rdr on tl0 proto tcp from any to any port 5000:5500 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.20 port 6000<br>
-rdr on tl0 proto tcp from any to any port 5000:5500 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.20 port 7000:*<br>
+pass in on tl0 proto tcp from any to any port 5000:5500 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.20<br>
+pass in on tl0 proto tcp from any to any port 5000:5500 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.20 port 6000<br>
+pass in on tl0 proto tcp from any to any port 5000:5500 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.20 port 7000:*<br>
 </tt>
 </blockquote>
 
@@ -131,71 +132,6 @@ These examples show ports 5000 to 5500 inclusive being redirected to
 In rule #1, port 5000 is redirected to 5000, 5001 to 5001, etc.
 In rule #2, the entire port range is redirected to port 6000.
 And in rule #3, port 5000 is redirected to 7000, 5001 to 7001, etc.
-
-<a name="filter"></a>
-<h2>Redirection and Packet Filtering</h2>
-<font color="#ff0000">NOTE:</font> Translated packets must still pass
-through the filter engine and will be blocked or passed based on the
-filter rules that have been defined.
-
-<p>
-The <i>only</i> exception to this rule is when the <tt>pass</tt> keyword
-is used within the <tt>rdr</tt> rule. In this case, the redirected
-packets will pass statefully right through the filtering engine: the
-filter rules won't be evaluated against these packets.
-This is a handy shortcut to avoid adding <tt>pass</tt> filter rules for
-each redirection rule.
-Think of it as a normal <tt>rdr</tt> rule (with no <tt>pass</tt> keyword)
-associated to a <tt>pass</tt> filter rule with the <tt>keep state</tt>
-keyword.
-However, if you want to enable more specific filtering options such as
-<tt>synproxy</tt>, <tt>modulate state</tt>, etc. you'll still have to
-use a dedicate <tt>pass</tt> rule as these options don't fit into
-redirection rules.
-
-<p>
-Also be aware that since translation occurs <i>before</i> filtering, the
-filter engine will see the <i>translated</i> packet as it looks after
-it's had its destination IP address and/or destination port changed to
-match the redirection address/port specified in the <tt>rdr</tt> rule.
-Consider this scenario:
-
-<ul>
-<li>192.0.2.1 - host on the Internet
-<li>24.65.1.13 - external address of OpenBSD router
-<li>192.168.1.5 - internal IP address of web server
-</ul>
-
-<p>
-Redirection rule:
-<blockquote>
-<tt>
-rdr on tl0 proto tcp from 192.0.2.1 to 24.65.1.13 port 80 \<br>
-&nbsp;&nbsp;&nbsp;-&gt; 192.168.1.5 port 8000
-</tt>
-</blockquote>
-
-<p>
-Packet before the <tt>rdr</tt> rule is processed:
-<ul>
-<li>Source address: 192.0.2.1
-<li>Source port: 4028 (arbitrarily chosen by the operating system)
-<li>Destination address: 24.65.1.13
-<li>Destination port: 80
-</ul>
-
-<p>
-Packet after the <tt>rdr</tt> rule is processed:
-<ul>
-<li>Source address: 192.0.2.1
-<li>Source port: 4028
-<li>Destination address: 192.168.1.5
-<li>Destination port: 8000
-</ul>
-
-<p>
-The filter engine will see the IP packet as it looks after translation
-has taken place.
 
 <a name="security"></a>
 <h2>Security Implications</h2>
@@ -225,8 +161,8 @@ network or LAN, as in:
 <tt>
 server = 192.168.1.40<br>
 <br>
-rdr on $ext_if proto tcp from any to $ext_if port 80 -&gt; $server \<br>
-&nbsp;&nbsp;&nbsp;port 80
+pass in on $ext_if proto tcp from any to $ext_if port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to $server port 80
 </tt>
 </blockquote>
 
@@ -323,10 +259,14 @@ The following redirection rule forwards port 80 on the internal
 interface to the proxy:
 <blockquote>
 <tt>
-rdr on $int_if proto tcp from $int_net to $ext_if port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;127.0.0.1 port 5000
+pass in on $int_if proto tcp from $int_net to $ext_if port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 127.0.0.1 port 5000
 </tt>
 </blockquote>
+
+High-performance proxies may also be created with
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=relayd&amp;sektion=8"
+>relayd(8)</a>.
 
 <a name="rdrnat"></a>
 <h3>RDR and NAT Combination</h3>
@@ -336,12 +276,10 @@ With an additional NAT rule on the internal interface, the lacking
 source address translation described above can be achieved.
 <blockquote>
 <tt>
-rdr on $int_if proto tcp from $int_net to $ext_if port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;$server
-<br>
-no nat on $int_if proto tcp from $int_if to $int_net<br>
-nat on $int_if proto tcp from $int_net to $server port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;$int_if
+pass in on $int_if proto tcp from $int_net to $ext_if port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to $server<br>
+pass out on $int_if proto tcp to $server port 80 \<br>
+&nbsp;&nbsp;&nbsp;received-on $int_if nat-to $int_if
 </tt>
 </blockquote>
 
@@ -355,7 +293,7 @@ construct is rather complex as it creates two separate states for each
 reflected connection. Care must be taken to prevent the NAT rule from
 applying to other traffic, for instance connections originating from
 external hosts (through other redirections) or the firewall itself. Note
-that the <tt>rdr</tt> rule above will cause the TCP/IP stack to see
+that the <tt>rdr-to</tt> rule above will cause the TCP/IP stack to see
 packets arriving on the internal interface with a destination address
 inside the internal network.
 
@@ -372,7 +310,7 @@ In general, the previously mentioned solutions should be used instead.
 <a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a> 
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: rdr.html,v 1.28 2009/06/22 10:40:04 sthen Exp $</small>
+<small>$OpenBSD: rdr.html,v 1.29 2010/05/19 13:25:16 sthen Exp $</small>
 
 </body>
 </html> 

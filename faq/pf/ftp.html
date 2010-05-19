@@ -114,28 +114,22 @@ FTP traffic through the NAT gateway/firewall, by actively adding needed
 rules to PF system and removing them when done, by means of the PF
 <a href="anchors.html">anchors</a> system. 
 The FTP proxy used by PF is
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+4.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+4.7"
 >ftp-proxy(8)</a>.
 
 <p>
-To activate it, put something like this in the NAT section
+To activate it, put something like this early in the rules section
 of <tt>pf.conf</tt>:
 
 <blockquote>
 <tt>
-nat-anchor "ftp-proxy/*"<br>
-rdr-anchor "ftp-proxy/*"<br>
-rdr on $int_if proto tcp from any to any port 21 -&gt; 127.0.0.1 \<br>
-&nbsp;&nbsp;&nbsp;port 8021
+pass in quick on $int_if proto tcp to port 21 rdr-to 127.0.0.1 port 8021
 </tt>
 </blockquote>
 
 <p>
-The first two lines are a couple <a href="anchors.html">anchors</a>
-which are used by ftp-proxy to add rules on-the-fly as needed to
-manage your FTP traffic.
-The last line redirects FTP from your clients to the ftp-proxy(8)
-program, which is listening on your machine to port 8021.
+This redirects FTP from your clients to the ftp-proxy(8) program,
+which is listening on your machine to port 8021.
 
 <p>
 You also need an anchor in the rules section:
@@ -161,12 +155,12 @@ The ftp-proxy program can be started as root to activate it without a
 reboot.
 
 <p>
-ftp-proxy listens on port 8021, the same port the above <tt>rdr</tt>
+ftp-proxy listens on port 8021, the same port the above <tt>rdr-to</tt>
 statement is sending FTP traffic to.
 
 <p>
-To enable active mode connections, you need the '-r' switch on
-ftp-proxy(8) (for this you had to run the old proxy with "-u root").
+To support active mode connections from certain (fussy) clients,
+you may need the '-r' switch on ftp-proxy(8).
 
 
 <a name="server"></a>
@@ -182,9 +176,8 @@ port 21 (the FTP control port):
 
 <blockquote>
 <tt>
-pass in on $ext_if proto tcp from any to any port 21 keep state<br>
-pass in on $ext_if proto tcp from any to any port &gt; 49151 \<br>
-&nbsp;&nbsp;&nbsp;keep state
+pass in on $ext_if proto tcp to port 21<br>
+pass in on $ext_if proto tcp to port &gt; 49151
 </tt>
 </blockquote>
 
@@ -231,15 +224,11 @@ Now for the pf.conf rules:
 ext_ip = "192.168.0.1"<br>
 ftp_ip = "10.10.10.1"<br>
 <br>
-nat-anchor "ftp-proxy/*"<br>
-nat on $ext_if inet from $int_if -&gt; ($ext_if)<br>
-rdr-anchor "ftp-proxy/*"<br>
+match out on $ext_if inet from $int_if nat-to ($ext_if)<br>
 <br>
-pass in on $ext_if inet proto tcp to $ext_ip port 21 \<br>
-&nbsp;&nbsp;&nbsp;&nbsp;flags S/SA keep state<br>
-pass out on $int_if inet proto tcp to $ftp_ip port 21 \<br>
-&nbsp;&nbsp;&nbsp;&nbsp;user proxy flags S/SA keep state<br>
-anchor "ftp-proxy/*"
+anchor "ftp-proxy/*"<br>
+pass in on $ext_if inet proto tcp to $ext_ip port 21<br>
+pass out on $int_if inet proto tcp to $ftp_ip port 21 user proxy
 </tt>
 </blockquote>
 
@@ -273,7 +262,7 @@ Reviewed</a>
 Trivial File Transfer Protocol (TFTP) suffers from some of the same
 limitations as FTP does when it comes to passing through a firewall.
 Luckily, PF has a helper proxy for TFTP called
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+4.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+4.7"
 >tftp-proxy(8)</a>.
 
 <p>
@@ -282,10 +271,10 @@ the <a href="#client">FTP Client Behind the Firewall</a> section above.
 
 <blockquote>
 <tt>
-nat on $ext_if from $int_if -&gt; ($ext_if)<br>
-rdr-anchor "tftp-proxy/*"<br>
-rdr on $int_if proto udp from $int_if to port tftp -&gt; \<br>
-&nbsp;&nbsp;&nbsp;&nbsp;127.0.0.1 port 6969<br>
+match out on $ext_if from $int_if nat-to ($ext_if)<br>
+anchor "tftp-proxy/*"<br>
+pass in quick on $int_if proto udp from $int_if to port tftp \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;rdr-to 127.0.0.1 port 6969<br>
 <br>
 anchor "tftp-proxy/*"
 </tt>
@@ -322,7 +311,7 @@ Gateways</a>]
 <a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a> 
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: ftp.html,v 1.29 2009/10/16 19:12:42 nick Exp $</small>
+<small>$OpenBSD: ftp.html,v 1.30 2010/05/19 13:25:16 sthen Exp $</small>
 
 </body>
 </html> 

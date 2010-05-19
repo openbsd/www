@@ -142,7 +142,7 @@ communicating over.
 <a name="carpconfig"></a>
 <h2>Configuring CARP</h2>
 Each redundancy group is represented by a
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=carp&amp;sektion=4&amp;manpath=OpenBSD+4.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=carp&amp;sektion=4&amp;manpath=OpenBSD+4.7"
 >carp(4)</a> virtual network interface. As such, CARP is configured
 using
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8"
@@ -155,10 +155,11 @@ ifconfig <i>carpN</i> create<br>
 ifconfig <i>carpN</i> vhid <i>vhid</i> [pass <i>password</i>]
 [carpdev <i>carpdev</i>] \<br>
 &nbsp;&nbsp;&nbsp;[advbase <i>advbase</i>] [advskew <i>advskew</i>]
-[state <i>state</i>] <i>ipaddress</i> \<br>
-&nbsp;&nbsp;&nbsp;netmask <i>mask</i>
+[state <i>state</i>] [group|-group <i>group</i>] \<br>
+&nbsp;&nbsp;&nbsp;<i>ipaddress</i> netmask <i>mask</i>
 </tt>
 </blockquote>
+<!-- XXX someone who understands carpnodes should add a piece -->
 
 <dl>
 <dt><tt><i>carpN</i></tt>
@@ -203,6 +204,14 @@ Acceptable values are from 0 to 254.
 <dd>Force a carp(4) interface into a certain state. Valid states are
 <tt>init</tt>, <tt>backup</tt>, and <tt>master</tt>.
 
+<dt><tt><i>group</i>, <i>-group</i></tt>
+<dd>Add or remove a carp(4) interface to a certain interface group.
+By default all carp(4) interfaces are added to the <tt>carp</tt> group.
+Each group has a <tt>carpdemote</tt> counter affecting all carp(4)
+interfaces belonging to that group.
+As described <a href="#demote">below</a>, it can be useful to group
+certain interfaces together for failover purposes.
+
 <dt><tt><i>ipaddress</i></tt>
 <dd>This is the shared IP address assigned to the redundancy group.
 This address does not have to be in the same subnet as the IP address on
@@ -223,17 +232,20 @@ Further CARP behavior can be controlled via
 <dd>Accept incoming CARP packets or not. Default is 1 (yes).
 
 <dt><tt>net.inet.carp.preempt</tt>
-<dd>Allow hosts within a redundancy group that have a better <tt>advbase</tt>
-and <tt>advskew</tt> to preempt the master.
-In addition, this option also enables failing over all interfaces in the
-event that one interface goes down.
-If one physical CARP-enabled interface goes down, CARP will change
-<tt>advskew</tt> to 240 on all other CARP-enabled interfaces, in
-essence, failing itself over.
-This option is 0 (disabled) by default.
+<dd>Allow hosts within a redundancy group that have a better
+<tt>advbase</tt> and <tt>advskew</tt> to preempt the master.
+In addition, this option also enables failing over a group of
+interfaces together in the event that one interface goes down.
+If one physical CARP-enabled interface goes down, CARP will increase
+the demotion counter, <tt>carpdemote</tt>, by 1 on interface groups that
+the carp(4) interface is a member of, in effect causing all group
+members to fail-over together.
+<tt>net.inet.carp.preempt</tt> is 0 (disabled) by default.
 
 <dt><tt>net.inet.carp.log</tt>
-<dd>Log bad CARP packets. Default is 0 (disabled).
+<dd>Log state changes, bad packets and other errors.
+May be between 0 and 7, corresponding with syslog(3) priorities.
+The default is 2 (state changes only).
 </dl>
 
 
@@ -283,9 +295,9 @@ advskew 100<br>
 <a name="pfsyncintro"></a>
 <h2>Introduction to pfsync</h2>
 The
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfsync&amp;sektion=4&amp;manpath=OpenBSD+4.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfsync&amp;sektion=4&amp;manpath=OpenBSD+4.7"
 >pfsync(4)</a> network interface exposes certain changes made to the
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+4.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+4.7"
 >pf(4)</a> state table.
 By monitoring this device using
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tcpdump&amp;sektion=8"
@@ -345,7 +357,7 @@ Since pfsync(4) is a virtual network interface, it is configured using
 <blockquote>
 <tt>
 ifconfig <i>pfsyncN</i> syncdev <i>syncdev</i> [syncpeer
-<i>syncpeer</i>]
+<i>syncpeer</i>] [defer|-defer]
 </tt>
 </blockquote>
 
@@ -363,6 +375,15 @@ exchange pfsync updates with.
 By default pfsync updates are multicast on the local network.
 This option overrides that behavior and instead unicasts the update to
 the specified <tt><i>syncpeer</i></tt>.
+
+<dt><tt><i>defer</i></tt>
+<dd>If the <tt>defer</tt> flag is used, the initial packet of a new
+connection passing through the firewall will not be transmitted
+until either another pfsync(4) system has acknowledged the state
+table addition, or a timeout has expired.
+This adds small delays but allows traffic to flow when more than
+one firewall might actively handle packets ("active/active"),
+e.g. with certain ospfd(8), bgpd(8) or carp(4) configurations.
 </dl>
 
 
@@ -550,7 +571,8 @@ An alternative is to increase the <tt>advskew</tt> to a value that's
 higher than the <tt>advskew</tt> on the backup host(s).
 This will cause a failover but still allow the master to participate in
 the CARP group.
-
+ 
+<a name="demote"></a>
 <p>
 Another method of failover is to tweak the CARP demotion counter.
 The demotion counter is a measure of how "ready" a host is to become
@@ -692,10 +714,10 @@ Please see these other sources for more information:
 
 <ul>
 <li>
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=carp&amp;sektion=4&amp;manpath=OpenBSD+4.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=carp&amp;sektion=4&amp;manpath=OpenBSD+4.7"
 >carp(4)</a>
 <li>
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfsync&amp;sektion=4&amp;manpath=OpenBSD+4.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfsync&amp;sektion=4&amp;manpath=OpenBSD+4.7"
 >pfsync(4)</a>
 <li>
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8"
@@ -704,7 +726,7 @@ Please see these other sources for more information:
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hostname.if&amp;sektion=5"
 >hostname.if(5)</a>
 <li>
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+4.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+4.7"
 >pf.conf(5)</a>
 <li>
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifstated&amp;sektion=8"
@@ -726,7 +748,7 @@ Gateways</a>]
 <a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a> 
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: carp.html,v 1.25 2010/02/01 14:48:11 jsg Exp $</small>
+<small>$OpenBSD: carp.html,v 1.26 2010/05/19 13:25:16 sthen Exp $</small>
 
 </body>
 </html> 
