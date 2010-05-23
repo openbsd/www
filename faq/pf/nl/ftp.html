@@ -117,28 +117,22 @@ actieve manier de nodige regels toe te voegen aan het PF systeem en ze
 weer te verwijderen als het klaar is, door middel van het PF
 <a href="anchors.html">ankers</a> systeem.
 De FTP proxy die door PF gebruikt wordt is
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+4.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+4.7"
 >ftp-proxy(8)</a>.
 
 <p>
-Om het te activeren, zet u iets als dit in de NAT sectie
+Om het te activeren, zet u iets als dit vooraan in de regels-sectie
 van <tt>pf.conf</tt>:
 
 <blockquote>
 <tt>
-nat-anchor "ftp-proxy/*"<br>
-rdr-anchor "ftp-proxy/*"<br>
-rdr on $int_if proto tcp from any to any port 21 -&gt; 127.0.0.1 \<br>
-&nbsp;&nbsp;&nbsp;port 8021
+pass in quick on $int_if proto tcp to port 21 rdr-to 127.0.0.1 port 8021
 </tt>
 </blockquote>
 
 <p>
-De eerste twee lijnen zijn een paar <a href="anchors.html">ankers</a>
-die gebruikt worden door ftp-proxy om "on-the-fly" regels toe te voegen
-naarmate dat nodig is om uw FTP verkeer te beheren.
-De laatste lijn leidt FTP van uw clients om naar het ftp-proxy(8)
-programma, dat op uw machine luistert op poort 8021.
+Dit leidt FTP van uw clients om naar het ftp-proxy(8) programma,
+dat op uw machine luistert op poort 8021.
 
 <p>
 U hebt ook een anker nodig in de regels-sectie:
@@ -165,12 +159,12 @@ Het ftp-proxy programma kan als root gestart worden om het te activeren
 zonder te herstarten.
 
 <p>
-ftp-proxy luistert op poort 8021, dezelfde poort als die waar het
-bovenstaande <tt>rdr</tt> commando FTP verkeer naartoe stuurt.
+ftp-proxy luistert op poort 8021, dezelfde poort als die waar de
+bovenstaande <tt>rdr-to</tt> optie FTP verkeer naartoe stuurt.
 
 <p>
-Om actieve modus verbindingen toe te laten, hebt u de '-r' optie voor
-ftp-proxy(8) nodig (hiervoor moest u de oude proxy met "-u root" uitvoeren).
+Om actieve modus te ondersteunen voor bepaalde (wazige) clients, hebt u
+mogelijk de '-r' optie voor ftp-proxy(8) nodig.
 
 
 <a name="server"></a>
@@ -186,9 +180,8 @@ met poort 21 (de FTP controlepoort):
 
 <blockquote>
 <tt>
-pass in on $ext_if proto tcp from any to any port 21 keep state<br>
-pass in on $ext_if proto tcp from any to any port &gt; 49151 \<br>
-&nbsp;&nbsp;&nbsp;keep state
+pass in on $ext_if proto tcp to port 21<br>
+pass in on $ext_if proto tcp to port &gt; 49151
 </tt>
 </blockquote>
 
@@ -235,15 +228,11 @@ Nu de pf.conf regels:
 ext_ip = "192.168.0.1"<br>
 ftp_ip = "10.10.10.1"<br>
 <br>
-nat-anchor "ftp-proxy/*"<br>
-nat on $ext_if inet from $int_if -&gt; ($ext_if)<br>
-rdr-anchor "ftp-proxy/*"<br>
+match out on $ext_if inet from $int_if nat-to ($ext_if)<br>
 <br>
-pass in on $ext_if inet proto tcp to $ext_ip port 21 \<br>
-&nbsp;&nbsp;&nbsp;&nbsp;flags S/SA keep state<br>
-pass out on $int_if inet proto tcp to $ftp_ip port 21 \<br>
-&nbsp;&nbsp;&nbsp;&nbsp;user proxy flags S/SA keep state<br>
-anchor "ftp-proxy/*"
+anchor "ftp-proxy/*"<br>
+pass in on $ext_if inet proto tcp to $ext_ip port 21<br>
+pass out on $int_if inet proto tcp to $ftp_ip port 21 user proxy
 </tt>
 </blockquote>
 
@@ -277,7 +266,7 @@ Reviewed</a>
 Trivial File Transfer Protocol (TFTP) leidt aan enkele van dezelfde
 beperkingen als FTP wanneer het gaat om door een firewall heen te geraken.
 Gelukkig heeft PF een helper-proxy voor TFTP,
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+4.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+4.7"
 >tftp-proxy(8)</a> genoemd.
 
 <p>
@@ -286,10 +275,10 @@ in de <a href="#client">FTP Client achter de Firewall</a> sectie hierboven.
 
 <blockquote>
 <tt>
-nat on $ext_if from $int_if -&gt; ($ext_if)<br>
-rdr-anchor "tftp-proxy/*"<br>
-rdr on $int_if proto udp from $int_if to port tftp -&gt; \<br>
-&nbsp;&nbsp;&nbsp;&nbsp;127.0.0.1 port 6969<br>
+match out on $ext_if from $int_if nat-to ($ext_if)<br>
+anchor "tftp-proxy/*"<br>
+pass in quick on $int_if proto udp from $int_if to port tftp \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;rdr-to 127.0.0.1 port 6969<br>
 <br>
 anchor "tftp-proxy/*"
 </tt>
@@ -328,10 +317,10 @@ Gateways</a>]
 <br>
 <small>
 <!--
-Originally [OpenBSD: ftp.html,v 1.29 ]<br>
-$Translation: ftp.html,v 1.15 2009/10/18 22:53:10 maurice Exp $<br>
+Originally [OpenBSD: ftp.html,v 1.30 ]<br>
+$Translation: ftp.html,v 1.16 2010/05/23 14:39:15 maurice Exp $<br>
 -->
-$OpenBSD: ftp.html,v 1.14 2009/10/19 09:39:58 ajacoutot Exp $
+$OpenBSD: ftp.html,v 1.15 2010/05/23 16:20:42 ajacoutot Exp $
 </small>
 
 </body>
