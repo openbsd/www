@@ -152,46 +152,45 @@ goals.
 <h3>Macros</h3>
 The following macros are defined to make maintenance and reading of
 the ruleset easier:
-<blockquote>
-<tt>
-ext_if="fxp0"<br>
-int_if="xl0"<br>
-<br>
-tcp_services="{ 22, 113 }"<br>
-icmp_types="echoreq"<br>
-<br>
+<blockquote><pre>
+int_if="xl0"
+
+tcp_services="{ 22, 113 }"
+icmp_types="echoreq"
+
 comp3="192.168.0.3"
-</tt>
-</blockquote>
+</pre></blockquote>
 
 <p>
-The first two lines define the network interfaces that filtering will
-happen on.
+The first line defines the internal network interface that filtering
+will happen on.
 By defining them here, if we have to move this system to another 
 machine with different hardware, we can change only those two lines, and 
 the rest of the rule set will be still usable.
-The third and fourth lines list the TCP port numbers of the services
+(For this example, the external interface will be handled by using the
+<tt>egress</tt> interface group.
+This is automatically set on any interface holding a default route,
+in this case, fxp0).
+The second and third lines list the TCP port numbers of the services
 that will be opened up to the Internet (SSH and ident/auth) and the ICMP
 packet types that will be accepted at the firewall machine. 
 Finally, the last line defines the IP address of COMP3.
 
 <p>
 <b>Note</b>: If the Internet connection required
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pppoe&amp;sektion=8"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pppoe&amp;sektion=4"
 >PPPoE</a>, then filtering and NAT would have to take place on the
-<tt>tun0</tt> interface and <i>not</i> on <tt>fxp0</tt>.
+<tt>pppoe0</tt> interface and <i>not</i> on <tt>fxp0</tt>.
 
 <a name="options"></a>
 <h3>Options</h3>
 The following two options will set the default response for
 <tt>block</tt> filter rules and turn statistics logging "on" for the
 external interface:
-<blockquote>
-<tt>
-set block-policy return<br>
-set loginterface $ext_if
-</tt>
-</blockquote>
+<blockquote><pre>
+set block-policy return
+set loginterface fxp0
+</pre></blockquote>
 
 <p>
 Every Unix system has a "loopback" interface.
@@ -203,102 +202,71 @@ On OpenBSD, the loopback interface is
 It is considered best practice to disable all filtering on loopback
 interfaces.
 Using <a href="options.html#skip">set skip</a> will accomplish this.
-<blockquote>
-<tt>
+<blockquote><pre>
 set skip on lo
-</tt>
-</blockquote>
-Note that we are skipping the entire interface group <tt>lo</tt>, this
+</pre></blockquote>
+<!-- XXX this should be interface groups, but PF (at least up to
+4.7) just does a substring match on the interface name -->
+Note that we are skipping for all <tt>lo</tt> interfaces, this
 way, should we later add additional loopback interfaces, we won't have
 to worry about altering this portion of our existing rules file.
 
 <a name="scrub"></a>
-<h3>Scrub</h3>
-There is no reason not to use the recommended scrubbing of all incoming
-traffic, so this is a simple one-liner:
-<blockquote>
-<tt>
-match in all scrub (no-df)
-</tt>
-</blockquote>
-
 <a name="nat"></a>
-<h3>Network Address Translation</h3>
-To perform NAT for the entire internal network the following
-<tt>nat</tt> rule is used:
-<blockquote>
-<tt>
-nat on $ext_if from !($ext_if) to any -&gt; ($ext_if)
-</tt>
-</blockquote>
+<a name="rdr"></a>
+<a name="filter"></a>
+<h3>Firewall Rules</h3>
+
+The example will start with some <tt>match</tt> rules.
+By itself, a <tt>match</tt> rule doesn't determine whether or
+not a packet is allowed to pass.
+Instead, packets matching this rule will have the parameters
+remembered; they will then be used in any <tt>pass</tt> rules
+which handle these packets.
 
 <p>
-The "<tt>!($ext_if)</tt>" could easily be replaced by a
-"<tt>$int_if</tt>" in this case, but if you added multiple internal
-interfaces, you would have to add additional NAT rules, whereas with
-this structure, NAT will be handled on all protected interfaces.
+This is powerful: parameters such as <a href="nat.html">NAT</a>
+or <a href="queueing.html">queueing</a> can be applied to certain
+classes of packet, and then access permissions can be defined
+separately.
+
+<p>
+To perform NAT for the entire internal network the following
+<tt>match</tt> rule is used:
+<blockquote><pre>
+match out on egress inet from !(egress:network) to any nat-to (egress:0)
+</pre></blockquote>
+
+<p>
+In this case, the "<tt>!(egress:network)</tt>" could easily be
+replaced by a "<tt>$int_if:network</tt>", but if you added multiple
+internal interfaces, you would have to add additional NAT rules,
+whereas with this structure, NAT will be handled on all protected
+interfaces.
 
 <p>
 Since the IP address on the external interface is assigned dynamically,
 parenthesis are placed around the translation interface so that PF
 will notice when the address changes.
+The :0 suffix is used so that, if the external interface has multiple
+addresses, only the first address is used for translation.
 
 <p>
-As we will want to have the FTP proxy working, we'll put the NAT 
-<a href="anchors.html">anchor</a> in, too:
-
-<blockquote>
-<tt>
-nat-anchor "ftp-proxy/*"
-</tt>
-</blockquote>
-
-
-
-<a name="rdr"></a>
-<h3>Redirection</h3>
-The first redirection rules needed are for 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+4.7"
->ftp-proxy(8)</a> so that FTP clients on the local network can connect
-to FTP servers on the Internet.
-<blockquote>
-<tt>
-rdr-anchor "ftp-proxy/*"<br>
-rdr on $int_if proto tcp from any to any port 21 -&gt; 127.0.0.1 port 8021
-</tt>
-</blockquote>
+Lastly, the protocol family <tt>inet</tt> (IPv4) is specified.
+This avoids translating any <tt>inet6</tt> (IPv6) packets which may
+be received.
 
 <p>
-Note that this rule will only catch FTP connections to port 21. If users
-regularly connect to FTP servers on other ports, then a list should be
-used to specify the destination port, for example: <tt>from any to any
-port { 21, 2121 }</tt>.
-
-<p>
-The last redirection rule catches any attempts by someone on the
-Internet to connect to TCP port 80 on the firewall. 
-Legitimate attempts to access this port will be from users trying to
-access the network's web server.
-These connection attempts need to be redirected to COMP3:
-
-<blockquote>
-<tt>
-rdr on $ext_if proto tcp from any to any port 80 -&gt; $comp3
-</tt>
-</blockquote>
-
-<a name="filter"></a>
-<h3>Filter Rules</h3>
-Now the filter rules. Start with the default deny:
-<blockquote>
-<tt>
-block in<br>
-</tt>
-</blockquote>
+Now the rules to control access permissions.
+Start with the default deny:
+<blockquote><pre>
+block in log
+</pre></blockquote>
 
 <p>
 At this point all traffic attempting to come into an interface will
 be blocked, even that from the internal network.
+These packets will also be logged.
 Later rules will open up the firewall as per
 the objectives above as well as open up any necessary virtual
 interfaces.
@@ -306,47 +274,48 @@ interfaces.
 <p>
 Keep in mind, pf can block traffic coming into or leaving out of an
 interface.
-It can simplify your life if you chose to filter traffic in one
+It can simplify your life if you choose to filter traffic in one
 direction, rather than trying to keep it straight when filtering some
 things in, and some things out.
 In our case, we'll opt to filter the inbound traffic, but once the
 traffic is permitted into an interface, we won't try to obstruct it
 leaving, so we will do the following:
 
-<blockquote>
-<tt>
-pass out keep state
-</tt>
-</blockquote>
+<blockquote><pre>
+pass out quick
+</pre></blockquote>
+
+By using <tt>quick</tt>, outbound packets can avoid being checked
+against the following rules, improving performance.
 
 <p>
-We need to have an <a href="anchors.html">anchor</a> for ftp-proxy(8):
-<blockquote>
-<tt>
-anchor "ftp-proxy/*"
-</tt>
-</blockquote>
-
 It is good to use the <a href="filter.html#antispoof">spoofed address
 protection</a>:
-<blockquote>
-<tt>
+<blockquote><pre>
 antispoof quick for { lo $int_if }
-</tt>
-</blockquote>
+</pre></blockquote>
 
+<p>
+We will be using
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+4.7"
+>ftp-proxy(8)</a> so that FTP clients on the local network can
+connect to FTP servers on the Internet.
+This works by dynamically inserting rules when an ftp connection
+is made.
+This is done using an <a href="anchors.html">anchor</a>:
+<blockquote><pre>
+anchor "ftp-proxy/*"
+</pre></blockquote>
 
 <p>
 Now open the ports used by those network services that will be available
 to the Internet.
 First, the traffic that is destined to the firewall itself:
 
-<blockquote>
-<tt>
-pass in on $ext_if inet proto tcp from any to ($ext_if) \<br>
-&nbsp;&nbsp;&nbsp;port $tcp_services flags S/SA keep state
-</tt>
-</blockquote>
+<blockquote><pre>
+pass in on egress inet proto tcp from any to (egress) \
+    port $tcp_services
+</pre></blockquote>
 
 <p>
 Specifying the network ports in the macro <tt>$tcp_services</tt> makes
@@ -356,14 +325,31 @@ by creating a <tt>$udp_services</tt> macro and adding a filter rule,
 similar to the one above, that specifies <tt>proto udp</tt>.
 
 <p>
-In addition to having an <tt>rdr</tt> rule which passes the web server
-traffic to COMP3, we MUST also pass this traffic through the firewall:
-<blockquote>
-<tt>
-pass in on $ext_if inet proto tcp from any to $comp3 port 80 \<br>
-&nbsp;&nbsp;&nbsp;&nbsp;flags S/SA synproxy state
-</tt>
-</blockquote>
+Now we will add the rule needed to redirect FTP connections so
+they are seen by ftp-proxy(8):
+<blockquote><pre>
+pass in on $int_if inet proto tcp to any port ftp \
+    rdr-to 127.0.0.1 port 8021
+</pre></blockquote>
+
+<p>
+This rule will intercept FTP connections to port 21 and redirect them
+to an ftp-proxy(8) instance running on port 8021.
+If users regularly connect to FTP servers on other ports, then a
+list should be used to specify the destination port, for example:
+<tt>to any port { 21, 2121 }</tt>.
+
+<p>
+The next rule catches any attempts by someone on the Internet to
+connect to TCP port 80 on the firewall. 
+Legitimate attempts to access this port will be from users trying to
+access the network's web server.
+These connection attempts need to be redirected to COMP3:
+
+<blockquote><pre>
+pass in on egress inet proto tcp to (egress) port 80 \
+    rdr-to $comp3 synproxy state
+</pre></blockquote>
 
 <p>
 For an added bit of safety, we'll make use of the 
@@ -372,11 +358,9 @@ web server.
 
 <p>
 ICMP traffic needs to be passed:
-<blockquote>
-<tt>
-pass in inet proto icmp all icmp-type $icmp_types keep state
-</tt>
-</blockquote>
+<blockquote><pre>
+pass in inet proto icmp all icmp-type $icmp_types
+</pre></blockquote>
 
 <p>
 Similar to the <tt>$tcp_services</tt> macro, the <tt>$icmp_types</tt>
@@ -390,15 +374,13 @@ We'll assume that the users on the internal network know what
 they are doing and aren't going to be causing trouble.  This is not
 necessarily a valid assumption; a much more restrictive ruleset would
 be appropriate for many environments.
-<blockquote>
-<tt>
-pass in quick on $int_if
-</tt>
-</blockquote>
+<blockquote><pre>
+pass in on $int_if
+</pre></blockquote>
 
 <p>
 TCP, UDP, and ICMP traffic is permitted to exit the firewall towards the
-Internet due to the earlier "<tt>pass out keep state</tt>" line.
+Internet due to the earlier "<tt>pass out</tt>" line.
 State information is kept so that the returning packets will be passed
 back in through the firewall.
 
@@ -408,7 +390,7 @@ back in through the firewall.
 <tr><td nowrap bgcolor="#EEEEEE">
 <pre>
 # macros
-ext_if="fxp0"
+
 int_if="xl0"
 
 tcp_services="{ 22, 113 }"
@@ -417,39 +399,36 @@ icmp_types="echoreq"
 comp3="192.168.0.3"
 
 # options
-set block-policy return
-set loginterface $ext_if
 
+set block-policy return
+set loginterface fxp0
 set skip on lo
 
-# scrub
-match in all scrub (no-df)
+# match rules
 
-# nat/rdr
-nat on $ext_if from !($ext_if) -> ($ext_if:0)
-nat-anchor "ftp-proxy/*"
-rdr-anchor "ftp-proxy/*"
-
-rdr pass on $int_if proto tcp to port ftp -> 127.0.0.1 port 8021
-rdr on $ext_if proto tcp from any to any port 80 -> $comp3
+match out on egress inet from !(egress) to any nat-to (egress:0)
 
 # filter rules
-block in
 
-pass out keep state
+block in log
+pass out quick
 
-anchor "ftp-proxy/*"
 antispoof quick for { lo $int_if }
 
-pass in on $ext_if inet proto tcp from any to ($ext_if) \
-   port $tcp_services flags S/SA keep state
+anchor "ftp-proxy/*"
 
-pass in on $ext_if inet proto tcp from any to $comp3 port 80 \
-    flags S/SA synproxy state
+pass in on egress inet proto tcp from any to (egress) \
+    port $tcp_services
 
-pass in inet proto icmp all icmp-type $icmp_types keep state
+pass in on $int_if inet proto tcp to any port ftp \
+    rdr-to 127.0.0.1 port 8021
 
-pass in quick on $int_if
+pass in on egress inet proto tcp to (egress) port 80 \
+    rdr-to $comp3 synproxy state
+
+pass in inet proto icmp all icmp-type $icmp_types
+
+pass in on $int_if
 </pre>
 </td></tr>
 </table>
@@ -463,7 +442,7 @@ pass in quick on $int_if
 <a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a> 
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: example1.html,v 1.41 2010/05/19 13:25:16 sthen Exp $</small>
+<small>$OpenBSD: example1.html,v 1.42 2010/05/24 12:15:02 sthen Exp $</small>
 
 </body>
 </html> 
