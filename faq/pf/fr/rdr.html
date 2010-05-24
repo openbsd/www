@@ -61,13 +61,14 @@ de Jeux de Règles</a>]
             Réseau Local Séparé</a>
         <li><a href="#tcpproxy">Mandater les Connexions TCP ("TCP
             Proxying")</a>
-        <li><a href="#rdrnat">Combinaison RDR et NAT</a>
+        <li><a href="#rdrnat">Combinaison RDR-TO et NAT-TO</a>
         </ul>
 </ul>
 
 <hr>
 
 <a name="intro"></a>
+<a name="filter"></a>
 <h2>Introduction</h2>
 Quand vous utilisez la NAT, les machines sur votre réseau peuvent
 accéder à la totalité des ressources Internet. Qu'en est-il lorsqu'une
@@ -80,7 +81,7 @@ machine derrière la passerelle NAT.
 Prenons un exemple :
 <blockquote>
 <tt>
-rdr on tl0 proto tcp from any to any port 80 -&gt; 192.168.1.20
+pass in on tl0 proto tcp from any to any port 80 rdr-to 192.168.1.20
 </tt>
 </blockquote>
 
@@ -97,8 +98,8 @@ sous-réseaux autorisés à avoir accès au serveur web sur le port 80, vous
 pouvez le faire de la façon suivante :
 <blockquote>
 <tt>
-rdr on tl0 proto tcp from 27.146.49.0/24 to any port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.20
+pass in on tl0 proto tcp from 27.146.49.0/24 to any port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.20
 </tt>
 </blockquote>
 
@@ -111,12 +112,12 @@ autoriser des utilisateurs sur des sites distants à accèder à leur
 propre machine dans la mesure où vous connaissez leur adresse IP :
 <blockquote>
 <tt>
-rdr on tl0 proto tcp from 27.146.49.14 to any port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.20<br>
-rdr on tl0 proto tcp from 16.114.4.89 to any port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.22<br>
-rdr on tl0 proto tcp from 24.2.74.178 to any port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.23
+pass in on tl0 proto tcp from 27.146.49.14 to any port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.20<br>
+pass in on tl0 proto tcp from 16.114.4.89 to any port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.22<br>
+pass in on tl0 proto tcp from 24.2.74.178 to any port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.23
 </tt>
 </blockquote>
 
@@ -124,12 +125,12 @@ rdr on tl0 proto tcp from 24.2.74.178 to any port 80 -&gt; \<br>
 Une plage de ports peut aussi être redirigée par une même règle :
 <blockquote>
 <tt>
-rdr on tl0 proto tcp from any to any port 5000:5500 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.20<br>
-rdr on tl0 proto tcp from any to any port 5000:5500 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.20 port 6000<br>
-rdr on tl0 proto tcp from any to any port 5000:5500 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.20 port 7000:*<br>
+pass in on tl0 proto tcp from any to any port 5000:5500 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.20<br>
+pass in on tl0 proto tcp from any to any port 5000:5500 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.20 port 6000<br>
+pass in on tl0 proto tcp from any to any port 5000:5500 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.20 port 7000:*<br>
 </tt>
 </blockquote>
 
@@ -143,74 +144,6 @@ Dans la deuxième règle, la plage de ports toute entière est redirigée
 vers le port 6000.
 Enfin, dans la troisième règle, le port 5000 est redirigé vers le port
 7000, 5001 vers 7001 et ainsi de suite.
-
-<a name="filter"></a>
-<h2>Redirection et Filtrage de Paquets</h2>
-<font color="#ff0000">REMARQUE :</font> Les paquets redirigés doivent
-encore être autorisés par le moteur de filtrage. Ils seront bloqués ou
-autorisés selon les règles de filtrage qui ont été définies.
-
-<p>
-La <i>seule</i> exception à cette règle est lorsque le mot-clé
-<tt>pass</tt> est utilisé dans la règle <tt>rdr</tt>. Dans ce cas, les
-paquets redirigés passeront à travers le moteur de filtrage et l'état de
-connexion sera préservé : Les règles de filtrage ne seront pas
-considérées pour ces paquets.
-Ceci est un raccourci utile pour éviter de rajouter des règles de
-filtrage <tt>pass</tt> pour chaque règle de redirection.
-Il faut voir cela comme une règle <tt>rdr</tt> normale (sans mot-clé
-<tt>pass</tt>) associée à une règle de filtrage <tt>pass</tt> avec le
-mot-clé <tt>keep state</tt>. Cependant, si vous voulez mettre en oeuvre
-des options de filtrage spécifiques telles que <tt>synproxy</tt>,
-<tt>modulate state</tt>, etc... vous devrez utiliser une règle de filtrage
-<tt>pass</tt> dédiée étant donné que ces options ne sont pas
-implémentées au niveau des règles de redirection.
-
-<p>
-Notez aussi que la traduction est effectuée <i>avant</i> le filtrage. Le
-moteur de filtrage verra le paquet <i>traduit</i>, c'est à dire après que son
-adresse IP destination et/ou port de destination soient modifiés pour
-correspondre à l'adresse/au port de redirection spécifié(e) dans la
-règle <tt>rdr</tt>. Considérons le cas suivant :
-<ul>
-<li>192.0.2.1 - hôte sur Internet
-<li>24.65.1.13 - adresse IP externe du routeur OpenBSD
-<li>192.168.1.5 - adresse IP interne du serveur web
-</ul>
-
-<p>
-Règle de redirection :
-<blockquote>
-<tt>
-rdr on tl0 proto tcp from 192.0.2.1 to 24.65.1.13 port 80 \<br>
-&nbsp;&nbsp;&nbsp;-&gt; 192.168.1.5 port 8000
-</tt>
-</blockquote>
-
-<p>
-Avant que la règle de redirection <tt>rdr</tt> ne soit utilisée, le paquet est
-traité :
-
-<ul>
-<li>Adresse source : 192.0.2.1
-<li>Port source : 4028 (choisi de manière arbitraire par le système
-    d'exploitation)
-<li>Adresse de destination : 24.65.1.13
-<li>Port de destination : 80
-</ul>
-
-<p>
-Puis la règle de redirection <tt>rdr</tt> est évaluée :
-<ul>
-<li>Adresse source : 192.0.2.1
-<li>Port source : 4028
-<li>Adresse de destination : 192.168.1.5
-<li>Port de destination : 8000
-</ul>
-
-<p>
-Le moteur de filtrage verra le paquet IP tel qu'il apparaît après la
-traduction effectuée par le mécanisme de redirection.
 
 <a name="security"></a>
 <h2>Implications au niveau de la Sécurité</h2>
@@ -242,8 +175,8 @@ privée sur le réseau interne comme le montre l'exemple suivant :
 <tt>
 server = 192.168.1.40<br>
 <br>
-rdr on $ext_if proto tcp from any to $ext_if port 80 -&gt; $server \<br>
-&nbsp;&nbsp;&nbsp;port 80
+pass in on $ext_if proto tcp from any to $ext_if port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to $server port 80
 </tt>
 </blockquote>
 
@@ -343,13 +276,17 @@ La règle de redirection suivante redirige le port 80 sur l'interface
 interne du mandataire :
 <blockquote>
 <tt>
-rdr on $int_if proto tcp from $int_net to $ext_if port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;127.0.0.1 port 5000
+pass in on $int_if proto tcp from $int_net to $ext_if port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 127.0.0.1 port 5000
 </tt>
 </blockquote>
 
+Des mandataires hautes-performances peuvent aussi être crées avec
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=relayd&amp;sektion=8"
+>relayd(8)</a>.
+
 <a name="rdrnat"></a>
-<h3>Combinaison RDR et NAT</h3>
+<h3>Combinaison RDR-TO et NAT-TO</h3>
 
 <p>
 A l'aide d'une règle NAT supplémentaire sur l'interface interne, la
@@ -357,12 +294,10 @@ traduction manquante d'adresse source décrite plus haut peut être
 réalisée.
 <blockquote>
 <tt>
-rdr on $int_if proto tcp from $int_net to $ext_if port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;$server
-<br>
-no nat on $int_if proto tcp from $int_if to $int_net<br>
-nat on $int_if proto tcp from $int_net to $server port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;$int_if
+pass in on $int_if proto tcp from $int_net to $ext_if port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to $server<br>
+pass out on $int_if proto tcp to $server port 80 \<br>
+&nbsp;&nbsp;&nbsp;received-on $int_if nat-to $int_if
 </tt>
 </blockquote>
 
@@ -378,7 +313,7 @@ Elle crée deux états séparés pour chaque connexion redirigée. Il faut
 prendre des précautions pour éviter que la règle de NAT ne s'applique au
 reste du trafic tel que les connexions en provenance de hôtes externes
 (via d'autres redirections) ou en provenance du pare-feu lui-même. La
-règle <tt>rdr</tt> précitée soumettra à la pile TCP/IP des paquets en
+règle <tt>rdr-to</tt> précitée soumettra à la pile TCP/IP des paquets en
 provenance du réseau interne et à destination de ce dernier.
 
 <p>
@@ -399,10 +334,10 @@ de Jeux de Règles</a>]
 <br>
 <small>
 <!--
-Originally [OpenBSD: rdr.html,v 1.28 ]<br>
-$Translation: rdr.html,v 1.25 2009/06/22 12:16:54 benoit Exp $<br>
+Originally [OpenBSD: rdr.html,v 1.30 ]<br>
+$Translation: rdr.html,v 1.26 2010/05/24 15:24:53 benoit Exp $<br>
 -->
-$OpenBSD: rdr.html,v 1.22 2009/06/29 17:19:48 ajacoutot Exp $
+$OpenBSD: rdr.html,v 1.23 2010/05/24 18:32:44 ajacoutot Exp $
 </small>
 
 </body>

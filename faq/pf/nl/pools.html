@@ -63,18 +63,17 @@ please, use a max of 72 chars per line -->
 <h2>Inleiding</h2>
 Een adrespool is een voorraad van twee of meer adressen waarvan het
 gebruik gedeeld wordt onder een groep van gebruikers. Een adrespool kan
-gespecificeerd worden als het omleidingsadres in
-<a href="rdr.html"><tt>rdr</tt></a> regels, als het vertalingsadres in
-<a href="nat.html"><tt>nat</tt></a> regels, en als het doeladres in
-<tt>route-to</tt>, <tt>reply-to</tt> en <tt>dup-to</tt>
-<a href="filter.html">filter</a>opties.
+gespecificeerd worden als het vertalingsadres in
+<tt>nat-to</tt>, <tt>rdr-to</tt>,<tt>route-to</tt>,
+<tt>reply-to</tt> en <tt>dup-to</tt> <a href="filter.html">filter</a>
+opties.
 
 <p>
 Er zijn vier methodes om een adrespool te gebruiken:
 <ul>
 <li><tt>bitmask</tt> - ent het netwerkgedeelte van het pooladres bovenop
-het adres dat gewijzigd wordt (bronadres voor <tt>nat</tt> regels,
-bestemmingsadres voor <tt>rdr</tt> regels).
+het adres dat gewijzigd wordt (bronadres voor <tt>nat-to</tt> regels,
+bestemmingsadres voor <tt>rdr-to</tt> regels).
 Voorbeeld: als de adrespool 192.0.2.1/24 is en het adres dat gewijzigd
 wordt 10.0.0.50, dan zal het resulterende adres 192.0.2.50 zijn. Als de
 adrespool 192.0.2.1/25 is en het adres dat gewijzigd wordt 10.0.0.130,
@@ -86,7 +85,7 @@ gegeven bronadres steeds afgebeeld wordt op hetzelfde pooladres.
 De sleutel waarmee het hash-algoritme gevoed wordt, kan optioneel gespecificeerd
 worden na het <tt>source-hash</tt> sleutelwoord in hex formaat of als een
 string. Standaard zal
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+4.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+4.7"
 >pfctl(8)</a> een random sleutel genereren elke keer de regelset wordt
 geladen.
 <li><tt>round-robin</tt> - loopt door de adrespool in volgorde. Dit is
@@ -110,7 +109,7 @@ steeds afgebeeld wordt op hetzelfde omleidingsadres.
 <a name="nat"></a>
 <h2>NAT Adrespool</h2>
 Een adrespool kan gebruikt worden als het vertalingsadres in
-<a href="nat.html"><tt>nat</tt></a> regels. Het source adres van verbindingen
+<a href="nat.html"><tt>nat-to</tt></a> regels. Het bron adres van verbindingen
 zal vertaald worden naar een adres van de pool op basis van de gekozen
 methode. Dit kan nuttig zijn in situaties waar PF NAT uitvoert vor een heel
 groot netwerk. Aangezien het aantal NAT-verbindingen per vertalingsadres
@@ -123,7 +122,7 @@ pakketten te vertalen. Voor elke buitengaande verbinding zal PF doorheen
 de adressen roteren op een "round-robin" manier.
 <blockquote>
 <tt>
-nat on $ext_if inet -&gt; { 192.0.2.5, 192.0.2.10 }
+match out on $ext_if inet nat-to { 192.0.2.5, 192.0.2.10 }
 </tt>
 </blockquote>
 
@@ -139,12 +138,12 @@ Om dit te doen, moet de adrespool een
 netwerkblok zijn.
 <blockquote>
 <tt>
-nat on $ext_if inet -&gt; 192.0.2.4/31 source-hash
+match out on $ext_if inet nat-to 192.0.2.4/31 source-hash
 </tt>
 </blockquote>
 
 <p>
-Deze <tt>nat</tt> regel gebruikt de adrespool 192.0.2.4/31 (192.0.2.4 -
+Deze regel gebruikt de adrespool 192.0.2.4/31 (192.0.2.4 -
 192.0.2.5) als het vertalingsadres voor buitengaande pakketten. Elk intern
 adres zal altijd vertaald worden naar hetzelfde vertalingsadres omwille van
 het <tt>source-hash</tt> sleutelwoord.
@@ -158,7 +157,7 @@ bijvoorbeeld verdeeld worden onder een webserver farm:
 <tt>
 web_servers = "{ 10.0.0.10, 10.0.0.11, 10.0.0.13 }"<br>
 <br>
-rdr on $ext_if proto tcp to port 80 -&gt; $web_servers \<br>
+match in on $ext_if proto tcp to port 80 rdr-to $web_servers \<br>
 &nbsp;&nbsp;&nbsp;&nbsp;round-robin sticky-address
 </tt>
 </blockquote>
@@ -201,9 +200,9 @@ ext_if2 = "fxp1"<br>
 ext_gw1 = "68.146.224.1"<br>
 ext_gw2 = "142.59.76.1"<br>
 <br>
-pass in on $int_if route-to \<br>
-&nbsp;&nbsp;&nbsp;{ ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) } round-robin \<br>
-&nbsp;&nbsp;&nbsp;from $lan_net to any
+pass in on $int_if from $lan_net \
+&nbsp;&nbsp;&nbsp;route-to { ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) } \
+&nbsp;&nbsp;&nbsp;round-robin
 </tt>
 </blockquote>
 
@@ -211,11 +210,10 @@ pass in on $int_if route-to \<br>
 De <tt>route-to</tt> optie wordt gebruikt op verkeer dat <i>binnen</i> komt
 op de <i>interne</i> interface om de buitengaande netwerkinterfaces te
 specificeren waartussen verkeer gebalanceerd zal worden, samen met hun
-respectievelijke gateways. Merk op dat de <tt>route-to</tt> optie aanwezig
-moet zijn op <i>elke</i> filterregel waarvoor verkeer gebalanceerd moet
-worden. Terugkerende pakketten zullen teruggerouteerd worden naar dezelfde
-externe interface die ze verlieten (dit wordt gedaan door de ISP's) en
-zullen normaal teruggerouteerd worden naar het interne netwerk.
+respectievelijke gateways.
+Merk op dat de <tt>route-to</tt> optie aanwezig moet zijn op <i>elke</i>
+filterregel waarvoor verkeer gebalanceerd moet worden (deze kan niet gebruikt
+worden met <tt>match</tt> regels).
 
 <p>
 Om te verzekeren dat pakketten met een bronadres horend bij
@@ -224,10 +222,10 @@ gelijkaardig voor <tt>$ext_if2</tt> en <tt>$ext_gw2</tt>), moeten de
 volgende twee lijnen in de regelset staan:
 <blockquote>
 <tt>
-pass out on $ext_if1 route-to ($ext_if2 $ext_gw2) from $ext_if2 \<br>
-&nbsp;&nbsp;&nbsp;to any<br>
-pass out on $ext_if2 route-to ($ext_if1 $ext_gw1) from $ext_if1 \<br>
-&nbsp;&nbsp;&nbsp;to any 
+pass out on $ext_if1 from $ext_if2 \<br>
+&nbsp;&nbsp;&nbsp;route-to ($ext_if2 $ext_gw2)<br>
+pass out on $ext_if2 from $ext_if1 \<br>
+&nbsp;&nbsp;&nbsp;route-to ($ext_if1 $ext_gw1)
 </tt>
 </blockquote>
 
@@ -235,8 +233,8 @@ pass out on $ext_if2 route-to ($ext_if1 $ext_gw1) from $ext_if1 \<br>
 Tenslotte kan NAT ook gebruikt worden op elke buitengaande interface:
 <blockquote>
 <tt>
-nat on $ext_if1 from $lan_net -&gt; ($ext_if1)<br>
-nat on $ext_if2 from $lan_net -&gt; ($ext_if2)
+match out on $ext_if1 from $lan_net nat-to ($ext_if1)<br>
+match out on $ext_if2 from $lan_net nat-to ($ext_if2)
 </tt>
 </blockquote>
 
@@ -257,8 +255,8 @@ ext_gw1 = "68.146.224.1"
 ext_gw2 = "142.59.76.1"
 
 #  nat buitengaande verbindingen op elke internet interface
-nat on $ext_if1 from $lan_net -&gt; ($ext_if1)
-nat on $ext_if2 from $lan_net -&gt; ($ext_if2)
+match out on $ext_if1 from $lan_net nat-to ($ext_if1)
+match out on $ext_if2 from $lan_net nat-to ($ext_if2)
 
 #  default deny
 block in
@@ -269,13 +267,13 @@ pass out on $int_if to $lan_net
 #  pass in quick pakketten bestemd voor de gateway zelf
 pass in quick on $int_if from $lan_net to $int_if
 #  load balance buitengaand verkeer vanaf intern netwerk.
-pass in on $int_if route-to \
-    { ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) } round-robin \
-    from $lan_net
+pass in on $int_if from $lan_net \
+    route-to { ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) } \
+    round-robin
 #  hou https verkeer op één enkele connectie; sommige webapplicaties,
 #  vooral de "veilige", staan niet toe om het in een sessie te wijzigen
-pass in on $int_if route-to ($ext_if1 $ext_gw1) \
-    proto tcp from $lan_net to port https
+pass in on $int_if proto tcp from $lan_net to port https \
+    route-to ($ext_if1 $ext_gw1)
 
 #  algemene "pass out" regels voor externe interfaces
 pass out on $ext_if1
@@ -283,8 +281,8 @@ pass out on $ext_if2
 
 #  routeer pakketten van gelijk welke IPs op $ext_if1 naar $ext_gw1 en
 #  hetzelfde voor $ext_if2 en $ext_gw2
-pass out on $ext_if1 route-to ($ext_if2 $ext_gw2) from $ext_if2
-pass out on $ext_if2 route-to ($ext_if1 $ext_gw1) from $ext_if1
+pass out on $ext_if1 from $ext_if2 route-to ($ext_if2 $ext_gw2)
+pass out on $ext_if2 from $ext_if1 route-to ($ext_if1 $ext_gw1)
 </pre>
 </td></tr>
 </table>
@@ -301,10 +299,10 @@ pass out on $ext_if2 route-to ($ext_if1 $ext_gw1) from $ext_if1
 <br>
 <small>
 <!--
-Originally [OpenBSD: pools.html,v 1.25 ]<br>
-$Translation: pools.html,v 1.13 2009/12/15 22:13:13 maurice Exp $<br>
+Originally [OpenBSD: pools.html,v 1.26 ]<br>
+$Translation: pools.html,v 1.14 2010/05/23 16:56:45 maurice Exp $<br>
 -->
-$OpenBSD: pools.html,v 1.13 2009/12/22 17:49:10 ajacoutot Exp $
+$OpenBSD: pools.html,v 1.14 2010/05/24 18:32:44 ajacoutot Exp $
 </small>
 
 </body>

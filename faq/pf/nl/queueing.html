@@ -365,7 +365,7 @@ terug in
 
 <p>
 Queueing wordt geconfigureerd in
-<tt><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+4.6"
+<tt><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+4.7"
 >pf.conf</a></tt>. Er zijn twee types van opdrachten die gebruikt worden
 om queueing te configureren:
 <ul>
@@ -517,15 +517,30 @@ sleutelwoord gebruikt in samenwerking met PF's
 <a href="filter.html">filterregels</a>. Beschouw bijvoorbeeld een set
 filterregels die een lijn als deze bevat:
 <blockquote>
-<tt>pass out on fxp0 from any to any port 22</tt>
+<tt>pass out on fxp0 proto tcp to port 22</tt>
 </blockquote>
 
 <p>
 Pakketten die overeenstemmen met die regel kunnen toegekend worden aan een
 specifieke wachtrij door het <tt>queue</tt> sleutelwoord te gebruiken:
 <blockquote>
-<tt>pass out on fxp0 from any to any port 22 queue ssh</tt>
+<tt>pass out on fxp0 proto tcp to port 22 queue ssh</tt>
 </blockquote>
+
+<p>
+Als een ingang in een state table door deze regel is aangemaakt, dan zal
+PF de queue opnemen in de state table ingang; dit zal worden gebruikt door
+andere packets die door deze ingang worden toegelaten:
+<blockquote>
+<tt>pass in on fxp0 proto tcp to port 80 queue http</tt>
+</blockquote>
+Met deze regel worden packets die via <tt>fxp0</tt> terug naar buiten
+gaan en die overeenkomen met de statefull connectie in de <tt>http</tt>
+queue geplaatst.
+Merk op dat alhoewel het <tt>queue</tt> sleutelwoord wordt gebruikt bij
+een regel die het binnenkomende verkeer filtert, het doel is om een queue
+te specificeren voor het bijbehorende uitgaande verkeer; bovenstaande
+regel plaatst de binnenkomende packets niet in een queue.
 
 <p>
 Bij gebruik van het <tt>queue</tt> sleutelwoord met <tt>block</tt>
@@ -541,16 +556,17 @@ altq on fxp0 cbq bandwidth 2Mb queue { std, ftp }<br>
 queue std bandwidth 500Kb cbq(default)<br>
 queue ftp bandwidth 1.5Mb<br>
 <br>
-pass in on dc0 from any to any port 21 queue ftp<br>
+pass in on dc0 proto tcp to port 21 queue ftp<br>
 </tt>
 </blockquote>
 
 <p>
 Queueing wordt ingeschakeld op <tt>fxp0</tt> maar de toewijzing gebeurt
 op <tt>dc0</tt>.
-Indien pakketten die overeenstemmen met de <tt>pass</tt> regel de interface
-<tt>fxp0</tt> verlaten, zullen ze in de <tt>ftp</tt> wachtrij geplaatst
-worden. Dit type van queueing kan heel nuttig zijn op routers.
+Indien pakketten die overeenstemmen met de <tt>pass</tt> regel (of met de
+toestand die door deze regel wordt gecreëerd) de interface <tt>fxp0</tt>
+verlaten, zullen ze in de <tt>ftp</tt> wachtrij geplaatst worden.
+Dit type van queueing kan heel nuttig zijn op routers.
 
 <p>
 Normaal wordt slechts één wachtrijnaam gegeven met het <tt>queue</tt>
@@ -590,25 +606,6 @@ van de <tt>bandwidth</tt> van de root-wachtrij op een waarde als 600Kb
 moeten leiden tot betere prestatie. Trial and error zal de beste
 <tt>bandwidth</tt> instelling opleveren.
 
-<p>
-Bij gebruik van het <tt>queue</tt> sleutelwoord met regels die
-<tt>keep state</tt> doen zoals:
-<blockquote>
-<tt>
-pass in on fxp0 proto tcp from any to any port 22 flags S/SA \<br>
-&nbsp;&nbsp;&nbsp;keep state queue ssh
-</tt>
-</blockquote>
-
-<p>
-zal PF de wachtrij registreren in de toestandstabel-entry zodat pakketten
-die terug naar buiten keren uit <tt>fxp0</tt> en overeenstemmen met de
-"stateful" verbinding, in de <tt>ssh</tt> wachtrij zullen belanden.
-Merk op dat zelfs al wordt het <tt>queue</tt> sleutelwoord gebruikt op
-een regel die binnenkomend verkeer filtert, het doel is om een wachtrij
-te specificeren voor het overeenkomstige buitengaande verkeer; de
-bovenstaande regel queue't geen binnenkomende pakketten.
-
 <a name="example1"></a>
 <h2>Voorbeeld #1: Klein Thuisnetwerk</h2>
 <pre>
@@ -644,9 +641,7 @@ al het andere buitengaande verkeer.
 <p>
 Hieronder staat de regelset die aan dit netwerkbeleid tegemoetkomt. Merk
 op dat alleen de <tt>pf.conf</tt> opdrachten aanwezig zijn die rechtstreeks
-op het bovenstaande beleid van toepassing zijn;
-<a href="nat.html"><tt>nat</tt></a>, <a href="rdr.html"><tt>rdr</tt></a>,
-<a href="options.html">opties</a>, enz. zijn niet getoond.
+op het bovenstaande beleid van toepassing zijn.
 
 <p>
 <table border=0 width="650">
@@ -708,15 +703,14 @@ block in on fxp0 all
 
 # filterregels voor fxp0 uitwaarts
 block out on fxp0 all
-pass  out on fxp0 inet proto tcp from (fxp0) to any flags S/SA \
-	keep state queue(std_out, tcp_ack_out)
-pass  out on fxp0 inet proto { udp icmp } from (fxp0) to any keep state
-pass  out on fxp0 inet proto { tcp udp } from (fxp0) to any port domain \
-	keep state queue dns_out
-pass  out on fxp0 inet proto tcp from (fxp0) to any port $ssh_ports \
-	flags S/SA keep state queue(std_out, ssh_im_out)
-pass  out on fxp0 inet proto tcp from (fxp0) to any port $im_ports \
-	flags S/SA keep state queue(ssh_im_out, tcp_ack_out)
+pass  out on fxp0 inet proto tcp from (fxp0) queue(std_out, tcp_ack_out)
+pass  out on fxp0 inet proto { udp icmp } from (fxp0)
+pass  out on fxp0 inet proto { tcp udp } from (fxp0) to port domain \
+	queue dns_out
+pass  out on fxp0 inet proto tcp from (fxp0) to port $ssh_ports \
+	queue(std_out, ssh_im_out)
+pass  out on fxp0 inet proto tcp from (fxp0) to port $im_ports \
+	queue(ssh_im_out, tcp_ack_out)
 
 # filterregels voor dc0 inwaarts
 block in on dc0 all
@@ -724,14 +718,14 @@ pass  in on dc0 from $local_net
 
 # filterregels voor dc0 uitwaarts
 block out on dc0 all
-pass  out on dc0 from any to $local_net
-pass  out on dc0 proto { tcp udp } from any port domain to $local_net \
+pass  out on dc0 to $local_net
+pass  out on dc0 proto { tcp udp } from port domain to $local_net \
 	queue dns_in
-pass  out on dc0 proto tcp from any port $ssh_ports to $local_net \
+pass  out on dc0 proto tcp from port $ssh_ports to $local_net \
 	queue(std_in, ssh_im_in)
-pass  out on dc0 proto tcp from any port $im_ports to $local_net \
+pass  out on dc0 proto tcp from port $im_ports to $local_net \
 	queue ssh_im_in
-pass  out on dc0 from any to $bob queue bob_in
+pass  out on dc0 to $bob queue bob_in
 </pre>
 </td></tr>
 </table>
@@ -877,35 +871,32 @@ block on { fxp0, fxp1, dc0 } all
 
 # filterregels voor fxp0 inwaarts
 pass in on fxp0 proto tcp from any to $wwwserv port { 21, \
-	&gt; 49151 } flags S/SA keep state queue www_ext_misc
-pass in on fxp0 proto tcp from any to $wwwserv port 80 \
-	flags S/SA keep state queue www_ext_http
+	&gt; 49151 } queue www_ext_misc
+pass in on fxp0 proto tcp from any to $wwwserv port 80 queue www_ext_http
 
 # filterregels voor fxp0 uitwaarts
-pass out on fxp0 from $int_nets to any keep state
-pass out on fxp0 from $boss to any keep state queue boss_ext
+pass out on fxp0 from $int_nets
+pass out on fxp0 from $boss queue boss_ext
 
 # filterregels voor dc0 inwaarts
-pass in on dc0 from $int_nets to any keep state
-pass in on dc0 from $it_net to any queue it_int
-pass in on dc0 from $boss to any queue boss_int
+pass in on dc0 from $int_nets
+pass in on dc0 from $it_net queue it_int
+pass in on dc0 from $boss queue boss_int
 pass in on dc0 proto tcp from $int_nets to $wwwserv port { 21, 80, \
-	&gt; 49151 } flags S/SA keep state queue www_int
+	&gt; 49151 } queue www_int
 
 # filterregels voor dc0 uitwaarts
 pass out on dc0 from dc0 to $int_nets
 
 # filterregels voor fxp1 inwaarts
-pass in on fxp1 proto { tcp, udp } from $wwwserv to any port 53 \
-	keep state
+pass in on fxp1 proto { tcp, udp } from $wwwserv to port 53
 
 # filterregels voor fxp1 uitwaarts
-pass out on fxp1 proto tcp from any to $wwwserv port { 21, \
-	&gt; 49151 } flags S/SA keep state queue net_dmz_misc
-pass out on fxp1 proto tcp from any to $wwwserv port 80 \
-	flags S/SA keep state queue net_dmz_http
+pass out on fxp1 proto tcp to $wwwserv port { 21, \
+	&gt; 49151 } queue net_dmz_misc
+pass out on fxp1 proto tcp to $wwwserv port 80 queue net_dmz_http
 pass out on fxp1 proto tcp from $int_nets to $wwwserv port { 80, \
-	21, &gt; 49151 } flags S/SA keep state queue internal_dmz
+	21, &gt; 49151 } queue internal_dmz
 </pre>
 </td></tr>
 </table>
@@ -922,10 +913,10 @@ pass out on fxp1 proto tcp from $int_nets to $wwwserv port { 80, \
 <br>
 <small>
 <!--
-Originally [OpenBSD: queueing.html,v 1.38 ]<br>
-$Translation: queueing.html,v 1.14 2009/10/18 22:53:10 maurice Exp $<br>
+Originally [OpenBSD: queueing.html,v 1.39 ]<br>
+$Translation: queueing.html,v 1.15 2010/05/23 16:56:45 maurice Exp $<br>
 -->
-$OpenBSD: queueing.html,v 1.14 2009/10/19 09:39:58 ajacoutot Exp $
+$OpenBSD: queueing.html,v 1.15 2010/05/24 18:32:44 ajacoutot Exp $
 </small>
 
 </body>

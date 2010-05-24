@@ -62,6 +62,7 @@ please, use a max of 72 chars per line -->
 <hr>
 
 <a name="intro"></a>
+<a name="filter"></a>
 <h2>Inleiding</h2>
 Wanneer u NAT hebt draaien in uw kantoor hebt u het hele Internet ter
 beschikking op al uw machines. Wat als u een machine hebt achter de
@@ -74,7 +75,7 @@ wordt.
 Laten we naar een voorbeeld kijken:
 <blockquote>
 <tt>
-rdr on tl0 proto tcp from any to any port 80 -&gt; 192.168.1.20
+pass in on tl0 proto tcp from any to any port 80 rdr-to 192.168.1.20
 </tt>
 </blockquote>
 
@@ -90,8 +91,8 @@ zouden mogen hebben tot de webserver op poort 80, kan u ze hier
 beperken:
 <blockquote>
 <tt>
-rdr on tl0 proto tcp from 27.146.49.0/24 to any port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.20
+pass in on tl0 proto tcp from 27.146.49.0/24 to any port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.20
 </tt>
 </blockquote>
 
@@ -104,12 +105,12 @@ kunnen verlenen met dezelfde poort en hetzelfde IP adres op de gateway
 zolang u het IP adres kent van waar ze zullen verbinden:
 <blockquote>
 <tt>
-rdr on tl0 proto tcp from 27.146.49.14 to any port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.20<br>
-rdr on tl0 proto tcp from 16.114.4.89 to any port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.22<br>
-rdr on tl0 proto tcp from 24.2.74.178 to any port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.23
+pass in on tl0 proto tcp from 27.146.49.14 to any port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.20<br>
+pass in on tl0 proto tcp from 16.114.4.89 to any port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.22<br>
+pass in on tl0 proto tcp from 24.2.74.178 to any port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.23
 </tt>
 </blockquote>
 
@@ -117,12 +118,12 @@ rdr on tl0 proto tcp from 24.2.74.178 to any port 80 -&gt; \<br>
 Een bereik van poorten kan ook omgeleid worden binnen dezelfde regel:
 <blockquote>
 <tt>
-rdr on tl0 proto tcp from any to any port 5000:5500 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.20<br>
-rdr on tl0 proto tcp from any to any port 5000:5500 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.20 port 6000<br>
-rdr on tl0 proto tcp from any to any port 5000:5500 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.20 port 7000:*<br>
+pass in on tl0 proto tcp from any to any port 5000:5500 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.20<br>
+pass in on tl0 proto tcp from any to any port 5000:5500 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.20 port 6000<br>
+pass in on tl0 proto tcp from any to any port 5000:5500 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.20 port 7000:*<br>
 </tt>
 </blockquote>
 
@@ -132,72 +133,6 @@ naar 192.168.1.20.
 In regel #1 wordt poort 5000 omgeleid naar 5000, 5001 naar 5001, etc.
 In regel #2 wordt het gehele poortbereik omgeleid naar 6000.
 En in regel #3 wordt poort 5000 omgeleid naar 7000, 5001 naar 7001, etc.
-
-<a name="filter"></a>
-<h2>Omleiding en Pakketten Filteren</h2>
-<font color="#ff0000">OPMERKING:</font> Vertaalde pakketten moeten nog
-steeds doorheen de filtermotor gaan en zullen geblokkeerd of doorgelaten
-worden op basis van de gedefinieerde filterregels.
-
-<p>
-De <i>enige</i> uitzondering op deze regel is wanneer het <tt>pass</tt>
-sleutelwoord gebruikt wordt binnen de <tt>rdr</tt> regel. In dit geval
-zullen de omgeleide pakketten "stateful" recht doorheen de filtermotor
-passeren: de filterregels zullen niet geëvalueerd worden voor deze
-pakketten.
-Dit is een handige shortcut om te vermijden <tt>pass</tt> filterregels
-toe te voegen voor iedere omleidingsregel.
-Beschouw het als een normale <tt>rdr</tt> regel (zonder <tt>pass</tt>
-sleutelwoord) geassocieerd met een <tt>pass</tt> filterregel met het
-<tt>keep state</tt> sleutelwoord.
-Als u echter meer specifieke filteropties zoals <tt>synproxy</tt>,
-<tt>modulate state</tt>, enz. wil inschakelen, zal u nog steeds een
-specifieke <tt>pass</tt> regel moeten gebruken aangezien deze opties
-niet binnen omleidingsregels passen.
-
-<p>
-Besef ook dat aangezien vertaling gebeurt <i>vóór</i> filtering, de
-filtermotor het <i>vertaalde</i> pakket zal zien zoals het er uitziet
-nadat zijn bestemmings-IP adres en/of bestemmingspoort veranderd werden
-in het omleidingsadres/poort gespecificeerd in de <tt>rdr</tt> regel.
-Beschouw het volgende scenario:
-
-<ul>
-<li>192.0.2.1 - host op het Internet
-<li>24.65.1.13 - extern adres van OpenBSD router
-<li>192.168.1.5 - intern IP adres van webserver
-</ul>
-
-<p>
-Omleidingsregel:
-<blockquote>
-<tt>
-rdr on tl0 proto tcp from 192.0.2.1 to 24.65.1.13 port 80 \<br>
-&nbsp;&nbsp;&nbsp;-&gt; 192.168.1.5 port 8000
-</tt>
-</blockquote>
-
-<p>
-Pakket vóór het verwerken van de <tt>rdr</tt> regel:
-<ul>
-<li>Bronadres: 192.0.2.1
-<li>Bronpoort: 4028 (willekeurig gekozen door besturingssysteem)
-<li>Bestemmingsadres: 24.65.1.13
-<li>Bestemmingspoort: 80
-</ul>
-
-<p>
-Pakket ná het verwerken van de <tt>rdr</tt> regel:
-<ul>
-<li>Bronadres: 192.0.2.1
-<li>Bronpoort: 4028
-<li>Bestemmingsadres: 192.168.1.5
-<li>Bestemmingspoort: 8000
-</ul>
-
-<p>
-De filtermotor zal het IP pakket zien zoals het er uitziet nadat de
-vertaling gebeurd is.
 
 <a name="security"></a>
 <h2>Veiligheidsimplicaties</h2>
@@ -228,8 +163,8 @@ in het interne netwerk of LAN, zoals:
 <tt>
 server = 192.168.1.40<br>
 <br>
-rdr on $ext_if proto tcp from any to $ext_if port 80 -&gt; $server \<br>
-&nbsp;&nbsp;&nbsp;port 80
+pass in on $ext_if proto tcp from any to $ext_if port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to $server port 80
 </tt>
 </blockquote>
 
@@ -328,10 +263,14 @@ De volgende omleidingsregel stuurt poort 80 op de interne interface
 door naar de proxy:
 <blockquote>
 <tt>
-rdr on $int_if proto tcp from $int_net to $ext_if port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;127.0.0.1 port 5000
+pass in on $int_if proto tcp from $int_net to $ext_if port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 127.0.0.1 port 5000
 </tt>
 </blockquote>
+
+Hoge-performance proxies kunnen ook worden gemaakt met
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=relayd&amp;sektion=8"
+>relayd(8)</a>.
 
 <a name="rdrnat"></a>
 <h3>Combinatie van RDR en NAT</h3>
@@ -341,12 +280,10 @@ Met een bijkomende NAT regel op de interne interface kan de ontbrekende
 vertaling van het bronadres die hierboven beschreven werd, bereikt worden.
 <blockquote>
 <tt>
-rdr on $int_if proto tcp from $int_net to $ext_if port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;$server
-<br>
-no nat on $int_if proto tcp from $int_if to $int_net<br>
-nat on $int_if proto tcp from $int_net to $server port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;$int_if
+pass in on $int_if proto tcp from $int_net to $ext_if port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to $server<br>
+pass out on $int_if proto tcp to $server port 80 \<br>
+&nbsp;&nbsp;&nbsp;received-on $int_if nat-to $int_if
 </tt>
 </blockquote>
 
@@ -361,7 +298,7 @@ is eerder complex aangezien ze twee afzonderlijke toestanden ("states")
 creëert voor elke gereflecteerde verbinding. Er moet zorg voor gedragen
 worden om te vermijden dat de NAT regel op ander verkeer van toepassing
 wordt, bijvoorbeeld verbindingen die van externe hosts komen (door
-andere omleidingen) of van de firewall zelf. Merk op dat de <tt>rdr</tt>
+andere omleidingen) of van de firewall zelf. Merk op dat de <tt>rdr-to</tt>
 regel hierboven er voor zal zorgen dat de TCP/IP stack de pakketten
 ziet aankomen op de interne interface met een bestemmingsadres binnen
 het interne netwerk.
@@ -381,10 +318,10 @@ In het algemeen worden beter de voorheen vermelde oplossingen gebruikt.
 <br>
 <small>
 <!--
-Originally [OpenBSD: rdr.html,v 1.28 ]<br>
-$Translation: rdr.html,v 1.13 2009/06/23 18:35:41 maurice Exp $<br>
+Originally [OpenBSD: rdr.html,v 1.29 ]<br>
+$Translation: rdr.html,v 1.14 2010/05/23 16:56:45 maurice Exp $<br>
 -->
-$OpenBSD: rdr.html,v 1.13 2009/06/29 17:19:48 ajacoutot Exp $
+$OpenBSD: rdr.html,v 1.14 2010/05/24 18:32:44 ajacoutot Exp $
 </small>
 
 </body>
