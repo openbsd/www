@@ -1,0 +1,238 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Tabulky</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-type" content="text/html; charset=UTF-8">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf">
+<meta name="distribution"  content="global">
+</head>
+
+<!--
+Copyright (c) 2003, 2004 Joel Knight <enabled@myrealbox.com>
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<a href="../../../cs/index.html">
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif" border="0">
+</a>
+<p>
+[<a href="macros.html">Předchozí: Seznamy a Makra</a>]
+[<a href="index.html">Obsah</a>]
+[<a href="../filter.html">Další: Filtrování paketů</a>]
+
+<p>
+<h1><font color="#e00000">PF: Tabulky</font></h1>
+
+<hr>
+
+<h3>Obsah</h3>
+<ul>
+<li><a href="#intro">Úvod</a>
+<li><a href="#config">Konfigurace</a>
+<li><a href="#manip">Manipulace pomocí <tt>pfctl</tt></a>
+<li><a href="#addr">Definování adres</a>
+<li><a href="#match">Vyhledání adres</a>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Úvod</h2>
+Tabulka se používá k uložení skupiny IPv4 a/nebo IPv6 adres. Vyhledávání
+v tabulce jsou velmi rychlá a spotřebují méně paměti a procesorového času
+než <a href="macros.html#lists">seznamy</a>. Z těchto důvodů je tabulka
+ideální pro udržování velké skupiny adres, protože vyhledávací čas v tabulce
+s 50.000 adresami je jen nepatrně větší oproti tabulce s 50 adresami. Tabulky
+mohou být použity nasledujícími způsoby:
+<ul>
+<li>zdrojové a/nebo cílové adresy v pravidlech.
+<li>překládací a přesměrovávací adresy <tt>nat-to</tt> a <tt>rdr-to</tt>
+pravidel.
+<li>cílové adresy v <tt>route-to</tt>, <tt>reply-to</tt> a
+<tt>dup-to</tt> pravidlech.
+</ul>
+
+<p>
+Tabulky se vytvářejí buď v 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+4.7"
+><tt>pf.conf</tt></a> nebo použitím
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+4.7"
+>pfctl(8)</a>.
+
+<a name="config"></a>
+<h2>Konfigurace</h2>
+V <tt>pf.conf</tt> se tabulky vytvářejí pomocí <tt>table</tt>
+direktivy. Nasledující atributy mohou být specifikovány pro každou tabulku:
+<ul>
+<li><tt>const</tt> - obsah tabulky nemůže být změněn jakmile je vytvořena.
+Když tento atribut není specifikován, tak 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+4.7"
+>pfctl(8)</a> může být použit pro přídání nebo odebrání adres z tabulky
+kdykoliv. Dokonce i když je
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=securelevel&amp;sektion=7"
+>securelevel(7)</a> nastaveno na 2 nebo více.
+<li><tt>persist</tt> - přinutí jádro udržovat tabulku v paměti i když
+se na ni neodkazují žádná pravidla. Bez tohoto atributu jádro tabulku
+automaticky odstraní jakmile se odstraní poslední pravidlo, které se
+na tabulku odkazovalo.
+</ul>
+
+<p>
+Například:
+<blockquote>
+<tt>
+table &lt;goodguys&gt; { 192.0.2.0/24 }<br>
+table &lt;rfc1918&gt; const { 192.168.0.0/16, 172.16.0.0/12, \<br>
+&nbsp;&nbsp;&nbsp;10.0.0.0/8 }<br>
+table &lt;spammers&gt; persist<br>
+<br>
+block in on fxp0 from { &lt;rfc1918&gt;, &lt;spammers&gt; } to any<br>
+pass&nbsp; in on fxp0 from &lt;goodguys&gt; to any<br>
+</tt>
+</blockquote>
+
+<p>
+Addresses can also be specified using the negation (or "not") modifier 
+such as:
+<blockquote>
+<tt>
+table &lt;goodguys&gt; { 192.0.2.0/24, !192.0.2.5 }
+</tt>
+</blockquote>
+
+<p>
+Tabulka <tt>goodguys</tt> bude nyní platná pro všechny adresy v
+192.0.2.0/24 sití kromě 192.0.2.5.
+
+<p>
+Všimněte si, že jména tabulek jsou vždy uzavřena do &lt; &gt; 
+špičatých závorek.
+<p>
+Tabulky mohou být také vytvořeny z textových souborů obsahujících
+IP adresy a sítě:
+<blockquote>
+<tt>
+table &lt;spammers&gt; persist file "/etc/spammers"<br>
+<br>
+block in on fxp0 from &lt;spammers&gt; to any<br>
+</tt>
+</blockquote>
+
+<p>
+Soubor <tt>/etc/spammers</tt> může obsahovat seznam IP adres
+a/nebo <a href="http://public.pacbell.net/dedicated/cidr.html">CIDR</a> 
+bloky sítí, jeden na každý řádek. 
+Jakýkoliv řádek začínající s <tt>#</tt> je považován za komentář a 
+ignorován. 
+
+<a name="manip"></a>
+<h2>Manipulace pomocí <tt>pfctl</tt></h2>
+Tabulky je možno spravovat za chodu pomocí
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+4.7"
+>pfctl(8)</a>. Například pro přidání záznamů do 
+&lt;spammers&gt; tabulky vytvořené v předchozím kroku:
+<blockquote>
+<tt># pfctl -t spammers -T add 218.70.0.0/16</tt>
+</blockquote>
+
+<p>
+Také to vytvoří &lt;spammers&gt; tabulku pokud ještě neexistovala.
+Pro vypsání adres v tabulce:
+<blockquote>
+<tt># pfctl -t spammers -T show</tt>
+</blockquote>
+Přepínač <tt>-v</tt> může být použit s <tt>-T show</tt> pro zobrazení
+statistik pro každý záznam v tabulce. Pro odstranění adres z tabulky:
+<blockquote>
+<tt>
+# pfctl -t spammers -T delete 218.70.0.0/16
+</tt>
+</blockquote>
+
+<p>
+Pro více informací o manipulaci tabulek s <tt>pfctl</tt> si prosím
+přečtěte
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+4.7"
+>pfctl(8)</a> man stránku.
+
+<a name="addr"></a>
+<h2>Specifikování adres</h2>
+Mimo specifikování pomocí IP adres mohou být systémy specifikovány
+take pomocí jejich jména. Když je jméno přeloženo na IP adresu, tak všechny
+výsledné IPv4 a IPv6 adresy jsou uloženy do tabulky. IP adresy mohou také
+být do tabulky zadány specifikováním platného jména síťového rozhraní, 
+skupiny síťového rozhraní nebo klíčového slova <tt>self</tt>. Tabulka poté
+bude obsahovat všechny IP adresy přiřazené pro danné rozhraní nebo skupinu
+nebo systém (včetně lokálního rozhraní).<br>
+<br>
+Jediný limit při specifikování adres je, že <tt>0.0.0.0/0</tt> a
+<tt>0/0</tt> nebudou v tabulkách fungovat.
+Alternativou je zadat adresu na "tvrdo" nebo použít
+<a href="macros.html#macros">makro</a>.
+
+<a name="match"></a>
+<h2>Vyhledání adres</h2>
+Vyhledání adresy v tabulce vrátí nejbližší odpovídající záznam. To umožňuje
+vytváření tabulek jako např.:
+<blockquote>
+<tt>
+table &lt;goodguys&gt; { 172.16.0.0/16, !172.16.1.0/24, 172.16.1.100 }<br>
+<br>
+block in on dc0<br>
+pass &nbsp;in on dc0 from &lt;goodguys&gt;<br>
+</tt>
+</blockquote>
+
+<p>
+Jakýkoliv paket přicházející přes <tt>dc0</tt> bude mít jeho zdrojovou adresu
+vyhledánu v tabulce <tt>&lt;goodguys&gt;</tt>:
+<ul>
+<li>172.16.50.5 - nejbližší záznam je 172.16.0.0/16; paket odpovídá tabulce
+a bude propuštěn dále
+<li>172.16.1.25 - nejbližší záznam je !172.16.1.0/24; paket odpovídá záznamu
+v tabulce, ale záznam je negovaný (používá "!" modifikátor); paket neodpovídá
+tabulce a bude blokován
+<li>172.16.1.100 - přesně odpovídá 172.16.1.100; paket odpovídá tabulce
+a bude propuštěn dále
+<li>10.1.4.55 - neodpovídá tabulce a bude blokován
+</ul>
+
+<p>
+[<a href="macros.html">Předchozí: Seznamy a Makra</a>]
+[<a href="index.html">Obsah</a>]
+[<a href="../filter.html">Další: Filtrování paketů</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[back]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+<!--
+Originally [OpenBSD: tables.html,v 1.27 ]<br>
+$Translation: tables.html,v 1.5 2010/06/05 11:13:22 bodie Exp $<br>
+-->
+$OpenBSD: tables.html,v 1.5 2010/06/06 16:35:26 ajacoutot Exp $
+</small>
+
+</body>
+</html> 
