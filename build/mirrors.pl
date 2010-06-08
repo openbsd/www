@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.21 2010/06/08 01:15:21 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.22 2010/06/08 03:32:11 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -194,7 +194,7 @@ sub write_mirror_list($$) {
 	open(my $fh, '>', $filename) or die "open $filename: $!";
 
 	for my $lv (1, 2, 3) {
-		for my $type ('UH', 'UF') {
+		for my $type ('UH', 'UF', 'UR') {
 			foreach my $mirror (sort _by_country @$mirrorref) {
 				next if (($lv <= 2) &&
 				    (! defined $mirror->{'LF'}));
