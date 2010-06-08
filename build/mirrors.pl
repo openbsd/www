@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.20 2010/06/08 00:11:07 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.21 2010/06/08 01:15:21 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -55,7 +55,7 @@ my $sources = {
 };
 my $targets = {
 	'ftplist'		=> '../ftplist',
-	'mirrors'		=> '/usr/src/distrib/notes/mirrors',
+	'mirrors'		=> '../mirrors-notes',
 	'mirror_list'		=> '../mirror_list',
 	'openbsd-ftp'		=> '../ftp.html',
 	'openbgpd-ftp'		=> '../openbgpd/ftp.html',
