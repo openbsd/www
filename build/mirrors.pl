@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.22 2010/06/08 03:32:11 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.23 2010/06/24 20:40:02 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -193,23 +193,22 @@ sub write_mirror_list($$) {
 
 	open(my $fh, '>', $filename) or die "open $filename: $!";
 
-	for my $lv (1, 2, 3) {
-		for my $type ('UH', 'UF', 'UR') {
-			foreach my $mirror (sort _by_country @$mirrorref) {
-				next if (($lv <= 2) &&
-				    (! defined $mirror->{'LF'}));
-				next if ((defined $mirror->{'LF'})
-				    && ($mirror->{'LF'} != $lv));
-				next unless ($mirror->{$type});
-				(my $url = $mirror->{$type}) =~ s,/$,,;
-				my $loc = '';
-				if (defined $mirror->{'GZ'}) {
-					$loc .= "$mirror->{'GZ'}";
+	for my $type ('UH', 'UF', 'UR') {
+		foreach my $mirror (sort _by_country @$mirrorref) {
+			next unless ($mirror->{$type});
+			(my $url = $mirror->{$type}) =~ s,/$,,;
+			my $loc = '';
+			if (defined $mirror->{'GZ'}) {
+				if ((defined $mirror->{'LF'})
+				    && ($mirror->{'LF'} <= 2)) {
+					$loc .= 'L2';
 				} else {
-					warn('no GZ for '.$mirror->{$type});
+					$loc .= "$mirror->{'GZ'}";
 				}
-				printf $fh "%s %s\n", $loc, $mirror->{$type};
+			} else {
+				warn('no GZ for '.$mirror->{$type});
 			}
+			printf $fh "%s %s\n", $loc, $mirror->{$type};
 		}
 	}
 
@@ -233,12 +232,10 @@ sub _paste_mirrorlist($$$$$$) {
 	my ($fh, $mirrorref, $type, $proj, $version, $links) = @_;
 
 	# indent for first <td> to come
-	print $fh ' ' x 4 if ($type eq 'UF' || $type eq 'UH' || $type eq 'UR'
-	    || $type eq 'USF' || $type eq 'USH' || $type eq 'USR');
+	print $fh ' ' x 4 if ($type eq 'UF' || $type eq 'UH' || $type eq 'UR');
 	for my $lv (1, 2, 3) {
 	foreach my $mirror (sort _by_country @$mirrorref) {
-		if ($type eq 'UF' || $type eq 'UH' || $type eq 'UR'
-		    || $type eq 'USF' || $type eq 'USH' || $type eq 'USR') {
+		if ($type eq 'UF' || $type eq 'UH' || $type eq 'UR') {
 			next if (($lv <= 2) && !defined $mirror->{'LF'});
 			next if ((defined $mirror->{'LF'}) && ($mirror->{'LF'} != $lv));
 		}
@@ -248,8 +245,7 @@ sub _paste_mirrorlist($$$$$$) {
 		}
 		next unless ($mirror->{$type});
 		my $loc = _get_location ($type, $mirror);
-		if ($type eq 'UF' || $type eq 'UH' || $type eq 'UR'
-		    || $type eq 'USF' || $type eq 'USH' || $type eq 'USR') {
+		if ($type eq 'UF' || $type eq 'UH' || $type eq 'UR') {
 			my $url = $mirror->{$type};
 			if ($proj eq 'openbgpd-ftp') {
 				$url .= "OpenBGPD/openbgpd-${version}.tgz";
@@ -258,11 +254,12 @@ sub _paste_mirrorlist($$$$$$) {
 				$url .= "OpenNTPD/openntpd-${version}.tgz";
 			}
 			elsif ($proj eq 'openssh-ftp') {
-				$url .= "openssh-${version}.tar.gz";
+				#next if ($type eq 'UR');
+				$url .= "OpenSSH/openssh-${version}.tar.gz";
 			}
 			elsif ($proj eq 'openssh-portable') {
-				#$url .= "portable/openssh-${version}.tar.gz";
-				$url .= "portable/";
+				#next if ($type eq 'UR');
+				$url .= "OpenSSH/portable/";
 			}
 			elsif ($proj eq 'openntpd-portable') {
 				$url .= "OpenNTPD/openntpd-${version}.tar.gz";
@@ -364,20 +361,11 @@ sub write_ftphtml($$$$) {
 
 	open(my $fh, '>', $filename) or die "open $filename: $!";
 	_paste_in($fh, $sources->{"${what}-head"});
-	# produce ftp mirror list
-	if($what eq 'openssh-ftp' || $what eq 'openssh-portable') {
-		_paste_mirrorlist($fh, $mirrorref, 'USF', $what, $ver, 1);
-	} else {
-		_paste_mirrorlist($fh, $mirrorref, 'UF', $what, $ver, 1);
-	}
+	_paste_mirrorlist($fh, $mirrorref, 'UF', $what, $ver, 1);
 	_paste_in($fh, $sources->{"${what}-mid1"});
-	# produce http mirror list
-	if($what eq 'openssh-ftp' || $what eq 'openssh-portable') {
-		_paste_mirrorlist($fh, $mirrorref, 'USH', $what, $ver, 1);
-	} else {
-		_paste_mirrorlist($fh, $mirrorref, 'UH', $what, $ver, 1);
-		_paste_in($fh, $sources->{"${what}-mid2"});
-		# produce rsync mirror list, not for OpenSSH
+	_paste_mirrorlist($fh, $mirrorref, 'UH', $what, $ver, 1);
+	_paste_in($fh, $sources->{"${what}-mid2"});
+	if (not $what =~ /^openssh.*/) {
 		_paste_mirrorlist($fh, $mirrorref, 'UR', $what, $ver, 0);
 	}
 	_paste_in($fh, $sources->{"${what}-end"});
@@ -419,8 +407,7 @@ sub _get_location($$) {
 	my $m = shift;
 
 	my $location = "";
-	if ($type eq 'UF' || $type eq 'UH' || $type eq 'UR' ||
-	    $type eq 'USF' || $type eq 'USH') {
+	if ($type eq 'UF' || $type eq 'UH' || $type eq 'UR') {
 		# first/second level mirrors have different title
 		if ((defined $m->{'LF'}) && ($m->{'LF'} == 1)) {
 			$location = "Master Fanout Site ($m->{'GC'})";
