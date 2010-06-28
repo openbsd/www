@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.23 2010/06/24 20:40:02 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.24 2010/06/28 20:44:24 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -200,7 +200,7 @@ sub write_mirror_list($$) {
 			my $loc = '';
 			if (defined $mirror->{'GZ'}) {
 				if ((defined $mirror->{'LF'})
-				    && ($mirror->{'LF'} <= 2)) {
+				    && ($mirror->{'LF'} == 2)) {
 					$loc .= 'L2';
 				} else {
 					$loc .= "$mirror->{'GZ'}";
