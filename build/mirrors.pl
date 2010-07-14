@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.24 2010/06/28 20:44:24 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.25 2010/07/14 23:45:56 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -112,13 +112,8 @@ sub write_ftplist($$$) {
 
 	open(my $fh, '>', $filename) or die "open $filename: $!";
 
-	for my $lv (1, 2, 3) {
-	for my $type ('UF', 'UH') {
+	for my $type ('UH', 'UF') {
 		foreach my $mirror (sort _by_country @$mirrorref) {
-			next if (($lv <= 2) &&
-			    (! defined $mirror->{'LF'}));
-			next if ((defined $mirror->{'LF'})
-			    && ($mirror->{'LF'} != $lv));
 			next unless ($mirror->{$type});
 			my $loc = '';
 			$loc .= "$mirror->{'GT'}, " if $mirror->{'GT'};
@@ -138,7 +133,6 @@ sub write_ftplist($$$) {
 			printf $fh "%s %" . $pad . "s\n", $url, $loc;
 		}
 	}
-	}
 
 	close($fh) or die "close $filename: $!";
 }
@@ -150,35 +144,22 @@ sub write_mirrors($$) {
 	open(my $fh, '>', $filename) or die "open $filename: $!";
 	_paste_in($fh, $sources->{"mirrors-head"});
 
-	for my $lv (1, 2, 3) {
-		printf $fh "Main server in Canada:\n" if ($lv == 1);
-		printf $fh "\n2nd level mirrors:\n" if ($lv == 2);
-		my $oldcountry='';
-		foreach my $mirror (sort _by_country @$mirrorref) {
-			for my $type ('UF', 'UH') {
-				next if (($lv <= 2) &&
-				    (! defined $mirror->{'LF'}));
-				next if ((defined $mirror->{'LF'})
-				    && ($mirror->{'LF'} != $lv));
-				next unless ($mirror->{$type});
-				if($lv > 2 && $mirror->{'GC'} ne $oldcountry) {
-					printf $fh "\n%s:\n", $mirror->{'GC'};
-					$oldcountry=$mirror->{'GC'};
-				}
-				(my $url = $mirror->{$type}) =~ s,/$,,;
-				my $loc;
-				if ($lv == 2) {
-					$loc = _get_location ('mirlist1', $mirror);
-				} else {
-					$loc = _get_location ('mirlist2', $mirror);
-				}
-				$loc =~ s/&auml;/a/g ;
-				$loc =~ s/&ouml;/o/g ;
-				$loc =~ s/&uuml;/u/g ;
-				$loc =~ s/&eacute;/e/g ;
-				$loc =~ s/&ntilde;/n/g ;
-				printf $fh "    %s%s\n", $url, $loc ? ' ('.$loc.')' : '';
+	my $oldcountry='';
+	foreach my $mirror (sort _by_country @$mirrorref) {
+		for my $type ('UH', 'UF') {
+			next unless ($mirror->{$type});
+			if($mirror->{'GC'} ne $oldcountry) {
+				printf $fh "\n%s:\n", $mirror->{'GC'};
+				$oldcountry=$mirror->{'GC'};
 			}
+			(my $url = $mirror->{$type}) =~ s,/$,,;
+			my $loc = _get_location ('mirlist2', $mirror);
+			$loc =~ s/&auml;/a/g ;
+			$loc =~ s/&ouml;/o/g ;
+			$loc =~ s/&uuml;/u/g ;
+			$loc =~ s/&eacute;/e/g ;
+			$loc =~ s/&ntilde;/n/g ;
+			printf $fh "    %s%s\n", $url, $loc ? ' ('.$loc.')' : '';
 		}
 	}
 
@@ -232,20 +213,11 @@ sub _paste_mirrorlist($$$$$$) {
 	my ($fh, $mirrorref, $type, $proj, $version, $links) = @_;
 
 	# indent for first <td> to come
-	print $fh ' ' x 4 if ($type eq 'UF' || $type eq 'UH' || $type eq 'UR');
-	for my $lv (1, 2, 3) {
+	print $fh ' ' x 4 if ($type eq 'UH' || $type eq 'UF' || $type eq 'UR');
 	foreach my $mirror (sort _by_country @$mirrorref) {
-		if ($type eq 'UF' || $type eq 'UH' || $type eq 'UR') {
-			next if (($lv <= 2) && !defined $mirror->{'LF'});
-			next if ((defined $mirror->{'LF'}) && ($mirror->{'LF'} != $lv));
-		}
-		elsif ($type eq 'AH' || $type eq 'VH') {
-			next if (($lv <= 2) && !defined $mirror->{'LC'});
-			next if ((defined $mirror->{'LC'}) && ($mirror->{'LC'} != $lv));
-		}
 		next unless ($mirror->{$type});
 		my $loc = _get_location ($type, $mirror);
-		if ($type eq 'UF' || $type eq 'UH' || $type eq 'UR') {
+		if ($type eq 'UH' || $type eq 'UF' || $type eq 'UR') {
 			my $url = $mirror->{$type};
 			if ($proj eq 'openbgpd-ftp') {
 				$url .= "OpenBGPD/openbgpd-${version}.tgz";
@@ -349,7 +321,6 @@ sub _paste_mirrorlist($$$$$$) {
 			print $fh "<p>\n";
 		}
 	}
-	}
 	print $fh "\n";
 }
 
@@ -361,13 +332,11 @@ sub write_ftphtml($$$$) {
 
 	open(my $fh, '>', $filename) or die "open $filename: $!";
 	_paste_in($fh, $sources->{"${what}-head"});
-	_paste_mirrorlist($fh, $mirrorref, 'UF', $what, $ver, 1);
-	_paste_in($fh, $sources->{"${what}-mid1"});
 	_paste_mirrorlist($fh, $mirrorref, 'UH', $what, $ver, 1);
+	_paste_in($fh, $sources->{"${what}-mid1"});
+	_paste_mirrorlist($fh, $mirrorref, 'UF', $what, $ver, 1);
 	_paste_in($fh, $sources->{"${what}-mid2"});
-	if (not $what =~ /^openssh.*/) {
-		_paste_mirrorlist($fh, $mirrorref, 'UR', $what, $ver, 0);
-	}
+	_paste_mirrorlist($fh, $mirrorref, 'UR', $what, $ver, 0);
 	_paste_in($fh, $sources->{"${what}-end"});
 	close($fh) or die "close $filename: $!";
 }
@@ -407,25 +376,11 @@ sub _get_location($$) {
 	my $m = shift;
 
 	my $location = "";
-	if ($type eq 'UF' || $type eq 'UH' || $type eq 'UR') {
-		# first/second level mirrors have different title
-		if ((defined $m->{'LF'}) && ($m->{'LF'} == 1)) {
-			$location = "Master Fanout Site ($m->{'GC'})";
-		} elsif ((defined $m->{'LF'}) && ($m->{'LF'} == 2)) {
-			$location = "Second Level Mirror<br>";
-			$location .= '(' if ($m->{'GT'} || $m->{'GS'} ||
-				$m->{'GC'});
-			$location .= $m->{'GT'} if $m->{'GT'};
-			$location .= ", $m->{'GS'}" if $m->{'GS'};
-			$location .= ", $m->{'GC'}" if $m->{'GC'};
-			$location .= ')' if ($m->{'GT'} || $m->{'GS'} ||
-				$m->{'GC'});
-		} else {
-			$location = "$m->{'GC'}";
-			$location .= " ($m->{'GT'}" if ($m->{'GT'});
-			$location .= ", $m->{'GS'}" if ($m->{'GS'});
-			$location .= ')' if ($m->{'GT'});
-		}
+	if ($type eq 'UH' || $type eq 'UF' || $type eq 'UR') {
+		$location = "$m->{'GC'}";
+		$location .= " ($m->{'GT'}" if ($m->{'GT'});
+		$location .= ", $m->{'GS'}" if ($m->{'GS'});
+		$location .= ')' if ($m->{'GT'});
 	}
 	else {
 		if ($type eq 'AH' || $type eq 'VH') {
