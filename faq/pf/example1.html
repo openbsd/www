@@ -217,7 +217,43 @@ to worry about altering this portion of our existing rules file.
 <a name="filter"></a>
 <h3>Firewall Rules</h3>
 
-The example will start with some <tt>match</tt> rules.
+We will start with rules to support the use of
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+4.7"
+>ftp-proxy(8)</a> so that FTP clients on the local network can
+connect to FTP servers on the Internet.
+This works by dynamically inserting rules when an ftp connection
+is made.
+This is done using an <a href="anchors.html">anchor</a>:
+<blockquote><pre>
+anchor "ftp-proxy/*"
+</pre></blockquote>
+
+<p>
+Now we will add the rule needed to redirect FTP connections so
+they are seen by ftp-proxy(8):
+<blockquote><pre>
+pass in quick on $int_if inet proto tcp to any port ftp \
+    rdr-to 127.0.0.1 port 8021
+</pre></blockquote>
+
+<p>
+This rule will intercept FTP connections to port 21 and redirect them
+to an ftp-proxy(8) instance running on port 8021 and, through the use
+of the <tt>quick</tt> keyword, matching packets will not be further
+checked against the rest of the ruleset.
+If users regularly connect to FTP servers on other ports, then a
+list should be used to specify the destination port, for example:
+<tt>to any port { 21, 2121 }</tt>.
+
+<p>
+Note that both the <a href="anchors.html">anchor</a> and the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+4.7"
+>ftp-proxy(8)</a> redirect rule need to be located before any
+<tt>match</tt> rules for NAT or the ftp-proxy(8) will not work
+as expected.
+
+<p>
+Now we move on to some <tt>match</tt> rules.
 By itself, a <tt>match</tt> rule doesn't determine whether or
 not a packet is allowed to pass.
 Instead, packets matching this rule will have the parameters
@@ -296,18 +332,6 @@ antispoof quick for { lo $int_if }
 </pre></blockquote>
 
 <p>
-We will be using
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+4.7"
->ftp-proxy(8)</a> so that FTP clients on the local network can
-connect to FTP servers on the Internet.
-This works by dynamically inserting rules when an ftp connection
-is made.
-This is done using an <a href="anchors.html">anchor</a>:
-<blockquote><pre>
-anchor "ftp-proxy/*"
-</pre></blockquote>
-
-<p>
 Now open the ports used by those network services that will be available
 to the Internet.
 First, the traffic that is destined to the firewall itself:
@@ -323,21 +347,6 @@ it simple to open additional services to the Internet by simply editing
 the macro and reloading the ruleset. UDP services can also be opened up
 by creating a <tt>$udp_services</tt> macro and adding a filter rule,
 similar to the one above, that specifies <tt>proto udp</tt>.
-
-<p>
-Now we will add the rule needed to redirect FTP connections so
-they are seen by ftp-proxy(8):
-<blockquote><pre>
-pass in on $int_if inet proto tcp to any port ftp \
-    rdr-to 127.0.0.1 port 8021
-</pre></blockquote>
-
-<p>
-This rule will intercept FTP connections to port 21 and redirect them
-to an ftp-proxy(8) instance running on port 8021.
-If users regularly connect to FTP servers on other ports, then a
-list should be used to specify the destination port, for example:
-<tt>to any port { 21, 2121 }</tt>.
 
 <p>
 The next rule catches any attempts by someone on the Internet to
@@ -404,6 +413,13 @@ set block-policy return
 set loginterface fxp0
 set skip on lo
 
+# FTP Proxy rules
+
+anchor "ftp-proxy/*"
+
+pass in quick on $int_if inet proto tcp to any port ftp \
+    rdr-to 127.0.0.1 port 8021
+
 # match rules
 
 match out on egress inet from !(egress) to any nat-to (egress:0)
@@ -415,13 +431,8 @@ pass out quick
 
 antispoof quick for { lo $int_if }
 
-anchor "ftp-proxy/*"
-
 pass in on egress inet proto tcp from any to (egress) \
     port $tcp_services
-
-pass in on $int_if inet proto tcp to any port ftp \
-    rdr-to 127.0.0.1 port 8021
 
 pass in on egress inet proto tcp to (egress) port 80 \
     rdr-to $comp3 synproxy state
@@ -442,7 +453,7 @@ pass in on $int_if
 <a href="index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a> 
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: example1.html,v 1.42 2010/05/24 12:15:02 sthen Exp $</small>
+<small>$OpenBSD: example1.html,v 1.43 2010/07/19 23:43:08 sthen Exp $</small>
 
 </body>
 </html> 
