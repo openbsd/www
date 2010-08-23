@@ -1,0 +1,204 @@
+OpenSSH 5.6 has just been released. It will be available from the
+mirrors listed at http://www.openssh.com/ shortly.
+
+OpenSSH is a 100% complete SSH protocol version 1.3, 1.5 and 2.0
+implementation and includes sftp client and server support.
+
+Once again, we would like to thank the OpenSSH community for their
+continued support of the project, especially those who contributed
+code or patches, reported bugs, tested snapshots or donated to the
+project. More information on donations may be found at:
+http://www.openssh.com/donations.html
+
+Changes since OpenSSH 5.5
+=========================
+
+Features:
+
+ * Added a ControlPersist option to ssh_config(5) that automatically
+   starts a background ssh(1) multiplex master when connecting. This
+   connection can stay alive indefinitely, or can be set to
+   automatically close after a user-specified duration of inactivity.
+
+ * Hostbased authentication may now use certificate host keys. CA keys
+   must be specified in a known_hosts file using the @cert-authority
+   marker as described in sshd(8).
+
+ * ssh-keygen(1) now supports signing certificate using a CA key that
+   has been stored in a PKCS#11 token.
+
+ * ssh(1) will now log the hostname and address that we connected to at
+   LogLevel=verbose after authentication is successful to mitigate
+   "phishing" attacks by servers with trusted keys that accept
+   authentication silently and automatically before presenting fake
+   password/passphrase prompts.
+
+   Note that, for such an attack to be successful, the user must have
+   disabled StrictHostKeyChecking (enabled by default) or an attacker
+   must have access to a trusted host key for the destination server.
+
+ * Expand %h to the hostname in ssh_config Hostname options. While this
+   sounds useless, it is actually handy for working with unqualified
+   hostnames:
+     
+     Host *.*
+        Hostname %h
+     Host *
+        Hostname %h.example.org
+     
+ * Allow ssh-keygen(1) to import (-i) and export (-e) of PEM and PKCS#8
+   keys in addition to RFC4716 (SSH.COM) encodings via a new -m option 
+   (bz#1749)
+
+ * sshd(8) will now queue debug messages for bad ownership or
+   permissions on the user's keyfiles encountered during authentication
+   and will send them after authentication has successfully completed.
+   These messages may be viewed in ssh(1) at LogLevel=debug or higher.
+
+ * ssh(1) connection multiplexing now supports remote forwarding with
+   dynamic port allocation and can report the allocated port back to
+   the user:
+
+     LPORT=`ssh -S muxsocket -R0:localhost:25 -O forward somehost`
+
+ * sshd(8) now supports indirection in matching of principal names
+   listed in certificates. By default, if a certificate has an
+   embedded principals list then the username on the server must match
+   one of the names in the list for it to be accepted for
+   authentication.
+
+   sshd(8) now has a new AuthorizedPrincipalsFile option to specify a
+   file containing a list of names that may be accepted in place of the
+   username when authorizing a certificate trusted via the
+   sshd_config(5) TrustedCAKeys option. Similarly, authentication
+   using a CA trusted in ~/.ssh/authorized_keys now accepts a
+   principals="name1[,name2,...]" to specify a list of permitted names.
+     
+   If either option is absent, the current behaviour of requiring the
+   username to appear in principals continues to apply. These options
+   are useful for role accounts, disjoint account namespaces and
+   "user@realm"-style naming policies in certificates.
+ 
+ * Additional sshd_config(5) options are now valid inside Match blocks:
+
+     AuthorizedKeysFile
+     AuthorizedPrincipalsFile
+     HostbasedUsesNameFromPacketOnly
+     PermitTunnel
+
+ * Revised the format of certificate keys. The new format, identified as
+   ssh-{dss,rsa}-cert-v01@openssh.com includes the following changes:
+     
+     - Adding a serial number field. This may be specified by the CA at
+       the time of certificate signing.
+
+     - Moving the nonce field to the beginning of the certificate where
+       it can better protect against chosen-prefix attacks on the
+       signature hash (currently infeasible against the SHA1 hash used)
+     
+     - Renaming the "constraints" field to "critical options"
+     
+     - Addng a new non-critical "extensions" field. The "permit-*"
+       options are now extensions, rather than critical options to
+       permit non-OpenSSH implementation of this key format to degrade
+       gracefully when encountering keys with options they do not
+       recognize.
+     
+   The older format is still supported for authentication and may still
+   be used when signing certificates (use "ssh-keygen -t v00 ...").
+   The v00 format, introduced in OpenSSH 5.4, will be supported for at
+   least one year from this release, after which it will be deprecated
+   and removed.
+     
+BugFixes:
+
+ * The PKCS#11 code now retries a lookup for a private key if there is
+   no matching key with CKA_SIGN attribute enabled; this fixes fixes
+   MuscleCard support (bz#1736)
+    
+ * Unbreak strdelim() skipping past quoted strings (bz#1757). For
+   example, the following directive was not parsed correctly:
+
+       AllowUsers "blah blah" blah
+
+ * sftp(1): fix swapped args in upload_dir_internal(), breaking
+   recursive upload depth checks and causing verbose printing of
+   transfers to always be turned on (bz#1797)
+
+ * Fix a longstanding problem where if you suspend scp(1) at the
+   password/passphrase prompt the terminal mode is not restored.
+
+ * Fix a PKCS#11 crash on some smartcards by validating the length
+   returned for C_GetAttributValue (bz#1773)
+
+ * sftp(1): fix ls in working directories that contain globbing
+   characters in their pathnames (bz#1655)
+
+ * Print warning for missing home directory when ChrootDirectory=none
+   (bz#1564)
+
+ * sftp(1): fix a memory leak in do_realpath() error path (bz#1771)
+
+ * ssk-keygen(1): Standardise error messages when attempting to open
+   private key files to include "progname: filename: error reason"
+   (bz#1783)
+
+ * Replace verbose and overflow-prone Linebuf code with
+   read_keyfile_line() (bz#1565)
+
+ * Include the user name on "subsystem request for ..." log messages
+
+ * ssh(1) and sshd(8): remove hardcoded limit of 100 permitopen clauses
+   and port forwards per direction (bz#1327)
+
+ * sshd(8): ignore stderr output from subsystems to avoid hangs if a
+   subsystem or shell initialisation writes to stderr (bz#1750)
+
+ * Skip the initial check for access with an empty password when
+   PermitEmptyPasswords=no (bz#1638)
+
+ * sshd(8): fix logspam when key options (from="..." especially) deny
+   non-matching keys (bz#1765)
+
+ * ssh-keygen(1): display a more helpful error message when $HOME is
+   inaccessible while trying to create .ssh directory (bz#1740)
+
+ * ssh(1): fix hang when terminating a mux slave using ~. (bz#1758)
+
+ * ssh-keygen(1): refuse to generate keys longer than
+   OPENSSL_[RD]SA_MAX_MODULUS_BITS, since we would refuse to use
+   them anyway (bz#1516)
+
+ * Suppress spurious tty warning when using -O and stdin is not a tty
+   (bz#1746)
+
+ * Kill channel when pty allocation requests fail. Fixed stuck client
+   if the server refuses pty allocation (bz#1698)
+
+Portable OpenSSH Bugfixes:
+
+ * sshd(8): increase the maximum username length for login recording
+   to 512 characters (bz#1579)
+
+ * Initialize the values to be returned from PAM to sane values in
+   case the PAM method doesn't write to them. (bz#1795) 
+
+ * Let configure find OpenSSL libraries in a lib64 subdirectory.
+   (bz#1756)
+
+Checksums:
+==========
+
+ - SHA1 (openssh-5.6.tar.gz) = fa5ac394b874d6709031306b6ac5c48399697f7f
+ - SHA1 (openssh-5.6p1.tar.gz) = 347dd39c91c3529f41dae63714d452fb95efea1e
+
+Reporting Bugs:
+===============
+
+- Please read http://www.openssh.com/report.html
+  Security bugs should be reported directly to openssh@openssh.com
+
+OpenSSH is brought to you by Markus Friedl, Niels Provos, Theo de Raadt,
+Kevin Steves, Damien Miller, Darren Tucker, Jason McIntyre, Tim Rice and
+Ben Lindstrom.
+
