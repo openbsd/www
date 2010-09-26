@@ -69,7 +69,7 @@ please, use a max of 72 chars per line -->
 
 <h2>Introduction</h2>
 Le filtrage de paquets à l'aide de
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+4.6">pf(4)</a>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+4.7">pf(4)</a>
 consiste à autoriser ou bloquer le trafic réseau en fonction des
 propriétés des protocoles des couches 3
 (<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ip&amp;sektion=4"
@@ -138,7 +138,7 @@ ou <tt>block return</tt>.
 <dd>La présence de ce mot-clef dans une règle déclenche la
 journalisation des paquets correspondants à la règle grâce à
 l'utilitaire
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+4.6">pflogd(8)</a>.
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+4.7">pflogd(8)</a>.
 Si la règle crée un état, seul le paquet correspondant à l'ouverture de
 la session est conservé. Pour conserver tous les paquets d'une session,
 il faut utiliser le mot-clef <tt>log (all)</tt>.
@@ -279,19 +279,21 @@ adresses peuvent être spécifiées :
 <dd>Spécifie les drapeaux qui doivent être activés dans l'en-tête TCP lors de
     l'utilisation de <tt>proto tcp</tt>. Cette valeur est spécifiée ainsi :
     <tt>flags <i>check</i>/<i>mask</i></tt>. Par exemple : <tt>flags S/SA</tt>.
-    Dans ce cas, PF teste la valeur des drapeaux S et A (SYN et ACK) pour savoir
-    s'ils sont positionnés. Si le drapeau SYN est positionné, et uniquement ce
-    drapeau, alors la règle est applicable.
-    A partir d'OpenBSD 4.1, les drapeaux par défaut <tt>S/SA</tt> sont
-    appliqués à toutes les règles de filtrage TCP.
+    Dans ce cas, PF teste uniquement la valeur des drapeaux S et A (SYN et ACK) 
+    pour savoir si le drapeau SYN est positionné (et est appliqué à toutes
+    les règles TCP par défaut).
+    <tt>flags any</tt> indique à PF de ne pas vérifier les drapeaux.
 
 <dt><tt><i>state</i></tt>
 <dd>Ce mot-clef indique dans quel état doit être le paquet pour
     satisfaire à une règle.
 <ul>
+<li><tt>no state</tt> - fonctionne avec TCP, UDP et ICMP.
+    PF ne suivra pas cette connexion avec état.
+    Pour les connnexions TCP, <tt>flags any</tt> est aussi généralement
+    nécessaire.
 <li><tt>keep state</tt> - s'applique aux protocoles TCP, UDP et ICMP.
-    A partir d'OpenBSD 4.1, cette option est appliquée par défaut à
-    toutes les règles de filtrage.
+    Cette option est appliquée par défaut à toutes les règles de filtrage.
 <li><tt>modulate state</tt> - ne s'applique qu'au protocole TCP. PF
     renforcera le caractère aléatoire des numéros de séquence initiaux
     (ISN) générés pour ces paquets.
@@ -372,7 +374,7 @@ exemples suivants illustrent ce cas de figure :
 Mauvais :
 <blockquote>
 <tt>
-block in on fxp0 proto tcp from any to any port ssh<br>
+block in on fxp0 proto tcp port ssh<br>
 pass &nbsp;in all
 </tt>
 </blockquote>
@@ -386,7 +388,7 @@ de cette première règle.
 Mieux :
 <blockquote>
 <tt>
-block in quick on fxp0 proto tcp from any to any port ssh<br>
+block in quick on fxp0 proto tcp port ssh<br>
 pass &nbsp;in all
 </tt>
 </blockquote>
@@ -425,14 +427,11 @@ table et donc autorisés à passer, mais également les paquets qui
 appartiennent aux réponses du destinataire.
 
 <p>
-A partir d'OpenBSD 4.1, toutes les règles de filtrage créent
-automatiquement une entrée dans la table d'état dès qu'un paquet les
-active.
-Dans les versions précédentes d'OpenBSD, une règle de filtrage doit
-explicitement utiliser l'option <tt>keep state</tt>.
+Toutes les règles <i>pass</i> créent de maniére automatique une entrée
+dans la table d'état dès qu'un paquet les active.
+Cela peut-être désactivé de maniére explicite en utilisant l'option
+<tt>no state</tt>.
 
-<p>
-Voici un exemple pour OpenBSD 4.1 et les versions suivantes :
 <blockquote>
 <tt>
 pass out on fxp0 proto tcp from any to any
@@ -440,15 +439,7 @@ pass out on fxp0 proto tcp from any to any
 </blockquote>
 
 <p>
-Voici un exemple pour OpenBSD 4.0 et les versions antérieures :
-<blockquote>
-<tt>
-pass out on fxp0 proto tcp from any to any keep state
-</tt>
-</blockquote>
-
-<p>
-Ces règles autorisent les connexions TCP sortantes sur l'interface
+Cette règle autorise les connexions TCP sortantes sur l'interface
 <tt>fxp0</tt> mais aussi les paquets retour. L'option keep state permet donc
 d'augmenter les performances du pare-feu car la recherche dans la table d'état
 est beaucoup plus rapide que l'opération consistant à évaluer un paquet au
@@ -460,9 +451,10 @@ l'option <tt>keep state</tt> à ceci près qu'elle ne s'applique qu'aux
 paquets TCP sortants. L'option <tt>modulate state</tt> renforce le
 caractère aléatoire de leurs numéros de séquence initiaux (ISN). Cette
 option permet de renforcer la sécurité de certains systèmes
-d'exploitation ne sachant pas générer d'ISN suffisamment aléatoires. A
-partir de la version 3.5 d'OpenBSD, l'option <tt>modulate state</tt>
-peut être utilisée pour les autres protocoles que TCP.
+d'exploitation ne sachant pas générer d'ISN suffisamment aléatoires. Pour
+simplifier les règles, l'option <tt>modulate state</tt> peut être utilisée 
+pour les autres protocoles que TCP, dans les autres cas elle est traitée
+comme <tt>keep state</tt>.
 
 <p>
 Pour conserver l'état des connexions TCP, UDP et ICMP tout en renforçant
@@ -502,9 +494,6 @@ pass out on fxp0 proto { tcp, udp, icmp } from any \<br>
 Selon cette règle, les paquets ne trouveront une correspondance dans la
 table d'état que s'ils transitent par l'interface <tt>fxp0</tt>.
 
-
-<p>
-Il faut noter que les règles <a href="nat.html"><tt>nat</tt></a>, <a href="nat.html#binat"><tt>binat</tt></a> et <a href="rdr.html"><tt>rdr</tt></a> créent implicitement des entrées dans la table d'état.
 
 
 <a name="udpstate"></a>
@@ -717,48 +706,22 @@ combinaison de drapeaux au niveau de l'en-tête.
 <blockquote>
 <tt>
 pass in on fxp0 proto tcp from any to any port ssh flags S/SA
+pass in on fxp0 proto tcp from any to any port ssh
 </tt>
 </blockquote>
 
 <p>
-Cette règle s'applique aux paquets TCP dont le drapeau SYN est
-positionné. PF limite son inspection aux drapeaux SYN et ACK. La règle
-s'applique donc à un paquet dont les drapeaux SYN et ECE sont
-positionnés mais pas à un paquet dont les drapeaux SYN et ACK ou dont
-seul le drapeau ACK sont positionnés.
+Comme les <tt>drapeaux S/SA</tt> sont définis par défaut, les règles
+précédentes sont équivalentes, chacune des ces règles s'applique au trafic
+TCP avec le drapeau SYN positionné en regardant uniquement les drapeaux SYN
+et ACK.
+Un paquet avec les drapeaux SYN et ECE s'appliquera aux règles précédentes,
+mais pas à un paquet dont les drapeaux SYN et ACK ou dont seul le 
+drapeau ACK sont positionnés.
 
 <p>
-A partir d'OpenBSD 4.1, les drapeaux appliqués par défaut aux règles TCP
-sont <tt>flags S/SA</tt>.
-Combinés avec le mot-clé <tt>keep state</tt> positionné par défaut au
-niveau de toutes les règles de filtrage à partir d'OpenBSD 4.1, les deux
-règles suivantes deviennent équivalentes :
-<blockquote>
-<tt>
-pass out on fxp0 proto tcp all flags S/SA keep state<br>
-pass out on fxp0 proto tcp all
-</tt>
-</blockquote>
-
-<p>
-Chaque règle sera activée par les paquets TCP dont le drapeau SYN est
-positionné et dont le drapeau ACK ne l'est pas et chacune de ces deux
-règles créera une entrée dans la table d'état pour les paquets
-correspondants.
 Les drapeaux par défaut peuvent être contournés en utilisant l'option
 <tt>flags</tt> tel que spécifié plus haut.
-
-<p>
-Jusqu'à OpenBSD 4.0, aucun drapeau n'était positionné par défaut par les
-règles de filtrage.
-Chaque règle devait spécifier le(s) drapeau(x) ainsi que l'option
-<tt>keep state</tt>.
-
-<blockquote>
-<tt>
-pass out on fxp0 proto tcp all flags S/SA keep state
-</tt>
-</blockquote>
 
 <p>
 Il faut manipuler les drapeaux avec prudence et se méfier des mauvais
@@ -786,7 +749,7 @@ cette combinaison devrait être sûre :
 </blockquote>
 
 <p>
-<!--XXX scrub-->
+<!--XXX scrub changes may have invalidated this-->
 Si le trafic est normalisé, il peut être
 pratique et sûr de ne pas tester la valeur des drapeaux FIN et RST. Dans
 ce cas, PF rejette tout paquet entrant dont les drapeaux TCP sont
@@ -816,8 +779,7 @@ state</tt> :
 
 <blockquote>
 <tt>
-pass in on $ext_if proto tcp from any to $web_server port www \<br>
-&nbsp;&nbsp;&nbsp;flags S/SA synproxy state
+pass in on $ext_if proto tcp to $web_server port www synproxy state
 </tt>
 </blockquote>
 
@@ -859,7 +821,7 @@ antispoof [log] [quick] for <i>interface</i> [<i>af</i>]
 <dl>
 <dt><tt>log</tt>
 <dd>Journalise les paquets via 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+4.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+4.7"
 >pflogd(8)</a>.
 
 <dt><tt>quick</tt>
@@ -950,8 +912,7 @@ trafic entrant sur <i>toutes</i> les interfaces.
 <h2>Unicast Reverse Path Forwarding</h2>
 
 <p>
-Depuis <a href="../../../fr/40.html">OpenBSD 4.0</a>, PF offre la
-fonctionnalité Unicast Reverse Path Forwarding (uRPF).
+PF offre la fonctionnalité Unicast Reverse Path Forwarding (uRPF).
 Lorsqu'un paquet est soumis à la vérification uRPF, l'adresse IP source
 de celui-ci est recherchée dans la table de routage. Si l'interface de
 sortie trouvée dans la table de routage afin de joindre la source est la
@@ -992,7 +953,7 @@ critères dans des règles de filtrage.
 <p>
 PF utilise le fichier
 <a href="options.html#fingerprints">d'empreintes</a>
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.os&amp;sektion=5&amp;manpath=OpenBSD+4.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.os&amp;sektion=5&amp;manpath=OpenBSD+4.7"
 ><tt>/etc/pf.os</tt></a>
 pour reconnaître les systèmes d'exploitation auxquels il a affaire.
 Lorsque PF s'exécute, la liste des empreintes reconnues peut être
@@ -1098,8 +1059,8 @@ block return in quick on $int_if proto tcp from ! 192.168.0.15 \
 # Autoriser le trafic sortant et entrant sur le réseau local.
 # ces règles créeront des entrées au niveau de la table d'état étant
 # donné que le mot-clé "keep state" est automatiquement appliqué.
-pass in  on $int_if from $lan_net to any
-pass out on $int_if from any to $lan_net
+pass in  on $int_if from $lan_net
+pass out on $int_if to $lan_net
 
 # Autoriser les connexions sortantes tcp, udp et icmp sur l'interface
 # externe.
@@ -1113,7 +1074,7 @@ pass out on $ext_if proto { tcp udp icmp } all modulate state
 # connecté. Activer un service mandataire SYN.
 # Les drapeaux par défaut "S/SA" seront automatiquement appliqués à la
 # règle par PF.
-pass in log on $ext_if proto tcp from any to ! &lt;firewall&gt; \
+pass in log on $ext_if proto tcp to ! &lt;firewall&gt; \
    port ssh synproxy state
 </pre>
 </td></tr>
@@ -1132,10 +1093,10 @@ pass in log on $ext_if proto tcp from any to ! &lt;firewall&gt; \
 <br>
 <small>
 <!--
-Originally [OpenBSD: filter.html,v 1.53 ]<br>
-$Translation: filter.html,v 1.46 2009/11/30 10:59:52 benoit Exp $<br>
+Originally [OpenBSD: filter.html,v 1.54 ]<br>
+$Translation: filter.html,v 1.47 2010/09/25 13:57:54 benoit Exp $<br>
 -->
-$OpenBSD: filter.html,v 1.40 2009/11/30 13:23:49 ajacoutot Exp $
+$OpenBSD: filter.html,v 1.41 2010/09/26 10:09:25 ajacoutot Exp $
 </small>
 
 </body>

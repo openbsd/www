@@ -373,7 +373,7 @@ d'activation de PF peuvent être trouvées dans les
 
 <p>
 La Mise en queue est configurée dans <tt>
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+4.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+4.7"
 >pf.conf</a></tt>.
 Il y a deux types de directives utilisées pour configurer la Mise en
 Queue :
@@ -532,15 +532,29 @@ utilisé en conjonction avec les <a href="filter.html">règles de
 filtrage</a> de PF. Par exemple, considérons un jeu de règles de
 filtrage contenant une ligne comme :
 <blockquote>
-<tt>pass out on fxp0 from any to any port 22</tt>
+<tt>pass out on fxp0 proto tcp to port 22</tt>
 </blockquote>
 
 <p>
 Les paquets répondant à cette règle peuvent être assignés à une queue
 spécifique en utilisant le mot-clé <tt>queue</tt> :
 <blockquote>
-<tt>pass out on fxp0 from any to any port 22 queue ssh</tt>
+<tt>pass out on fxp0 proto tcp to port 22 queue ssh</tt>
 </blockquote>
+
+<p>
+Quand une entrée est crée dans la table d'état par cette règle, PF
+enregistre la queue dans la table d'état; cela sera utilisé par les autres
+paquets permis par cette entrée :
+<blockquote>
+<tt>pass in on fxp0 proto tcp to port 80 queue http</tt>
+</blockquote>
+Avec cette règle, les paquets traversant en retour <tt>fxp0</tt> qui
+s'applique à une connexion active arrivera dans la queue <tt>http</tt>.
+Il faut remarquer que même si le mot clé <tt>queue</tt> est utilisé sur une
+règle de filtrage sur un trafic entrant, le but est de spécifier une queue
+pour le trafic sortant correspondant; la règle précedente ne mise pas en 
+"queue" le trafic entrant.
 
 <p>
 Lorsque l'on utilise le mot-clé <tt>queue</tt> avec les directives
@@ -556,16 +570,17 @@ altq on fxp0 cbq bandwidth 2Mb queue { std, ftp }<br>
 queue std bandwidth 500Kb cbq(default)<br>
 queue ftp bandwidth 1.5Mb<br>
 <br>
-pass in on dc0 from any to any port 21 queue ftp<br>
+pass in on dc0 proto tcp to port 21 queue ftp<br>
 </tt>
 </blockquote>
 
 <p>
 La Mise en queue est activée sur <tt>fxp0</tt> mais la désignation
 concerne <tt>dc0</tt>.
-Si les paquets répondant à la règle <tt>pass</tt> sortent de l'interface
-<tt>fxp0</tt>, ils seront mis en queue dans <tt>ftp</tt>. Ce type de
-mise en queue peut être très pratique sur les routeurs.
+Si les paquets répondant à la règle <tt>pass</tt> (ou l'état crée par cette
+règle) sortent de l'interface <tt>fxp0</tt>, ils seront mis en queue dans 
+<tt>ftp</tt>. 
+Ce type de mise en queue peut être très pratique sur les routeurs.
 
 <p>
 Normalement, un seul nom de queue est donné avec le mot-clé
@@ -608,24 +623,6 @@ valeur comme 600Kb entraînera de meilleures performances. C'est après
 des essais et des erreurs que vous obtiendrez les meilleurs réglages de
 <tt>bande passante</tt>.
 
-<p>
-Quand on utilise le mot-clé <tt>queue</tt> avec des règles qui
-<tt>gardent l'état</tt> comme :
-<blockquote>
-<tt>
-pass in on fxp0 proto tcp from any to any port 22 flags S/SA \<br>
-&nbsp;&nbsp;&nbsp;keep state queue ssh
-</tt>
-</blockquote>
-
-<p>
-PF enregistrera la queue dans la table d'états ce qui entraînera que les
-paquets traversant <tt>fxp0</tt> au retour et répondant à la connexion
-"stateful" termineront dans la queue <tt>ssh</tt>. Notez que même si le mot-clé
-<tt>queue</tt> est utilisé dans une règle filtrant le trafic entrant, le
-but est de spécifier une queue pour le trafic sortant correspondant; la
-règle ci-dessus ne mettra pas en queue les paquets entrants.
-
 <a name="example1"></a>
 <h2>Exemple #1 : Réseau domestique</h2>
 <pre>
@@ -663,10 +660,7 @@ La politique de mise en queue pour ce réseau :
 <p>
 Le jeu de règles ci-dessous permet cette politique réseau. Notez que
 seules les directives de <tt>pf.conf</tt> qui concernent directement la
-politique ci-dessus sont présentes;
-<a href="nat.html"><tt>nat</tt></a>,
-<a href="rdr.html"><tt>rdr</tt></a>, <a href="options.html">options</a>,
-etc... ne sont pas montrées.
+politique ci-dessus sont présentes.
 
 <p>
 <table border=0 width="650">
@@ -733,15 +727,14 @@ block in on fxp0 all
 
 # règles de filtrage pour la sortie en fxp0
 block out on fxp0 all
-pass  out on fxp0 inet proto tcp from (fxp0) to any flags S/SA \
-        keep state queue(std_out, tcp_ack_out)
-pass  out on fxp0 inet proto { udp icmp } from (fxp0) to any keep state
-pass  out on fxp0 inet proto { tcp udp } from (fxp0) to any port domain \
-        keep state queue dns_out
-pass  out on fxp0 inet proto tcp from (fxp0) to any port $ssh_ports \
-        flags S/SA keep state queue(std_out, ssh_im_out)
-pass  out on fxp0 inet proto tcp from (fxp0) to any port $im_ports \
-        flags S/SA keep state queue(ssh_im_out, tcp_ack_out)
+pass  out on fxp0 inet proto tcp from (fxp0) queue(std_out, tcp_ack_out)
+pass  out on fxp0 inet proto { udp icmp } from (fxp0)
+pass  out on fxp0 inet proto { tcp udp } from (fxp0) to port domain \
+	queue dns_out
+pass  out on fxp0 inet proto tcp from (fxp0) to port $ssh_ports \
+	queue(std_out, ssh_im_out)
+pass  out on fxp0 inet proto tcp from (fxp0) to port $im_ports \
+	queue(ssh_im_out, tcp_ack_out)
 
 # règles de filtrage pour l'entrée en dc0
 block in on dc0 all
@@ -749,14 +742,14 @@ pass  in on dc0 from $local_net
 
 # règles de filtrage pour la sortie en dc0
 block out on dc0 all
-pass  out on dc0 from any to $local_net
-pass  out on dc0 proto { tcp udp } from any port domain to $local_net \
-        queue dns_in
-pass  out on dc0 proto tcp from any port $ssh_ports to $local_net \
-        queue(std_in, ssh_im_in)
-pass  out on dc0 proto tcp from any port $im_ports to $local_net \
-        queue ssh_im_in
-pass  out on dc0 from any to $bob queue bob_in
+pass  out on dc0 to $local_net
+pass  out on dc0 proto { tcp udp } from port domain to $local_net \
+ 	queue dns_in
+pass  out on dc0 proto tcp from port $ssh_ports to $local_net \
+ 	queue(std_in, ssh_im_in)
+pass  out on dc0 proto tcp from port $im_ports to $local_net \
+ 	queue ssh_im_in
+pass  out on dc0 to $bob queue bob_in 	 	
 </pre>
 </td></tr>
 </table>
@@ -906,35 +899,32 @@ block on { fxp0, fxp1, dc0 } all
 
 # règles de filtrage pour l'entrée de fxp0
 pass in on fxp0 proto tcp from any to $wwwserv port { 21, \
-        &gt; 49151 } flags S/SA keep state queue www_ext_misc
-pass in on fxp0 proto tcp from any to $wwwserv port 80 \
-        flags S/SA keep state queue www_ext_http
+	&gt; 49151 } queue www_ext_misc
+pass in on fxp0 proto tcp from any to $wwwserv port 80 queue www_ext_http
 
 # règles de filtrage pour la sortie de fxp0
-pass out on fxp0 from $int_nets to any keep state
-pass out on fxp0 from $boss to any keep state queue boss_ext
+pass out on fxp0 from $int_nets
+pass out on fxp0 from $boss queue boss_ext
 
 # règles de filtrage pour l'entrée de dc0
-pass in on dc0 from $int_nets to any keep state
-pass in on dc0 from $it_net to any queue it_int
-pass in on dc0 from $boss to any queue boss_int
+pass in on dc0 from $int_nets
+pass in on dc0 from $it_net queue it_int
+pass in on dc0 from $boss queue boss_int
 pass in on dc0 proto tcp from $int_nets to $wwwserv port { 21, 80, \
-        &gt; 49151 } flags S/SA keep state queue www_int
+        &gt; 49151 } queue www_int
 
 # règles de filtrage pour la sortie de dc0
 pass out on dc0 from dc0 to $int_nets
 
 # règles de filtrage pour l'entrée de fxp1
-pass in on fxp1 proto { tcp, udp } from $wwwserv to any port 53 \
-        keep state
+pass in on fxp1 proto { tcp, udp } from $wwwserv to port 53
 
 # règles de filtrages pour la sortie de fxp1
-pass out on fxp1 proto tcp from any to $wwwserv port { 21, \
-        &gt; 49151 } flags S/SA keep state queue net_dmz_misc
-pass out on fxp1 proto tcp from any to $wwwserv port 80 \
-        flags S/SA keep state queue net_dmz_http
+pass out on fxp1 proto tcp to $wwwserv port { 21, \
+	&gt; 49151 } queue net_dmz_misc
+pass out on fxp1 proto tcp to $wwwserv port 80 queue net_dmz_http
 pass out on fxp1 proto tcp from $int_nets to $wwwserv port { 80, \
-        21, &gt; 49151 } flags S/SA keep state queue internal_dmz
+        21, &gt; 49151 } queue internal_dmz
 </pre>
 </td></tr>
 </table>
@@ -952,10 +942,10 @@ Partage de Charge</a>]
 <br>
 <small>
 <!--
-Originally [OpenBSD: queueing.html,v 1.38 ]<br>
-$Translation: queueing.html,v 1.28 2009/10/19 15:48:30 benoit Exp $<br>
+Originally [OpenBSD: queueing.html,v 1.39 ]<br>
+$Translation: queueing.html,v 1.29 2010/09/25 14:18:06 benoit Exp $<br>
 -->
-$OpenBSD: queueing.html,v 1.22 2009/10/20 20:44:42 ajacoutot Exp $
+$OpenBSD: queueing.html,v 1.23 2010/09/26 10:09:25 ajacoutot Exp $
 </small>
 
 </body>

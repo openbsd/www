@@ -72,8 +72,8 @@ PERFORMANCE OF THIS DOCUMENTATION
   <li><a href="#PortsDelete"  >15.3.7 - Désinstaller un paquetage de port</a>
   <li><a href="#PortsFlavors" >15.3.8 - Utiliser les saveurs ("flavors") et 
   les sous-paquetages ("subpackages")</a>
-<!--  <li><a href="#PortsSecurity">15.3.9 - Mises à jour de sécurité
-(-stable)</a> -->
+  <li><a href="#PortsSecurity">15.3.9 - Mises à jour de sécurité (<i>-stable</i>)</a>
+  <li><a href="#PkgSig" >15.3.10 - Signatures des paquetages</a>
   </ul>
 <li><a href="#PkgFAQ"         >15.4 - FAQ</a>
   <ul>
@@ -140,12 +140,11 @@ Bien que nous tâchions de maintenir la qualité de la collection des
 paquetages élévée, nous n'avons juste pas assez de ressources humaines pour 
 assurer le même niveau de robustesse et de sécurité.
 </font></b>
-<!--
+
 Bien évidemment les <a href="#PortsSecurity">mises à jour de sécurité</a> pour
 différentes applications sont intégrées dans l'arbre des ports aussi 
 rapidement que possible, et les mises à jour de sécurité des paquetages
 correspondants sont mises à disposition des snapshots de <i>-current</i>.
--->
 
 <a name="PkgMgmt"></a>
 <h2>15.2 - Gestion des paquetages</h2>
@@ -1326,14 +1325,13 @@ aucune option de configuration avant de construire le port.
 Dans ce but vous devez employer les saveurs.
 
 
-<!--
 <a name="PortsSecurity"></a>
 <h3>15.3.9 - Mises à jour de sécurité (-stable)</h3>
 
 Quand un bogue sérieux ou une faille de sécurité sont découverts dans un
-logiciel tiers, ils sont corrigés dans la branche <b>-stable</b> de l'arbre
+logiciel tiers, ils sont corrigés dans la branche <i>-stable</i> de l'arbre
 des ports.
-Rappelez-vous que le cycle de vie est de 1 an : seulement la current et la
+Rappelez-vous que le cycle de vie est de 1 version : seulement la current et la
 derniére révision sont mises à jour, comme expliqué dans 
 <a href="faq5.html#Flavors">FAQ 5 - Saveurs ('Flavors") OpenBSD</a>.
 
@@ -1341,14 +1339,81 @@ derniére révision sont mises à jour, comme expliqué dans
 Cela signifie que tous ce que vous devez faire est de s'assurer d'avoir
 récupéré la branche correcte de l'arbre de ports, et de construire le logiciel 
 désiré de celui-ci.
-Vous pouvez avoir un arbre mis à jour avec CVS, et en plus s'abonner à la
-<a href="../../fr/mail.html">liste de diffusion</a> ports-security pour reçevoir les 
-annonces de sécurité relatives aux logiciels dans l'arbre des ports.
+Vous pouvez avoir <a href="../../fr/anoncvs.html">un arbre mis à jour avec CVS</a>, 
+et en plus s'abonner à la <a href="../../fr/mail.html">liste de diffusion</a>
+ports-changes pour reçevoir les annonces de sécurité relatives aux logiciels 
+dans l'arbre des ports.
 
 <p>
 Bien evidemment, les mises à jour de sécurité sont effectuées sur l'arbre
-des ports -current avant d'être intégrées dans la branche -stable.
--->
+des ports -current avant d'être intégrées dans la branche <i>-stable</i>.
+
+<a name="PkgSig"></a>
+<h3>15.3.10 - Sigantures des paquetages</h3>
+
+Les signatures sont un bon moyen pour être sûr que les paquetages sont
+légitimes et non corrompus.
+
+<p>
+Pour démarrer la construction de la signature des paquetages, nous avons
+besoin en premier de créer un certificat racine CA (autorité de
+certification) et une clé. Dans cette exemple, nous utiliserons une validité
+de 10 ans.
+
+<blockquote><pre>
+# <b>openssl req -x509 -days 3650 -newkey rsa:2048 -keyout /etc/ssl/private/pkgca.key -out /etc/ssl/pkgca.pem</b>
+</pre></blockquote>
+
+Maintenant nous allons créer une certificat <i>build</i> et une clé que nous
+utiliserons pour signer nos paquetages. Pour cet exemple, nous utiliserons
+une validité de 1 an. Nous allons aussi créer la demande correspondante de
+signature de certificat qui sera utilisée par notre CA pour signer le
+certificat.
+
+<blockquote><pre>
+# <b>openssl genrsa -out /etc/ssl/private/pkg.key 2048</b>
+# <b>openssl req -new -key /etc/ssl/private/pkg.key -out /etc/ssl/private/pkg.csr</b>
+</pre></blockquote>
+
+Maintenant nous allons signer le certificat en utilisant la CA que nous
+avons crée lors de la premiére étape.
+
+<blockquote><pre>
+# <b>openssl x509 -req -days 365 -in /etc/ssl/private/pkg.csr -CA /etc/ssl/pkgca.pem -CAkey /etc/ssl/private/pkgca.key -CAcreateserial -out /etc/ssl/pkg.crt</b>
+# <b>rm /etc/ssl/private/pkg.csr</b>
+</pre></blockquote>
+
+<p>
+Finalement, nous ajoutons la ligne suivante à <tt>/etc/mk.conf</tt> pour
+contruire des paquetages signés par défaut.
+
+<blockquote><pre>
+PKG_CREATE=/usr/sbin/pkg_create -s x509 -s /etc/ssl/pkg.crt -s /etc/ssl/private/pkg.key</b>
+</pre></blockquote>
+
+<p>
+Quand on installe des paquetages signés, vous verrez une ligne
+supplémentaire à la fin de la sortie qui vous informe du nombre de 
+paquetages signés que vous avez installé.
+
+<blockquote><pre>
+$ <b>sudo pkg_add vte-0.24.3.tgz</b>
+vte-0.24.3: ok
+Packages with signatures: 1
+</pre></blockquote>
+
+<p>
+Si vous avez des problèmes avec des paquetages signés (par exemple
+certificat expiré...), vous pouvez forcer la (re-)installation et/ou
+suppression en utilisant une des commandes suuivantes (en fonction de ce que
+vous voulez faire) :
+
+<blockquote><pre>
+$ <b>sudo pkg_add -r -D installed PKGNAME</b>
+$ <b>sudo pkg_add -D nosig PKGNAME</b>
+$ <b>sudo pkg_delete -q PKGNAME</b>
+</pre></blockquote>
+
 
 <a name="PkgFAQ"></a>
 <h2>15.4 - FAQ</h2>
@@ -1387,8 +1452,8 @@ quelques semaines auparavant.
 Gardez en mémoire que si vous utilisez X11 comme une partie de votre système, 
 il doit aussi suivre la branche correspondante ! 
 <li>Parce que des changements non intrusifs sont faits dans -stable, il est
-possible d'utiliser des paquetages et ports -release sur un système
--stable et vice-versa.
+possible d'utiliser des paquetages et ports -stable sur un système
+-release et vice-versa.
 Il n'est pas nécessaire de mettre à jour tous les paquetages installés aprés
 avoir appliqué quelques patchs correctifs d'erreurs sur votre système.
 </ul>
@@ -1704,7 +1769,7 @@ Elle sont listée ci-dessous, par ordre croissant de difficulté.
 <li><a href="#Problems">Signaler les problèmes</a> que vous rencontrez.
 <li>Vous pouvez systématiquement tester les ports et reporter les cassures
 ("breakages"), ou suggérer des améliorations.
-Jetez un oeil au <a href="../../fr/porttest.html">Guide de Tests des Ports</a>.
+Jetez un oeil au <a href="../ports/testing.html">Guide de Tests des Ports</a>.
 <li>Testez les mises à jour des ports qui sont postées dans la liste de
 diffusion des ports.
 <li>Envoyez des mises à jour ou des patches ou mainteneur du port, ou sur la
@@ -1737,10 +1802,10 @@ de pouvoir mettre à jour vous-même le système -current.
 <br>
 <small>
 <!--
-Originally [OpenBSD: faq15.html,v 1.70 ]<br>
-$Translation: faq15.html,v 1.32 2010/06/11 21:58:27 benoit Exp $<br>
+Originally [OpenBSD: faq15.html,v 1.75 ]<br>
+$Translation: faq15.html,v 1.33 2010/09/25 13:29:42 benoit Exp $<br>
 -->
-$OpenBSD: faq15.html,v 1.25 2010/06/12 19:51:10 ajacoutot Exp $
+$OpenBSD: faq15.html,v 1.26 2010/09/26 10:09:24 ajacoutot Exp $
 </small>
 
 </body>
