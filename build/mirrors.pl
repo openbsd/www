@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.25 2010/07/14 23:45:56 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.26 2010/09/27 07:34:26 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -275,13 +275,15 @@ sub _paste_mirrorlist($$$$$$) {
 			}
 			printf $fh $format{'fingerprints'}."<br>\n"
 				if ($mirror->{'SD'} || $mirror->{'SR'} ||
-					$mirror->{'SO'});
+					$mirror->{'SO'} || $mirror->{'SE'});
 			print $fh "(RSA1) $mirror->{'SO'}<br>\n"
 				if ($mirror->{'SO'});
 			print $fh "(RSA) $mirror->{'SR'}<br>\n"
 				if ($mirror->{'SR'});
 			print $fh "(DSA) $mirror->{'SD'}<br>\n"
 				if ($mirror->{'SD'});
+			print $fh "(ECDSA) $mirror->{'SE'}<br>\n"
+				if ($mirror->{'SE'});
 			print $fh "<p>\n";
 		}
 		elsif ($type eq 'VH') {
