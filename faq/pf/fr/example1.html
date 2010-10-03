@@ -158,25 +158,27 @@ répondra aux objectifs précités.
 <h3>Macros</h3>
 Les macros suivantes sont définies pour rendre la maintenance et la
 lecture du jeu de règles plus faciles :
-<blockquote>
-<tt>
-ext_if="fxp0"<br>
-int_if="xl0"<br>
-<br>
-tcp_services = "{ 22, 113 }"<br>
-icmp_types = "echoreq"<br>
-<br>
+<blockquote><pre>
+int_if="xl0"
+
+tcp_services="{ 22, 113 }"
+icmp_types="echoreq"
+
 comp3 = "192.168.0.3"
-</tt>
-</blockquote>
+</pre></blockquote>
 
 <p>
-Les deux premières lignes définissent les interfaces réseau sur
+La première ligne définit les interfaces réseau sur
 lesquelles le filtrage sera effectué. En les définissant ici, si nous
 devons déplacer ce système vers une autre machine avec un matériel
 différent, nous pourrons alors ne changer que ces deux lignes et le
-reste des règles restera valable. Les troisièmes et quatrièmes lignes
-listent les numéros de port TCP des services ouverts depuis Internet
+reste des règles restera valable. 
+(Pour cet exemple, l'interface externe sera assurée en utilisant
+l'interface de groupe <tt>egress</tt>.
+C'est automatiquement activé sur toutes les interfaces ayant une route par
+défaut, dans ce cas, fxp0).
+Les deuxièmes et troisièmes lignes listent les numéros de port TCP  
+des services ouverts depuis Internet
 (SSH et ident/auth) et les types de paquets ICMP qui sont autorisés à
 parvenir jusqu'aù pare-feu. Enfin, la dernière ligne définit l'adresse
 IP de COMP3.
@@ -184,8 +186,8 @@ IP de COMP3.
 <p>
 <b>Remarque</b> : Si la connexion Internet nécessite l'utilisation
    de
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pppoe&amp;sektion=8">PPPoE</a>, 
-   le filtrage et la NAT s'effectueront sur l'interface <tt>tun0</tt> <i>au
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pppoe&amp;sektion=4">PPPoE</a>, 
+   le filtrage et la NAT s'effectueront sur l'interface <tt>pppoe0</tt> <i>au
    lieu de</i> <tt>fxp0</tt>.
 
 <a name="options"></a>
@@ -193,12 +195,10 @@ IP de COMP3.
 Les deux options suivantes spécifient la réponse par défaut fournie par
 les règles de filtrage <tt>block</tt> et activent la collecte de
 statistiques sur l'interface externe :
-<blockquote>
-<tt>
-set block-policy return<br>
-set loginterface $ext_if
-</tt>
-</blockquote>
+<blockquote><pre>
+set block-policy return
+set loginterface fxp0
+</pre></blockquote>
 
 <p>
 Chaque système Unix possède une interface de "loopback".
@@ -210,107 +210,110 @@ Sur OpenBSD, l'interface de bouclage ("loopback") est
 Le filtrage est communément désactivé sur ces interfaces.
 L'utilisation de <a href="options.html#skip">set skip</a> permet
 d'accomplir cela.
-<blockquote>
-<tt>
+<blockquote><pre>
 set skip on lo
-</tt>
-</blockquote>
-Veuillez prendre note que nous n'effectuons pas de filtrage sur le
-groupe d'interfaces <tt>lo</tt> entier, de cette manière nous pourrions
+</pre></blockquote>
+<!-- XXX this should be interface groups, but PF (at least up to
+ 4.7) just does a substring match on the interface name -->
+Veuillez prendre note que nous n'effectuons pas de filtrage sur les
+interfaces <tt>lo</tt>, de cette manière nous pourrions
 rajouter des interfaces de loopback supplémentaire sans avoir à nous
 soucier de mettre à jour cette partie de la configuration.
 
 <a name="scrub"></a>
-<h3>Scrub</h3>
-Il n'y a aucune raison pour ne pas utiliser la normalisation de paquets
-recommandée pour tous les paquets entrants. Il suffit d'utiliser la
-ligne suivante :
-
-<blockquote>
-<tt>
-match in all scrub (no-df)
-</tt>
-</blockquote>
-
-<a name="nat"></a>
-<h3>Traduction d'Adresses Réseau</h3>
-Pour effectuer la NAT du réseau interne, la règle de <tt>nat</tt>
-suivante est utilisée :
-
-<blockquote>
-<tt>
-nat on $ext_if from !($ext_if) to any -&gt; ($ext_if)
-</tt>
-</blockquote>
-
-<p>
-Dans ce cas, "<tt>!($ext_if)</tt>" pourrait être aisément remplacé par
-"<tt>$int_if</tt>" mais si vous ajoutez plusieurs interfaces internes
-vous devrez ajouter de nouvelles règles NAT, alors qu'avec cette
-structure, NAT sera activé sur toutes les interfaces protégées.
-
-<p>
-Vu que l'adresse IP de l'interface externe est attribuée dynamiquement,
-des parenthèses sont utilisés autour de l'interface de traduction afin
-que PF tienne compte automatiquement des changements d'adresse IP sur
-cette interface.
-
-<p>
-Puisque nous souhaitons que le proxy FTP fonctionne, nous ajouterons
-également <a href="anchors.html">l'ancre</a> NAT :
-
-<blockquote>
-<tt>
-nat-anchor "ftp-proxy/*"
-</tt>
-</blockquote>
-
 <a name="rdr"></a>
-<h3>Redirection</h3>
-La première redirection est pour
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+4.7">ftp-proxy(8)</a> 
-afin de permettre aux clients FTP sur le réseau interne de se connecter
-à des serveurs FTP sur Internet.
-<blockquote>
-<tt>
-rdr-anchor "ftp-proxy/*"<br>
-rdr on $int_if proto tcp from any to any port 21 -&gt; 127.0.0.1 port 8021
-</tt>
-</blockquote>
-
-<p>
-Il est à noter que cette règle ne fonctionnera que pour les connexions
-FTP au port 21. Si les utilisateurs se connectent de manière régulière à
-des serveurs FTP sur d'autres ports, une liste devra être utilisée pour
-spécifier le port de destination, par exemple : <tt>from any to any port
-{ 21, 2121 }</tt>.
-
-<p>
-La dernière règle de redirection est utilisée pour toutes les tentatives
-de connexion sur le port TCP 80 du pare-feu en provenance d'Internet.
-Les tentatives légitimes d'accès à ce port seront générées par des
-utilisateurs qui essaient d'accèder au serveur web du réseau. Ces
-tentatives de connexion doivent être redirigées vers COMP3 :
-
-<blockquote>
-<tt>
-rdr on $ext_if proto tcp from any to any port 80 -&gt; $comp3
-</tt>
-</blockquote>
-
 <a name="filter"></a>
-<h3>Règles de Filtrage</h3>
-Détaillons maintenant les règles de filtrage. Commencez par
-l'interdiction par défaut de tout trafic :
-<blockquote>
-<tt>
-block in<br>
-</tt>
-</blockquote>
+<h3>Règles Pare-feu</h3>
+
+On commencera avec des règles pour supporter l'utilisation de 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+4.7">
+ftp-proxy(8)</a> ainsi les clients FTP sur le réseau local pourront se
+connecter aux serveurs FTP sur Inernet.
+Cela fonctionne en insérant dynamiquement des règles quand une connexion ftp
+est effectuée.
+C'est réalisé en utilisant une <a href="anchors.html">ancre</a>:
+<blockquote><pre>
+anchor "ftp-proxy/*"
+</pre></blockquote>
+
+<p>
+Maintenant nous allons ajouter la régle permettant le redirection des
+connexions FTP pour qu'elles soient vues par ftp-proxy(8):
+<blockquote><pre>
+pass in quick on $int_if inet proto tcp to any port ftp \
+    rdr-to 127.0.0.1 port 8021
+</pre></blockquote>
+
+<p>
+Cette règle intercepte les connxions FTP sur le port 21 et les redirigent
+vers une instance ftp-proxy(8) tournant sur le port 8021 et, à travers
+l'utilisation du mot clé <tt>quick</tt>, les paquets valides ne seront pas
+testés par le reste du jeu de règles.
+Si des utilisateurs se connectent sur les serveurs FTP sur des ports
+diffèrents, une liste peut-être utilisée pour spécifier le port de
+destination, par exemple :
+<tt>to any port { 21, 2121 }</tt>.
+
+
+<p>
+Il faut remarquer qu'aussi bien les <a href="anchors.html">ancres</a> que
+la règle de redirection
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+4.7"
+>ftp-proxy(8)</a> ont besoin d'être placées avant toutes règles <tt>match</tt> 
+pour le NAT ou le ftp-proxy(8) ne fonctionnera pas bien.
+
+<p>
+Maintenant nous allons voir les règles <tt>match</tt>.
+Par elle-même, un règle <tt>match</tt> ne détermine pas si un paquet à la
+permission ou non de passer.
+A la place, les paquets qui sont conforment à cette règle auront les
+paramétres mémorisés; ils seront utilisés dans toutes les règles <tt>pass</tt>
+qui valident ces paquets.
+
+<p>
+C'est puissant : des paramétres comme <a href="nat.html">NAT</a>
+ou <a href="queueing.html">queueing</a> peuvent être appliqué pour
+certaines classes de paquets, et les permissions d'accès définies séparement.
+ 
+<p>
+Pour avoir du NAT pour la totalité du réseau interne la règle <tt>match</tt>
+suivante est utilisée :
+<blockquote><pre>
+match out on egress inet from !(egress:network) to any nat-to (egress:0)
+</pre></blockquote>
+ 
+<p>
+Dans ce cas, le "<tt>!(egress:network)</tt>" peut-être facilement remplacé
+par un "<tt>$int_if:network</tt>", mais si vous ajoutez plusieurs interfaces
+interners, vous devrez ajouter des règles NAT en plus, par rapport à la
+structure, NAT sera utilisé sur toutes les interfaces protégées.
+
+<p>
+Comme l'adresse IP de l'interface externe est assignée dynamiquement, les
+parenthéses sont placées entre l'interface de traduction pour que PF soit
+notifié d'un chagement d'adresse.
+Le suffixe :0 est utilisé pour cela, si l'interface externe posséde
+plusieurs adresses, seule la premiére adresse est utilisée pour la
+traduction. 
+
+
+<p>
+Pour finir, la famille de protocole <tt>inet</tt> (IPv4) est spécifiée.
+Cela supprime la traduction de tous les paquets <tt>inet6</tt> (IPv6) qui
+sont reçus.
+
+<p>
+Maintenant les règles pour contrôler les permissions d'accès.
+On commence avec une interdiction par défaut :
+<blockquote><pre>
+block in log
+</pre></blockquote>
 
 <p>
 A ce point, tout le trafic entrant sera bloqué même celui en provenance
-du réseau interne. Des règles suivantes vont ouvrir un certain
+du réseau interne. 
+Ces paquets seront aussi tracés.
+Des règles suivantes vont ouvrir un certain
 nombre de flux sur le pare-feu afin de répondre aux objectifs précités
 et d'ouvrir toutes les interfaces virtuelles nécessaires.
 
@@ -324,40 +327,29 @@ Dans notre cas, nous choisirons de filtrer le trafic entrant uniquement,
 mais lorsque celui-ci sera permit sur une interface nous ne
 l'empêcherons pas d'en sortir. Pour se faire, nous utiliserons :
 
-<blockquote>
-<tt>
-pass out keep state
-</tt>
-</blockquote>
+<blockquote><pre>
+pass out quick
+</pre></blockquote>
 
+En utilisant <tt>quick</tt>, les paquets sortants ne seront pas vérifiés sur
+les règles suivantes, cela améliore les performances.
+ 
 <p>
-Nous avons besoin d'une <a href="anchors.html">ancre</a> pour
-ftp-proxy(8) :
-<blockquote>
-<tt>
-anchor "ftp-proxy/*"
-</tt>
-</blockquote>
-
 Il est utile d'utiliser la <a href="filter.html#antispoof">protection
 contre le spoofing d'adresses</a> :
-<blockquote>
-<tt>
+<blockquote><pre>
 antispoof quick for { lo $int_if }
-</tt>
-</blockquote>
+</pre></blockquote>
 
 <p>
 Maintenant, il faut ouvrir les ports utilisés par les services réseau
 disponibles depuis Internet. Tout d'abord, le trafic destiné au pare-feu
 lui-même :
 
-<blockquote>
-<tt>
-pass in on $ext_if inet proto tcp from any to ($ext_if) \<br>
-&nbsp;&nbsp;&nbsp;port $tcp_services flags S/SA keep state
-</tt>
-</blockquote>
+<blockquote><pre>
+pass in on egress inet proto tcp from any to (egress) \
+    port $tcp_services
+</pre></blockquote>
 
 <p>
 La spécification des ports réseau par le biais de la macro
@@ -370,14 +362,16 @@ similaire à la règle de filtrage ci-dessus en spécifiant <tt>proto
 udp</tt>.
 
 <p>
-En plus de la règle <tt>rdr</tt> qui fait suivre tout le trafic web vers
-COMP3, nous DEVONS aussi autoriser ce trafic à travers le pare-feu :
-<blockquote>
-<tt>
-pass in on $ext_if inet proto tcp from any to $comp3 port 80 \<br>
-&nbsp;&nbsp;&nbsp;&nbsp;flags S/SA synproxy state
-</tt>
-</blockquote>
+La règle suivante récupére toutes les tentatives de quelqu'un sur Internet
+voulant se connecter sur le port 80 du pare-feu.
+Les tentatives légitimes pour accéder à ce port seront des utilisateurs
+essayant d'accéder au serveur web du réseau. 
+Ces tentatives de connexion seront redirigées vers COMP3 :
+ 
+<blockquote><pre>
+pass in on egress inet proto tcp to (egress) port 80 \
+    rdr-to $comp3 synproxy state
+</pre></blockquote>
 
 <p>
 Pour un niveau de sécurité plus élevé, nous utilisons
@@ -386,11 +380,9 @@ protection du web serveur.
 
 <p>
 Le trafic ICMP doit être permis :
-<blockquote>
-<tt>
-pass in inet proto icmp all icmp-type $icmp_types keep state
-</tt>
-</blockquote>
+<blockquote><pre>
+pass in inet proto icmp all icmp-type $icmp_types
+</pre></blockquote>
 
 <p>
 Comme pour la macro <tt>$tcp_services</tt>, la macro
@@ -405,15 +397,13 @@ autorisé. Nous supposerons que les utilisateurs du réseau interne savent
 ce qu'ils font et ne provoqueront pas de problème sur Internet. Ce n'est
 pas nécessairement une bonne supposition pour de nombreux
 environnements.
-<blockquote>
-<tt>
-pass in quick on $int_if
-</tt>
-</blockquote>
+<blockquote><pre>
+pass in on $int_if
+</pre></blockquote>
 
 <p>
 Le trafic TCP, UDP et ICMP à destination d'Internet est autorisé sortir
-du pare-feu grâce à la règle précédente "<tt>pass out keep state</tt>".
+du pare-feu grâce à la règle précédente "<tt>pass out</tt>".
 L'information sur l'état des connexions est sauvegardée pour permettre
 aux paquets de retour de passer à leur tour la barrière que constitue le
 pare-feu.
@@ -424,7 +414,7 @@ pare-feu.
 <tr><td nowrap bgcolor="#EEEEEE">
 <pre>
 # macros
-ext_if="fxp0"
+
 int_if="xl0"
 
 tcp_services = "{ 22, 113 }"
@@ -433,38 +423,39 @@ icmp_types = "echoreq"
 comp3 = "192.168.0.3"
 
 # options
+
 set block-policy return
-set loginterface $ext_if
+set loginterface fxp0
 
 set skip on lo
 
-# scrub
-match in all scrub (no-df)
-
-# nat/rdr
-nat on $ext_if from !($ext_if) -> ($ext_if:0)
-nat-anchor "ftp-proxy/*"
-rdr-anchor "ftp-proxy/*"
-rdr pass on $int_if proto tcp to port ftp -> 127.0.0.1 port 8021
-rdr on $ext_if proto tcp from any to any port 80 -> $comp3
-
-# règles de filtrage
-block in
-
-pass out keep state
+# règles Proxy FTP
 
 anchor "ftp-proxy/*"
+
+pass in quick on $int_if inet proto tcp to any port ftp \
+    rdr-to 127.0.0.1 port 8021
+
+# règles match
+
+match out on egress inet from !(egress) to any nat-to (egress:0)
+
+# règles de filtrage
+
+block in log
+pass out quick
+
 antispoof quick for { lo $int_if }
 
-pass in on $ext_if inet proto tcp from any to ($ext_if) \
-   port $tcp_services flags S/SA keep state
+pass in on egress inet proto tcp from any to (egress) \
+    port $tcp_services
 
-pass in on $ext_if inet proto tcp from any to $comp3 port 80 \
-   flags S/SA synproxy state
+pass in on egress inet proto tcp to (egress) port 80 \
+    rdr-to $comp3 synproxy state
 
-pass in inet proto icmp all icmp-type $icmp_types keep state
+pass in inet proto icmp all icmp-type $icmp_types
 
-pass in quick on $int_if
+pass in on $int_if
 </pre>
 </td></tr>
 </table>
@@ -482,10 +473,10 @@ src="../../../images/back.gif" border="0" alt="[back]"></a>
 <br>
 <small>
 <!--
-Originally [OpenBSD: example1.html,v 1.41 ]<br>
-$Translation: example1.html,v 1.39 2010/05/24 06:30:44 benoit Exp $<br>
+Originally [OpenBSD: example1.html,v 1.43 ]<br>
+$Translation: example1.html,v 1.40 2010/10/01 05:50:39 benoit Exp $<br>
 -->
-$OpenBSD: example1.html,v 1.34 2010/05/24 18:32:44 ajacoutot Exp $
+$OpenBSD: example1.html,v 1.35 2010/10/03 15:11:11 ajacoutot Exp $
 </small>
 
 </body>
