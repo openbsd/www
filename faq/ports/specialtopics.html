@@ -47,6 +47,7 @@ PERFORMANCE OF THIS DOCUMENTATION
   <li><a href="#Autoconf"   >3.2 - GNU autoconf</a>
   <li><a href="#Config"     >3.3 - Configuration Files</a>
   <li><a href="#Audio"      >3.4 - Audio Applications</a>
+  <li><a href="#Mandoc"     >3.5 - Manual pages</a>
 </ul>
 
 <hr>
@@ -805,6 +806,145 @@ share/ups/driver.list
 	a handful of lines, cooperation is almost certainly a very good idea.
 	</p>
 
+<a name="Mandoc"></a>
+<h2>3.5 - Manual pages</h2>
+
+<p>This section provides preliminary guidelines on how to deal with
+groff versus <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mandoc&amp;sektion=1">mandoc(1)</a>
+issues in ports.  Note that this topic is actively under development,
+so the information provided here is likely to be updated frequently
+and may even change completely.
+
+<h3>Should I check anything?</h3>
+
+<p>When creating a new port or updating an existing port, you are welcome
+to check whether the port can use mandoc to format its manuals.
+This may make the manuals more useable for the port's users, and it will
+reduce the port's build time.  Note that these checks are not considered
+a required step to create a good port.  It is completely acceptable to
+just put <code>USE_GROFF=Yes</code> into the Makefile and be done with it.
+Marc has done that more than 3.000 times, and we didn't kill him.
+
+<p>When you choose to do any checks, note that both automatic and manual
+checks are required.  In case you are not willing to do a manual check at
+the end, looking over the manuals as formatted with mandoc, do not bother
+with the automatic part of the checks, just put <code>USE_GROFF=Yes</code>.
+
+<p>Only remove <code>USE_GROFF</code> if you plan to actively maintain
+the port.
+Removing <code>USE_GROFF</code> from a port nobody is going to maintain
+will force the poor soul doing the next update to redo the check.
+If that persons fails to do the check and the upstream author has added
+any features to the manuals mandoc does not support, we will end up with
+unusable manuals.
+
+<h3>Which tool do I need?</h3>
+
+<p>Before you start checking anything, make sure you have really -current
+mandoc installed.  For now, it should not be older than one week, because
+error detection is very actively developed, and being told about issues
+that have been fixed long ago will not help mandoc developers.
+In case of doubt, just update your mandoc utility, it is really quick
+and easy, and does not require to have your whole system up to date:
+
+<pre>
+$ cd /usr/src/usr.bin/mandoc/
+$ cvs up -dP
+$ make cleandir
+$ make obj
+$ make depend
+$ make
+$ sudo make install
+</pre>
+
+<h3>How do I do automatic checking?</h3>
+
+<p>To do the automatic part of the check, please run the following command
+over all <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mdoc&amp;sektion=7">mdoc(7)</a>
+and <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=man&amp;sektion=7">man(7)</a>
+manual source files contained in the port:
+
+<pre>
+$ mandoc -Tlint -Werror *
+</pre>
+
+<p>If this produces a considerable number of error messages, for now,
+the port needs <code>USE_GROFF</code>.  Don't even consider using mandoc
+for anything here, it's not up to the job yet.  You can stop reading right
+here.
+
+<p>If manual pages look good with groff, never patch them to get rid of
+mandoc errors.  That would merely be a make-work project not helping
+anyone: It will neither help to improve upstream manuals nor mandoc.
+
+<h3>How do I do manual checking?</h3>
+
+<p>If there are no errors, proceed to the manual part of the check.
+Look at the manuals as formatted by mandoc.  Do they look fine?
+If yes, you do not need <code>USE_GROFF</code>.
+
+<p>If there are no errors, but mandoc output has serious issues, that
+is, relevant information is missing or part of the output is seriously
+garbled, please always report to schwarze@ and kristaps@, even if you
+happen to know it's due to a known issue with mandoc.  We do want to know
+which issues cause serious problems in practice, such that we can address
+the most pressing issues first.
+
+<p>If mandoc output has serious issues and groff output looks bad
+as well, there are two possibilities:  Either the page is depending
+on newer groff features not yet supported by our old groff-1.15.
+In that case, we need to update our groff port; talk to schwarze@.
+Or the manuals are just broken upstream.  In that case, you have
+the usual options when porting broken software:  Abandon the port,
+ignore the problem, report upstream, and/or patch the bugs away.
+In case you need help with the latter, talk to schwarze@.
+
+<p>If there are no errors, but mandoc output has minor issues that
+don't really hinder the user when reading the manual, you are welcome
+to report these issues as well.  In that case, you are even more
+welcome to first check the mandoc
+<a href="http://mdocml.bsd.lv/cgi-bin/cvsweb/TODO?cvsroot=mdocml">TODO</a>
+list, to avoid having the same minor issues reported again and again -
+but in case of doubt, it is always better to report dupes than to let
+problems go unnoticed.
+
+<p>If there are only very few errors, in particular if you get the
+impression that mandoc output is just fine all the same, it's your call
+to either set <code>USE_GROFF=Yes</code> (that's the quicker way out)
+or to discuss the matter with schwarze@.  In the latter case, make sure
+you send in copies of all the unformatted manual pages causing errors,
+the output of "mandoc -Tlint" run on them, and to include a tarball
+or patch of your draft port as well.
+
+<h3>What about warnings?</h3>
+
+<p>You might wonder about mandoc warnings, as opposed to mandoc errors.
+In a nutshell, the distinction is that errors may seriously impact the
+usefulness of the output, while warnings might at the worst cause minor
+formatting glitches, if at all.  If a mandoc warning appears to be
+related to seriously garbled output, that's probably a bug in mandoc.
+
+<p>That said, it is obvious that warnings are irrelevant for the decision
+whether to use or not to use mandoc for a given port.  They are for
+manual authors, to help improve manual quality, not for porters.
+
+<h3>How can I help upstream?</h3>
+
+<p>In case you are one of the port's upstream developers, or know they care
+about good quality of their manuals and gladly accept patches, it may
+make sense to use <code>mandoc -Tlint</code>
+to identify potential formatting issues and to produce patches to be
+submitted upstream.  Usually, there is no need to put such patches into
+the ports tree.
+
+<p>As with any kind of linting, before changing your 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mdoc&amp;sektion=7">mdoc(7)</a> or
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=man&amp;sektion=7">man(7)</a>
+source code or sending out patches, first make sure you are chasing
+real problems in the manuals.  The manual utility is not perfect.
+It may produce bogus warnings.  We are trying to fix that, but that
+will still need lots of time to mature.  In case of doubt, ask
+schwarze@ for advice.
 
 <p>
 
@@ -820,7 +960,7 @@ share/ups/driver.list
 <a href="../index.html"><img height="24" width="24" src="../../images/back.gif" border="0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: specialtopics.html,v 1.9 2010/09/19 13:35:40 jim Exp $</small>
+<small>$OpenBSD: specialtopics.html,v 1.10 2010/10/27 15:49:06 schwarze Exp $</small>
 
 </body>
 </html>
