@@ -575,36 +575,16 @@ If the device doesn't support those parameters,
 will automatically pick another set of parameters.
 
 <p>
-If you have the necessary privileges, you can increase its priority,
-to decrease the probability of buffer underruns or overruns, for
-instance:
+If you start aucat as root, it will increase its priority,
+to decrease the probability of buffer underruns or overruns.
+
+It can be started at system boot by appending:
 
 <pre>
-$ <strong>sudo renice -n -20 `pgrep -x aucat`</strong>
+<strong>aucat_flags=""</strong>
 </pre>
 
-Note that aucat(1) starts in full-duplex mode by default, which requires your
-device to support full-duplex mode.
-If it doesn't, you have to start aucat(1) in play-only or record-only mode,
-for example:
-
-<pre>
-$ <strong>aucat -l -m play</strong>
-</pre>
-
-<h3>How do I start aucat(1) at system boot?</h3>
-
-If you're the only local user of the machine, you can start
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=aucat&amp;sektion=1">aucat(1)</a>
-at system boot from
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rc.local&amp;sektion=8">rc.local(8)</a>,
-for instance:
-
-<pre>
-<strong>nice -n -20 su -m mylogin -c "aucat -l"</strong>
-</pre>
-
-The aucat(1) process cannot be shared between multiple users.
+to <tt>/etc/rc.conf.local</tt>.
 
 <h3>What latency do I need?</h3>
 
@@ -816,27 +796,29 @@ An example of MIDI ports in a dmesg
 output is:
 
 <blockquote><pre>
-midi0 at pcppi0: &lt;PC speaker&gt;
 umidi0 at uhub2 port 2 configuration 1 interface 0 "Roland Roland XV-2020" rev 1.10/1.00 addr 2
-midi1 at umidi0: &lt;USB MIDI I/F&gt;
+midi0 at umidi0: &lt;USB MIDI I/F&gt;
 umidi1 at uhub1 port 2 configuration 1 interface 1 "Evolution Electronics Ltd. USB Keystation 61es" rev 1.00/1.25 addr 3
-midi2 at umidi1: &lt;USB MIDI I/F&gt;
+midi1 at umidi1: &lt;USB MIDI I/F&gt;
 </pre></blockquote>
 
 It shows three MIDI ports, corresponding to:
 
 <ul>
-<li> <tt>/dev/rmidi0</tt> - the PC speaker
-<li> <tt>/dev/rmidi1</tt> - synthesizer connected by USB
-<li> <tt>/dev/rmidi2</tt> - a MIDI master keyboard
+<li> <tt>/dev/rmidi0</tt> - synthesizer connected by USB
+<li> <tt>/dev/rmidi1</tt> - a MIDI master keyboard
 </ul>
+
+These devices are known by
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sndio">sndio(7)</a>
+as <tt>rmidi:0</tt> and <tt>rmidi:1</tt>.
 
 To test your MIDI keyboard, you can use the
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hexdump&amp;sektion=1">hexdump(1)</a>
 utility to display MIDI data you're playing on it:
 
 <blockquote><pre>
-$ <strong>hexdump -e '1/1 "%02x\n"' &lt;/dev/rmidi2 </strong>
+$ <strong>midicat -q rmidi:1 -o - | hexdump -e '1/1 "%02x\n"'</strong>
 90
 3c
 71
@@ -847,15 +829,13 @@ The output of the keyboard can be connected to the input of the
 synthesizer, as follows:
 
 <blockquote><pre>
-$ <strong>cat -u /dev/rmidi1 &gt;/dev/rmidi2</strong>
+$ <strong>midicat -q rmidi:0 -q rmidi:1</strong>
 </pre></blockquote>
 
 Now you can hear on the synthesizer what you're playing on the MIDI
 keyboard.
-Indeed information on what you play is captured from /dev/rmidi1 and
-sent to /dev/rmidi2 in real-time.
 Refer to the 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=midi&amp;sektion=4">midi(4)</a>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=midicat&amp;sektion=1">midicat(1)</a>
 manual page for further information.
 
 <!-- <h3>Playing, recording MIDI sequences</h3> -->
@@ -867,22 +847,19 @@ Playing a standard MIDI file, in this example through the synthesizer,
 is as easy as:
 
 <blockquote><pre>
-$ <strong>midiplay -d 1 file.mid</strong>
+$ <strong>midiplay -f rmidi:0 file.mid</strong>
 </pre></blockquote>
-
-Notice that we specified MIDI device number 1 (ie. <tt>/dev/rmidi1</tt>)
-as a parameter because device number 0 is used by default.
 
 <p>
 To record MIDI files, you can use the <tt>smfrec</tt> utility bundled in
 the <tt>audio/midish</tt> port, for instance:
 
 <blockquote><pre>
-$ <strong>smfrec -d /dev/rmidi1 -i /dev/rmidi2 file.mid</strong>
+$ <strong>smfrec -d rmidi:0 -i rmidi:1 file.mid</strong>
 </pre></blockquote>
 
-will record what is played on the keyboard (<tt>/dev/rmidi2</tt>) while
-sending it in real-time on the synthesizer (<tt>/dev/rmidi1</tt>) so you
+will record what is played on the keyboard (<tt>rmidi:1</tt>) while
+sending it in real-time on the synthesizer (<tt>rmidi:0</tt>) so you
 can hear what you're playing.
 More complicated operations like editing, routing, mixing and
 transforming MIDI data, can be achieved using the <tt>rmidish</tt>
@@ -1710,7 +1687,7 @@ this would be interesting, but lack of hardware at the moment
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq13.html,v 1.136 2010/07/04 17:07:56 nick Exp $</small>
+<small>$OpenBSD: faq13.html,v 1.137 2010/11/06 20:11:30 ratchov Exp $</small>
 
 </body>
 </html>
