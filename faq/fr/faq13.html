@@ -604,35 +604,16 @@ Si le périphérique ne supporte pas ces paramétres,
 utilisera automatiquement un autre ensemble de paramétres.
 
 <p>
-Si vous avez les priviléges nécessaires, vous pouvez augmenter sa priorité,
+Si vous démarrez aucat comme root, il augmentera sa priorité,
 pour diminuer la probabilité d'un problème de cache, par exemple :
 
-<pre>
-$ <strong>sudo renice -n -20 `pgrep -x aucat`</strong>
-</pre>
-
-Remarquez de aucat(1) démarre en mode full-duplex par défaut, ce qui
-nécessite que votre matériel supporte le mode full-duplex.
-Si cela n'est pas le cas, vous devez démarrer aucat(1) en mode lecture seule
-ou enregistrement seul, par exemple :
+Il peut-être démarré au démarrage du système en ajoutant :
 
 <pre>
-$ <strong>aucat -l -m play</strong>
+<strong>aucat_flags=""</strong>
 </pre>
 
-<h3>Comment démarrer aucat(1) au démarrage du système ?</h3>
-
-Si vous êtes le seul utilisateur local de la machine, vous pouvez démarrer 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=aucat&amp;sektion=1">aucat(1)</a>
-au démarrage du système via
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rc.local&amp;sektion=8">rc.local(8)</a>,
-par exemple :
-
-<pre>
-<strong>nice -n -20 su -m mylogin -c "aucat -l"</strong>
-</pre>
-
-Le processus aucat(1) ne peut pas être partagé entre plusieurs utilisateurs.
+à <tt>/etc/rc.conf.local</tt>.
 
 <h3>Quel temps de latence configurer ?</h3>
 
@@ -843,27 +824,29 @@ la commande dmesg(8).
 Un exemple de ports MIDI dans une sortie dmesg :
 
 <blockquote><pre>
-midi0 at pcppi0: &lt;PC speaker&gt;
 umidi0 at uhub2 port 2 configuration 1 interface 0 "Roland Roland XV-2020" rev 1.10/1.00 addr 2
-midi1 at umidi0: &lt;USB MIDI I/F&gt;
+midi0 at umidi0: &lt;USB MIDI I/F&gt;
 umidi1 at uhub1 port 2 configuration 1 interface 1 "Evolution Electronics Ltd. USB Keystation 61es" rev 1.00/1.25 addr 3
-midi2 at umidi1: &lt;USB MIDI I/F&gt;
+midi1 at umidi1: &lt;USB MIDI I/F&gt;
 </pre></blockquote>
 
-Il montre trois ports MIDI correspondants à :
+Il montre deux ports MIDI correspondants à :
  
 <ul>
-<li> <tt>/dev/rmidi0</tt> - le haut parleur du PC
-<li> <tt>/dev/rmidi1</tt> - synthétiseur connecté par USB
-<li> <tt>/dev/rmidi2</tt> - un clavier MIDI maitre
+<li> <tt>/dev/rmidi0</tt> - synthétiseur connecté par USB
+<li> <tt>/dev/rmidi1</tt> - un clavier MIDI maitre
 </ul>
+
+Ces périphériques sont reconnus par
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sndio">sndio(7)</a>
+comme <tt>rmidi:0</tt> et <tt>rmidi:1</tt>.
 
 Pour tester votre clavier MIDI vous pouvez utiliser l'utilitaire
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hexdump&amp;sektion=1">hexdump(1)</a>
 qui affiche les données MIDI que vous jouez dessus :
 
 <blockquote><pre>
-$ <strong>hexdump -e '1/1 "%02x\n"' &lt;/dev/rmidi2 </strong>
+$ <strong>midicat -q rmidi:1 -o - | hexdump -e '1/1 "%02x\n"'</strong>
 90
 3c
 71
@@ -873,15 +856,13 @@ $ <strong>hexdump -e '1/1 "%02x\n"' &lt;/dev/rmidi2 </strong>
 La sortie du clavier peut être connectée à l'entrée du synthétiseur comme :
 
 <blockquote><pre>
-$ <strong>cat -u /dev/rmidi1 &gt;/dev/rmidi2</strong>
+$ <strong>midicat -q rmidi:0 -q rmidi:1</strong>
 </pre></blockquote>
 
 Maintenant vous pouvez entendre sur le synthétiseur ce que vous jouez sur le
 clavier MIDI.
-Les informations que vous jouez sont capturées de /dev/rmidi1 et envoyées
-sur /dev/rmidi2 en temps réel.
 Referez vous aux pages du manuel 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=midi&amp;sektion=4">midi(4)</a>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=midicat&amp;sektion=4">midicat(4)</a>
 pour plus d'informations.
 
 <!-- <h3>Playing, recording MIDI sequences</h3> -->
@@ -893,23 +874,19 @@ Jouer un fichier MIDI standard, dans cet exemple à travers le synthétiseur,
 est aussi simple que :
  
 <blockquote><pre>
-$ <strong>midiplay -d 1 file.mid</strong>
+$ <strong>midiplay -f rmidi:0 file.mid</strong>
 </pre></blockquote>
-
-Il faut remarquer que nous spécifions le numéro de périphérique MID à 1 
-(<tt>/dev/rmidi1</tt>) comme paramétre à cause du numéro de périphérique 0
-qui est utilisé par défaut.
 
 <p>
 Pour enregistrer des fichiers MIDI, vous pouvez utiliser l'utilitaire
 <tt>smfrec</tt> fournit dans le port <tt>audio/midish</tt>, ainsi :
 
 <blockquote><pre>
-$ <strong>smfrec -d /dev/rmidi1 -i /dev/rmidi2 file.mid</strong>
+$ <strong>smfrec -d rmidi:0 -i rmidi:1 file.mid</strong>
 </pre></blockquote>
 
-enregistrera ce qui est joué au clavier (<tt>/dev/rmidi2</tt>) pendant
-qu'il enverra en temps réel sur le synthétiseur (<tt>/dev/rmidi1</tt>) ce que
+enregistrera ce qui est joué au clavier (<tt>rmidi:1</tt>) pendant
+qu'il enverra en temps réel sur le synthétiseur (<tt>rmidi:0</tt>) ce que
 vous pourrez entendre en jouant.
 Une opération plus compliquée comme l'édition, routage, mixage et la 
 transformation de données MIDI peut être réalisée en utilisant l'utilitaire
@@ -1781,10 +1758,10 @@ Plates-Formes Et Au Matériel]</a>
 <br>
 <small>
 <!--
-Originally [OpenBSD: faq13.html,v 1.136 ]<br>
-$Translation: faq13.html,v 1.61 2010/07/07 20:37:19 benoit Exp $<br>
+Originally [OpenBSD: faq13.html,v 1.137 ]<br>
+$Translation: faq13.html,v 1.62 2010/11/07 09:27:23 benoit Exp $<br>
 -->
-$OpenBSD: faq13.html,v 1.53 2010/07/09 10:57:21 ajacoutot Exp $
+$OpenBSD: faq13.html,v 1.54 2010/11/09 08:15:20 ajacoutot Exp $
 </small>
 
 </body></html>
