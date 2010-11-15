@@ -593,35 +593,16 @@ Als het device deze parameters niet ondersteunt, dan kiest
 automatisch een andere set parameters.
 
 <p>
-Als u de benodigde rechten hebt, dan kunt u de prioriteit verhogen, om de kans
-op buffer underruns of overruns te verkleinen, bijvoorbeeld:
+Als u aucat als root start, dan verhoogt het zijn prioriteit, om de kans
+op buffer underruns of overruns te verkleinen.
+
+Het kan bij de systeemboot gestart worden door
 
 <pre>
-$ <strong>sudo renice -n -20 `pgrep -x aucat`</strong>
+<strong>aucat_flags=""</strong>
 </pre>
 
-Merk op dat aucat(1) standaard in full-duplex mode start, waardoor uw device
-dit moet ondersteunen.
-Als het dat niet doet, moet u aucat(1) starten in alleen-afspelen of
-alleen-opnemen mode starten, bijvoorbeeld:
-
-<pre>
-$ <strong>aucat -l -m play</strong>
-</pre>
-
-<h3>Hoe start ik aucat(1) bij het booten van het systeem?</h3>
-
-Als u de enige lokale gebruiker van de machine bent, dan kunt u
-+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=aucat&amp;sektion=1">aucat(1)</a>
-starten bij het booten vanuit
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rc.local&amp;sektion=8">rc.local(8)</a>,
-bijvoorbeeld:
-
-<pre>
-<strong>nice -n -20 su -m mylogin -c "aucat -l"</strong>
-</pre>
-
-Het aucat(1) proces kan niet worden gedeeld met meerdere gebruikers.
+toe te voegen aan <tt>/etc/rc.conf.local</tt>.
 
 <h3>Welke latency heb ik nodig?</h3>
 
@@ -837,27 +818,29 @@ Een voorbeeld van MIDI poorten in een dmesg
 uitvoer is:
 
 <blockquote><pre>
-midi0 at pcppi0: &lt;PC speaker&gt;
 umidi0 at uhub2 port 2 configuration 1 interface 0 "Roland Roland XV-2020" rev 1.10/1.00 addr 2
-midi1 at umidi0: &lt;USB MIDI I/F&gt;
+midi0 at umidi0: &lt;USB MIDI I/F&gt;
 umidi1 at uhub1 port 2 configuration 1 interface 1 "Evolution Electronics Ltd. USB Keystation 61es" rev 1.00/1.25 addr 3
-midi2 at umidi1: &lt;USB MIDI I/F&gt;
+midi1 at umidi1: &lt;USB MIDI I/F&gt;
 </pre></blockquote>
 
 Er zijn drie MIDI poorten zichtbaar, overeenkomend met:
 
 <ul>
-<li> <tt>/dev/rmidi0</tt> - the PC speaker
-<li> <tt>/dev/rmidi1</tt> - synthesizer connected by USB
-<li> <tt>/dev/rmidi2</tt> - a MIDI master keyboard
+<li> <tt>/dev/rmidi0</tt> - synthesizer connected by USB
+<li> <tt>/dev/rmidi1</tt> - a MIDI master keyboard
 </ul>
+
+Deze devices zijn voor
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sndio">sndio(7)</a>
+bekend als <tt>rmidi:0</tt> and <tt>rmidi:1</tt>.
 
 Om uw MIDI keyboard te testen kunt u de
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hexdump&amp;sektion=1">hexdump(1)</a>
 utility gebruiken om MIDI data weer te geven die u erop speelt:
 
 <blockquote><pre>
-$ <strong>hexdump -e '1/1 "%02x\n"' &lt;/dev/rmidi2 </strong>
+$ <strong>midicat -q rmidi:1 -o - | hexdump -e '1/1 "%02x\n"'</strong>
 90
 3c
 71
@@ -868,14 +851,12 @@ De uitvoer van het keyboard kan worden verbinden met de invoer van
 een synthesizer, en wel als volgt:
 
 <blockquote><pre>
-$ <strong>cat -u /dev/rmidi1 &gt;/dev/rmidi2</strong>
+$ <strong>midicat -q rmidi:0 -q rmidi:1</strong>
 </pre></blockquote>
 
 Nu kunt u op de synthesizer horen wat u speelt op het MIDI keyboard.
-Inderdaad wordt in real-time wat u speelt gevangen vanaf /dev/rmidi1
-en doorgestuurd naar /dev/rmidi2.
 Bekijk de
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=midi&amp;sektion=4">midi(4)</a>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=midicat&amp;sektion=1">midicat(1)</a>
 manual pagina voor meer informatie.
 
 <!-- <h3>Playing, recording MIDI sequences</h3> -->
@@ -887,22 +868,19 @@ Het afspelen van een standaard MIDI bestand, in dit voorbeeld via een
 synthesizer, is zo eenvoudig als:
 
 <blockquote><pre>
-$ <strong>midiplay -d 1 file.mid</strong>
+$ <strong>midiplay -f rmidi:0 file.mid</strong>
 </pre></blockquote>
-
-Merk op dat we het MIDI devicenummer 1 (dus <tt>/dev/rmidi1</tt>)
-als parameter hebben opgegeven omdat standaard device 0 wordt gebruikt.
 
 <p>
 Om MIDI bestanden op te nemen kunt u de <tt>smfrec</tt> utility gebruiken
 die gebundeld is in de <tt>audio/midish</tt> port, bijvoorbeeld:
 
 <blockquote><pre>
-$ <strong>smfrec -d /dev/rmidi1 -i /dev/rmidi2 file.mid</strong>
+$ <strong>smfrec -d rmidi:0 -i rmidi:1 file.mid</strong>
 </pre></blockquote>
 
-neemt op wat op het keyboard gespeeld wordt (<tt>/dev/rmidi2</tt>) terwijl
-het in real-time wordt doorgestuurd naar de synthesizer (<tt>/dev/rmidi1</tt>)
+neemt op wat op het keyboard gespeeld wordt (<tt>rmidi:1</tt>) terwijl
+het in real-time wordt doorgestuurd naar de synthesizer (<tt>rmidi:0</tt>)
 zodat u hoort wat u speelt.
 Ingewikkelder handelingen zoals bewerken, routeren, mixen en
 vervormen van MIDI data, kunnen worden gedaan met de <tt>rmidish</tt>
@@ -1759,10 +1737,10 @@ this would be interesting, but lack of hardware at the moment
 <br>
 <small>
 <!--
-Originally [OpenBSD: faq13.html,v 1.136 ]<br>
-$Translation: faq13.html,v 1.48 2010/07/04 20:41:00 maurice Exp $<br>
+Originally [OpenBSD: faq13.html,v 1.137 ]<br>
+$Translation: faq13.html,v 1.49 2010/11/12 18:54:05 maurice Exp $<br>
 -->
-$OpenBSD: faq13.html,v 1.39 2010/07/09 10:57:21 ajacoutot Exp $
+$OpenBSD: faq13.html,v 1.40 2010/11/15 18:41:58 ajacoutot Exp $
 </small>
 
 </body>
