@@ -72,34 +72,62 @@
 <h2>14.1 - Disks and Partitions</h2>
 
 <p>
-The details of setting up disks in OpenBSD varies between platforms, so
+The details of setting up disks in OpenBSD vary between platforms, so
 you should read the installation instructions in the
-<b>INSTALL.&lt;arch&gt;</b> file for your 
-<a href="http://www.openbsd.org/plat.html">platform</a>
-to determine what is required. 
+<tt>INSTALL.&lt;arch&gt;</tt> file for your 
+<a href="../plat.html">platform</a>
+to determine the specifics for your system.
 
 <p>
-Some programs such as fdisk(8), disklabel(8) and others allow you to use
-short syntax like "sd0" for the first SCSI drive or "wd0" for the
-first IDE drive. The program will expand the short syntax out to the
-correct device.
+<h3>Drive identification</h3>
+OpenBSD handles mass storage with two drivers on most platforms,
+depending upon the normal command set that kind of device supports:
 
-<p>
+<ul>
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=wd&amp;sektion=4">wd(4):</a>
+IDE disks (and devices that look like IDE disks, for example, SATA, MFM
+or ESDI disks, or a flash device with an appropriate adapter) attached to a
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=wdc&amp;sektion=4">wdc(4)</a>
+or
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pciide&amp;sektion=4">pciide(4)</a>
+interface.
+<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sd&amp;sektion=4">sd(4):</a>
+Devices that utilize SCSI commands, such as SCSI disks attached to a
+SCSI adapter, USB disks, SATA disks attached to an
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ahci&amp;sektion=4">ahci(4)</a>
+interface, and disk arrays attached to a RAID controller. 
+</ul>
+
+The first drive of a particular type identified by OpenBSD will be
+drive '0', the second will be '1', etc.
+So, the first IDE-like disk will be wd0, the third SCSI-like disk will
+be sd2.
+If you have two SCSI-like drives and three IDE-like drives on a system,
+you would have sd0, sd1, wd0, wd1, and wd2 on that machine.
+The order is based on the order they are found during hardware discovery
+at boot.
+There are a few key points to keep in mind:
+<ul>
+<li>Drives may not be numbered in the same order as your boot ROM
+attempts to boot them (i.e., your system may attempt to boot what OpenBSD
+identifies as wd2 or sd1).
+Sometimes you may be able to change this, sometimes not.
+<li>Removing or adding a disk may impact the identity of other drives on
+the system.
+</ul>
+
+
+<h3>Partitioning</h3>
+
 Due to historical reasons, the term "partition" is regularly used for
-two completely different things in the UNIX world and this leads to some
-confusion.
-Originally, a "partition" was defined by the operating system and used
-to keep file systems separated on the disk. 
-Later, other platforms such as i386 then reused this term for the name
-of the entries in their required "Partition Table" and this newer
-definition has mostly replaced the older definition in common usage.
+two different things in OpenBSD and this leads to some confusion.
 
 <p>
 The two types of "partitions" are:
 <ul>
 <li> "disklabel partitions" created with 
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=disklabel&amp;sektion=8">disklabel(8)</a>
-(often called "filesystem partitions" or "labels").
+(often called "filesystem partitions").
 <li> "fdisk partitions" created with 
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fdisk&amp;sektion=8&amp;arch=i386">fdisk(8)</a>
 (often called "partition table partitions" or "Master Boot Record (MBR) partitions").
@@ -109,7 +137,46 @@ The two types of "partitions" are:
 All OpenBSD platforms use disklabel(8) as the primary way to manage
 OpenBSD filesystem partitions, but only some platforms also require 
 using fdisk(8) to manage Partition Table partitions.
+On the platforms that use fdisk partitions, one fdisk partition is used
+to hold all of the OpenBSD file systems, this partition is then sliced
+up into disklabel partitions.
+These disklabel partitions are labeled "a" through "p".
+A few of these are "special":
+<ul>
+<li><b>a</b> -- On the boot disk, the 'a' partition is your root partition.
+<li><b>b</b> -- On the boot disk, the 'b' partition is automatically used
+as a swap partition.
+<li><b>c</b> -- On all disks, the 'c' partition is the entire disk,
+from the first sector to the last.
+(Hint: if you wish to totally clear a drive, you write zeros to the
+'c' partition of the drive.
+More commonly, the 'c' partition is used by utilities like 'fdisk' to
+install boot loaders, partition tables, etc.)
+</ul>
 
+<h3>Partition identification</h3>
+An OpenBSD filesystem is identified by the disk it is on, plus the file
+system partition on that disk.
+So, file systems may be identified by identifiers like "sd0a" (the "a"
+partition of the first "sd" device), "wd2h" (the "h" partition of the
+third "wd" device), or "sd1c" (the entire second sd device).
+The device files would be <tt>/dev/sd0a</tt> for the block device,
+<tt>/dev/rsd0a</tt> would be the device file for the "raw" (character)
+device.
+
+<p>
+Some utilities will let you use the "shortcut" name of a partition
+(i.e., "sd0d") or a drive (i.e., "wd1") instead of the actual device
+name ("<tt>/dev/sd0d</tt>" or "<tt>/dev/wd1c</tt>", respectively).
+
+
+<p>
+Note again that if you put data on <tt>wd2d</tt>, then later remove
+<tt>wd1</tt> from the system and reboot, your data is now on
+<tt>wd1d</tt>, as your old <tt>wd2</tt> is now <tt>wd1</tt>.
+However, a drive's identification won't change after boot, so if
+a USB drive is unplugged or fails, it won't change the identification
+of other drives until reboot.
 
 <a name="fdisk"></a>
 <h2>14.2 - Using fdisk(8)</h2>
@@ -2558,7 +2625,7 @@ they will get wiped and recreated on a reboot anyway.
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq14.html,v 1.203 2010/11/01 09:48:45 nick Exp $</small>
+<small>$OpenBSD: faq14.html,v 1.204 2010/12/04 00:18:42 nick Exp $</small>
 
 </body>
 </html>
