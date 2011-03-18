@@ -1,0 +1,758 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>PF: Cortafuegos en Alta Disponibilidad con CARP y pfsync</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenBSD FAQ page">
+<meta name="keywords"      content="openbsd,faq,pf,carp,pfsync">
+<meta name="distribution"  content="global">
+</head>
+
+<!--
+Copyright (c) 2005-2007 Joel Knight <enabled@myrealbox.com>
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<a href="../../../es/index.html">
+<img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif" border="0">
+</a>
+<p>
+[<a href="authpf.html">Anterior: authpf: shell de usuario para pasarelas de autenticación</a>]
+[<a href="index.html">Contenido</a>]
+[<a href="example1.html">Siguiente: Cortafuegos para una red doméstica o una oficina</a>]
+
+<p>
+<h1><font color="#e00000">PF: Cortafuegos en Alta Disponibilidad con CARP y pfsync</font></h1>
+
+<hr>
+
+<h3>Índice de contenidos</h3>
+<ul>
+<li><a href="#carpintro">Introducción a CARP</a>
+<li><a href="#carpop">Funcionamiento de CARP</a>
+<li><a href="#carpconfig">Configuración de CARP</a>
+<li><a href="#carpex">Ejemplo de configuración de CARP</a>
+<li><a href="#pfsyncintro">Introducción a pfsync</a>
+<li><a href="#pfsyncop">Funcionamiento de pfsync</a>
+<li><a href="#pfsyncconfig">Configuración de pfsync</a>
+<li><a href="#pfsyncex">Ejemplo de configuración de pfsync</a>
+<li><a href="#failover">Uso combinado de CARP y pfsync para Alta Disponibilidad</a>
+<li><a href="#ops">Problemas operativos</a>
+	<ul>
+	<li><a href="#bootconfig">Configuración de CARP y pfsync durante el arranque</a>
+	<li><a href="#forcefail">Forzar el "failover" del nodo maestro</a>
+	<li><a href="#RulesetTips">Consejos para el conjunto de reglas</a>
+	</ul>
+<li><a href="#ref">Otras referencias</a>
+</ul>
+
+<hr>
+
+<a name="carpintro"></a>
+<h2>Introducción a CARP</h2>
+CARP son las siglas de <i>Common Address Redundancy Protocol</i>. 
+Su objetivo principal es permitir que varias máquinas 
+en el mismo segmento de red compartan una dirección IP.
+CARP es una alternativa segura y libre a los protocolos
+<a href="http://www.ietf.org/rfc/rfc3768.txt">Virtual Router Redundancy
+Protocol</a> (VRRP) y 
+<a href="http://www.ietf.org/rfc/rfc2281.txt">Hot Standby Router
+Protocol</a> (HSRP).
+
+<p>
+CARP funciona permitiendo que un grupo de máquinas o nodos 
+en el mismo segmento de red compartan una dirección IP. 
+Este grupo de nodos se conoce como un 
+"grupo de redundancia". Al grupo de redundancia se le 
+asigna una dirección IP que se comparte entre los 
+los miembros del grupo. Dentro del grupo, un nodo es 
+denominado &laquo;maestro&raquo; (<i>master</i>) y el resto 
+son nodos &laquo;de respaldo&raquo; (<i>backups</i>). 
+El nodo maestro es el que en ese momento &laquo;posee&raquo; 
+la IP compartida; es el que responde al tráfico o peticiones ARP 
+dirigidas hacia esa IP. Cada nodo puede pertenecer a más de un 
+grupo de redundancia a la vez. 
+
+<p>
+Un uso común de CARP es crear un grupo de cortafuegos redundantes. 
+La IP virtual que se asigna al grupo de redundancia se configura 
+en las máquinas cliente como pasarela predeterminada. 
+En el caso de que el cortafuegos maestro sufra un fallo o quede 
+desconectado de la red, la IP se trasladará a uno de los cortafuegos 
+de respaldo y el servicio continuará sin interrupción.
+
+<p>
+CARP soporta IPv4 e IPv6.
+
+
+<a name="carpop"></a>
+<h2>Funcionamiento de CARP</h2>
+El nodo maestro del grupo envía avisos regulares a la red local 
+para que los nodos de respaldo sepan que sigue activa. Si los 
+nodos de respaldo no reciben el aviso del nodo maestro durante un período 
+determinado de tiempo, entonces una de ellas asumirá las funciones de maestro 
+(cualquier nodo de respaldo con los valores más bajos definidos por 
+<tt>advbase</tt> y <tt>advskew</tt>).
+
+<p>
+Pueden existir varios grupos de CARP en el mismo segmento de red. 
+Los avisos de CARP contienen un identificador denominado  
+VHID (<i>Virtual Host ID</i>) que permite a los miembros del grupo 
+identificar a qué grupo de redundancia pertenece el aviso.
+
+<p>
+Con el fin de evitar que un usuario malicioso en el segmento de red 
+pueda falsificar avisos CARP, cada grupo se puede configurar con una contraseña.
+Cada paquete CARP enviado al grupo es así protegido por HMAC-SHA1.
+
+<p>
+Dado que CARP es un protocolo en sí mismo, debe ser expresamente 
+autorizado por las reglas de filtrado:
+
+<blockquote>
+<tt>
+pass out on $carp_dev proto carp keep state
+</tt>
+</blockquote>
+
+<p>
+<tt>$carp_dev</tt> es la interfaz física que CARP utiliza para 
+comunicarse.
+
+<a name="carpconfig"></a>
+<h2>Configuración de CARP</h2>
+Cada grupo de redundancia está representado por una interfaz de red virtual
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=carp&amp;sektion=4&amp;manpath=OpenBSD+4.8"
+>carp(4)</a>. Como tal, CARP se configura mediante
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8"
+>ifconfig(8)</a>.
+
+<blockquote>
+<tt>
+ifconfig <i>carpN</i> create<br>
+<br>
+ifconfig <i>carpN</i> vhid <i>vhid</i> [pass <i>password</i>]
+[carpdev <i>carpdev</i>] \<br>
+&nbsp;&nbsp;&nbsp;[advbase <i>advbase</i>] [advskew <i>advskew</i>]
+[state <i>state</i>] [group|-group <i>group</i>] \<br>
+&nbsp;&nbsp;&nbsp;<i>ipaddress</i> netmask <i>mask</i>
+</tt>
+</blockquote>
+<!-- XXX someone who understands carpnodes should add a piece -->
+
+<dl>
+<dt><tt><i>carpN</i></tt>
+<dd>El nombre de la interfaz virtual carp(4), donde <i>N</i> es un
+número entero que representa el número de la interfaz (por ejemplo, carp10).
+
+<dt><tt><i>vhid</i></tt>
+<dd>El identificador Virtual Host ID. Es un número único que se usa
+para identificar el grupo de redundancia en la red. Los valores válidos 
+son de 1 a 255.
+
+<dt><tt><i>password</i></tt>
+<dd>La contraseña de autenticación que se usa cuando se comunica 
+con otros nodos CARP en este grupo de redundancia. Esta contraseña 
+debe ser compartida entre todos los miembros del grupo. 
+
+<dt><tt><i>carpdev</i></tt>
+<dd>Este parámetro opcional especifica la interfaz de red física que 
+pertenece a este grupo de redundancia. Por omisión, CARP tratará de 
+determinar qué interfaz usar buscando una interfaz física que se encuentre 
+en la misma subred que la combinación de <i>dirección IP</i> y <i>máscara</i> 
+dada a la interfaz carp(4).
+
+<dt><tt><i>advbase</i></tt>
+<dd>Este parámetro opcional especifica con qué frecuencia, en segundos, 
+se avisa de que somos miembros del grupo de redundancia. 
+El valor predeterminado es 1 segundo. Los valores válidos son de 1 a 255.
+
+<dt><tt><i>advskew</i></tt>
+<dd>Este parámetro opcional especifica el sesgo introducido en 
+<tt><i>advbase</i></tt> al enviar avisos CARP. Mediante la manipulación 
+de <tt><i>advskew</i></tt>, se puede elegir el nodo maestro CARP. 
+Cuanto mayor sea el número, <i>menos</i> preferido será el nodo al 
+elegirse un maestro. 
+El valor predeterminado es 0. 
+Los valores válidos son de 0 a 254.
+
+<dt><tt><i>state</i></tt>
+<dd>Permite forzar el estado de una interfaz carp(4). Son estados válidos:
+<tt>init</tt>, <tt>backup</tt> y <tt>master</tt>.
+
+<dt><tt><i>group</i>, <i>-group</i></tt>
+<dd>Agrega o elimina una interfaz carp(4) a un determinado grupo de interfaz. 
+Por omisión, todas las interfaces carp(4) se agregan al grupo <tt>carp</tt>. 
+Cada grupo posee un contador <tt>carpdemote</tt> que afecta a todas 
+las interfaces carp(4) pertenecientes a ese grupo. 
+Como se describe <a href="#demote">más adelante</a>, puede ser útil 
+agrupar ciertas interfaces para propósitos de conmutación (<i>failover</i>).
+
+<dt><tt><i>ipaddress</i></tt>
+<dd>Dirección IP compartida entre los miembros del grupo de redundancia. 
+Esta dirección no tiene que estar en la misma subred que la dirección IP 
+de la interfaz física (si existe una dirección configurada en esta interfaz). 
+Esta dirección, sin embargo, ha de ser la misma en todos los 
+miembros del grupo.
+
+<dt><tt><i>mask</i></tt>
+<dd>La máscara de subred de la IP compartida.
+</dl>
+
+<p>
+El comportamiento de CARP puede controlarse también mediante 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=8"
+>sysctl(8)</a>.
+
+<dl>
+<dt><tt>net.inet.carp.allow</tt>
+<dd>Acepta o no la entrada de paquetes CARP. El valor predeterminado es 1 (sí).
+
+<dt><tt>net.inet.carp.preempt</tt>
+<dd>Permite elegir al maestro a los miembros de un grupo de redundancia 
+que tengan mejores <tt>advbase</tt> y <tt>advskew</tt>. 
+Además, esta opción también permite la conmutación a un grupo 
+de interfaces en el caso de que una interfaz cause baja. 
+Si una interfaz física CARP habilitada no está disponible, 
+CARP aumentará el contador de degradación (<tt>carpdemote</tt>) 
+a 1 en el grupo de interfaces cuya interfaz carp(4) es miembro,
+lo que tendrá como efecto conmutar juntos a todos los miembros del grupo.  
+<tt>net.inet.carp.preempt</tt> está a 0 (deshabilitado) por omisión.
+
+<dt><tt>net.inet.carp.log</tt>
+<dd>Registra los cambios de estado, malos paquetes y otros errores. 
+Puede estar entre 0 y 7, correspondientes a las prioridades de syslog(3). 
+El valor predeterminado es 2 (cambios de estado únicamente).
+</dl>
+
+
+<a name="carpex"></a>
+<h2>Ejemplo de configuración de CARP</h2>
+He aquí un ejemplo de configuración de CARP:
+
+<blockquote>
+<tt>
+# sysctl -w net.inet.carp.allow=1<br>
+# ifconfig carp1 create<br>
+# ifconfig carp1 vhid 1 pass mekmitasdigoat carpdev em0 \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;advskew 100 10.0.0.1 netmask 255.255.255.0<br>
+</tt>
+</blockquote>
+
+<p>
+Estas órdenes configuran lo siguiente:
+<ul>
+<li>Habilita la recepción de paquetes CARP (es la configuración predeterminada).
+<li>Crea una interfaz carp(4), <tt>carp1</tt>
+<li>Configura <tt>carp1</tt>  para el nodo virtual número 1, habilita una 
+contraseña, define <tt>em0</tt> como la interfaz perteneciente al grupo y
+hace de este nodo un respaldo debido a la <tt>advskew</tt> de <tt>100</tt>
+(asumiendo, por supuesto, que el nodo maestro sea configurado con un
+<tt>advskew</tt> menor de 100). 
+La IP compartida asignada a este grupo es 10.0.0.1/255.255.255.0.
+</ul>
+
+<p>
+El uso de <tt>ifconfig</tt> permite ver el estado de la 
+interfaz <tt>carp1</tt>:
+
+<blockquote>
+<tt>
+# ifconfig carp1<br>
+carp1: flags=8802&lt;UP,BROADCAST,SIMPLEX,MULTICAST&gt; mtu 1500<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;carp: BACKUP carpdev em0 vhid 1 advbase 1
+advskew 100<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;groups: carp<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;inet 10.0.0.1 netmask 0xffffff00 broadcast
+10.0.0.255
+</tt>
+</blockquote>
+
+
+<a name="pfsyncintro"></a>
+<h2>Introducción a pfsync</h2>
+La interfaz de red 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfsync&amp;sektion=4&amp;manpath=OpenBSD+4.8"
+>pfsync(4)</a> expone ciertos cambios realizados en la tabla de estados
+de <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+4.8"
+>pf(4)</a>. Al monitorizar este dispositivo mediante 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tcpdump&amp;sektion=8"
+>tcpdump(8)</a>, se pueden observar en tiempo real los cambios 
+en la tabla de estados. Además, la interfaz pfsync(4) 
+puede enviar estos mensajes de cambio de estado 
+por la red para que otros nodos ejecutando PF puedan fusionar estos 
+cambios con sus propias tablas de estado. Del mismo modo, 
+pfsync(4) también puede estar a la escucha de mensajes entrantes.
+
+<a name="pfsyncop"></a>
+<h2>Funcionamiento de pfsync</h2>
+Por omisión, pfsync(4) no envía ni recibe actualizaciones de la tabla
+de estados a través de la red; sin embargo, las actualizaciones se pueden 
+monitorizar mediante tcpdump(8) o herramientas análogas en la máquina
+local.
+
+<p>
+Cuando pfsync(4) está configurado para enviar o recibir actualizaciones
+a través de la red, el comportamiento prederminado es usar 
+<i>multicast</i> sobre la red local. Todas las actualizaciones se envían
+sin autenticación.
+La práctica más habitual es una de las dos siguientes:
+
+<ol>
+<li>Conecte los dos nodos que deben intercambiar actualizaciones mediante
+un cable cruzado. Las interfaces así conectadas se utilizan como 
+<tt>syncdev</tt> (véase <a href="#pfsyncconfig">más adelante</a>).
+<li>Use la opción <tt>syncpeer</tt> option de la orden ifconfig(8) 
+(véase <a href="#pfsyncconfig">más adelante</a>) para enviar las 
+actualizaciones son enviadas como <i>unicast</i> al par, 
+a continuación configure 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ipsec&amp;sektion=4"
+>ipsec(4)</a> entre los nodos para proteger el tráfico pfsync(4).
+</ol>
+
+<p>
+Cuando las actualizaciones se envían y reciben a través de la red, 
+los paquetes pfsync deben ser autorizados por las reglas de filtrado:
+
+<blockquote>
+<tt>
+pass on $sync_if proto pfsync
+</tt>
+</blockquote>
+
+<p>
+<tt>$sync_if</tt> debe ser la interfaz física por la que pfsync(4) se 
+comunica.
+
+<a name="pfsyncconfig"></a>
+<h2>Configuración de pfsync</h2>
+Dado que pfsync(4) es una interfaz de red virtual, se configura mediante
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8"
+>ifconfig(8)</a>. 
+
+<blockquote>
+<tt>
+ifconfig <i>pfsyncN</i> syncdev <i>syncdev</i> [syncpeer
+<i>syncpeer</i>] [defer|-defer]
+</tt>
+</blockquote>
+
+<dl>
+<dt><tt><i>pfsyncN</i></tt>
+<dd>El nombre de la interfaz pfsync(4). <tt>pfsync0</tt> existe por 
+omisión si se usa el kernel <tt>GENERIC</tt>.
+
+<dt><tt><i>syncdev</i></tt>
+<dd>El nombre de la interfaz física usada para enviar 
+actualizaciones a pfsync.
+
+<dt><tt><i>syncpeer</i></tt>
+<dd>Este parámetro opcional especifica la dirección IP de un
+nodo para intercambiar actualizaciones pfsync.
+Por omisión, las actualizaciones pfsync son &laquo;multicast&raquo; en
+la red local. Esta opción sobreescribe ese comportamiento y, en
+su lugar, envía &laquo;unicasts&raquo; al <tt><i>syncpeer</i></tt> 
+especificado. 
+
+<dt><tt><i>defer</i></tt>
+<dd>Si se emplea el indicador <tt>defer</tt>, el paquete inicial 
+de una nueva conexión que atraviesa el cortafuegos no se transmitirá 
+hasta que o bien otro sistema pfsync(4) haya llevado a cabo 
+la adición a la tabla de estados, o bien haya expirado el 
+tiempo máximo (<i>timeout</i>). 
+Esto añade pequeños retrasos, pero permite que el tráfico fluya 
+cuando más de un cortafuegos debe manejar paquetes activamente 
+(&laquo;activo/activo&raquo;), por ejemplo, con determinadas 
+configuraciones ospfd(8), bgpd(8) o carp(4).
+</dl>
+
+<a name="pfsyncex"></a>
+<h2>Ejemplo de configuración de pfsync</h2>
+He aquí un ejemplo de configuración de pfsync:
+
+<blockquote>
+<tt>
+# ifconfig pfsync0 syncdev em1<br>
+</tt>
+</blockquote>
+
+Esta orden activa pfsync en la interfaz <tt>em1</tt>. 
+Las actualizaciones serán transmitidas en 
+&laquo;multicast&raquo; a la red, permitiendo que cualquier 
+otro nodo que utilice pfsync pueda recibirlas.
+
+<a name="failover"></a>
+<h2>Uso combinado de CARP y pfsync para Alta Disponibilidad</h2>
+Al combinar las funcionalidades de CARP y pfsync, se puede usar 
+un grupo de dos o más cortafuegos para crear un clúster de 
+Alta Disponibilidad totalmente redundante.
+
+<dl>
+<dt>CARP:
+<dd>Gestiona la conmutación automática (<i>failover</i>) 
+de un cortafuegos a otro.
+
+<dt>pfsync:
+<dd>Sincroniza la tabla de estados entre todos los cortafuegos.
+En caso de que se produzca una conmutación, el tráfico puede fluir sin 
+interrupción a través del nuevo cortafuegos maestro.
+</dl>
+
+<p>
+Un escenario de ejemplo.
+Dos cortafuegos: <tt>fw1</tt> y <tt>fw2</tt>.
+
+<pre>
+         +----| WAN/Internet |----+ 
+         |                        |
+      em2|                        |em2   
+      +-----+                  +-----+
+      | fw1 |-em1----------em1-| fw2 |
+      +-----+                  +-----+
+      em0|                        |em0
+         |                        | 
+      ---+-----LAN compartida-----+---
+</pre>
+
+<p>
+Las interfaces <tt>em1</tt> de los cortafuegos son conectados directamente 
+mediante un cable cruzado.
+Ambos se conectan a la LAN en <tt>em0</tt> y a una conexión WAN/Internet
+en <tt>em2</tt>
+Las direcciones IP son las siguientes:
+
+<ul>
+<li>fw1 em0: 172.16.0.1
+<li>fw1 em1: 10.10.10.1
+<li>fw1 em2: 192.0.2.1
+<li>fw2 em0: 172.16.0.2
+<li>fw2 em1: 10.10.10.2
+<li>fw2 em2: 192.0.2.2
+<li>IP compartida LAN: 172.16.0.100
+<li>IP compartida de WAN/Internet: 192.0.2.100
+</ul>
+
+<p>
+La política de red es que el cortafuegos <tt>fw1</tt> sea el maestro.
+
+<p>
+Configuración de fw1:
+
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+! activa la función de anticipación y el "failover" de la interfaz de grupo 
+# sysctl -w net.inet.carp.preempt=1
+
+! configuración de pfsync
+# ifconfig em1 10.10.10.1 netmask 255.255.255.0
+# ifconfig pfsync0 syncdev em1
+# ifconfig pfsync0 up
+
+! configuración de CARP en el lado de la LAN
+# ifconfig carp1 create
+# ifconfig carp1 vhid 1 carpdev em0 pass lanpasswd \
+     172.16.0.100 netmask 255.255.255.0
+
+! configuración CARP en el lado de la WAN/Internet 
+# ifconfig carp2 create
+# ifconfig carp2 vhid 2 carpdev em2 pass netpasswd \
+    192.0.2.100 netmask 255.255.255.0
+</pre>
+</td></tr>
+</table>
+
+<p>
+Configuración de fw2:
+
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+! activa la función de anticipación y el "failover" de la interfaz de grupo
+# sysctl -w net.inet.carp.preempt=1
+
+! configuración de pfsync
+# ifconfig em1 10.10.10.2 netmask 255.255.255.0
+# ifconfig pfsync0 syncdev em1
+# ifconfig pfsync0 up
+
+! configuración de CARP en el lado de la LAN
+# ifconfig carp1 create
+# ifconfig carp1 vhid 1 carpdev em0 pass lanpasswd \
+     advskew 128 172.16.0.100 netmask 255.255.255.0
+
+! configuración CARP en el lado de la WAN/Internet
+# ifconfig carp2 create
+# ifconfig carp2 vhid 2 carpdev em2 pass netpasswd \
+    advskew 128 192.0.2.100 netmask 255.255.255.0
+</pre>
+</td></tr>
+</table>
+
+
+<a name="ops"></a>
+<h2>Problemas operativos</h2>
+Algunos problemas operativos comunes hallados con CARP/pfsync.
+
+<a name="bootconfig"></a>
+<h3>Configuración de CARP y pfsync durante el arranque</h3>
+Dado que carp(4) y pfsync(4) son interfaces de red, pueden
+configurarse al inicio mediante la creación de un fichero
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hostname.if&amp;sektion=5"
+>hostname.if(5)</a>.
+El script de inicio 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=netstart&amp;sektion=8"
+>netstart</a> se ocupará de crear las interfaces y configurarlas.
+<p>
+Ejemplos:
+
+<dl>
+<dt>/etc/hostname.carp1</dt>
+<dd>
+inet 172.16.0.100 255.255.255.0 172.16.0.255 vhid 1 carpdev em0 \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;pass lanpasswd
+</dd>
+</dl>
+
+<dl>
+<dt>/etc/hostname.pfsync0</dt>
+<dd>
+up syncdev em1
+</dd>
+</dl>
+
+<a name="forcefail"></a>
+<h3>Forzar el &laquo;failover&raquo; del nodo maestro</h3>
+Puede haber momentos en que sea necesario forzar la conmutación 
+(<i>failover</i>) o degradar el nodo maestro a propósito. 
+Por ejemplo, por la necesidad de detener el nodo maestro para 
+realizar diagnósticos o porque haya un problema de funcionamiento. 
+El objetivo aquí es conmutar el tráfico a uno de los nodos 
+de respaldo de forma que los usuarios no noten ningún impacto.
+
+<p>
+Para forzar la conmutación de un determinado grupo de CARP, tumbe
+la interfaz carp(4) del nodo maestro.
+Esto causará que el nodo maestro se anuncie con un valor 
+de <tt>advbase</tt> y <tt>advskew</tt> &laquo;infinito&raquo;.
+El nodo o nodos de respaldo lo verán y de inmediato asumirán 
+el papel del nodo maestro.
+
+<blockquote>
+<tt>
+# ifconfig carp1 down
+</tt>
+</blockquote>
+
+<p>
+Una alternativa consiste en incrementar <tt>advskew</tt> a un valor superior 
+que <tt>advskew</tt> en el nodo o nodos de respaldo.
+Esto causará una conmutación pero aún permite participar al nodo maestro 
+en el grupo CARP.
+ 
+<a name="demote"></a>
+<p>
+Otro método de conmutación es ajustar el contador de degradación de 
+CARP. El contador de degradación es una medida de lo &laquo;preparado&raquo; 
+que está un nodo para convertirse en maestro del grupo CARP.
+Por ejemplo, mientras un nodo está en medio del proceso de arranque, es
+una mala idea convertirse en maestro CARP hasta que todas las
+interfaces hayan sido configuradas, todos los servicios de red se hayan 
+iniciado, etc. Los nodos que anuncian un valor alto de degradación tendrán 
+menos preferencia para pasar a nodo maestro.
+
+<p>
+Un contador de degradación se almacena en cada grupo de interfaces al 
+que la interfaz CARP pertenece.
+Por omisión, todas las interfaces CARP son miembros del grupo de 
+interfaces &laquo;carp&raquo;. 
+Puede verse el valor actual de un contador de degradación mediante
+ifconfig(8):
+
+<blockquote>
+<tt>
+# ifconfig -g carp<br>
+carp: carp demote count 0
+</tt>
+</blockquote>
+
+<p>
+En este ejemplo, se muestra el contador asociado con el grupo de 
+interfaces &laquo;carp&raquo;.
+Cuando un nodo CARP se anuncia en la red, toma la suma de
+los contadores de degradación para cada grupo de interfaces al que 
+pertenece la interfaz carp(4) y anuncia ese valor como su valor de
+degradación.
+
+
+<p>
+Considere ahora el siguiente ejemplo.
+Dos cortafuegos que utilizan CARP con las siguientes interfaces: 
+
+<ul>
+<li>carp1 -- Departamento de Contabilidad
+<li>carp2 -- Empleados 
+<li>carp3 -- Internet
+<li>carp4 -- DMZ
+</ul>
+
+<p>
+El objetivo consiste únicamente en conmutar los grupos carp1 y carp2 al
+cortafuegos secundario.
+
+<p>
+En primer lugar, asigne cada interfaz a un nuevo grupo, en este caso
+denominado &laquo;internal&raquo;:
+
+<blockquote>
+<tt>
+# ifconfig carp1 group internal<br>
+# ifconfig carp2 group internal<br>
+# ifconfig internal<br>
+carp1: flags=8843&lt;UP,BROADCAST,RUNNING,SIMPLEX,MULTICAST&gt; mtu 1500<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;carp: MASTER carpdev em0 vhid 1 advbase 1
+advskew 100<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;groups: carp internal<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;inet 10.0.0.1 netmask 0xffffff00 broadcast
+10.0.0.255<br>
+carp2: flags=8843&lt;UP,BROADCAST,RUNNING,SIMPLEX,MULTICAST&gt; mtu 1500<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;carp: MASTER carpdev em1 vhid 2 advbase 1
+advskew 100<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;groups: carp internal<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;inet 10.0.1.1 netmask 0xffffff00 broadcast
+10.0.1.255
+</tt>
+</blockquote>
+
+<p>
+Ahora incremente el contador de degradación para el grupo &laquo;internal&raquo;
+por medio de ifconfig(8):
+
+<blockquote>
+<tt>
+# ifconfig -g internal<br>
+internal: carp demote count 0<br>
+# ifconfig -g internal carpdemote 50<br>
+# ifconfig -g internal<br>
+internal: carp demote count 50<br>
+</tt>
+</blockquote>
+
+<p>
+El cortafuegos ahora conmutará de forma elegante los grupos carp1 y carp2 
+hacia el otro cortafuegos del clúster, mientras todavía permanece como 
+maestro de carp3 y carp4. 
+Si el otro cortafuegos comienza a anunciarse con un valor de degradación 
+superior a 50, o si deja de dar avisos, a continuación 
+este cortafuegos tomará de nuevo el papel de maestro para carp1 carp2.
+
+<p>
+Para restablecer (<i>fail back</i>) el cortafuegos primario, 
+revierta los cambios:
+
+<blockquote>
+<tt>
+# ifconfig -g internal -carpdemote 50<br>
+# ifconfig -g internal<br>
+internal: carp demote count 0<br>
+</tt>
+</blockquote>
+
+<p>
+Servicios de red como 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bgpd&amp;sektion=8"
+>OpenBGPD</a> y
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sasyncd&amp;sektion=8"
+>sasyncd(8)</a> hacen uso del contador de degradación para garantizar 
+que el cortafuegos no se convierta en maestro hasta que las sesiones BGP 
+lleguen a establecerse y las SAs IPsec estén sincronizadas.
+
+<a name="RulesetTips"></a> 
+<h3>Consejos para el conjunto de reglas</h3>
+<b>Filtre la interfaz física.</b>
+En lo que se refiere a PF, el tráfico de red proviene de la interfaz
+física, no de la interfaz virtual CARP (o sea, <tt>carp0</tt>).
+Por tanto, escriba las reglas en consecuencia.
+No hay que olvidar que un nombre de interfaz en una regla de PF 
+puede ser o bien el nombre de una interfaz física o bien una dirección 
+asociada con esa interfaz.
+Por ejemplo, esta regla podría ser correcta:
+<blockquote><tt>
+pass in on fxp0 inet proto tcp from any to carp0 port 22
+</tt></blockquote>
+pero sustituir <tt>fxp0</tt> por <tt>carp0</tt> no funcionará como 
+desea.
+
+<p>
+&iexcl;<b>NO se olvide</b> de autorizar <tt>proto carp</tt> y <tt>proto
+pfsync</tt>!
+
+<p>
+
+<a name="ref"></a>
+<h2>Otras referencias</h2>
+Por favor, consulte las siguientes fuentes para obtener más información:
+
+<ul>
+<li>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=carp&amp;sektion=4&amp;manpath=OpenBSD+4.8"
+>carp(4)</a>
+<li>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfsync&amp;sektion=4&amp;manpath=OpenBSD+4.8"
+>pfsync(4)</a>
+<li>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifconfig&amp;sektion=8"
+>ifconfig(8)</a>
+<li>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hostname.if&amp;sektion=5"
+>hostname.if(5)</a>
+<li>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+4.8"
+>pf.conf(5)</a>
+<li>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifstated&amp;sektion=8"
+>ifstated(8)</a>
+<li>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ifstated.conf&amp;sektion=5" 
+>ifstated.conf(5)</a>
+</ul>
+
+
+<p>
+[<a href="authpf.html">Anterior: authpf: shell de usuario para pasarelas de autenticación</a>]
+[<a href="index.html">Contenido</a>]
+[<a href="example1.html">Siguiente: Cortafuegos para una red doméstica o una oficina</a>]
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../../../images/back.gif" border="0" alt="[back]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+<!--
+Originally [OpenBSD: carp.html,v 1.27 ]<br>
+$Translation: carp.html,v 1.1 2011/03/16 19:33:44 mvidal Exp $<br>
+-->
+$OpenBSD: carp.html,v 1.1 2011/03/18 16:33:11 ajacoutot Exp $
+</small>
+
+</body>
+</html> 
