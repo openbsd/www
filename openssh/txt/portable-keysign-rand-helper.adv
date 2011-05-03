@@ -1,0 +1,90 @@
+OpenSSH Security Advisory: portable-keysign-rand-helper.adv
+
+This document may be found at:
+http://www.openssh.com/txt/portable-keysign-rand-helper.adv
+
+1. Vulnerability
+
+        Portable OpenSSH's ssh-keysign utility may allow unauthorised
+        local access to host keys on platforms if ssh-rand-helper is
+        used.
+
+2. Affected configurations
+
+        Portable OpenSSH prior to version 5.8p2 only on platforms
+        that are configured to use ssh-rand-helper for entropy
+        collection.
+
+        ssh-rand-helper is enabled at configure time when it is
+        detected that OpenSSL does not have a built-in source of
+        randomness, and only used at runtime if this condition
+        remains. Platforms that support /dev/random or otherwise
+        configure OpenSSL with a random number provider are not
+        vulnerable.
+
+        In particular, *BSD, OS X, Cygwin and Linux are not
+        affected.
+
+3. Mitigation
+
+        If host-based authentication is not in use (enabled using
+        HostBasedAuthentication or RhostsRSAAuthentication in
+        sshd_config), then remove the setuid bit from ssh-keysign.
+
+4. Details
+
+        ssh-keysign is a setuid helper program that is used to mediate
+        access to the host's private host keys during host-based
+        authentication. It would use its elevated privilege to open
+        the keys and then immediately drop privileges to complete its
+        cryptographic signing operations.
+
+        After privilege was dropped, ssh-keysign would ensure that
+        the OpenSSL random number generator that it depends upon was
+        adequately prepared. On configurations that lacked a built-in
+        source of entropy in OpenSSL, ssh-keysign would execute the
+        ssh-rand-helper program to attempt to retrieve some from the
+        system environment.
+
+        However, the file descriptors to the host private key files
+        were not closed prior to executing ssh-rand-helper. Since this
+        process was "born unprivileged" and inherited the sensitive
+        file descriptors, there was no protection against an attacker
+        using ptrace(2) to attach to it and instructing it to read out
+        the private keys.
+
+5. Credit
+
+        This issue was privately reported by Tomas Mraz on April 26,
+        2011.
+
+6. Fix
+
+        OpenSSH 5.8p2 contains a fix for this vulnerability.
+
+        Future releases of portable OpenSSH will remove support for
+        ssh-rand-helper - in 2011, there is no excuse for not
+        providing a /dev/random-like interface as part of the OS.
+        Users stuck on one of these platforms may use PRNGd
+        (http://prngd.sf.net) to provide a host-wide random pool.
+
+        Users of older versions that do not wish to upgrade
+        immediately may apply this patch:
+
+Index: ssh-keysign.c
+===================================================================
+RCS file: /var/cvs/openssh/ssh-keysign.c,v
+retrieving revision 1.43
+diff -u -p -r1.43 ssh-keysign.c
+--- ssh-keysign.c	10 Sep 2010 01:12:09 -0000	1.43
++++ ssh-keysign.c	29 Apr 2011 01:25:55 -0000
+@@ -167,6 +167,9 @@ main(int argc, char **argv)
+ 
+ 	key_fd[0] = open(_PATH_HOST_RSA_KEY_FILE, O_RDONLY);
+ 	key_fd[1] = open(_PATH_HOST_DSA_KEY_FILE, O_RDONLY);
++	if (fcntl(key_fd[0], F_SETFD, FD_CLOEXEC) != 0 ||
++	    fcntl(key_fd[1], F_SETFD, FD_CLOEXEC) != 0)
++		fatal("fcntl failed");
+ 
+ 	original_real_uid = getuid();	/* XXX readconf.c needs this */
+ 	if ((pw = getpwuid(original_real_uid)) == NULL)
