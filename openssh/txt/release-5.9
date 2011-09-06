@@ -1,0 +1,163 @@
+OpenSSH 5.9 has just been released. It will be available from the
+mirrors listed at http://www.openssh.com/ shortly.
+
+OpenSSH is a 100% complete SSH protocol version 1.3, 1.5 and 2.0
+implementation and includes sftp client and server support.
+
+Once again, we would like to thank the OpenSSH community for their
+continued support of the project, especially those who contributed
+code or patches, reported bugs, tested snapshots or donated to the
+project. More information on donations may be found at:
+http://www.openssh.com/donations.html
+
+Changes since OpenSSH 5.8
+=========================
+
+Features:
+
+ * Introduce sandboxing of the pre-auth privsep child using an optional
+   sshd_config(5) "UsePrivilegeSeparation=sandbox" mode that enables
+   mandatory restrictions on the syscalls the privsep child can perform.
+   This intention is to prevent a compromised privsep child from being
+   used to attack other hosts (by opening sockets and proxying) or
+   probing local kernel attack surface.
+    
+   Three concrete sandbox implementation are provided (selected at
+   configure time): systrace, seatbelt and rlimit.
+
+   The systrace sandbox uses systrace(4) in unsupervised "fast-path"
+   mode, where a list of permitted syscalls is supplied. Any syscall not
+   on the list results in SIGKILL being sent to the privsep child. Note
+   that this requires a kernel with the new SYSTR_POLICY_KILL option
+   (only OpenBSD has this mode at present).
+ 
+   The seatbelt sandbox uses OS X/Darwin sandbox(7) facilities with a
+   strict (kSBXProfilePureComputation) policy that disables access to
+   filesystem and network resources.
+
+   The rlimit sandbox is a fallback choice for platforms that don't
+   support a better one; it uses setrlimit() to reset the hard-limit
+   of file descriptors and processes to zero, which should prevent
+   the privsep child from forking or opening new network connections.
+
+   Sandboxing of the privilege separated child process is currently
+   experimental but should become the default in a future release.
+   Native sandboxes for other platforms are welcome (e.g. Capsicum,
+   Linux pid/net namespaces, etc.)
+
+ * Add new SHA256-based HMAC transport integrity modes from
+   http://www.ietf.org/id/draft-dbider-sha2-mac-for-ssh-02.txt
+   These modes are hmac-sha2-256, hmac-sha2-256-96, hmac-sha2-512,
+   and hmac-sha2-512-96, and are available by default in ssh(1) and
+   sshd(8)
+
+ * The pre-authentication sshd(8) privilege separation slave process
+   now logs via a socket shared with the master process, avoiding the
+   need to maintain /dev/log inside the chroot.
+
+ * ssh(1) now warns when a server refuses X11 forwarding
+
+ * sshd_config(5)'s AuthorizedKeysFile now accepts multiple paths,
+   separated by whitespace. The undocumented AuthorizedKeysFile2
+   option is deprecated (though the default for AuthorizedKeysFile
+   includes .ssh/authorized_keys2)
+
+ * sshd_config(5): similarly deprecate UserKnownHostsFile2 and
+   GlobalKnownHostsFile2 by making UserKnownHostsFile and
+   GlobalKnownHostsFile accept multiple options and default to
+   include known_hosts2
+
+ * Retain key comments when loading v.2 keys. These will be visible
+   in "ssh-add -l" and other places. bz#439
+
+ * ssh(1) and sshd(8): set IPv6 traffic class from IPQoS (as well as
+   IPv4 ToS/DSCP). bz#1855
+
+ * ssh_config(5)'s ControlPath option now expands %L to the host
+   portion of the destination host name.
+
+ * ssh_config(5) "Host" options now support negated Host matching, e.g.
+     
+     Host *.example.org !c.example.org
+        User mekmitasdigoat
+     
+   Will match "a.example.org", "b.example.org", but not "c.example.org"
+
+ * ssh_config(5): a new RequestTTY option provides control over when a
+   TTY is requested for a connection, similar to the existing -t/-tt/-T
+   ssh(1) commandline options.
+
+ * sshd(8): allow GSSAPI authentication to detect when a server-side
+   failure causes authentication failure and don't count such failures
+   against MaxAuthTries; bz#1244
+
+ * ssh-keygen(1): Add -A option. For each of the key types (rsa1, rsa,
+   dsa and ecdsa) for which host keys do not exist, generate the host
+   keys with the default key file path, an empty passphrase, default
+   bits for the key type, and default comment. This is useful for
+   system initialisation scripts.
+
+ * ssh(1): Allow graceful shutdown of multiplexing: request that a mux
+   server removes its listener socket and refuse future multiplexing
+   requests but don't kill existing connections. This may be requested
+   using "ssh -O stop ..."
+
+ * ssh-add(1) now accepts keys piped from standard input. E.g.
+   "ssh-add - < /path/to/key"
+ 
+ * ssh-keysign(8) now signs hostbased authentication
+   challenges correctly using ECDSA keys; bz#1858
+
+ * sftp(1): document that sftp accepts square brackets to delimit
+   addresses (useful for IPv6); bz#1847a
+
+ * ssh(1): when using session multiplexing, the master process will
+   change its process title to reflect the control path in use and
+   when a ControlPersist-ed master is waiting to close; bz#1883 and
+   bz#1911
+
+ * Other minor bugs fixed: 1849 1861 1862 1869 1875 1878 1879 1892
+   1900 1905 1913
+
+Portable OpenSSH Bugfixes:
+
+ * Fix a compilation error in the SELinux support code. bz#1851
+
+ * This release removes support for ssh-rand-helper. OpenSSH now
+   obtains its random numbers directly from OpenSSL or from
+   a PRNGd/EGD instance specified at configure time.
+
+ * sshd(8) now resets the SELinux process execution context before
+   executing passwd for password changes; bz#1891
+
+ * Since gcc >= 4.x ignores all -Wno-options options, test only the
+   corresponding -W-option when trying to determine whether it is
+   accepted; bz#1901
+
+ * Add ECDSA key generation to the Cygwin ssh-{host,user}-config
+   scripts.
+
+ * Updated .spec and init files for Linux; bz#1920
+
+ * Improved SELinux error messages in context change failures and
+   suppress error messages when attempting to change from the
+   "unconfined_t" type; bz#1924 bz#1919
+
+ * Fix build errors on platforms without dlopen(); bz#1929
+
+Checksums:
+==========
+
+ - SHA1 (openssh-5.9.tar.gz) = bc0cb728bbc394769f9a2ce5b8cd99dc41e12632
+ - SHA1 (openssh-5.9p1.tar.gz) = be8878869bb80ce12ca79282768ffa73cc3f05fc
+
+Reporting Bugs:
+===============
+
+- Please read http://www.openssh.com/report.html
+  Security bugs should be reported directly to openssh@openssh.com
+
+OpenSSH is brought to you by Markus Friedl, Niels Provos, Theo de Raadt,
+Kevin Steves, Damien Miller, Darren Tucker, Jason McIntyre, Tim Rice and
+Ben Lindstrom.
+
