@@ -174,6 +174,38 @@ However, a drive's identification won't change after boot, so if
 a USB drive is unplugged or fails, it won't change the identification
 of other drives until reboot.
 
+<a name="DUID"></a>
+<h3>Disklabel Unique Identifiers</h3>
+Disks can also be identified by Disklabel Unique Identifiers (DUIDs), a
+16 hex digit number, managed by the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=diskmap&amp;sektion=4">diskmap(4)</a>.
+device.
+This number is generated automatically as a random number when a
+disklabel is first created, though defaults to all zeros on an existing
+(pre OpenBSD 4.8) labels.
+disklabel(8) can be used to change the UID if desired.
+These UIDs are "persistent" -- if you identify your disks this way,
+drive "<tt>f18e359c8fa2522b</tt>" will always be
+<tt>f18e359c8fa2522b</tt>, no matter what order or how it is attached.
+You can specify partitions on the disk by appending a period and the
+partition letter, for example, <tt>f18e359c8fa2522b.d</tt> is the 'd'
+partition of the disk <tt>f18e359c8fa2522b</tt> and will ALWAYS refer
+to the same chunk of storage, no mater what order the device is attached
+to the system, or what kind of interface it is attached to.
+
+<p>
+These UIDs can be used to identify the disks almost anywhere a partition
+or device would be specified, for example in <tt>/etc/fstab</tt> or in
+command lines.
+Of course, disks and partitions may also be identified in the
+traditional way, by device, unit number and partition (i.e., /dev/sd1f),
+and this can be done interchangably.
+
+<p>
+It is worth noting that the DUID is a property of the disklabel, though
+as OpenBSD only supports one disklabel per disk, this is mostly academic.
+
+
 <p>
 <a name="fdisk"></a>
 <h2>14.2 - Using fdisk(8)</h2>
@@ -983,7 +1015,7 @@ otherwise by <tt>/etc/boot.conf</tt>, it then gives the user a prompt:
 <blockquote><pre>
 probing: pc0 com0 com1 apm mem[636k 190M a20=on]
 disk: fd0 hd0+
->> OpenBSD/i386 BOOT 3.02
+>> OpenBSD/i386 BOOT 3.17
 boot>
 </pre></blockquote>
 
@@ -1026,7 +1058,7 @@ Using drive 0, partition 3.                      <b><i>&lt;- MBR</i></b>
 Loading....                                      <b><i>&lt;- PBR</i></b>
 probing: pc0 com0 com1 apm mem[636k 190M a20=on] <b><i>&lt;- /boot</i></b>
 disk: fd0 hd0+
->> OpenBSD/i386 BOOT 3.15
+>> OpenBSD/i386 BOOT 3.17
 boot>
 booting hd0a:/bsd 4464500+838332 [58+204240+181750]=0x56cfd0
 entry point at 0x100120
@@ -1036,7 +1068,7 @@ Copyright (c) 1982, 1986, 1989, 1991, 1993       <b><i>&lt;- Kernel</i></b>
         The Regents of the University of California.  All rights reserved.
 Copyright (c) 1995-2008 OpenBSD.  All rights reserved.  http://www.OpenBSD.org
 
-OpenBSD 4.9 (GENERIC) #671: Wed Mar  2 07:09:00 MST 2011
+OpenBSD 5.0 (GENERIC) #43: Wed Aug 17 10:10:52 MDT 2011
     deraadt@i386.openbsd.org:/usr/src/sys/arch/i386/compile/GENERIC
    ...
 </pre></blockquote>
@@ -1669,14 +1701,14 @@ and ready to use again.
 <p>
 To mount a disk image (ISO images, disk images created with dd, etc.) in
 OpenBSD you must configure a
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=svnd&amp;sektion=4">svnd(4)</a>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vnd&amp;sektion=4">vnd(4)</a>
 device. For example, if you have an ISO image located at
 <i>/tmp/ISO.image</i>, you would take the following steps to mount the
 image.
 
 <blockquote><pre>
-# <b>vnconfig svnd0 /tmp/ISO.image</b>
-# <b>mount -t cd9660 /dev/svnd0c /mnt</b>
+# <b>vnconfig vnd0 /tmp/ISO.image</b>
+# <b>mount -t cd9660 /dev/vnd0c /mnt</b>
 </pre></blockquote>
 
 <p>
@@ -1690,7 +1722,7 @@ To unmount the image use the following commands.
 
 <blockquote><pre>
 # <b>umount /mnt</b>
-# <b>vnconfig -u svnd0</b>
+# <b>vnconfig -u vnd0</b>
 </pre></blockquote>
 
 <p>
@@ -2220,12 +2252,15 @@ In the case of booting from a USB device, your system must be
 able to boot from the USB device without being distracted by
 other devices on the system.
 Note that if your intention is to make a portable boot environment on a
-USB device, the USB device will show up as a SCSI disk, sometimes sd0.
-However, if you plug this device into a system which already has a few
+USB device, you really want to use <a href="#DUID">DUIDs</a>, rather
+than the traditional "<tt>/dev/sd0X</tt>" notation.
+The USB device will show up as a SCSI disk, sometimes sd0.
+Without DUIDs, if you plug this device into a system which already has a few
 SCSI-like disks (i.e., devices attached to an ahci(4) interface) on it,
 it will probably end up with a different
 identifier, which will complicate carrying the flash device from system
-to system, as you will have to update <tt>/etc/fstab</tt>.
+to system, as you would have to update <tt>/etc/fstab</tt>.
+Using DUIDs completely resolves this issue.
 
 <p>
 Some notes:
@@ -2376,13 +2411,7 @@ want to use.
 However, if you wish to use it as an install media, you could have an
 amd64 bsd.rd and install files in addition to i386.
 
-<li>If your target machine has an
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ahci&amp;sektion=4">ahci(4)</a>
-or SCSI interface, you will probably find your USB drive's identifier
-changing.
-Having multiple versions of your <tt>/etc/fstab</tt> file may make this
-easier to "fix" (in single user mode).
-
+<li>Use <a href="#DUID">DUIDs</a> to identify your partitions.
 <li>You may find it desirable to have a FAT partition on the USB
 drive, create it as detailed <a href="#flashmemBoot">above</a>.
 
@@ -2503,7 +2532,7 @@ they will get wiped and recreated on a reboot anyway.
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq14.html,v 1.213 2011/06/20 02:07:50 nick Exp $</small>
+<small>$OpenBSD: faq14.html,v 1.214 2011/11/01 10:52:28 nick Exp $</small>
 
 </body>
 </html>
