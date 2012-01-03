@@ -56,13 +56,14 @@ Conjuntos de Regras</a>]
 	<li><a href="#sepnet">Mover o Servidor Para uma Rede Local
             Separada</a>
 	<li><a href="#tcpproxy">Proxy TCP</a>
-	<li><a href="#rdrnat">Combinação de RDR e NAT</a>
+	<li><a href="#rdrnat">Combinação de RDR-TO e NAT-TO</a>
 	</ul>
 </ul>
 
 <hr>
 
 <a name="intro"></a>
+<a name="filter"></a>
 <h2>Introdução</h2>
 Quando você utiliza NAT no seu escritório, você tem a Internet
 inteira disponível para todas as suas máquinas.
@@ -75,7 +76,7 @@ gateway NAT.
 Vejamos um exemplo:
 <blockquote>
 <tt>
-rdr on tl0 proto tcp from any to any port 80 -&gt; 192.168.1.20
+pass in on tl0 proto tcp from any to any port 80 rdr-to 192.168.1.20
 </tt>
 </blockquote>
 
@@ -91,8 +92,8 @@ muito útil. Se você souber quais endereços ou sub-redes devem ter acesso
 ao servidor na porta 80, pode restringi-los assim:
 <blockquote>
 <tt>
-rdr on tl0 proto tcp from 27.146.49.0/24 to any port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.20
+pass in on tl0 proto tcp from 27.146.49.0/24 to any port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.20
 </tt>
 </blockquote>
 
@@ -105,12 +106,12 @@ próprios computadores desktop usando a mesma porta e o mesmo endereço IP
 no gateway desde que você saiba de que endereço IP eles se conectarão:
 <blockquote>
 <tt>
-rdr on tl0 proto tcp from 27.146.49.14 to any port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.20<br>
-rdr on tl0 proto tcp from 16.114.4.89 to any port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.22<br>
-rdr on tl0 proto tcp from 24.2.74.178 to any port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.23
+pass in on tl0 proto tcp from 27.146.49.14 to any port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.20<br>
+pass in on tl0 proto tcp from 16.114.4.89 to any port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.22<br>
+pass in on tl0 proto tcp from 24.2.74.178 to any port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.23
 </tt>
 </blockquote>
 
@@ -118,12 +119,12 @@ rdr on tl0 proto tcp from 24.2.74.178 to any port 80 -&gt; \<br>
 Uma faixa de portas também pode ser redirecionada dentro da mesma regra:
 <blockquote>
 <tt>
-rdr on tl0 proto tcp from any to any port 5000:5500 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.20<br>
-rdr on tl0 proto tcp from any to any port 5000:5500 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.20 port 6000<br>
-rdr on tl0 proto tcp from any to any port 5000:5500 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.20 port 7000:*<br>
+pass in on tl0 proto tcp from any to any port 5000:5500 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.20<br>
+pass in on tl0 proto tcp from any to any port 5000:5500 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.20 port 6000<br>
+pass in on tl0 proto tcp from any to any port 5000:5500 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.20 port 7000:*<br>
 </tt>
 </blockquote>
 
@@ -136,73 +137,6 @@ Na segunda regra, toda a faixa de portas é redirecionada para a porta
 6000.
 E, na última regra, a porta 5000 é redirecionada para 7000, 5001 para
 7001, etc.
-
-<a name="filter"></a>
-<h2>Redirecionamento e Filtragem de Pacotes</h2>
-<font color="#ff0000">NOTA:</font> Pacotes traduzidos ainda devem passar
-pelo sistema de filtragem e serão bloqueados ou permitidos com base
-nas regras de filtragem que foram definidas.
-
-<p>
-A <i>única</i> exceção à regra é quando a palavra-chave <tt>pass</tt>
-é usada na regra <tt>rdr</tt>. Nesse caso, os pacotes redirecionados
-passam direto pelo sistema de filtragem: as regras de filtragem não
-são avaliadas para esses pacotes.
-Esse é um atalho para evitar a adição de regras de filtragem
-<tt>pass</tt> para cada regra de redirecionamento.
-Pense nisso como uma regra <tt>rdr</tt> normal (sem a palavra-chave
-<tt>pass</tt>) associada a uma regra de filtragem <tt>pass</tt> com a
-palavra-chave <tt>keep state</tt>.
-Contudo, caso queira habilitar opções de filtragem mais específicas,
-como <tt>synproxy</tt>, <tt>modulate state</tt>, etc., você ainda
-precisa usar regras <tt>pass</tt> dedicadas, já que essas opções
-não se encaixam em regras de redirecionamento.
-
-<p>
-Também fique ciente de que a tradução ocorre <i>antes</i> da
-filtragem; o sistema de filtragem vê os pacotes <i>traduzidos</i>
-como eles ficam após terem seus endereços IP e/ou portas alterados
-para corresponder ao endereço/à porta de redirecionamento
-especificado(a) na regra <tt>rdr</tt>.
-Considere o cenário:
-
-<ul>
-<li>192.0.2.1 - máquina na Internet
-<li>24.65.1.13 - endereço externo do roteador OpenBSD
-<li>192.168.1.5 - endereço IP interno do servidor Web
-</ul>
-
-<p>
-Regra de redirecionamento:
-<blockquote>
-<tt>
-rdr on tl0 proto tcp from 192.0.2.1 to 24.65.1.13 port 80 \<br>
-&nbsp;&nbsp;&nbsp;-&gt; 192.168.1.5 port 8000
-</tt>
-</blockquote>
-
-<p>
-Pacote antes da regra <tt>rdr</tt> ser processada:
-<ul>
-<li>Endereço de origem: 192.0.2.1
-<li>Porta de origem: 4028 (escolhida aleatoriamente pelo sistema
-    operacional)
-<li>Endereço de destino: 24.65.1.13
-<li>Porta de destino: 80
-</ul>
-
-<p>
-Pacote após a regra <tt>rdr</tt> ter sido processada:
-<ul>
-<li>Endereço de origem: 192.0.2.1
-<li>Porta de origem: 4028
-<li>Endereço de destino: 192.168.1.5
-<li>Porta de destino: 8000
-</ul>
-
-<p>
-O sistema de filtragem vê o pacote IP como ele se encontra após ter
-sido feita a tradução.
 
 <a name="security"></a>
 <h2>Implicações de Segurança</h2>
@@ -234,8 +168,8 @@ privado na rede interna, ou LAN, como:
 <tt>
 server = 192.168.1.40<br>
 <br>
-rdr on $ext_if proto tcp from any to $ext_if port 80 -&gt; $server \<br>
-&nbsp;&nbsp;&nbsp;port 80
+pass in on $ext_if proto tcp from any to $ext_if port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to $server port 80
 </tt>
 </blockquote>
 
@@ -333,25 +267,25 @@ A regra de redirecionamento a seguir transfere conexões na porta 80,
 na interface interna, para o proxy:
 <blockquote>
 <tt>
-rdr on $int_if proto tcp from $int_net to $ext_if port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;127.0.0.1 port 5000
+pass in on $int_if proto tcp from $int_net to $ext_if port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 127.0.0.1 port 5000
 </tt>
 </blockquote>
 
+Proxies de alto desempenho, também podem ser criados com <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=relayd&amp;sektion=8">relayd(8)</a>.
+
 <a name="rdrnat"></a>
-<h3>Combinação de RDR e NAT</h3>
+<h3>Combinação de RDR-TO e NAT-TO</h3>
 
 <p>
 Com uma regra NAT adicional na interface interna, a tradução de
 endereço que estava faltando no cenário acima pode ser remediada.
 <blockquote>
 <tt>
-rdr on $int_if proto tcp from $int_net to $ext_if port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;$server
-<br>
-no nat on $int_if proto tcp from $int_if to $int_net<br>
-nat on $int_if proto tcp from $int_net to $server port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;$int_if
+pass in on $int_if proto tcp from $int_net to $ext_if port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to $server<br>
+pass out on $int_if proto tcp to $server port 80 \<br>
+&nbsp;&nbsp;&nbsp;received-on $int_if nat-to $int_if
 </tt>
 </blockquote>
 
@@ -365,13 +299,9 @@ Essa construção é um tanto complexa, pois cria dois estados separados
 para cada conexão refletida. Deve-se tomar muito cuidado para evitar
 que a regra NAT atinja outro tráfego; por exemplo, conexões originadas
 de máquinas externas (através de outros redirecionamentos) ou do próprio
-firewall. Perceba que a regra <tt>rdr</tt> acima faz com que a pilha
+firewall. Perceba que a regra <tt>rdr-to</tt> acima faz com que a pilha
 TCP/IP receba pacotes na interface interna com um endereço de destino
 dentro da rede interna.
-
-<p>
-De preferência, deve-se utilizar uma das soluções apresentadas
-anteriormente.
 
 <p>
 [<a href="nat.html">Anterior: Tradução do Endereço de Rede (NAT)</a>]
@@ -386,10 +316,10 @@ Conjuntos de Regras</a>]
 <br>
 <small>
 <!--
-Originally [OpenBSD: rdr.html,v 1.28 ]<br>
-$Translation: rdr.html,v 1.12 2009/10/18 16:52:52 alan Exp $<br>
+Originally [OpenBSD: rdr.html,v 1.29 ]<br>
+$Translation: rdr.html,v 1.13 2012/01/02 16:38:56 renato Exp $<br>
 -->
-$OpenBSD: rdr.html,v 1.12 2009/10/19 09:39:59 ajacoutot Exp $
+$OpenBSD: rdr.html,v 1.13 2012/01/03 08:19:10 ajacoutot Exp $
 </small>
 
 </body>
