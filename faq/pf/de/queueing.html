@@ -379,7 +379,7 @@ den <a href="config.html#activate">Ersten Schritten</a> gefunden werden.
 
 <p>
 ,Queueing' wird in <tt>
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+4.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf&amp;sektion=5&amp;manpath=OpenBSD+5.0"
 >pf.conf</a></tt> konfiguriert. Dort gibt es zwei Arten an
 Direktiven, die genutzt werden, um ,queueing' zu konfigurieren.
 <ul>
@@ -539,7 +539,7 @@ Um Verkehr einer Warteschlange zuzuweisen, wird das
 Beispiel einen Satz an Filterregeln an, der eine Zeile wie folgende
 beinhaltet:
 <blockquote>
-<tt>pass out on fxp0 from any to any port 22</tt>
+<tt>pass out on fxp0 proto tcp to port 22</tt>
 </blockquote>
 
 <p>
@@ -547,8 +547,23 @@ Pakete, die zu dieser Regel zutreffen, können einer bestimmten
 Warteschlange zugewiesen werden, unter Verwendung des
 <tt>queue</tt>-Schlüsselworts:
 <blockquote>
-<tt>pass out on fxp0 from any to any port 22 queue ssh</tt>
+<tt>pass out on fxp0 proto tcp to port 22 queue ssh</tt>
 </blockquote>
+
+<p>
+Wird von dieser Regel ein Statustabelleneintrag erzeugt, so wird PF die
+Warteschlange im Statustabelleneintrag erfassen; dies wird für andere Pakete
+benutzt, die von diesem Eintrag als statthaft erkannt werden:
+<blockquote>
+<tt>pass in on fxp0 proto tcp to port 80 queue http</tt>
+</blockquote>
+Mit dieser Regel werden Pakete, die über <tt>fxp0</tt> ausreisen und die der
+zustandsorientierten Verbindung entsprechen, der <tt>http</tt>-Warteschlange
+zugeordnet.
+Beachte das, obwohl das Schlüsselwort <tt>queue</tt> mit einer Regel benutzt
+wird, die eingehenden Datenverkehr filtert, das Ziel darin besteht, eine
+Warteschlange für ausgehenden Datenverkehr zu spezifizieren; die oben gezeigte
+Regel reiht nicht einkommende Pakete in die Warteschlange ein.
 
 <p>
 Wenn das <tt>queue</tt>-Schlüsselwort mit <tt>block</tt>-Direktiven
@@ -565,16 +580,17 @@ altq on fxp0 cbq bandwidth 2Mb queue { std, ftp }<br>
 queue std bandwidth 500Kb cbq(default)<br>
 queue ftp bandwidth 1.5Mb<br>
 <br>
-pass in on dc0 from any to any port 21 queue ftp<br>
+pass in on dc0 proto tcp to port 21 queue ftp<br>
 </tt>
 </blockquote>
 
 <p>
-,Queueing' wird auf <tt>fxp0</tt> aktiviert, aber das Markieren findet auf
-<tt>dc0</tt> statt. Wenn Pakete, die mit dieser <tt>pass</tt>-Regel
-übereinstimmten, vom Interface <tt>fxp0</tt> aus hinausgehen, werden sie
-in der <tt>ftp</tt>-Warteschlange eingereiht. Diese Art von ,queueing' kann
-auf Routern sehr nützlich sein.
+»Queueing« wird auf <tt>fxp0</tt> aktiviert, aber die Designierung findet auf
+<tt>dc0</tt> statt.
+Wenn Pakete, die dieser <tt>pass</tt>-Regel (oder dem vom ihr erzeugten
+Zustand) entsprechen die Schnittstelle <tt>fxp0</tt> verlassen, so werden sie
+in die Warteschlange <tt>ftp</tt> eingereiht.
+Diese Art Warteschlange kann auf Routern sehr nützlich sein.
 
 <p>
 Normalerweise wird nur ein Warteschlangen-Name mit dem
@@ -615,26 +631,7 @@ kleineren Wert gesetzt wird, als die Verbindung hergeben könnte. Wenn
 zum Beispiel eine ADSL-Verbindung einen maximalen Upload von 640 Kbps
 hat, wird das Setzen von <tt>bandwith</tt> der root-Warteschlange auf einen
 Wert wie zum Beispiel 600 Kb bessere Leistung erbringen. Versuch und
-Irrtum werden die beste <tt>bandwith</tt>-Einstellung liefern.
-
-<p>
-Wenn das <tt>queue</tt>-Schlüsselwort mit Regeln genutzt wird, die
-<tt>keep state</tt> beinhalten, wie zum Beispiel:
-<blockquote>
-<tt>
-pass in on fxp0 proto tcp from any to any port 22 flags S/SA \<br>
-&nbsp;&nbsp;&nbsp;keep state queue ssh
-</tt>
-</blockquote>
-
-<p>
-wird PF die Warteschlange in dem ,state'-Tabelleneintrag halten, so
-dass Pakete, die zurück durch <tt>fxp0</tt> kommen und mit der ,stateful'
-Verbindung übereinstimmen, in der <tt>ssh</tt>-Warteschlange enden. Bedenke,
-dass, obwohl das <tt>queue</tt>-Schlüsselwort mit einem Regelfilter für
-eingehenden Verkehr genutzt wird, das Ziel das Angeben einer Warteschlange
-für korrespondierenden ausgehenden Verkehr ist; die oben angegebene Regel
-reiht keine eingehenden Pakete ein.
+Irrtum werden die beste <tt>bandwidth</tt>-Einstellung liefern.
 
 <a name="example1"></a>
 <h2>Beispiel #1: kleines, Heim-Netzwerk</h2>
@@ -669,51 +666,49 @@ andere ausgehende Verkehr.
 </ul>
 
 <p>
-Weiter unten ist der Regelsatz, der dieser Netzwerk-Richtlinie entspricht.
-Bedenke, dass nur die <tt>pf.conf</tt>-Direktiven, die direkt für diese
-Richtlinie gelten, vorhanden sind; <a href="nat.html"><tt>nat</tt></a>,
-<a href="rdr.html"><tt>rdr</tt></a>, <a href="options.html">Optionen</a>
-etc. werden nicht gezeigt.
+Es folgt der Regelsatz, der dieser Netzwerk-Richtlinie entspricht.
+Beachte, dass nur jene <tt>pf.conf</tt>-Direktiven, die direkt obiger
+Richtlinie entsprechen, dargestellt werden.
 
 <p>
 <table border=0 width="650">
 <tr><td nowrap bgcolor="#EEEEEE">
 <pre>
-# aktiviere ,queueing' auf dem externen interface, um den verkehr, der
-# zum internet geht, zu kontrollieren. verwende den priq-,scheduler',
-# um nur prioritäten zu kontrollieren. setze die bandbreite auf 610 kbps,
-# um die beste leistung aus der ,tcp ack'-warteschlange zu bekommen.
+# enable queueing on the external interface to control traffic going to
+# the Internet. use the priq scheduler to control only priorities. set
+# the bandwidth to 610Kbps to get the best performance out of the TCP
+# ACK queue.
 
 altq on fxp0 priq bandwidth 610Kb queue { std_out, ssh_im_out, dns_out, \
 	tcp_ack_out }
 
-# definiere die parameter für die ,child'-warteschlangen.
-# std_out      - die standard-warteschlange. jegliche filterregel weiter
-#                unten, die nicht explizit eine warteschlange angibt,
-#                wird ihren verkehr zu dieser warteschlange hinzufügen.
-# ssh_im_out   - interaktiver SSH- und etlicher ,instant message'-verkehr.
-# dns_out      - DNS-anfragen.
-# tcp_ack_out  - ,TCP ACK'-pakete mit keinem daten-,payload'.
+# define the parameters for the child queues.
+# std_out      - the standard queue. any filter rule below that does not
+#                explicitly specify a queue will have its traffic added
+#                to this queue.
+# ssh_im_out   - interactive SSH and various instant message traffic.
+# dns_out      - DNS queries.
+# tcp_ack_out  - TCP ACK packets with no data payload.
 
 queue std_out     priq(default)
 queue ssh_im_out  priority 4 priq(red)
 queue dns_out     priority 5
 queue tcp_ack_out priority 6
 
-# aktivere ,queueing' auf dem internen interface, um den verkehr zu
-# kontrollieren, der vom internet kommt. verwende den cbq-,scheduler' um
-# die bandbreite zu kontrollieren. max bandbreite ist 2 Mbps.
+# enable queueing on the internal interface to control traffic coming in
+# from the Internet. use the cbq scheduler to control bandwidth. max
+# bandwidth is 2Mbps.
 
 altq on dc0 cbq bandwidth 2Mb queue { std_in, ssh_im_in, dns_in, bob_in }
 
-# definiere die parameter für die ,child'-warteschlangen.
-# std_in      - die standard-warteschlange. jegliche filterregel weiter
-#               unten, die nicht explizit eine warteschlange angibt,
-#               wird ihren verkehr zu dieser warteschlange hinzufügen.
-# ssh_im_in   - interaktiver SSH- und etlicher ,instant message'-verkehr.
-# dns_in      - DNS-antworten.
-# bob_in      - für bobs workstation reservierte bandbreite. erlaube ihm,
-#               zu leihen.
+# define the parameters for the child queues.
+# std_in      - the standard queue. any filter rule below that does not
+#               explicitly specify a queue will have its traffic added
+#               to this queue.
+# ssh_im_in   - interactive SSH and various instant message traffic.
+# dns_in      - DNS replies.
+# bob_in      - bandwidth reserved for Bob's workstation. allow him to
+#               borrow.
 
 queue std_in    bandwidth 1.6Mb cbq(default)
 queue ssh_im_in bandwidth 200Kb priority 4
@@ -721,7 +716,7 @@ queue dns_in    bandwidth 120Kb priority 5
 queue bob_in    bandwidth 80Kb cbq(borrow)
 
 
-# ... in der filter-sektion von pf.conf ...
+# ... in the filtering section of pf.conf ...
 
 alice         = "192.168.0.2"
 bob           = "192.168.0.3"
@@ -730,35 +725,34 @@ local_net     = "192.168.0.0/24"
 ssh_ports     = "{ 22 2022 }"
 im_ports      = "{ 1863 5190 5222 }"
 
-# filterregeln für fxp0-eingang
+# filter rules for fxp0 inbound
 block in on fxp0 all
 
-# filterregeln für fxp0-ausgang
+# filter rules for fxp0 outbound
 block out on fxp0 all
-pass  out on fxp0 inet proto tcp from (fxp0) to any flags S/SA \
-	keep state queue(std_out, tcp_ack_out)
-pass  out on fxp0 inet proto { udp icmp } from (fxp0) to any keep state
-pass  out on fxp0 inet proto { tcp udp } from (fxp0) to any port domain \
-	keep state queue dns_out
-pass  out on fxp0 inet proto tcp from (fxp0) to any port $ssh_ports \
-	flags S/SA keep state queue(std_out, ssh_im_out)
-pass  out on fxp0 inet proto tcp from (fxp0) to any port $im_ports \
-	flags S/SA keep state queue(ssh_im_out, tcp_ack_out)
+pass  out on fxp0 inet proto tcp from (fxp0) queue(std_out, tcp_ack_out)
+pass  out on fxp0 inet proto { udp icmp } from (fxp0)
+pass  out on fxp0 inet proto { tcp udp } from (fxp0) to port domain \
+	queue dns_out
+pass  out on fxp0 inet proto tcp from (fxp0) to port $ssh_ports \
+	queue(std_out, ssh_im_out)
+pass  out on fxp0 inet proto tcp from (fxp0) to port $im_ports \
+	queue(ssh_im_out, tcp_ack_out)
 
-# filterregeln für dc0-eingang
+# filter rules for dc0 inbound
 block in on dc0 all
 pass  in on dc0 from $local_net
 
-# filterregeln für dc0-ausgang
+# filter rules for dc0 outbound
 block out on dc0 all
-pass  out on dc0 from any to $local_net
-pass  out on dc0 proto { tcp udp } from any port domain to $local_net \
+pass  out on dc0 to $local_net
+pass  out on dc0 proto { tcp udp } from port domain to $local_net \
 	queue dns_in
-pass  out on dc0 proto tcp from any port $ssh_ports to $local_net \
+pass  out on dc0 proto tcp from port $ssh_ports to $local_net \
 	queue(std_in, ssh_im_in)
-pass  out on dc0 proto tcp from any port $im_ports to $local_net \
+pass  out on dc0 proto tcp from port $im_ports to $local_net \
 	queue ssh_im_in
-pass  out on dc0 from any to $bob queue bob_in
+pass  out on dc0 to $bob queue bob_in
 </pre>
 </td></tr>
 </table>
@@ -822,22 +816,20 @@ etc. werden nicht gezeigt.
 <table border=0 width="650">
 <tr><td nowrap bgcolor="#EEEEEE">
 <pre>
-# aktiviere ,queueing' auf dem externen interface um pakete einzureihen,
-# die ins internet hinaus gehen. verwende den ,cbq'-scheduler, sodass die
-# bandbreite, die für jede warteschlange genutzt wird, kontrolliert werden
-# kann. die max ausgehende bandbreite ist 1,5 Mbps.
+# enable queueing on the external interface to queue packets going out
+# to the Internet. use the cbq scheduler so that the bandwidth use of
+# each queue can be controlled. the max outgoing bandwidth is 1.5Mbps.
 
 altq on fxp0 cbq bandwidth 1.5Mb queue { std_ext, www_ext, boss_ext }
 
-# definiere die parameter für die ,child'-warteschlangen.
-# std_ext        - die standard-warteschlange. ebenfalls die
-#                  standardmäßige warteschlange für ausgehenden verkehr
-#                  auf fxp0.
-# www_ext        - container-warteschlange für WWW-server-warteschlangen.
-#                  begrenzt für 500 Kbps.
-#   www_ext_http - http-verkehr von dem WWW-server; höhere priorität.
-#   www_ext_misc - jeder nicht-http-verkehr von dem WWW-server.
-# boss_ext       - verkehr, der vom computer des chefs kommt.
+# define the parameters for the child queues.
+# std_ext        - the standard queue. also the default queue for
+#                  outgoing traffic on fxp0.
+# www_ext        - container queue for WWW server queues. limit to
+#                  500Kbps.
+#   www_ext_http - http traffic from the WWW server; higher priority.
+#   www_ext_misc - all non-http traffic from the WWW server.
+# boss_ext       - traffic coming from the boss's computer.
 
 queue std_ext        bandwidth 500Kb cbq(default borrow)
 queue www_ext        bandwidth 500Kb { www_ext_http, www_ext_misc }
@@ -845,25 +837,23 @@ queue www_ext        bandwidth 500Kb { www_ext_http, www_ext_misc }
   queue www_ext_misc bandwidth 50% priority 1 cbq(borrow)
 queue boss_ext       bandwidth 500Kb priority 3 cbq(borrow)
 
-# aktiviere ,queueing' auf dem internen interface, um verkehr zu
-# kontrollieren, der vom internet oder der DMZ kommt. verwende
-# den cbq-,scheduler' um die bandbreite für jede warteschlange zu
-# kontrollieren. bandbreite auf diesem interface ist auf das maximum
-# gesetzt. verkehr, der von der dmz kommt, wird in der lage sein,
-# die gesamte bandbreite zu nutzen, während verkehr, der vom internet
-# kommt, auf 1,0 Mbps (wegen 0,5 Mbps (500 Kbps) für fxp1 zugewiesen
-# wird) begrenzt wird.
+# enable queueing on the internal interface to control traffic coming
+# from the Internet or the DMZ. use the cbq scheduler to control the
+# bandwidth of each queue. bandwidth on this interface is set to the
+# maximum. traffic coming from the DMZ will be able to use all of this
+# bandwidth while traffic coming from the Internet will be limited to
+# 1.0Mbps (because 0.5Mbps (500Kbps) is being allocated to fxp1).
 
 altq on dc0 cbq bandwidth 100% queue { net_int, www_int }
 
-# definiere die parameter für die ,child'-warteschlangen.
-# net_int    - container-warteschlange für verkehr vom internet.
-#              bandbreite ist 1,0 Mbps.
-#   std_int  - die standard-warteschlange. ebenfalls die
-#              standard-warteschlange für ausgehenden verkehr auf dc0.
-#   it_int   - verkehr zum it-abt-netzwerk; reserviere ihnen 500 Kbps.
-#   boss_int - verkehr zum PC des chefs, eine höhere Priorität zuweisen
-# www_int    - verkehr vom WWW-server in die DMZ; volle Geschwindigkeit.
+# define the parameters for the child queues.
+# net_int    - container queue for traffic from the Internet. bandwidth
+#              is 1.0Mbps.
+#   std_int  - the standard queue. also the default queue for outgoing
+#              traffic on dc0.
+#   it_int   - traffic to the IT Dept network; reserve them 500Kbps.
+#   boss_int - traffic to the boss's PC; assign a higher priority.
+# www_int    - traffic from the WWW server in the DMZ; full speed.
 
 queue net_int    bandwidth 1.0Mb { std_int, it_int, boss_int }
   queue std_int  bandwidth 250Kb cbq(default borrow)
@@ -871,22 +861,20 @@ queue net_int    bandwidth 1.0Mb { std_int, it_int, boss_int }
   queue boss_int bandwidth 250Kb priority 3 cbq(borrow)
 queue www_int    bandwidth 99Mb cbq(red borrow)
 
-# aktivere ,queueing' auf dem DMZ-interface, um den verkehr, der für
-# den WWW-server bestimmt ist, zu kontrollieren. cbq wird auf diesem
-# interface verwendet, da detaillierte kontrolle der bandbreite notwendig
-# ist. bandbreite auf diesem interface ist auf das maximum gesetzt.
-# verkehr vom internen netzwerk wird in der lage sein, alles dieser
-# bandbreite nutzen zu können, während verkehr vom internet auf 500 Kbps
-# begrenzt wird.
+# enable queueing on the DMZ interface to control traffic destined for
+# the WWW server. cbq will be used on this interface since detailed
+# control of bandwidth is necessary. bandwidth on this interface is set
+# to the maximum. traffic from the internal network will be able to use
+# all of this bandwidth while traffic from the Internet will be limited
+# to 500Kbps.
 
 altq on fxp1 cbq bandwidth 100% queue { internal_dmz, net_dmz }
 
-# definiere die parameter für die ,child'-warteschlangen.
-# internal_dmz   - verkehr vom internen netzwerk.
-# net_dmz        - container-warteschlange für den verkehr vom internet.
-#   net_dmz_http - http verkehr; höhere Priorität.
-#   net_dmz_misc - der gesamte nicht-http-verkehr. dies ist ebenfalls die
-#                  standardmäßige warteschlange.
+# define the parameters for the child queues.
+# internal_dmz   - traffic from the internal network.
+# net_dmz        - container queue for traffic from the Internet.
+#   net_dmz_http - http traffic; higher priority.
+#   net_dmz_misc - all non-http traffic. this is also the default queue.
 
 queue internal_dmz   bandwidth 99Mb cbq(borrow)
 queue net_dmz        bandwidth 500Kb { net_dmz_http, net_dmz_misc }
@@ -894,8 +882,7 @@ queue net_dmz        bandwidth 500Kb { net_dmz_http, net_dmz_misc }
   queue net_dmz_misc bandwidth 50% priority 1 cbq(default borrow)
 
 
-
-# ... in der filter-sektion von pf.conf ...
+# ... in the filtering section of pf.conf ...
 
 main_net  = "192.168.0.0/24"
 it_net    = "192.168.1.0/24"
@@ -905,40 +892,37 @@ dmz_net   = "10.0.0.0/24"
 boss      = "192.168.0.200"
 wwwserv   = "10.0.0.100"
 
-# standardmäßiges blocken
+# default deny
 block on { fxp0, fxp1, dc0 } all
 
-# filterregeln für fxp0-eingang
+# filter rules for fxp0 inbound
 pass in on fxp0 proto tcp from any to $wwwserv port { 21, \
-	&gt; 49151 } flags S/SA keep state queue www_ext_misc
-pass in on fxp0 proto tcp from any to $wwwserv port 80 \
-	flags S/SA keep state queue www_ext_http
+	&gt; 49151 } queue www_ext_misc
+pass in on fxp0 proto tcp from any to $wwwserv port 80 queue www_ext_http
 
-# filterregeln für fxp0-ausgang
-pass out on fxp0 from $int_nets to any keep state
-pass out on fxp0 from $boss to any keep state queue boss_ext
+# filter rules for fxp0 outbound
+pass out on fxp0 from $int_nets
+pass out on fxp0 from $boss queue boss_ext
 
-# filterregeln für dc0-eingang
-pass in on dc0 from $int_nets to any keep state
-pass in on dc0 from $it_net to any queue it_int
-pass in on dc0 from $boss to any queue boss_int
+# filter rules for dc0 inbound
+pass in on dc0 from $int_nets
+pass in on dc0 from $it_net queue it_int
+pass in on dc0 from $boss queue boss_int
 pass in on dc0 proto tcp from $int_nets to $wwwserv port { 21, 80, \
-	&gt; 49151 } flags S/SA keep state queue www_int
+	&gt; 49151 } queue www_int
 
-# filterregeln für dc0-ausgang
+# filter rules for dc0 outbound
 pass out on dc0 from dc0 to $int_nets
 
-# filterregeln für fxp1-eingang
-pass in on fxp1 proto { tcp, udp } from $wwwserv to any port 53 \
-	keep state
+# filter rules for fxp1 inbound
+pass in on fxp1 proto { tcp, udp } from $wwwserv to port 53
 
-# filterregeln für fxp1-ausgang
-pass out on fxp1 proto tcp from any to $wwwserv port { 21, \
-	&gt; 49151 } flags S/SA keep state queue net_dmz_misc
-pass out on fxp1 proto tcp from any to $wwwserv port 80 \
-	flags S/SA keep state queue net_dmz_http
+# filter rules for fxp1 outbound
+pass out on fxp1 proto tcp to $wwwserv port { 21, \
+	&gt; 49151 } queue net_dmz_misc
+pass out on fxp1 proto tcp to $wwwserv port 80 queue net_dmz_http
 pass out on fxp1 proto tcp from $int_nets to $wwwserv port { 80, \
-	21, &gt; 49151 } flags S/SA keep state queue internal_dmz
+	21, &gt; 49151 } queue internal_dmz
 </pre>
 </td></tr>
 </table>
@@ -955,10 +939,10 @@ pass out on fxp1 proto tcp from $int_nets to $wwwserv port { 80, \
 <br>
 <small>
 <!--
-Originally [OpenBSD: queueing.html,v 1.38 ]<br>
-$Translation: queueing.html,v 1.31 2009/11/05 12:55:49 tobias Exp $<br>
+Originally [OpenBSD: queueing.html,v 1.42 ]<br>
+$Translation: queueing.html,v 1.32 2012/01/20 20:21:49 steffen Exp $<br>
 -->
-$OpenBSD: queueing.html,v 1.31 2009/11/07 07:32:54 ajacoutot Exp $
+$OpenBSD: queueing.html,v 1.32 2012/01/21 19:34:39 ajacoutot Exp $
 </small>
 
 </body>

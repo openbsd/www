@@ -55,13 +55,14 @@ please, use a max of 72 chars per line -->
 	<li><a href="#sepnet">Den Server in ein separates lokales
 	Netzwerk verschieben</a>
 	<li><a href="#tcpproxy">TCP-Proxying</a>
-	<li><a href="#rdrnat">RDR- und NAT-Kombination</a>
+	<li><a href="#rdrnat">Kombination von RDR-TO und NAT-TO</a>
 	</ul>
 </ul>
 
 <hr>
 
 <a name="intro"></a>
+<a name="filter"></a>
 <h2>Einführung</h2>
 Wenn du NAT in deinem Büro einsetzt, steht dir das gesamte Internet für
 alle Maschinen zur Verfügung. Was aber, wenn du eine Maschine hinter
@@ -74,7 +75,7 @@ dem NAT-Gateway ist.
 Lass uns ein Beispiel betrachten:
 <blockquote>
 <tt>
-rdr on tl0 proto tcp from any to any port 80 -&gt; 192.168.1.20
+pass in on tl0 proto tcp from any to any port 80 rdr-to 192.168.1.20
 </tt>
 </blockquote>
 
@@ -91,8 +92,8 @@ berechtigt sind, Zugriff auf den Webserver auf dem Port 80 zu haben,
 kannst du sie hier einschränken:
 <blockquote>
 <tt>
-rdr on tl0 proto tcp from 27.146.49.0/24 to any port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.20
+pass in on tl0 proto tcp from 27.146.49.0/24 to any port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.20
 </tt>
 </blockquote>
 
@@ -106,12 +107,12 @@ der gleichen IP-Adresse auf dem Gateway ermöglichen, so lange du die
 IP-Adresse kennst, von der aus sie sich verbinden werden:
 <blockquote>
 <tt>
-rdr on tl0 proto tcp from 27.146.49.14 to any port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.20<br>
-rdr on tl0 proto tcp from 16.114.4.89 to any port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.22<br>
-rdr on tl0 proto tcp from 24.2.74.178 to any port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.23
+pass in on tl0 proto tcp from 27.146.49.14 to any port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.20<br>
+pass in on tl0 proto tcp from 16.114.4.89 to any port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.22<br>
+pass in on tl0 proto tcp from 24.2.74.178 to any port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.23
 </tt>
 </blockquote>
 
@@ -120,12 +121,12 @@ Ein Portbereich kann ebenfalls mit ein- und derselben Regel
 umgeleitet werden:
 <blockquote>
 <tt>
-rdr on tl0 proto tcp from any to any port 5000:5500 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.20<br>
-rdr on tl0 proto tcp from any to any port 5000:5500 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.20 port 6000<br>
-rdr on tl0 proto tcp from any to any port 5000:5500 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;192.168.1.20 port 7000:*<br>
+pass in on tl0 proto tcp from any to any port 5000:5500 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.20<br>
+pass in on tl0 proto tcp from any to any port 5000:5500 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.20 port 6000<br>
+pass in on tl0 proto tcp from any to any port 5000:5500 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 192.168.1.20 port 7000:*<br>
 </tt>
 </blockquote>
 
@@ -136,73 +137,6 @@ In Regel #1 wird der Port 5000 auf 5000 umgeleitet, 5001 auf 5001 etc.
 In Regel #2 wird der gesamte Portbereich auf den Port 6000 geleitet.
 Und in Regel #3 wird der Port 5000 auf 7000 umgeleitet, 5001 auf 7001
 etc.
-
-<a name="filter"></a>
-<h2>Umleitung und Paket-Filterung</h2>
-<font color="#ff0000">HINWEIS:</font> Übersetzte Pakete müssen weiterhin
-durch die Filter-Engine gelassen werden und werden geblockt oder
-durchgelassen, jenachdem, wie du die Filterregeln definiert hast.
-
-<p>
-Die <i>einzige</i> Ausnahme zu dieser Regel ist, wenn das
-<tt>pass</tt>-Schlüsselwort innerhalb der <tt>rdr</tt>-Regel eingesetzt
-wird. In diesem Fall werden die umgeleiteten Pakete direkt ,statefully'
-durch die Filter-Engine gelassen: die Filterregeln werden für diese
-Pakete nicht überprüft.
-Dies ist eine praktische Abkürzung, um das Hinzufügen von
-<tt>pass</tt>-Filterregeln für jede Umleitungsregel zu verhindern.
-Stell sie dir wie eine normale <tt>rdr</tt>-Regel vor (mit keinem
-<tt>pass</tt>-Schlüsselwort), in Verbindung gebracht mit einer
-<tt>pass</tt>-Filterregel mit dem <tt>keep state</tt>-Schlüsselwort.
-Wenn du jedoch spezifischere Filter-Optionen wie zum Beispiel
-<tt>synproxy</tt>, <tt>modulate state</tt> etc. aktivieren möchtest,
-musst du weiterhin eine dafür gewidmete <tt>pass</tt>-Regel verwenden,
-da diese Optionen nicht in Umleitungsregeln eingesetzt werden können.
-
-<p>
-Sei dir ebenfalls bewusst, dass, da die Übersetzung <i>vor</i> dem
-Filtern stattfindet, die Filter-Engine die <i>übersetzten</i> Pakete
-sehen wird, so wie sie nach der Änderung der Ziel-IP-Adresse und/oder
-des Ziel-Ports aussehen, um eine Übereinstimmung mit der angegeben
-umgeleiteten Adresse (und dem Port) in der <tt>rdr</tt>-Regel zu finden.
-Betrachte dieses Szenario:
-
-<ul>
-<li>192.0.2.1 - Host im Internet
-<li>24.65.1.13 - externe Adresse des OpenBSD-Routers
-<li>192.168.1.5 - interne IP-Adresse des Webservers
-</ul>
-
-<p>
-Umleitungsregel:
-<blockquote>
-<tt>
-rdr on tl0 proto tcp from 192.0.2.1 to 24.65.1.13 port 80 \<br>
-&nbsp;&nbsp;&nbsp;-&gt; 192.168.1.5 port 8000
-</tt>
-</blockquote>
-
-<p>
-Pakete, bevor die <tt>rdr</tt>-Regel verarbeitet wurde:
-<ul>
-<li>Quell-Adresse: 192.0.2.1
-<li>Quell-Port: 4028 (willkürlich vom Betriebssystem gewählt)
-<li>Ziel-Adresse: 24.65.1.13
-<li>Ziel-Port: 80
-</ul>
-
-<p>
-Pakete, nachdem die <tt>rdr</tt>-Regel verarbeitet wurde:
-<ul>
-<li>Quell-Adresse: 192.0.2.1
-<li>Quell-Port: 4028
-<li>Ziel-Adresse: 192.168.1.5
-<li>Ziel-Port: 8000
-</ul>
-
-<p>
-Die Filter-Engine wird die IP-Pakete so sehen, wie sie nach der
-Übersetzung aussehen.
 
 <a name="security"></a>
 <h2>Auswirkungen auf die Sicherheit</h2>
@@ -235,8 +169,8 @@ dem internen Netzwerk oder LAN weiterzuleiten, wie es hier getan wird:
 <tt>
 server = 192.168.1.40<br>
 <br>
-rdr on $ext_if proto tcp from any to $ext_if port 80 -&gt; $server \<br>
-&nbsp;&nbsp;&nbsp;port 80
+pass in on $ext_if proto tcp from any to $ext_if port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to $server port 80
 </tt>
 </blockquote>
 
@@ -340,13 +274,18 @@ Die folgende Umleitungsregel leitet den Port 80 vom
 internen Interface zum Proxy:
 <blockquote>
 <tt>
-rdr on $int_if proto tcp from $int_net to $ext_if port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;127.0.0.1 port 5000
+pass in on $int_if proto tcp from $int_net to $ext_if port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to 127.0.0.1 port 5000
 </tt>
 </blockquote>
 
+Hoch-performante-Proxyserver können ebenfalls mit dem
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=relayd&amp;sektion=8"
+>relayd(8)</a> erzeugt werden.
+
+
 <a name="rdrnat"></a>
-<h3>RDR- und NAT-Kombination</h3>
+<h3>Kombination von RDR-TO und NAT-TO</h3>
 
 <p>
 Mit einer zusätzlichen NAT-Regel auf dem internen Interface kann
@@ -354,12 +293,10 @@ die fehlende Adress-Übersetzung erzielt werden, die oben
 beschrieben wurde.
 <blockquote>
 <tt>
-rdr on $int_if proto tcp from $int_net to $ext_if port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;$server
-<br>
-no nat on $int_if proto tcp from $int_if to $int_net<br>
-nat on $int_if proto tcp from $int_net to $server port 80 -&gt; \<br>
-&nbsp;&nbsp;&nbsp;$int_if
+pass in on $int_if proto tcp from $int_net to $ext_if port 80 \<br>
+&nbsp;&nbsp;&nbsp;rdr-to $server<br>
+pass out on $int_if proto tcp to $server port 80 \<br>
+&nbsp;&nbsp;&nbsp;received-on $int_if nat-to $int_if
 </tt>
 </blockquote>
 
@@ -374,13 +311,9 @@ da es zwei separate ,states' für jede reflektierende Verbindung erzeugt.
 Es muss darauf geachtet werden, die NAT-Regel davon abzuhalten, auch
 für anderen Verkehr zuzutreffen, zum Beispiel für Verbindungen
 von externen Hosts (durch andere Umleitungen) oder der Firewall selbst.
-Bedenke, dass die oben angegebene <tt>rdr</tt>-Regel den TCP/IP-,stack'
+Bedenke, dass die oben angegebene <tt>rdr-to</tt>-Regel den TCP/IP-,stack'
 veranlasst, ankommende Pakete auf dem internen Interface mit einer
 Ziel-Adresse innerhalb des internen Netzwerks zu sehen.
-
-<p>
-Im Allgemeinen sollten die zuvor angegebenen Lösungen stattdessen
-verwendet werden.
 
 <p>
 [<a href="nat.html">Zurück: Network Address Translation</a>]
@@ -394,10 +327,10 @@ verwendet werden.
 <br>
 <small>
 <!--
-Originally [OpenBSD: rdr.html,v 1.28 ]<br>
-$Translation: rdr.html,v 1.19 2009/08/01 21:35:46 tobias Exp $<br>
+Originally [OpenBSD: rdr.html,v 1.31 ]<br>
+$Translation: rdr.html,v 1.20 2012/01/20 20:21:49 steffen Exp $<br>
 -->
-$OpenBSD: rdr.html,v 1.17 2009/08/01 21:41:39 tobias Exp $
+$OpenBSD: rdr.html,v 1.18 2012/01/21 19:34:39 ajacoutot Exp $
 </small>
 
 </body>

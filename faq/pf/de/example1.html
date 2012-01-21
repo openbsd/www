@@ -35,7 +35,7 @@ please, use a max of 72 chars per line -->
 <img alt="[OpenBSD]" height=30 width=141 src="../../../images/smalltitle.gif" border="0">
 </a>
 <p>
-[<a href="carp.html">Zurück: Firewal-Redundanz mit CARP und pfsync</a>]
+[<a href="carp.html">Zurück: Firewall-Redundanz mit CARP und pfsync</a>]
 [<a href="index.html">Inhalt</a>]
 
 <p>
@@ -54,10 +54,7 @@ please, use a max of 72 chars per line -->
 	<ul>
 	<li><a href="#macros">Makros</a>
 	<li><a href="#options">Optionen</a>
-	<li><a href="#scrub">Scrub</a>
-	<li><a href="#nat">Network Address Translation</a>
-	<li><a href="#rdr">Redirection</a>
-	<li><a href="#filter">Filter-Regeln</a>
+	<li><a href="#rules">Firewall-Regeln</a>
 	</ul>
 <li><a href="#allrules">Der komplette Regelsatz</a>
 </ul>
@@ -143,9 +140,10 @@ und dass die
 >sysctl(3)</a>-Variablen <tt>net.inet.ip.forwarding</tt> und/oder
 <tt>net.inet6.ip6.forwarding</tt> auf »<tt>1</tt>« eingestellt
 wurde. Du musst ebenfalls PF mittels
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+4.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+5.0"
 >pfctl(8)</a> starten oder die entsprechende Variable in
 <tt>/etc/rc.conf.local</tt> aktivieren.
+PF ist seit dem Release OpenBSD 4.6 standarmäßig aktiviert.
 
 <a name="ruleset"></a>
 <h2>Der Regelsatz</h2>
@@ -156,45 +154,46 @@ gehen, der die zuvor genannten Ziele realisiert.
 <h3>Makros</h3>
 Die folgenden Makros wurden definiert, um die Wartung und das Lesen
 des Regelsatzes einfacher zu machen:
-<blockquote>
-<tt>
-ext_if="fxp0"<br>
-int_if="xl0"<br>
-<br>
-tcp_services="{ 22, 113 }"<br>
-icmp_types="echoreq"<br>
-<br>
+<blockquote><pre>
+int_if="xl0"
+
+tcp_services="{ 22, 113 }"
+icmp_types="echoreq"
+
 comp3="192.168.0.3"
-</tt>
-</blockquote>
+</pre></blockquote>
 
 <p>
-Die ersten beiden Zeilen definieren die Netzwerkinterfaces, auf denen
-gefiltert wird. Da wir sie hier definieren, können wir den Regelsatz bei
+Die erste Zeile definiert eine interne Netzwerkschnittstelle, auf der das
+Filtern stattfinden wird.
+Da wir sie hier definieren, können wir den Regelsatz bei
 einer Hardwareumstellung so belassen wie er ist und müssen lediglich
-diese zwei Zeilen abändern. Die dritte und vierte Zeile listen die
-TCP-Portnummern der Dienste auf, die dem Internet gegenüber offengelegt
+diese zwei Zeilen abändern.
+(Für dieses Beispiel wird die externe Schnittstelle von der <tt>egress</tt>
+Schnittstellengruppe gehandhabt.
+In dieser finden sich alle Schnittstellen, für die eine Standard-Route gesetzt
+ist, in diesem Fall fxp0.)
+Die zweite und dritte Zeile listen die TCP-Portnummern der Dienste auf, die dem
+Internet gegenüber offengelegt
 werden (SSH und ident/auth) und den ICMP-Pakettyp, dem erlaubt wird,
 die Firewallmaschine zu erreichen. Zum Schluss definiert die letzte
 Zeile die IP-Adresse von COMP3.
 
 <p>
 <b>Hinweis</b>: Wenn die Internetverbindung
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pppoe&amp;sektion=8"
->PPPoE</a> benötigt, werden Filter und NAT auf dem
-<tt>tun0</tt>-Interface stattfinden und <i>nicht</i> auf <tt>fxp0</tt>.
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pppoe&amp;sektion=4"
+>PPPoE</a> benötigt, werden Filter und NAT auf der Schnittstelle
+<tt>pppoe0</tt> stattfinden und <i>nicht</i> auf <tt>fxp0</tt>.
 
 <a name="options"></a>
 <h3>Optionen</h3>
 Die folgenden beiden Optionen werden die standardmäßige Antwort für
 <tt>block</tt>-Filterregeln setzen und Statistikaufzeichnungen für
 das externe Interface anstellen:
-<blockquote>
-<tt>
-set block-policy return<br>
-set loginterface $ext_if
-</tt>
-</blockquote>
+<blockquote><pre>
+set block-policy return
+set loginterface fxp0
+</pre></blockquote>
 
 <p>
 Jedes Unix-System hat ein sogenanntes Loopbackinterface. Hierbei
@@ -206,218 +205,204 @@ kommunizieren. Unter OpenBSD ist das Loopbackinterface
 Es ist allgemein gute Praxis, jegliches Filtern auf den
 Loopbackinterfaces zu unterbinden. Die Verwendung von
 <a href="options.html#skip">set skip</a> bewerkstelligt dies.
-<blockquote>
-<tt>
+<blockquote><pre>
 set skip on lo
-</tt>
-</blockquote>
-Beachte, dass wir die gesamte Interfacegruppe <tt>lo</tt> überspringen.
+</pre></blockquote>
+<!-- XXX this should be interface groups, but PF (at least up to
+4.8) just does a substring match on the interface name -->
+Beachte, dass wir alle <tt>lo</tt>-Schnittstellen überspringen.
 Auf diese Weise können wir später noch Loopbackinterfaces hinzufügen,
 ohne dass wir uns Gedanken darüber machen müssten, diesen Teil unseres
 Regelsatzes anzupassen.
 
-<a name="scrub"></a>
-<h3>Scrub</h3>
-Es gibt keinen Grund, das empfohlene Scrubbing, das auf den gesamten
-eingehenden Verkehr angewandt wird, nicht zu verwenden. Somit handelt es
-sich hierbei um einen einfachen Einzeiler:
-<blockquote>
-<tt>
-match in all scrub (no-df)
-</tt>
-</blockquote>
+<a name="rules"></a>
+<h3>Firewall-Regeln</h3>
 
-<a name="nat"></a>
-<h3>Network Address Translation</h3>
-Um NAT auf das gesamte interne Netzwerk durchzuführen, wird folgende
-<tt>nat</tt>-Regel verwendet:
-<blockquote>
-<tt>
-nat on $ext_if from !($ext_if) to any -&gt; ($ext_if)
-</tt>
-</blockquote>
-
-<p>
-»<tt>!($ext_if)</tt>« könnte in diesem Fall ganz einfach gegen
-»<tt>$int_if</tt>« ausgetauscht werden, doch wenn du weitere
-interne Interfaces hinzufügst, müsstest du ebenfalls zusätzliche
-NAT-Regeln einfügen, wobei mit dieser Struktur NAT sofort auf allen
-geschützten Interfaces funktioniert.
-
-<p>
-Da die IP-Adresse des externen Interfaces dynamisch zugewiesen wird,
-werden Klammern um das Übersetzungsinterface herum gesetzt. Auf diese
-Weise wird PF bemerken, wenn sich die Adresse ändert.
-
-<p>
-Wir wollen ebenfalls, dass der FTP-Proxy funktioniert. Das erreichen
-wir dadurch, indem wir ebenfalls den
-NAT-<a href="anchors.html">Anker></a> einbinden:
-
-<blockquote>
-<tt>
-nat-anchor "ftp-proxy/*"
-</tt>
-</blockquote>
-
-
-
-<a name="rdr"></a>
-<h3>Umleitung</h3>
-Die ersten benötigten Umleitungsregeln sind für
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+4.6"
->ftp-proxy(8)</a>, sodass sich FTP-Clients vom lokalen Netzwerk aus
-mit FTP-Servern im Internet verbinden können.
-<blockquote>
-<tt>
-rdr-anchor "ftp-proxy/*"<br>
-rdr on $int_if proto tcp from any to any port 21 -&gt; 127.0.0.1 port 8021
-</tt>
-</blockquote>
-
-<p>
-Bedenke, dass diese Regel nur FTP-Verbindungen auf Port 21 erfassen
-wird. Wenn sich Benutzer auf regulärer Basis mit FTP-Servern auf anderen
-Ports verbinden, sollte eine Liste verwendet werden, die die Zielports
-angibt - zum Beispiel: <tt>from any to any port { 21, 2121 }</tt>.
-
-<p>
-Die letzte Umleitungsregel erfasst alle Versuche von Personen im
-Internet, die auf den TCP-Port 80 der Firewall verbinden wollen.
-Berechtigte Versuche, diesen Port zu erreichen, werden von Benutzern
-sein, die versuchen, den Webserver vom Netzwerk zu erreichen.
-Dieser Verbindungsversuch muss auf COMP3 weitergeleitet werden:
-
-<blockquote>
-<tt>
-rdr on $ext_if proto tcp from any to any port 80 -&gt; $comp3
-</tt>
-</blockquote>
-
-<a name="filter"></a>
-<h3>Filter-Regeln</h3>
-Nun die Filterregeln. Fange mit standardmäßigem Blocken an:
-<blockquote>
-<tt>
-block in<br>
-</tt>
-</blockquote>
-
-<p>
-Zu diesem Zeitpunkt wird der gesamte Verkehr, der in ein Interface
-gelangen will, abgeblockt - sogar vom internen Netzwerk.
-Die nächsten Regeln werden die Firewall den oben genannten Zielen
-entsprechend öffnen, so wie alle benötigten virtuellen Interfaces.
-
-<p>
-Bedenke, dass PF sowohl den eingehenden als auch den ausgehenden
-Netzwerkverkehr eines Interfaces blocken kann. Du kannst dir die
-Konfiguration vereinfachen, indem du den Verkehr nur in eine Richtung
-filterst, statt sowohl eingehenden als auch ausgehenden. In unserem
-Fall haben wir uns entschieden, den eingehenden Verkehr zu filtern.
-Doch sobald der Netzwerkverkehr in ein Interface hineingelassen wurde,
-werden wir nicht versuchen, ihn am Verlassen zu hintern. Das ganze
-sieht dann wie folgt aus:
-
-<blockquote>
-<tt>
-pass out keep state
-</tt>
-</blockquote>
-
-<p>
-Des Weiteren benötigen wir einen <a href="anchors.html">Anker</a>
-für ftp-proxy(8):
-<blockquote>
-<tt>
+Wir starten mit Regeln zur Unterstützung des
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+5.0"
+>ftp-proxy(8)</a>, sodass sich FTP-Clients des lokalen Netzwerks mit
+FTP-Servern im Internet verbinden können.
+Dies funktioniert durch dynamisches Einfügen von Regeln, wenn eine
+FTP-Verbindung aufgebaut wird.
+Dies wird mit Hilfe von <a href="anchors.html">Ankern</a> bewerkstelligt:
+<blockquote><pre>
 anchor "ftp-proxy/*"
-</tt>
-</blockquote>
+</pre></blockquote>
 
-Sinnvoll ist auch der Einsatz eines
-<a href="filter.html#antispoof">Schutzes gegen gefälschte Adressen</a>:
-<blockquote>
-<tt>
+<p>
+Nun fügen wir die Regel hinzu, die benötigt wird, um FTP-Verbindungen
+dergestalt umzuleiten, dass sie vin ftp-proxy(8) gesehen werden:
+<blockquote><pre>
+pass in quick on $int_if inet proto tcp to any port ftp \
+    divert-to 127.0.0.1 port 8021
+</pre></blockquote>
+
+<p>
+Diese Regel fängt jegliche FTP-Verbindung zu Port 21 ab, leitet sie zu der
+ftp-proxy(8)-Instanz auf Port 8021 um, und vermeidet, durch Nutzung des
+Schlüsselworts <tt>quick</tt>, eine Abarbeitung von entsprechenden Paketen
+durch den Rest des Regelsatzes.
+Verbinden sich Benutzer regulär auf anderen Ports mit FTP-Servern, so sollte
+eine Liste mit Zielports spezifiziert werden, zum Beispiel:
+<tt>to any port { 21, 2121 }</tt>.
+
+<p>
+Beachte, dass sich sowohl der <a href="anchors.html">Anker</a>, als auch die
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+5.0"
+>ftp-proxy(8)</a> Umleitungsregel vor jeglicher <tt>match</tt>-Regel für NAT
+befinden müssen, oder andernfalls wird der ftp-proxy(8) nicht wie erwartet
+funktionieren.
+
+<p>
+Machen wir weiter mit einigen <tt>match</tt>-Regeln.
+Für sich selbst kann eine <tt>match</tt>-Regel nicht festzustellen, ob es einem
+Paket erlaubt ist, zu passieren.
+Stattdessen werden die Parameter der Regel erinnert, denen ein Paket entsprach;
+diese werden dann für jegliche, die Pakete weiterverarbeitenden
+<tt>pass</tt>-Regeln benutzt.
+
+<p>
+Dies ist leistungsfähig: Parameter wie <a href="nat.html">NAT</a> oder
+<a href="queueing.html">Warteschlangen</a> können auf bestimmte Klassen von
+Paketen angewendet werden, und so können Zugriffsrechte separat definiert
+werden.
+
+<p>
+Um NAT für das gesamtes internes Netzwerk auszuführen, wird die folgende
+<tt>match</tt>-Regel genutzt:
+<blockquote><pre>
+match out on egress inet from !(egress:network) to any nat-to (egress:0)
+</pre></blockquote>
+
+<p>
+In diesem Fall könnte das »<tt>!(egress:network)</tt>« einfach durch ein
+»<tt>$int_if:network</tt>« ersetzt werden, aber wenn du mehrere interne
+Schnittstellen hinzufügen würdest, so müsstest du zusätzliche NAT-Regeln
+hinzufügen, währenddessen mit dieser Struktur NAT auf allen geschützten
+Schnittstellen ausgeführt wird.
+
+<p>
+Da die IP-Adressen der externen Schnittstelle dynamisch zugewiesen werden,
+werden Klammern um die Übersetzungsschnittstelle gesetzt, sodass PF bemerkt,
+wenn sich eine Adresse ändert.
+Die Nachsilbe :0 wird benutzt so dass, falls die externe Schnittstelle mehrere
+Adressen besitzt, nur die erste Adresse für die Übersetzung benutzt wird.
+
+<p>
+Zuletzt wird die Protokollfamilie <tt>inet</tt> (IPv4) spezifiziert.
+Dies verhindert die Übersetzung aller <tt>inet6</tt> (IPv6)-Pakete, welche
+eventuell empfangen werden.
+
+<p>
+Nun die Regeln zur Kontrolle von Zugriffsrechten.
+Beginne mit der standardmäßigen Verweigerung.
+<blockquote><pre>
+block in log
+</pre></blockquote>
+
+<p>
+An diesem Punkt wird jeglicher Datenverkehr, der versucht, in eine
+Schnittstelle zu gelangen, blockiert, selbst solcher aus dem internen Netzwerk.
+Alle diese Pakete werden protokolliert.
+Spätere Regeln werden die Firewall für obige Objektiven öffnen, und ebenfalls
+alle notwendigen virtuellen Schnittstellen öffnen.
+
+<p>
+Denke daran, PF kann sowohl in eine Schnittstelle eingehenden, als auch aus
+einer Schnittstelle ausgehenden Verkehr blocken.
+Es kann dein Leben vereinfachen, wenn du dich dafür entscheidest, den Verkehr
+einer Richtung zu filtern, anstatt zu versuchen die Dinge einfach zu halten,
+wenn man einige Sachen in der einen, und andere in der anderen Richtung
+filtert.
+In unserem Fall entscheiden wir uns dafür, den eingehenden Verkehr zu filtern,
+aber sobald der Datenverkehr einmal für die Schnittstelle zugelassen ist,
+werden wir nicht mehr versuchen, sie am Verlassen zu hindern,
+sodass wir bei folgendem Konstrukt enden:
+
+<blockquote><pre>
+pass out quick
+</pre></blockquote>
+
+Durch Nutzung von <tt>quick</tt> wird die Überprüfung ausgehender Pakete durch
+folgende Regeln vermieden, was die Leistung erhöht.
+
+<p>
+Die <a href="filter.html#antispoof">Blockade gefälschter Adressen</a> ist gut:
+<blockquote><pre>
 antispoof quick for { lo $int_if }
-</tt>
-</blockquote>
-
+</pre></blockquote>
 
 <p>
-Nun öffne die Ports, die von den Netzwerkdiensten genutzt werden, die
-für das Internet verfügbar sein sollen. Zuerst der Verkehr, der
-für die Firewall selbst bestimmt ist:
-<blockquote>
-<tt>
-pass in on $ext_if inet proto tcp from any to ($ext_if) \<br>
-&nbsp;&nbsp;&nbsp;port $tcp_services flags S/SA keep state
-</tt>
-</blockquote>
+Nun öffne die Ports, die von den Netzwerkdiensten genutzt werden, die über das
+Internet erreichbar sein sollen.
+Zuerst, der Verkehr, der für die Firewall selbst bestimmt ist:
+
+<blockquote><pre>
+pass in on egress inet proto tcp from any to (egress) \
+    port $tcp_services
+</pre></blockquote>
 
 <p>
-Die Netzwerkports in dem Makro <tt>$tcp_services</tt> anzugeben macht
-es simpel, zusätzliche Dienste dem Internet anzubieten. Neue Ports
-müssen nur in das Makro eingetragen und der Regelsatz neugeladen werden.
-UDP-Dienste können ebenfalls geöffnet werden, indem ein
-<tt>$udp_services</tt>-Makro erstellt wird und eine Filterregel so wie
-oben angegeben hinzugefügt wird (mit <tt>proto udp</tt>).
+Die Spezifikation der Netwerk-Ports durch das Makro <tt>$tcp_services</tt>
+macht das Öffnen weiterer Dienste für das Internet einfach, da einzig das Makro
+geändert, und der Regelsatz neu geladen werden muss.
+UDP-Dienste können ebenfalls, durch die Erzeugung eines Makros
+<tt>$udp_services</tt> und dem Hinzufügen einer Filterregel ähnlich der obigen,
+die jedoch <tt>proto udp</tt> spezifizieren muss, geöffnet werden.
 
 <p>
-Zusätzlich zur <tt>rdr</tt>-Regel, die den Webserververkehr zu COMP3
-weiterleitet, MÜSSEN wir ebenfalls diesen Verkehr durch die Firewall
-leiten:
-<blockquote>
-<tt>
-pass in on $ext_if inet proto tcp from any to $comp3 port 80 \<br>
-&nbsp;&nbsp;&nbsp;&nbsp;flags S/SA synproxy state
-</tt>
-</blockquote>
+Die nächste Regel fängt alle Versuche ab, aus dem Internet zu dem TCP-Port 80
+der Firewall eine Verbindung aufzubauen.
+Legitime Versuche, auf diesen Port zuzugreifen, kommen von Benutzern, die auf
+den Webserver des Netzwerks zugreifen möchten.
+Diese Verbindungsversuche müssen zu COMP3 umgeleitet werden:
+
+<blockquote><pre>
+pass in on egress inet proto tcp to (egress) port 80 \
+    rdr-to $comp3 synproxy state
+</pre></blockquote>
 
 <p>
-Für ein bisschen mehr Sicherheit werden wir den
-<a href="filter.html#synproxy">TCP-SYN-Proxy</a> verwenden, um den
-Webserver noch besser zu beschützen.
+Für ein bisschen Mehr an Sicherheit nutzen wir den
+<a href="filter.html#synproxy">TCP SYN Proxy</a>,
+zum weiteren Schutz des Webservers.
 
 <p>
-ICMP-Verkehr muss durchgelassen werden:
-<blockquote>
-<tt>
-pass in inet proto icmp all icmp-type $icmp_types keep state
-</tt>
-</blockquote>
+ICMP-Datenverkehr muss durchgelassen werden:
+<blockquote><pre>
+pass in inet proto icmp all icmp-type $icmp_types
+</pre></blockquote>
 
 <p>
-Dem <tt>$tcp_services</tt>-Makro ähnelnd kann das
-<tt>$icmp_types</tt>-Makro einfach editiert werden, um die Typen der
-ICMP-Pakete zu ändern, denen erlaubt wird, die Firewall zu erreichen.
-Bedenke, dass diese Regel für alle Netzwerkinterfaces gilt.
+Ähnlich dem Makro <tt>$tcp_services</tt> kann ein Makro <tt>$icmp_types</tt>
+einfach editiert werden, um die Arten von ICMP-Paketen, denen es erlaubt
+werden soll, die Firewall zu erreichen, zu ändern.
+Beachte, dass diese Regel für alle Netzwerkschnittstellen gilt.
 
 <p>
-Nun muss der Verkehr zu und vom internen Netzwerk zugelassen werden.
-Wir nehmen an, dass die Benutzer im internen Netzwerk wissen, was
-sie tun und keinen Ärger verursachen werden. Dies ist
-nicht notwendigerweise eine gültige Annahme; ein sehr viel
-restriktiverer Regelsatz wäre für viele Umgebungen angebrachter.
-<blockquote>
-<tt>
-pass in quick on $int_if
-</tt>
-</blockquote>
+Nun muss der Datenverkehr zu und von dem internen Netzwerk durchgelassen
+werden.
+Wir nehmen an, dass die Benutzer des internen Netzwerks wissen was sie tun, und
+keinerlei Ärger verursachen.
+Dies ist nicht notwendigerweise eine richtige Annahme; ein viel restriktiverer
+Regelsatz wäre in vielen Umgebungen angemessen.
+<blockquote><pre>
+pass in on $int_if
+</pre></blockquote>
 
 <p>
-TCP-, UDP- und ICMP-Verkehr darf die Firewall in Richtung Internet
-verlassen. Das ist auf Grund der vorher genannten Zeile
-»<tt>pass out keep state</tt>« notwendig. Zustandsinformationen werden
-aufbewahrt, sodass die wiederkommenden Pakete durch die Firewall
-gelassen werden.
+TCP-, UDP- und ICMP-Datenverkehr ist es durch die frühere Zeile
+»<tt>pass out</tt>« erlaubt, die Firewall in Richtung Internet zu verlassen.
+Zustandsinformationen werden aufbewahrt, sodass zurückkommende Pakete ihren
+Weg zurück durch die Firewall nehmen können.
 
 <a name="allrules"></a>
 <h2>Der komplette Regelsatz</h2>
 <table border=0 width="650">
 <tr><td nowrap bgcolor="#EEEEEE">
 <pre>
-# makros
-ext_if="fxp0"
+# macros
+
 int_if="xl0"
 
 tcp_services="{ 22, 113 }"
@@ -425,46 +410,45 @@ icmp_types="echoreq"
 
 comp3="192.168.0.3"
 
-# optionen
-set block-policy return
-set loginterface $ext_if
+# options
 
+set block-policy return
+set loginterface fxp0
 set skip on lo
 
-# scrub
-match in all scrub (no-df)
-
-# nat/rdr
-nat on $ext_if from !($ext_if) -> ($ext_if:0)
-nat-anchor "ftp-proxy/*"
-rdr-anchor "ftp-proxy/*"
-
-rdr pass on $int_if proto tcp to port ftp -> 127.0.0.1 port 8021
-rdr on $ext_if proto tcp from any to any port 80 -> $comp3
-
-# filterregeln
-block in
-
-pass out keep state
+# FTP Proxy rules
 
 anchor "ftp-proxy/*"
+
+pass in quick on $int_if inet proto tcp to any port ftp \
+    divert-to 127.0.0.1 port 8021
+
+# match rules
+
+match out on egress inet from !(egress) to any nat-to (egress:0)
+
+# filter rules
+
+block in log
+pass out quick
+
 antispoof quick for { lo $int_if }
 
-pass in on $ext_if inet proto tcp from any to ($ext_if) \
-   port $tcp_services flags S/SA keep state
+pass in on egress inet proto tcp from any to (egress) \
+    port $tcp_services
 
-pass in on $ext_if inet proto tcp from any to $comp3 port 80 \
-    flags S/SA synproxy state
+pass in on egress inet proto tcp to (egress) port 80 \
+    rdr-to $comp3 synproxy state
 
-pass in inet proto icmp all icmp-type $icmp_types keep state
+pass in inet proto icmp all icmp-type $icmp_types
 
-pass in quick on $int_if
+pass in on $int_if
 </pre>
 </td></tr>
 </table>
 
 <p>
-[<a href="carp.html">Zurück: Firewal-Redundanz mit CARP und pfsync</a>]
+[<a href="carp.html">Zurück: Firewall-Redundanz mit CARP und pfsync</a>]
 [<a href="index.html">Inhalt</a>]
 
 <p>
@@ -474,10 +458,10 @@ pass in quick on $int_if
 <br>
 <small>
 <!--
-Originally [OpenBSD: example1.html,v 1.39 ]<br>
-$Translation: example1.html,v 1.29 2009/11/05 12:55:49 tobias Exp $<br>
+Originally [OpenBSD: example1.html,v 1.48 ]<br>
+$Translation: example1.html,v 1.30 2012/01/20 20:21:49 steffen Exp $<br>
 -->
-$OpenBSD: example1.html,v 1.27 2009/11/07 07:32:54 ajacoutot Exp $
+$OpenBSD: example1.html,v 1.28 2012/01/21 19:34:39 ajacoutot Exp $
 </small>
 
 </body>

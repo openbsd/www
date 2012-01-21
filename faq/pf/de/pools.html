@@ -63,19 +63,16 @@ please, use a max of 72 chars per line -->
 <h2>Einführung</h2>
 Ein Adress-Pool ist eine Ansammlung von zwei oder mehreren Adressen,
 deren Verwendung unter einer Gruppe an Benutzern geteilt wird.
-Ein Adress-Pool kann als Umleitungs-Adresse in
-<a href="rdr.html"><tt>rdr</tt></a>-Regeln, als Übersetzungs-Adresse
-in <a href="nat.html"><tt>nat</tt></a>-Regeln und als Ziel-Adresse
-in <tt>route-to</tt>-, <tt>reply-to</tt>- und
-<tt>dup-to</tt>-<a href="filter.html">Filter</a>-Optionen angegeben
-werden.
+Ein Adress-Pool kann als Zieladresse der <tt>nat-to</tt>, <tt>rdr-to</tt>,
+<tt>route-to</tt>, <tt>reply-to</tt> und <tt>dup-to</tt>
+<a href="filter.html">Filter</a>optionen angegeben werden.
 
 <p>
 Es gibt vier Methoden, um einen Adress-Pool zu verwenden:
 <ul>
 <li><tt>bitmask</tt> - setzt den Netzwerk-Teil der Pool-Adresse über
-die Adresse, die modifiziert wird (Source-Adresse für <tt>nat</tt>-Regeln,
-Ziel-Adresse für <tt>rdr</tt>-Regeln).
+die Adresse, die modifiziert wird (Quelladresse für <tt>nat-to</tt>-Regeln,
+Zieladresse für <tt>rdr-to</tt>-Regeln).
 Beispiel: wenn der Adress-Pool 192.0.2.1/24 und die zu modifizierende
 Adresse 10.0.0.50 ist, dann wird die resultierende Adresse 192.0.2.50
 sein. Wenn der Adress-Pool 192.0.2.1/25 und die zu modifizierende
@@ -90,7 +87,7 @@ Der Schlüssel, der dem ,hashing'-Algorithmus übergeben wird, kann
 gegebenenfalls nach dem <tt>source-hash</tt>-Schlüsselwortes im
 Hex-Format oder als Zeichenkette angegeben werden. Standardmäßig
 wird
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+4.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+5.0"
 >pfctl(8)</a> einen zufälligen Schlüssel jedes Mal erzeugen, wenn der
 Regelsatz geladen wird.
 <li><tt>round-robin</tt> - Läuft in Reihe durch den Adress-Pool.
@@ -117,7 +114,7 @@ Umleitungs-Adresse zugewiesen wird.
 <a name="nat"></a>
 <h2>NAT-Adress-Pool</h2>
 Ein Adress-Pool kann als Übersetzungs-Adresse in
-<a href="nat.html"><tt>nat</tt></a>-Regeln verwendet werden. Die
+<a href="nat.html"><tt>nat-to</tt></a>-Regeln verwendet werden. Die
 Source-Adresse einer Verbindung wird somit immer in eine Adresse
 übersetzt, die aus dem Pool stammt, je nach gewählter Methode.
 Dies kann in Situationen gebräuchlich sein, in denen PF als
@@ -134,7 +131,7 @@ Verbindung wird PF durch die Adressen in einer ,round-robin'-Manier
 wechseln.
 <blockquote>
 <tt>
-nat on $ext_if inet -&gt; { 192.0.2.5, 192.0.2.10 }
+match out on $ext_if inet nat-to { 192.0.2.5, 192.0.2.10 }
 </tt>
 </blockquote>
 
@@ -151,12 +148,12 @@ Um das zu machen, muss der Adress-Pool ein
 sein.
 <blockquote>
 <tt>
-nat on $ext_if inet -&gt; 192.0.2.4/31 source-hash
+match out on $ext_if inet nat-to 192.0.2.4/31 source-hash
 </tt>
 </blockquote>
 
 <p>
-Diese <tt>nat</tt>-Regel verwende den Adress-Pool 192.0.2.4/31
+Diese Regel verwendet den Adress-Pool 192.0.2.4/31
 (192.0.2.4 - 192.0.2.5) als Übersetzungs-Adresse für ausgehende
 Pakete. Jede interne Adresse wird wegen dem
 <tt>source-hash</tt>-Schlüsselwort immer mit der gleichen
@@ -171,7 +168,7 @@ Webserver-Verbindungen über eine Webserver-Farm verteilt werden:
 <tt>
 web_servers = "{ 10.0.0.10, 10.0.0.11, 10.0.0.13 }"<br>
 <br>
-rdr on $ext_if proto tcp to port 80 -&gt; $web_servers \<br>
+match in on $ext_if proto tcp to port 80 rdr-to $web_servers \<br>
 &nbsp;&nbsp;&nbsp;&nbsp;round-robin sticky-address
 </tt>
 </blockquote>
@@ -217,9 +214,9 @@ ext_if2 = "fxp1"<br>
 ext_gw1 = "68.146.224.1"<br>
 ext_gw2 = "142.59.76.1"<br>
 <br>
-pass in on $int_if route-to \<br>
-&nbsp;&nbsp;&nbsp;{ ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) } round-robin \<br>
-&nbsp;&nbsp;&nbsp;from $lan_net to any
+pass in on $int_if from $lan_net \<br>
+&nbsp;&nbsp;&nbsp;route-to { ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) }\<br>
+&nbsp;&nbsp;&nbsp;round-robin
 </tt>
 </blockquote>
 
@@ -227,12 +224,10 @@ pass in on $int_if route-to \<br>
 Die <tt>route-to</tt>-Option wird auf den Verkehr, der durch
 <i>in</i> in das <i>interne</i> Interface kommt, angewandt, um
 die ausgehenden Interfaces anzugeben, über die der Verkehr aufgeteilt
-werden soll, mit den jeweiligen Gateways. Bedenke, dass die
-<tt>route-to</tt>-Option bei <i>jeder</i> Filterregel anwesend sein
-muss, für die der Verkehr aufgeteilt wird. Antwort-Pakete werden
-über das gleiche externe Interface zurückgeleitet, das sie verlassen
-haben (dies wird durch die ISPs gemacht) und normal zurück zum
-internen Netzwerk geleitet.
+werden soll, mit den jeweiligen Gateways.
+Beachte, dass die Option <tt>route-to</tt> bei <i>jeder</i> Filterregel
+angegeben sein muss, für die Verkehr aufgeteilt werden soll
+(sie kann nicht mit <tt>match</tt> Regeln genutzt werden).
 
 <p>
 Um sicherzustellen, dass Pakete mit einer Source-Adresse, die zum
@@ -241,10 +236,10 @@ Um sicherzustellen, dass Pakete mit einer Source-Adresse, die zum
 sollten die folgenden beiden Zeilen in den Regelsatz eingefügt werden:
 <blockquote>
 <tt>
-pass out on $ext_if1 route-to ($ext_if2 $ext_gw2) from $ext_if2 \<br>
-&nbsp;&nbsp;&nbsp;to any<br>
-pass out on $ext_if2 route-to ($ext_if1 $ext_gw1) from $ext_if1 \<br>
-&nbsp;&nbsp;&nbsp;to any
+pass out on $ext_if1 from $ext_if2 \<br>
+&nbsp;&nbsp;&nbsp;route-to ($ext_if2 $ext_gw2)<br>
+pass out on $ext_if2 from $ext_if1 \<br>
+&nbsp;&nbsp;&nbsp;route-to ($ext_if1 $ext_gw1) 
 </tt>
 </blockquote>
 
@@ -253,8 +248,8 @@ Schlussendlich kann NAT ebenfalls auf alle ausgehenden Interfaces
 angewendet werden:
 <blockquote>
 <tt>
-nat on $ext_if1 from $lan_net -&gt; ($ext_if1)<br>
-nat on $ext_if2 from $lan_net -&gt; ($ext_if2)
+match out on $ext_if1 from $lan_net nat-to ($ext_if1)<br>
+match out on $ext_if2 from $lan_net nat-to ($ext_if2)
 </tt>
 </blockquote>
 
@@ -274,37 +269,36 @@ ext_if2 = "fxp1"
 ext_gw1 = "68.146.224.1"
 ext_gw2 = "142.59.76.1"
 
-#  nat auf ausgehende Verbindungen auf jedem Internet-Interface anwenden
-nat on $ext_if1 from $lan_net -&gt; ($ext_if1)
-nat on $ext_if2 from $lan_net -&gt; ($ext_if2)
+#  nat outgoing connections on each internet interface
+match out on $ext_if1 from $lan_net nat-to ($ext_if1)
+match out on $ext_if2 from $lan_net nat-to ($ext_if2)
 
-#  standardmäßiges Blocken
+#  default deny
 block in
 block out
 
-#  lasse alle ausgehenden Pakete durch das interne Interface
+#  pass all outgoing packets on internal interface
 pass out on $int_if to $lan_net
-#  lasse ,quick' (schnell) alle Pakete, die für das Gateway selbst
-#  bestimmt sind, durch
+#  pass in quick any packets destined for the gateway itself
 pass in quick on $int_if from $lan_net to $int_if
-#  ,load balancing' auf ausgehenden Verkehr für das interne Netzwerk
-pass in on $int_if route-to \
-    { ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) } round-robin \
-    from $lan_net
-#  halte https-Verkehr auf einer einzelnen Verbindung; einige
-#  Webanwendungen, inbesondere ,sichere', erlauben keine Aenderung an
-#  der mid-session
-pass in on $int_if route-to ($ext_if1 $ext_gw1) \
-    proto tcp from $lan_net to port https
+#  load balance outgoing traffic from internal network. 
+pass in on $int_if from $lan_net \
+    route-to { ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) } \
+    round-robin
+#  keep https traffic on a single connection; some web applications,
+#  especially "secure" ones, don't allow it to change mid-session
+pass in on $int_if proto tcp from $lan_net to port https \
+    route-to ($ext_if1 $ext_gw1)
 
-#  generelle ,pass out'-Regeln für die externen Interfaces
+#  general "pass out" rules for external interfaces
 pass out on $ext_if1
 pass out on $ext_if2
 
-#  leite Pakete von jeder IP vom $ext_if1 zum $ext_gw1 und das Gleiche
-#  für $ext_if2 und $ext_gw2
-pass out on $ext_if1 route-to ($ext_if2 $ext_gw2) from $ext_if2
-pass out on $ext_if2 route-to ($ext_if1 $ext_gw1) from $ext_if1
+#  route packets from any IPs on $ext_if1 to $ext_gw1 and the same for
+#  $ext_if2 and $ext_gw2
+pass out on $ext_if1 from $ext_if2 route-to ($ext_if2 $ext_gw2)
+pass out on $ext_if2 from $ext_if1 route-to ($ext_if1 $ext_gw1) 
+
 </pre>
 </td></tr>
 </table>
@@ -321,10 +315,10 @@ pass out on $ext_if2 route-to ($ext_if1 $ext_gw1) from $ext_if1
 <br>
 <small>
 <!--
-Originally [OpenBSD: pools.html,v 1.25 ]<br>
-$Translation: pools.html,v 1.24 2009/12/20 13:19:16 tobias Exp $<br>
+Originally [OpenBSD: pools.html,v 1.30 ]<br>
+$Translation: pools.html,v 1.25 2012/01/19 21:33:34 steffen Exp $<br>
 -->
-$OpenBSD: pools.html,v 1.24 2009/12/22 17:49:10 ajacoutot Exp $
+$OpenBSD: pools.html,v 1.25 2012/01/21 19:34:39 ajacoutot Exp $
 </small>
 
 </body>
