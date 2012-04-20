@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.26 2010/09/27 07:34:26 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.27 2012/04/20 14:57:19 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -238,7 +238,7 @@ sub _paste_mirrorlist($$$$$$) {
 			}
 			print $fh "<tr>\n\t<td>\n\t<strong>$loc</strong>\n";
 			print $fh "\t</td><td>\n";
-			($links) && print $fh "	<a href=\"$url\">\n";
+			($links) && print $fh "	<a href=\"$url\" rel=\"nofollow\">\n";
 			print $fh "\t$url";
 			($links) && print $fh "</a>";
 			print $fh "\n\t</td>\n    </tr>";
