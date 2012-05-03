@@ -47,7 +47,7 @@ PERFORMANCE OF THIS DOCUMENTATION
 <li><a href="#playaudio"  >13.2 - Verschillende soorten audio spelen</a>
 <li><a href="#playCD"     >13.3 - Hoe kan ik audio CD's afspelen in OpenBSD?</a>
 <li><a href="#recordaudio">13.4 - Kan ik OpenBSD gebruiken om audiomonsters op te nemen?</a>
-<li><a href="#audioserver">13.5 - Hoe zet ik een audio server op?</a>
+<li><a href="#audioserver">13.5 - Hoe zet ik een audioserver op?</a>
 <li><a href="#audioprob"  >13.6 - Wat kan ik doen als ik problemen heb met audio?</a>
 <li><a href="#midi"       >13.7 - Hoe kan ik mijn MIDI instrumenten gebruiken?</a>
 <li><a href="#lossyaudio" >13.8 - Vertel me eens over Ogg Vorbis en MP3 codering?</a>
@@ -507,7 +507,7 @@ $ <strong>aucat -o file.wav</strong>
 Het commando hierboven zal het openemen van een bestand in WAV-formaat
 starten.
 Druk op [CTRL-C] om het opnemen te beëindigen.
-Het bestand zal signed 16-bit stereo monsters bevatten, bemonsterd op 44,1 kHz.
+Het bestand zal signed 16-bit stereo monsters bevatten, bemonsterd op 48 kHz.
 Andere formaten, bemonsteringsfrequenties and aantallen kanalen kunnen
 opgenomen worden
 Zie de manual pagina voor meer details.
@@ -546,66 +546,48 @@ Op andere systemen kan voorversterking juist erg luid zijn.
 
 <p>
 <a name="audioserver"></a>
-<h2>13.5 - Hoe zet ik een audio server op?</h2>
+<h2>13.5 - Hoe zet ik een audioserver op?</h2>
 
 <!-- This section Copyright (c) 2009 Alexandre Ratchov -->
 
-<h3>Heb ik een audio server nodig?</h3>
-
-Het <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=aucat&amp;sektion=1">aucat(1)</a>
-programma kan worden gebruikt als audio server,
-die zich als laag tussen de audio(4) driver
-en audio-applicaties gedraagt.
-Het heeft als doel:
-
-<ul>
-
-<li>
-Overwinnen van incompatibiliteiten tussen hardware en applicaties.
-De applicatie ondersteunt bijvoorbeeld de coderingen of bemonsteringsfrequenties
-van de hardware niet; in dat geval kan de server de nodige conversie uitvoeren.
-
-<li>
-Laat meerdere applicaties de hardware gelijktijdig gebruiken.
-Bijvoorbeeld om een muziekspeler op de achtergrond te gebruiken terwijl een
-applicatie geluid speelt, of om de front luidsprekers te gebruiken om muziek
-te speken en de hoofdtelefoonaansluiting voor telefonie.
-
-</ul>
-
-Als de applicaties die u gebruikt compatibel zijn met uw hardware en u bent
-niet van plan om meerdere applicaties gelijktijdig te gebruiken, dan heeft
-u geen audio server nodig.
-
-<h3>Hoe stel ik aucat(1) in?</h3>
-
-Er is geen configuratiebestand en, in de meeste gevallen, is er ook geen
-fijninstelling nodig.  Type:
-
-<pre>
-$ <strong>aucat -l</strong>
-</pre>
-
-en de server start op het standaard audio device (degene waar de
-<tt>/dev/audio</tt> symlink naar verwijst), draaient op 44,1 kHz en met
-twee kanalen (stereo).
-Dit betekent dat applicaties die stereo op 44,1 kHz gebruiken optimaal werken,
-d.w.z. zonder de conversiecode te triggeren.
-Als het device deze parameters niet ondersteunt, dan kiest
-+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=aucat&amp;sektion=1">aucat(1)</a>
-automatisch een andere set parameters.
+<h3>Wat is de sndiod(1) audioserver?</h3>
 
 <p>
-Als u aucat als root start, dan verhoogt het zijn prioriteit, om de kans
-op buffer underruns of overruns te verkleinen.
+De
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sndiod">sndiod(1)</a>
+daemon is een tussenlaag tussen de audio of MIDI programma's
+en de hardware.
+Het verricht de noodzakelijke geluidsbewerkingen om alle programma's
+te kunnen laten werken op alle ondersteunde hardware.
+Het stelt ten minste één sub-device ter beschikking waarop ieder aantal
+audioprogramma's kan aansluiten om het te gebruiken als audiohardware.
+Tijdens afspelen ontvangt sndiod tegelijkertijd audiogegevens van alle
+programma's, mixt deze en zendt het resultaat naar de audiohardware.
+Op een vergelijkbare manier dupliceert het bij opname de opgenomen gegevens
+en stuurt deze naar alle programma's.
 
-Het kan bij de systeemboot gestart worden door
+<p>
+Het accepteert standaard alleen connecties van programma's die op
+hetzelfde systeem draaien.  Het initialiseert alleen als er programma's
+zijn die zijn diensten gebruiken en verbruikt dus een verwaarloosbare
+hoeveelheid systeembronnen.
+Systemen zonder audiohardware kunnen sndiod gebruiken om hot-plug apparaten
+te kunnen gebruiken, vrijwel zonder kosten.
 
-<pre>
-<strong>aucat_flags=""</strong>
-</pre>
+<h3>Heb ik een audioserver nodig?</h3>
 
-toe te voegen aan <tt>/etc/rc.conf.local</tt>.
+<p>
+Als uw applicaties compatibel zijn met uw hardware en u niet van plan bent
+om meerdere applicaties tegelijk te gebuiken, dan heeft u strikt genomen
+geen audioserver nodig.
+Op OpenBSD 5.1 wordt sndiod(1) standaard gestart bij het booten.
+Er is niet meer reden om sndiod uit te schakelen op een systeem zonder
+audiohardware dan er reden is om getty(8) uit te zetten op een
+systeem zonder toetsenbord en beeldscherm.
+
+<p>
+Merk op dat sndiod kan worden omzeild door <b>rsnd/0</b> als audiodevice
+te gebruiken in plaats van het standaard device.
 
 <h3>Welke latency heb ik nodig?</h3>
 
@@ -641,41 +623,80 @@ kans op vollopen/leeglopen van de buffer.
 Het vollopen/leeglopen resulteert in ``stotteren'' van het geluid.
 
 <p>
-In server mode legt aucat(1) een minimum latency op aan alle audioapplicaties
-en de standaard latency ligt rond de 250 ms.
+sndiod(1) legt een minimum latency op aan alle audioapplicaties
+en de standaard latency is 160 ms.
 
 Indien u applicaties wilt gebruiken die een lagere latency vereisen, gebruik
 dan de ``-b'' optie om de gewenste latency te kiezen (uitgedrukt in aantal
 frames).
 
-Bij bijvoorbeeld 441100 samples/seconde komt 50 ms latency overeen met:
+Bij bijvoorbeeld 48000 samples/seconde komt 50 ms latency overeen met:
 
 <blockquote>
-44100 samples/seconde x 0.050 seconde = 2205 samples
+48000 samples/seconde x 0.050 seconde = 2400 samples
 </blockquote>
 
-dus start
-+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=aucat&amp;sektion=1">aucat(1)</a>
-als volgt:
+dus voeg:
 
 <pre>
-$ <strong>aucat -b 2205 -l</strong>
+<strong>sndiod_flags="-b2400"</strong>
 </pre>
+
+toe aan <tt>/etc/rc.conf.local</tt>.
 
 <h3>Verbetert lage latency de synchronisatie tussen audio en video?</h3>
 
-Lage latency is geen vereiste voor synchronisatie tussen audio en video.
+Nee. Lage latency is geen vereiste voor synchronisatie tussen audio en video.
 Problemen met synchronisatie worden vaak veroorzaakt door de software zelf
 (slechte implentatie, bugs,&nbsp;...).
-De applicatie dwingen om kleinere buffers te gebruiken (door aucat(1) te
+De applicatie dwingen om kleinere buffers te gebruiken (door sndiod(1) te
 starten met lage latency) kan in sommige gevallen het echte probleem verbergen
 en het gevoel geven dat de software beter functioneerd, maar het is
 uiteraard beter om te zoeken naar de corresponderende bug.
 
+<h3>Hoe kan ik een geluidskaart op afstand gebruiken?</h3>
+
+sndiod(1) kan worden ingesteld om connecties via het netwerk te accepteren,
+zodat andere machines ook de geluidskaart kunnen gebruiken.
+
+Voeg op het andere systeem (met de geluidskaart) het volgende toe:
+
+<pre>
+<strong>sndiod_flags="-L-"</strong>
+</pre>
+
+aan <tt>/etc/rc.conf.local</tt>.
+
+Op het lokale systeem stelt u uw programma in om
+
+<pre>
+<strong>snd@hostname/0</strong>
+</pre>
+
+te gebruiken, waarbij ``hostname'' het adres is van het andere systeem.
+De omgevingsvariabele AUDIODEVICE kan op bovenstaande waarde worden ingesteld
+om de andere geluidskaart het standaard audiodevice te laten zijn.
+
+<p>
+Merk op dat ieder systeem dat naar TCP-poort 11025 van het andere systeem
+kan verbinden, het audiodevice kan gebruiken.
+Om privacyredenen kan slechts één gebruiker op één systeem tegelijk
+een verbinding maken.
+Indien meerdere systemen het audiodevice gelijktijdig moeten kunnen gebruiken,
+dan moet het sndio(7) authorization cookie identiek zijn.
+Kopieer bijvoorbeeld uw <tt>~/.aucat_cookie</tt> naar alle accounts die het
+audiodevice willen gebruiken.
+
+<p>
+Om haperingen te voorkomen kan TCP verkeer op poort 25
+<a href="../pf/nl/queueing.html">prioriteit krijgen</a>
+met het packet filter.
+In de standaard configuratie gebruikt sndiod ongeveer 200 kB/s
+aan netwerkbandbreedte.
+
 <p>
 <a name="audioprob"></a>
 <h2>13.6 - Wat kan ik doen als ik problemen heb met audio?</h2>
-
 
 <p>
 Als u niets hoort bij het afspelen van audio, dan is er mogelijk een
@@ -697,9 +718,9 @@ ondersteund.
 Als uw device alleen ongebruikelijke coderingen ondersteunt of slechts
 één of enkele bemonsteringsfrequenties en de applicaties die u gebruikt
 kunnen de nodige conversie van het formaat niet uitvoeren, overweeg dan
-om aucat(1) te gebruiken als audio server.
+om aucat(1) te gebruiken als audioserver.
 Zie paragraaf
-<a href="#audioserver">13.5 - Hoe zet ik een audio server op?</a>
+<a href="#audioserver">13.5 - Hoe zet ik een audioserver op?</a>
 
 <p>
 Indien u nog steeds problemen heeft, dan zijn wat andere dingen
@@ -836,14 +857,14 @@ Er zijn drie MIDI poorten zichtbaar, overeenkomend met:
 
 Deze devices zijn voor
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sndio">sndio(7)</a>
-bekend als <tt>rmidi:0</tt> and <tt>rmidi:1</tt>.
+bekend als <tt>rmidi/0</tt> and <tt>rmidi/1</tt>.
 
 Om uw MIDI keyboard te testen kunt u de
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hexdump&amp;sektion=1">hexdump(1)</a>
 utility gebruiken om MIDI data weer te geven die u erop speelt:
 
 <blockquote><pre>
-$ <strong>midicat -q rmidi:1 -o - | hexdump -e '1/1 "%02x\n"'</strong>
+$ <strong>aucat -Mq rmidi/1 -o - | hexdump -e '1/1 "%02x\n"'</strong>
 90
 3c
 71
@@ -854,12 +875,12 @@ De uitvoer van het keyboard kan worden verbinden met de invoer van
 een synthesizer, en wel als volgt:
 
 <blockquote><pre>
-$ <strong>midicat -q rmidi:0 -q rmidi:1</strong>
+$ <strong>aucat -M -q rmidi/0 -q rmidi/1</strong>
 </pre></blockquote>
 
 Nu kunt u op de synthesizer horen wat u speelt op het MIDI keyboard.
 Bekijk de
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=midicat&amp;sektion=1">midicat(1)</a>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=aucat&amp;sektion=1">aucat(1)</a>
 manual pagina voor meer informatie.
 
 <!-- <h3>Playing, recording MIDI sequences</h3> -->
@@ -871,7 +892,7 @@ Het afspelen van een standaard MIDI bestand, in dit voorbeeld via een
 synthesizer, is zo eenvoudig als:
 
 <blockquote><pre>
-$ <strong>midiplay -f rmidi:0 file.mid</strong>
+$ <strong>midiplay -f rmidi/0 file.mid</strong>
 </pre></blockquote>
 
 <p>
@@ -879,11 +900,11 @@ Om MIDI bestanden op te nemen kunt u de <tt>smfrec</tt> utility gebruiken
 die gebundeld is in de <tt>audio/midish</tt> port, bijvoorbeeld:
 
 <blockquote><pre>
-$ <strong>smfrec -d rmidi:0 -i rmidi:1 file.mid</strong>
+$ <strong>smfrec -d rmidi/0 -i rmidi/1 file.mid</strong>
 </pre></blockquote>
 
-neemt op wat op het keyboard gespeeld wordt (<tt>rmidi:1</tt>) terwijl
-het in real-time wordt doorgestuurd naar de synthesizer (<tt>rmidi:0</tt>)
+neemt op wat op het keyboard gespeeld wordt (<tt>rmidi/1</tt>) terwijl
+het in real-time wordt doorgestuurd naar de synthesizer (<tt>rmidi/0</tt>)
 zodat u hoort wat u speelt.
 Ingewikkelder handelingen zoals bewerken, routeren, mixen en
 vervormen van MIDI data, kunnen worden gedaan met de <tt>rmidish</tt>
@@ -1698,10 +1719,10 @@ this would be interesting, but lack of hardware at the moment
 <br>
 <small>
 <!--
-Originally [OpenBSD: faq13.html,v 1.141 ]<br>
-$Translation: faq13.html,v 1.54 2011/11/10 20:08:33 maurice Exp $<br>
+Originally [OpenBSD: faq13.html,v 1.142 ]<br>
+$Translation: faq13.html,v 1.56 2012/05/02 20:38:44 maurice Exp $<br>
 -->
-$OpenBSD: faq13.html,v 1.45 2011/11/11 07:11:10 ajacoutot Exp $
+$OpenBSD: faq13.html,v 1.46 2012/05/03 12:50:11 ajacoutot Exp $
 </small>
 
 </body>
