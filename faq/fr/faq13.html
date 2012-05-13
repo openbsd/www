@@ -515,7 +515,7 @@ $ <strong>aucat -o file.wav</strong>
 La commande précédente commencera l'enregistrement d'un fichier au format WAV.
 Appuyez sur [CTRL]-C pour terminer l'enregistrement.
 Le fichier contiendra des échantillons signés 16-bit stéréo, échantillonné à
-44.1 kHz.
+48 kHz.
 D'autres formats d'échantillonnage, taux d'échantillonnage et nombre de voix
 peuvent être enregistrés.
 Lisez le manuel pour plus de détail.
@@ -558,66 +558,43 @@ La pré-amplification a été activée, car sinon le son enregistré peut
 
 <!-- This section Copyright (c) 2009 Alexandre Ratchov -->
 
-<h3>Est-ce que j'ai besoin d'un serveur audio ?</h3>
-
-L'utilitaire 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=aucat&amp;sektion=1">aucat(1)</a>
-peut être utilisé comme serveur audio,
-qui agit comme une couche entre le pilote audio(4)
-et l'application audio.
-Cela vise à :
-
-<ul>
-
-<li>
-Dépasser les incompatibilités entre le matériel et les applications.
-Par exemple une application ne supporte pas l'encodage et les taux
-d'échantillonnage du matériel; si c'est le cas, le cas peut faire les
-conversions nécessaires à la volée. 
-
-<li>
-Permettre à plusieurs applications d'utiliser le matériel simultanément.
-Par exemple, pour utiliser un lecteur de musique en tache de fond pendant
-que l'on exécute une application jouant des sons, ou pour
-utiliser simultanément les hauts-parleurs frontaux pour la musique et la
-prise casque pour la téléphonie est un autre exemple.
-
-</ul>
-
-Si les applications utilisées sont compatibles avec votre matériel et que
-vous ne pensez pas utiliser plusieurs applications simultanément, vous
-n'avez donc pas besoin d'un serveur audio.
-
-<h3>Comment configurer aucat(1)</h3>
-
-Il n'y a pas de fichier de configuration, et dans la plupart des cas, rien à
-faire. Tapez :
-
-<pre>
-$ <strong>aucat -l</strong>
-</pre>
-
-démarrera le serveur sur le périphérique audio par défaut (celui où pointe
-le lien symbolique sur <tt>/dev/audio</tt>) fonctionnant à 44.1KHz et
-utilisant deux voix (stéréo).
-Cela signifie que les applications utilisant la stéréo à 44.1KHz
-fonctionneront de manière optimale, c'est-à-dire, sans passer par du code de
-conversion.
-Si le périphérique ne supporte pas ces paramètres,
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=aucat&amp;sektion=1">aucat(1)</a>
-utilisera automatiquement un autre ensemble de paramètres.
+<h3>Qu'est-ce que le serveur audio sndiod(1) ?</h3>
 
 <p>
-Si vous démarrez aucat comme root, il augmentera sa priorité,
-pour diminuer la probabilité d'un problème de cache, par exemple :
+Le démon
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sndiod">sndiod(1)</a>
+est une couche intermédiaire entre les programmes audio ou MIDI et le matériel.
+Il effectue le traitement audio nécessaire pour permettre à n'importe quel
+programme de fonctionner sur n'importe quel matériel supporté.
+Il dispose d'au moins un sub-device auquel un certain nombre de programmes
+audio peuvent se connecter et l'utiliser comme si c'était un matériel audio.
+Pendant la lecture, sndiod reçoit des données audio simultanément de tous
+les programmes, il mixe et envoie le résultat au matériel audio.
+De même, pendant l'enregistrement il duplique les données audio
+enregistrées à partir du périphérique et l'envoie à tous les programmes.
 
-il peut être démarré au démarrage du système en ajoutant :
+<p>
+Par défaut, il accepte les connexions provenant d'un seul système;
+il s'initialise seulement lorsque les programmes utilisent ses services,
+ce qui signifie qu'utilises des ressources du système négligeables.
+Les systèmes sans matériel audio peuvent utiliser sndiod pour faire
+en sorte que lorsqu'un matériel de ces matériels est branché à chaud sur
+la machine, il puisse être utilisé.
 
-<pre>
-<strong>aucat_flags=""</strong>
-</pre>
+<h3>Ai-je besoin d'un serveur audio ?</h3>
 
-à <tt>/etc/rc.conf.local</tt>.
+<p>
+Si les applications que vous utilisez sont compatibles avec votre
+matériel et que vous ne prévoyez pas de lancer plusieurs applications
+en même temps, vous n'avez absolument pas besoin d'un serveur audio.
+Sur OpenBSD 5.1, sndiod(1) est lancé par défaut durant la phase
+de démarrage du système. Il n'y a pas plus de raisons de désactiver
+sndiod(1) sur un système sans matériel audio que de désactiver
+getty(8) sur un système bancal.
+
+<p>
+Notez que sndiod peut être contourné en utilisant <b>rsnd/0</b> en tant
+que périphérique audio à la place de celui par défaut.
 
 <h3>Quel temps de latence configurer ?</h3>
 
@@ -654,36 +631,77 @@ les probabilités sont grandes d'avoir des problèmes de overrun/underrun.
 Le cache en overruns/underruns donnera au son un "bégaiement".
 
 <p>
-En mode serveur, aucat(1) impose un temps minimum de latence pour toutes les
-applications audio, et le temps de latence par défaut est autour de 250ms.
+sndiod(1) impose une latence minimale sur toutes les applications audio,
+et la latence par défaut est 160ms.
 
-Si vous prévoyez d'utiliser des applications qui demandent une latence plus
-courte, utilisez l'option "-b" pour sélectionner la latence désirée
-(exprimée en nombre d'échantillons).
+Si vous prévoyez d'utiliser des applications qui requièrent une plus
+faible latence, utilisez l'option ``-b'' pour sélectionner la latence
+désirée (exprimée en nombre de frames).
 
-Par exemple à 44100 échantillons/seconde, 50ms de latence correspond à :
+Par exemple à 48000 échantillons/seconde, 50ms de latence correspond à :
 
 <blockquote>
-44100 échantillons/seconde x 0.050 secondes = 2205 échantillons
+48000 échantillons/seconde x 0.050 secondes = 2400 échantillons
 </blockquote>
  
-donc lancez 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=aucat&amp;sektion=1">aucat(1)</a>
-ainsi :
+ensuite, ajoutez:
 
 <pre>
-$ <strong>aucat -b 2205 -l</strong>
+<strong>sndiod_flags="-b2400"</strong>
 </pre>
+
+à <tt>/etc/rc.conf.local</tt>.
 
 <h3>Une latence plus faible améliore-t-elle la synchronisation audio-vidéo ?</h3>
 
-Synchroniser l'audio à la vidéo ne nécessite pas une latence faible.
+Non. Synchroniser l'audio à la vidéo ne nécessite pas une latence faible.
 Les problèmes de synchronisation sont souvent causés par le logiciel
 lui-même (mauvaise implémentation, bogues, &nbsp;...).
-Forcer l'application à utiliser des cache plus petits (en démarrant aucat(1)
+Forcer l'application à utiliser des cache plus petits (en démarrant sndiod(1)
 en mode latence faible) peut cacher les problèmes actuels dans certains cas
 et donner la sensation que le logiciel fonctionne mieux, mais normalement la
-bonne chose à faire et de commencer à chercher le bogue correspondant.
+bonne chose à faire est de commencer à chercher le bogue correspondant.
+
+<h3>Comment utiliser une carte audio à distance ?</h3>
+
+sndiod(1) peut être configuré pour accepter les connexions depuis
+le réseau, permettant ainsi à d'autres machines d'utiliser la carte audio.
+
+Sur le système distant (celui avec la carte audio), ajoutez:
+
+<pre>
+<strong>sndiod_flags="-L-"</strong>
+</pre>
+
+à <tt>/etc/rc.conf.local</tt>.
+
+Sur le système local, configurez votre programme pour qu'il
+utilise:
+
+<pre>
+<strong>snd@hostname/0</strong>
+</pre>
+
+où ``hostname'' est l'adresse du système distant.
+La variable d'environnement AUDIODEVICE devrait être
+définie à la valeur précédente pour faire de la carte
+audio distante le périphérique audio par défaut.
+
+<p>
+Notez qu'un système capable de se connecter au port TCP 11025 de
+la machine distante sera capable d'utiliser le périphérique audio.
+Pour des raisons de confidentialité, seul un utilisateur peut se
+connecter au système à la fois.
+Si plusieurs systèmes doivent utiliser le même périphérique audio
+simultanément, le cookie d'autorisation de sndio(7) doit être le même.
+Pour ce faire, copiez votre fichier <tt>~/.aucat_cookie</tt> sur tous
+les comptes qui pourraient utiliser le périphérique audio.
+
+<p>
+Pour éviter les bogues, le trafic TCP sur le port 11025 devrait
+être <a href="../pf/fr/queueing.html">prioritaire</a> avec packet
+filter. Avec la configuration par défaut, sndiod va utiliser environ
+200kB/s de bande passante.
 
 <p>
 <a name="audioprob"></a>
@@ -844,14 +862,14 @@ Il montre deux ports MIDI correspondants à :
 
 Ces périphériques sont reconnus par
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sndio">sndio(7)</a>
-comme <tt>rmidi:0</tt> et <tt>rmidi:1</tt>.
+comme <tt>rmidi/0</tt> et <tt>rmidi/1</tt>.
 
 Pour tester votre clavier MIDI vous pouvez utiliser l'utilitaire
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hexdump&amp;sektion=1">hexdump(1)</a>
 qui affiche les données MIDI que vous jouez dessus :
 
 <blockquote><pre>
-$ <strong>midicat -q rmidi:1 -o - | hexdump -e '1/1 "%02x\n"'</strong>
+$ <strong>aucat -Mq rmidi/1 -o - | hexdump -e '1/1 "%02x\n"'</strong>
 90
 3c
 71
@@ -861,13 +879,13 @@ $ <strong>midicat -q rmidi:1 -o - | hexdump -e '1/1 "%02x\n"'</strong>
 La sortie du clavier peut être connectée à l'entrée du synthétiseur comme :
 
 <blockquote><pre>
-$ <strong>midicat -q rmidi:0 -q rmidi:1</strong>
+$ <strong>aucat -M -q rmidi/0 -q rmidi/1</strong>
 </pre></blockquote>
 
 Maintenant vous pouvez entendre sur le synthétiseur ce que vous jouez sur le
 clavier MIDI.
-Referez vous aux pages du manuel 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=midicat&amp;sektion=4">midicat(4)</a>
+Referez-vous aux pages du manuel 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=aucat&amp;sektion=1">aucat(1)</a>
 pour plus d'informations.
 
 <!-- <h3>Playing, recording MIDI sequences</h3> -->
@@ -879,7 +897,7 @@ Jouer un fichier MIDI standard, dans cet exemple à travers le synthétiseur,
 est aussi simple que :
  
 <blockquote><pre>
-$ <strong>midiplay -f rmidi:0 file.mid</strong>
+$ <strong>midiplay -f rmidi/0 file.mid</strong>
 </pre></blockquote>
 
 <p>
@@ -887,11 +905,11 @@ Pour enregistrer des fichiers MIDI, vous pouvez utiliser l'utilitaire
 <tt>smfrec</tt> fournit dans le port <tt>audio/midish</tt>, ainsi :
 
 <blockquote><pre>
-$ <strong>smfrec -d rmidi:0 -i rmidi:1 file.mid</strong>
+$ <strong>smfrec -d rmidi/0 -i rmidi/1 file.mid</strong>
 </pre></blockquote>
 
-enregistrera ce qui est joué au clavier (<tt>rmidi:1</tt>) pendant
-qu'il enverra en temps réel sur le synthétiseur (<tt>rmidi:0</tt>) ce que
+enregistrera ce qui est joué au clavier (<tt>rmidi/1</tt>) pendant
+qu'il enverra en temps réel sur le synthétiseur (<tt>rmidi/0</tt>) ce que
 vous pourrez entendre en jouant.
 Une opération plus compliquée comme l'édition, routage, mixage et la 
 transformation de données MIDI peut être réalisée en utilisant l'utilitaire
@@ -1718,10 +1736,10 @@ Plates-Formes Et Au Matériel]</a>
 <br>
 <small>
 <!--
-Originally [OpenBSD: faq13.html,v 1.141 ]<br>
-$Translation: faq13.html,v 1.66 2012/02/10 20:59:17 rustybsd Exp $<br>
+Originally [OpenBSD: faq13.html,v 1.142 ]<br>
+$Translation: faq13.html,v 1.67 2012/05/12 10:28:54 rustybsd Exp $<br>
 -->
-$OpenBSD: faq13.html,v 1.57 2012/02/11 08:47:55 ajacoutot Exp $
+$OpenBSD: faq13.html,v 1.58 2012/05/13 16:30:18 ajacoutot Exp $
 </small>
 
 </body></html>
