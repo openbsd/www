@@ -1,0 +1,164 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>OpenSMTPD: Filterregeln</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description"   content="the OpenSMTPD FAQ page">
+<meta name="keywords"      content="openbsd,faq,opensmtpd">
+<meta name="distribution"  content="global">
+</head>
+
+<!--
+Copyright (c) 2012 Gilles Chehade <gilles@openbsd.org>
+Copyright (c) 2012 Robert Peichaer <rpe@openbsd.org>
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+
+<body bgcolor="#ffffff" text="#000000">
+<!-- Passes validator.w3.org, please keep it this way;
+please, use a max of 72 chars per line -->
+
+<!-- =============================================================== -->
+<!-- XXX: for now, link to the (external) OpenSMTPD website          -->
+<!-- =============================================================== -->
+<a href="http://www.opensmtpd.org/">
+<img alt="[OpenSMTPD]" height="30" width="160" src="../../../images/smalltitle.jpg" border="0">
+</a>
+<p>
+[<a href="../options.html">Previous: Options</a>]
+[<a href="../index.html">Contents</a>]
+[<a href="../maps.html">Next: Maps</a>]
+
+<h1><font color="#e00000">OpenSMTPD: Filterregeln</font></h1>
+
+<hr>
+
+<h3>Inhaltsangabe</h3>
+<ul>
+<li><a href="#intro">Einleitung</a>
+<li><a href="#syntax">Regelsyntax</a>
+<li><a href="#example">Beispiel eines filternden Regelsatzes</a>
+</ul>
+
+<hr>
+
+<a name="intro"></a>
+<h2>Einleitung</h2>
+Filterregeln kontrollieren, welche Nachrichten von smtpd akzeptiert oder
+zurückgewiesen werden, basierend auf Informationen, die während der
+SMTP-Sitzung gesammelt werden.
+Diese Regeln werden für jede einzelne Nachricht vom Dämon abgearbeitet,
+von der Ersten bis zur Letzten.
+Die erste entsprechende Regel entscheidet über die Vorgehensweise, und, sollte
+keine entsprechende Regel gefunden werden, so wird der Dämon die Nachricht
+zurückweisen.
+
+<a name="syntax"></a>
+<h2>Regelsyntax</h2>
+Die komplette Syntax ist auf der Handbuchseite
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=smtpd.conf&amp;sektion=5"
+>smtpd.conf(5)</a> dokumentiert.
+Die allgemeine, <i>stark vereinfachte</i> Syntax für Filterregeln ist:
+
+<blockquote>
+<tt>
+<i>action</i> from <i>client_ip_filter</i> for <i>domain_filter</i>
+{ deliver to <i>delivery_method</i> | relay [<i>relay_method</i>] }
+[expire <i>expire_time</i>]
+</tt>
+</blockquote>
+
+<dl>
+<dt><tt><i>action</i></tt>
+<dd>Die vorzunehmende Handlung für entsprechende Nachrichten,
+entweder <tt>accept</tt> oder <tt>reject</tt>.
+
+<dt><tt><i>client_ip_filter</i></tt>
+<dd>Ein Filter, der sich auf die IP-Quelladresse des verbundenen Klienten
+bezieht.
+<tt>from all</tt> entspricht immer, d.&nbsp;h., unabhängig von der IP-Adresse,
+<tt>from local</tt> wird einzig lokale Verbindungen akzeptieren und
+<tt>from <i>network</i></tt> alle Verbindungen aus <tt><i>network</i></tt>,
+dass in CIDR-Notation spezifiziert werden muss.
+
+<dt><tt><i>domain_filter</i></tt>
+<dd>Dies ist ein Filter, der die Zieldomäne der Nachricht betrachtet.
+<tt>for all</tt> entspricht unabhängig von der Zieldomäne,
+<tt>for domain <i>domain</i></tt> akzeptiert Nachrichten für die angegebene
+  Domäne,
+<tt>for domain map <i>domains</i></tt> wird allen Domänen entsprechen, die Teil
+  der angegebenen Zuordnung <i>domains</i> sind,
+<tt>for <i>local</i></tt> entspricht localhost oder der FQDN des Servers,
+und
+<tt>for virtual map <i>vmap</i></tt> wird allen virtuellen Domänen entsprechen,
+  die Teil der angegebenen Zuordnung <i>vmap</i> sind.
+
+<dt><tt><i>delivery_method</i></tt>
+<dd><tt>maildir <i>path</i></tt> fügt E-Mail zu einem Maildir-Verzeichnis
+  hinzu,
+<tt>mbox</tt> liefert in den Briefkasten (Mailbox) eines lokalen Benutzers,
+<tt>mda <i>program</i></tt> sendet die Nachricht durch eine Pipe an das
+  angegebene Programm.
+
+<dt><tt><i>relay_method</i></tt>
+<dd>Ohne die Angabe einer <tt><i>relay_method</i></tt> werden Nachrichten
+weitergeleitet und das Routing ist DNS-basiert,
+<tt>as <i>address</i></tt> kann benutzt werden, um optional den Sender
+umzuschreiben, der in der SMTP-Sitzung angekündigt wird,
+und
+<tt>via</tt> leitet Nachrichten über den als URL angebenen Hostcomputer weiter.
+
+<dt><tt><i>expire_time</i></tt>
+<dd>Spezifiziert, wie lange eine Nachricht, die dieser Regel entsprach, in der
+Warteschlange verbleiben kann.
+</dl>
+
+<a name="example"></a>
+<h2>Beispiel eines filternden Regelsatzes</h2>
+Unten angeführt ist ein Beispiel eines filternden Regelsatzes.
+<br>
+<table border=0 width="650">
+<tr><td nowrap bgcolor="#EEEEEE">
+<pre>
+
+find a good example of a (not so) basic setup
+
+</pre>
+</td></tr>
+</table>
+
+<p>
+[<a href="../options.html">Previous: Options</a>]
+[<a href="../index.html">Contents</a>]
+[<a href="../maps.html">Next: Maps</a>]
+
+<p>
+<hr>
+<a href="../index.html"><img height="24" width="24" src="../../../images/back.gif"
+  border="0" alt="[back]"></a> 
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>
+<!--
+Originally [OpenBSD: filter.html,v 1.1.1.1]<br>
+$Translation: filter.html,v 1.1 2012/10/16 14:06:49 steffen Exp $
+-->
+$OpenBSD: filter.html,v 1.1 2012/10/16 16:57:25 ajacoutot Exp $
+</small>
+
+</body>
+</html> 
