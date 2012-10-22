@@ -1,0 +1,508 @@
+OpenBSD and RThreads
+********************
+
+#IMG# flowers.jpg
+
+
+----------------------------------------------------------------
+
+OpenBSD and Threads
+*******************
+
+* OpenBSD has used userspace threads since it split from NetBSD
+
+#RTIMG# stacks.jpg
+
+  * Threads were implemented by stack switching when an operation would block or when a scheduling timer triggered
+
+  * blocking I/O handled by doing non-blocking I/O and then polling in thread scheduler
+
+
+----------------------------------------------------------------
+
+Problems with Userspace Threads
+*******************************
+
+* Problems:
+
+  * only one kernel thread, so a process can only use one CPU on MP boxes
+
+  * non-blocking I/O implemented via O_NONBLOCK
+    * file-level flag: shared between processes after fork(), etc
+    * whether a process uses the thread library affects other processes
+
+  * some blocking syscalls can't be polled for: open(FIFO)
+
+  * some weren't: kevent(), socket timeouts
+
+  * some block anyway: disk I/O
+
+----------------------------------------------------------------
+
+OpenBSD's Answer: RThreads
+**************************
+* kernel threads: 1-1 architecture
+
+  * minimal kernel changes
+
+  * existing [[struct proc]] was left as the schedulable entity; [[struct process]] placed "above" that for shared information
+
+* Six new syscalls:
+
+  * thread creation and destruction: [[rfork(RFTHREAD)]] and [[threxit()]]
+ 
+  * thread identification and signal redirection: [[getthrid()]] and [[thrsigdivert()]]
+
+  * sleep and wakeup primitives: [[thrsleep()]] and [[thrwakeup()]]
+
+* described by Ted Unangst, EuroBSD 2005
+
+----------------------------------------------------------------
+
+#TITLE# Kernel-side: process relationships
+#IMG# process_links.gif
+
+----------------------------------------------------------------
+
+Kernel-side: process relationships
+**********************************
+
+* threads couldn't [[wait()]] for child created by another thread's [[fork()]]
+
+* setpgid() in threaded process: different threads in different groups breaks job-control
+
+* many links between data-structures with assumptions that they are in common
+
+* they all have to move at once
+
+----------------------------------------------------------------
+
+Kernel-side: [[struct sigacts]]
+*******************************
+
+* [[struct sigacts]] holds the signal disposition information for a process
+
+  * i.e., everything you control with [[sigaction()]]
+
+* [[SIG_IGN]] vs [[SIG_DFL]] vs handler represented by sigsets
+
+  * previously, those sets were stored in [[struct proc]], so they wouldn't be swapped out
+
+  * simple: move them together into [[struct sigacts]]
+
+----------------------------------------------------------------
+
+Kernel-side: [[struct sigacts]]
+*******************************
+
+#RTIMG# cats.jpg
+
+* oops, that broke NFS!
+
+================================================================
+
+  * delayed writes carried pointer to the proc that triggered the write
+    * ...even after the proc had exited and the struct freed
+
+  * moving the signal sets meant it started chasing a [[0xdeadbeef]] pointer in the freed [[struct proc]]
+
+  * "Boom"
+
+----------------------------------------------------------------
+
+Kernel-side: [[kevent()]]
+*************************
+
+* EVFILT_PROC filter lets a process monitor other processes and get events when they [[fork()]], [[execve()]], or [[exit()]]
+
+* want those events to be when the entire process does those, not when an individual thread does so
+
+  * get more events than you care about
+
+  * can't tell creation of threads from creation of child processes
+
+* just move the [[struct klist]] from [[proc]] to [[process]]
+
+* catch: librthread was using [[kevent()]] to determine when an exiting thread's stack could be freed
+
+  * A: change threxit() to copyout a zero integer
+
+----------------------------------------------------------------
+
+Kernel-side: [[ktrace]]
+***********************
+
+* tracing a process should trace all its threads
+
+* need to record and (optionally) display the thread id in the ktrace output
+
+  * always had to use [[ktrace -di]] when tracing threaded procs
+
+* most of the work was in improving [[kdump]] output and fixing unrelated issues
+
+  * what credentials should be used when writing ktrace output?
+
+  * what process file-size limit?
+
+* thank you to the clever cookie on the FreeBSD project that came up with dumping of structure by ktrace
+
+* very useful for debugging
+
+----------------------------------------------------------------
+
+Kernel-side: [[resource limits and usages]]
+*******************************************
+
+* [[setrlimit()]] should affect all the threads in the process
+
+* [[getrusage()]] must accumulate the usages from threads as they exit
+
+  * bogus [[ps]] output
+
+  * ports people complained: [[dpb]] uses resource usages for planning
+
+----------------------------------------------------------------
+
+Kernel-side: [[single-threading]]
+*********************************
+
+* some operations need to turn off or pause multithreading for a process:
+
+  * [[execve()]] kills other threads once it's committed
+
+  * coredumping needs to capture a consistent state
+
+* pull threads out of run-queues to suspend
+
+* tell them to unwind and then exit in [[userret()]]
+
+* inspired by FreeBSD's bits
+
+----------------------------------------------------------------
+
+Kernel-side: [[ptrace]]
+***********************
+
+* works by *reparenting* the target process to the tracing process
+
+* have to stop all the threads in the process and get all their statuses
+
+* uses the single-threading routines, but with a different 'reason' flag
+
+* still not entirely correct: MT processes stopped by a breakpoint take
+  one ptrace(PT_CONTINUE) per thread to resume
+
+
+----------------------------------------------------------------
+
+Syscall API: thread creation
+****************************
+
+* Previously, threads were created using a function:
+  [[rfork_thread(int flags, void *stack_ptr, void (*func)(void *), void *arg)]]
+
+  1) called [[rfork(flags)]]
+
+  2) change stack register to [[stack_ptr]]
+
+  3) invoke [[func(arg)]]
+
+* what happens if the new thread receives a signal between (1) and (2)?
+
+================================================================
+
+  * new thread uses the parent thread's stack while processesing the signal!
+
+  * "Boom"
+
+----------------------------------------------------------------
+
+Syscall API: thread creation
+****************************
+
+* A: pass desired stack pointer into the kernel and have it set it up
+
+* [[rfork()]] doesn't have the arguments for this, so new syscall:
+  [[pid_t __tfork(struct __tfork { void *tf_stack; ... } *params)]]
+
+* annoying MD work in kernel (I hate you, hppa)
+
+* still need MD ASM wrapper to call this: the child can't return from the stub that invokes the syscall trap
+
+----------------------------------------------------------------
+
+Syscall API: thread-control-block
+*********************************
+
+* need per-thread pointer that userspace controls and can use in an async-signal-safe way to find errno
+
+* new syscalls: [[__set_tcb()]] and [[__get_tcb()]]
+
+* [[pid_t __tfork(struct __tfork { void *tf_stack; void *tf_tcb; ... } *params)]]
+
+* eventually will also be used for ELF Thread-Local-Storage
+
+* for now, just gives a fast way to find the errno storage for the thread
+
+----------------------------------------------------------------
+
+Syscall API: thread-control-block
+*********************************
+
+#IMG# tcb_v1.gif
+
+----------------------------------------------------------------
+
+Syscall API: thread-control-block
+*********************************
+
+#IMG# tcb_v2.gif
+
+----------------------------------------------------------------
+
+Syscall API: thread-control-block
+*********************************
+
+* mapped to MD register where possible for cheap userspace access:
+
+  * i386: [[%gs]], amd64: [[%fs]], hppa: [[%cr27]], powerpc: [[%r2]], sparc/sparc64: [[%g7]]
+
+  * not yet: alpha, arm
+
+* [[<machine/tcb.h>]] provides macros to hide the differences
+
+* thread library creates the TCB for the initial thread and calls [[TCB_SET()]] during library [[.init]] function
+
+----------------------------------------------------------------
+
+Syscall API: sleep/wakeup
+*************************
+
+* original:
+
+  [[int thrsleep(void *ident, int timeout, void *lock);]]
+
+  [[int thrwakeup(void *ident, int n);]]
+
+* problems:
+
+  * pthread sleeps are specified as absolute times, want to adjust if the realtime clock is shifted:
+
+* [[int thrsleep(void *ident, clockid_t clock_id, const struct timespec *abstime, void *lock);]]
+
+----------------------------------------------------------------
+
+Syscall API: sleep/wakeup: cancellation
+***************************************
+
+* if the cancellation signal is delivered after [[thrsleep]] is called then the spinlock is no longer locked; if it's delivered before that then we need to keep [[thrsleep]] from blocking, but still release the spinlock
+
+* [[int thrsleep(void *ident, clockid_t clock_id, const struct timespec *abstime, void *lock, const int *abort);]]
+
+  * if [[*abort]] is non-zero after unlocking the spinlock, [[thrsleep()]] will return [[EINTR]] as-if the cancellation signal had occurred after the entry into the kernel
+
+  * The signal handler for cancellation, when this can occur, just set that flag and returns instead of trying to call [[pthread_exit(PTHREAD_CANCELED)]]
+
+----------------------------------------------------------------
+
+Syscall API: [[mquery()]]
+*************************
+
+* To provide W^X on i386, segments of each shared library are mapped with specific offsets
+
+  * e.g., data segment is placed exactly 1GB above the code segment
+
+* [[ld.so]] implements that for [[dlopen()]] by using [[mquery()]] to probe the address space for a base address where everything will fit:
+
+	  base = 0
+	  foreach segment {
+	     ret = mquery(base + segment->offset, segment->size)
+	     if (base == 0)
+		base = ret;
+	     else if (ret == MAP_FAILED)
+		/* get hint, reset base to match */
+		goto begin;
+	  }
+
+----------------------------------------------------------------
+
+Syscall API: [[mquery()]]
+*************************
+
+* TOCTOU: [[mquery()]] doesn't actually reserve the address-space: what happens if another thread calls [[mmap()]] and takes a spot that [[ld.so]] was going to use?
+
+* "Boom"
+
+* [[O_CREAT]] : [[O_EXCL]] :: [[MAP_FIXED]] : ???
+
+================================================================
+
+  * [[__MAP_NOREPLACE]]
+
+* [[ld.so]] still does initial probing with [[mquery()]]
+
+  * tests showed that probe failures happened often enough to make that more efficient
+
+----------------------------------------------------------------
+
+Userspace
+*********
+
+* Ports testing is the trial-by-fire
+
+* libpthread registers locking callback with [[ld.so]] to protect the lists of loaded shared libraries
+
+  * oops: [[dlclose()]] calls [[.fini]] functions, which may need to call [[dlclose()]]
+
+    * make it a recursive lock
+
+* mutex error behavior (double lock, unlocking an unlocked mutex, etc)
+
+  * glib2 assumes the default mutex type is error checking and thus 'safe' for those
+
+----------------------------------------------------------------
+
+Mutex and Condvar
+*****************
+
+* mutex and conditional-variable implementations were based on semaphores
+
+  * [[pthread_cond_wait()]] does 'down' operation on semaphore
+  * [[pthread_cond_signal()]] does one 'up' if anyone is blocked
+  * [[pthread_cond_broadcast()]] gets count of blocked threads and does that many 'up' operations
+
+----------------------------------------------------------------
+
+Mutex and Condvar
+*****************
+
+* Inefficient
+  * [[pthread_cond_broadcast()]] wakes up everyone, but they all have to immediately block on the mutex
+
+* Not Safe
+
+        T1: mutex_lock(&mutex)
+        T1: cond_wait(&cond, &mutex)			/* down */
+                        T2: mutex_lock(&mutex)
+                        T2: cond_signal(&cond)		/* up */
+                        T2: cond_wait(&cond, &mutex)	/* down */
+
+  * [[pthread_cond_signal()]] could consume its own signal
+    * non-compliant
+    * programs *do* depend on that not happening
+
+----------------------------------------------------------------
+
+Mutex and Condvar
+*****************
+
+* rewritten to use explicit wait-queues in userspace
+
+* [[pthread_cond_signal()]] and [[pthread_cond_broadcast()]] transfer the unblocked thread or threads directly to the wait-queue on the mutex and wake the first
+
+* good news: compliant
+
+* bad news
+  * complicated
+  * can't support process-shared
+  * can't support priority-inheritence
+
+* better than before, good enough for now
+
+
+----------------------------------------------------------------
+
+Other Userspace
+***************
+
+* added missing stuff
+  * [[pthread_condattr_setclock()]]
+  * rwlocks
+  * barriers
+  * spinlocks
+  * cancellation
+
+----------------------------------------------------------------
+
+Future Work: Kernel
+*******************
+
+* correct process-pending signal set
+* less biglock, less/distributed sched lock
+* ptrace support issues
+* UVM api for mapping [[< uvmspace, addr >]] to [[< is-sharable?, ident >]] for implementing process-shared mutexes, condvars, etc
+* MD-bits for arm and alpha for TLS
+* eventually: for robust mutexes and priority-inheritence would need type-aware mutex and condvar syscalls
+* "fix bugs"
+
+----------------------------------------------------------------
+
+Future Work: [[__mwrite()]]
+===========================
+
+* on OpenBSD, the GOT and/or PLT indirection tables for dynamic linking are read-only to block a class of attacks
+
+* when a (lazy) binding needs to be updated, [[ld.so]] uses [[mprotect()]] to make it writable, does the update, then protects it again
+
+	sigprocmask(SIG_BLOCK, &allsigs, &curset);
+	spinlock_lock(&bind_lock);		/* libpthread cb */
+	mprotect(addr, len, PROT_READ|PROT_WRITE);
+	/* update the GOT entry */
+	mprotect(addr, len, PROT_READ);
+	spinlock_unlock(&bind_lock);		/* libpthread cb */
+	sigprocmask(SIG_SETMASK, &curset, NULL);
+
+  * [[mprotect()]] involves TLB flushing in many cases
+  * for short lived processes, most their syscalls may be [[sigprocmask()]] and [[mprotect()]]: 434 of 523 for [[w]]
+
+
+----------------------------------------------------------------
+
+Future Work: [[__mwrite()]]
+===========================
+
+* syscall for atomic/efficient GOT updates by [[ld.so]]?
+
+* [[int __mwrite(void *dst, void *src, size_t nbytes, void *ro_start, size_t ro_size)]]
+
+  * copy [[nbytes]] from [[src]] to [[dst]]
+  * [[ [ro_start, ro_start + ro_size) ]] is expected to be read-only; kernel should do the copy anyway "as if" that area was actually read-write
+
+
+----------------------------------------------------------------
+
+Future Work: [[__mwrite()]]
+===========================
+
+* some platforms (powerpc) need to write two regions under same lock: [[__mwritev]]?
+
+* need to do proper ordering and cache syncs for the platforms
+
+  * sparc: write back to front, doing [[isync]] instructions
+
+* maybe just a bad idea: won't this just be target for attackers?
+  * kernel to check address of caller and only let [[ld.so]] call it?
+    * probably doesn't help against return-oriented-programming
+  
+
+----------------------------------------------------------------
+
+Future Work: Userspace
+**********************
+* TLS support (mostly needs binutils and gcc support)
+* can't [[dlopen("libpthread")]] because already resolved references to functions that libpthread overrides are not overriden afterwards
+  * indirect through jump-table that libthread overwrite in its [[.init]]
+  * just merge the stubs into libc
+* "fix bugs"
+  * missing locking in libc, etc
+* async/MT-hot resolver is being worked on
+
+
+----------------------------------------------------------------
+
+Questions?  Thank you!
+**********************
+
+#IMG# goodbye.gif
+
+----------------------------------------------------------------
