@@ -7,9 +7,6 @@ OPENBGPD_VERSION=		4.6
 OPENNTPD_VERSION=		4.6
 OPENNTPD_PORTABLE_VERSION=	3.9p1
 
-OPENSMTPD_VERSION=		x.x
-OPENSMTPD_PORTABLE_VERSION=	x.x
-
 OPENSSH_VERSION=		6.1
 OPENSSH_PORTABLE_VERSION=	6.1p1
 
@@ -52,8 +49,6 @@ ftp: mirrors.pl mirrors.dat mirrors/ftp.html.{end,head,mid1,mid2} \
 	perl mirrors.pl openbgpd-ftp ${OPENBGPD_VERSION}
 	perl mirrors.pl openntpd-ftp ${OPENNTPD_VERSION}
 	perl mirrors.pl openntpd-portable ${OPENNTPD_PORTABLE_VERSION}
-	perl mirrors.pl opensmtpd-ftp ${OPENSMTPD_VERSION}
-	perl mirrors.pl opensmtpd-portable ${OPENSMTPD_PORTABLE_VERSION}
 	perl mirrors.pl openssh-ftp ${OPENSSH_VERSION}
 	perl mirrors.pl openssh-portable ${OPENSSH_PORTABLE_VERSION}
 	perl mirrors.pl ftplist ${STABLE_VERSION}
