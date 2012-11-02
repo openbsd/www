@@ -1,14 +1,17 @@
 # Makefile for WWW subdirectory.
 
-STABLE_VERSION=	5.1
-PREV_VERSION=	5.0
+STABLE_VERSION=	5.2
+PREV_VERSION=	5.1
 
 OPENBGPD_VERSION=		4.6
 OPENNTPD_VERSION=		4.6
 OPENNTPD_PORTABLE_VERSION=	3.9p1
 
-OPENSSH_VERSION=		6.0
-OPENSSH_PORTABLE_VERSION=	6.0p1
+OPENSMTPD_VERSION=		x.x
+OPENSMTPD_PORTABLE_VERSION=	x.x
+
+OPENSSH_VERSION=		6.1
+OPENSSH_PORTABLE_VERSION=	6.1p1
 
 all: ../groups.html ../support.html ../pkg-stable.html \
 	../pkg-stable${PREV_VERSION:S/.//}.html \
@@ -49,6 +52,8 @@ ftp: mirrors.pl mirrors.dat mirrors/ftp.html.{end,head,mid1,mid2} \
 	perl mirrors.pl openbgpd-ftp ${OPENBGPD_VERSION}
 	perl mirrors.pl openntpd-ftp ${OPENNTPD_VERSION}
 	perl mirrors.pl openntpd-portable ${OPENNTPD_PORTABLE_VERSION}
+	perl mirrors.pl opensmtpd-ftp ${OPENSMTPD_VERSION}
+	perl mirrors.pl opensmtpd-portable ${OPENSMTPD_PORTABLE_VERSION}
 	perl mirrors.pl openssh-ftp ${OPENSSH_VERSION}
 	perl mirrors.pl openssh-portable ${OPENSSH_PORTABLE_VERSION}
 	perl mirrors.pl ftplist ${STABLE_VERSION}
