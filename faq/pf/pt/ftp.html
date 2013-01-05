@@ -111,33 +111,26 @@ NAT e firewalls.
 
 <p>
 O Packet Filter fornece uma solução para essa situação através do
-redirecionamento do tráfego FTP para um servidor proxy de FTP.
+desvio do tráfego FTP para um servidor proxy de FTP.
 Esse processo age como "guia" do tráfego FTP através do
 gateway/firewall NAT, adicionando as regras necessárias e removendo-as
 do sistema quando não forem mais necessárias através do sistema de
 <a href="anchors.html">âncoras</a>.
 O proxy de FTP usado pelo PF é o
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+4.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+5.2"
 >ftp-proxy(8)</a>.
 
 <p>
-Para ativá-lo, insira algo assim na seção de NAT do <tt>pf.conf</tt>:
+Para ativá-lo, insira algo assim no início da sessão de regras do <tt>pf.conf</tt>:
 
 <blockquote>
 <tt>
-nat-anchor "ftp-proxy/*"<br>
-rdr-anchor "ftp-proxy/*"<br>
-rdr on $int_if proto tcp from any to any port 21 -&gt; 127.0.0.1 \<br>
-&nbsp;&nbsp;&nbsp;port 8021
-</tt>
+pass in quick on $int_if inet proto tcp to port 21 divert-to 127.0.0.1 port 8021</tt>
 </blockquote>
 
 <p>
-As primeiras duas linhas são <a href="anchors.html">âncoras</a>, as
-quais são usadas pelo ftp-proxy para adicionar regras em tempo de
-execução para gerenciar seu tráfego FTP.
-A última linha redireciona o tráfego FTP de seus clientes para o
-programa ftp-proxy(8), que está escutando na sua máquina, na porta 8021.
+Isso desvia o tráfego FTP de seus clientes para o ftp-proxy(8),
+que está ouvindo na porta 8021 em sua máquina.
 
 <p>
 Você também precisa de uma âncora na seção de regras:
@@ -165,13 +158,12 @@ precisar reinicializar.
 
 <p>
 O ftp-proxy escuta na porta 8021, a mesma porta que a instrução
-<tt>rdr</tt> acima está enviando o tráfego FTP.
+<tt>divert-to</tt> acima está enviando o tráfego FTP.
 
 <p>
-Para habilitar conexões de modo ativo, você precisa do comutador '-r' no
-ftp-proxy(8) (para isso você tem que executar o proxy antigo com
-"-u root").
-
+Para suportar conexões de modo ativo a partir de certos 
+(diferentíssimos) clientes, você pode precisar utilizar '-r' 
+em conjunto com o ftp-proxy(8).
 
 <a name="server"></a>
 <h2>Servidor FTP Protegido pelo PF</h2>
@@ -187,9 +179,8 @@ regras de filtragem, junto com a porta 21 (a porta de controle FTP):
 
 <blockquote>
 <tt>
-pass in on $ext_if proto tcp from any to any port 21 keep state<br>
-pass in on $ext_if proto tcp from any to any port &gt; 49151 \<br>
-&nbsp;&nbsp;&nbsp;keep state
+pass in on $ext_if proto tcp to port 21<br>
+pass in on $ext_if proto tcp to port &gt; 49151
 </tt>
 </blockquote>
 
@@ -236,15 +227,11 @@ Agora para as regras do pf.conf:
 ext_ip = "192.168.0.1"<br>
 ftp_ip = "10.10.10.1"<br>
 <br>
-nat-anchor "ftp-proxy/*"<br>
-nat on $ext_if inet from $int_if -&gt; ($ext_if)<br>
-rdr-anchor "ftp-proxy/*"<br>
++match out on $ext_if inet from $int_if nat-to ($ext_if)<br>
 <br>
-pass in on $ext_if inet proto tcp to $ext_ip port 21 \<br>
-&nbsp;&nbsp;&nbsp;&nbsp;flags S/SA keep state<br>
-pass out on $int_if inet proto tcp to $ftp_ip port 21 \<br>
-&nbsp;&nbsp;&nbsp;&nbsp;user proxy flags S/SA keep state<br>
-anchor "ftp-proxy/*"
+anchor "ftp-proxy/*"<br>
+pass in on $ext_if inet proto tcp to $ext_ip port 21<br>
+pass out on $int_if inet proto tcp to $ftp_ip port 21 user proxy
 </tt>
 </blockquote>
 
@@ -278,7 +265,7 @@ O Protocolo de Transferência de Arquivos Trivial
 (TFTP - "Trivial File Transfer Protocol") sofre algumas das mesmas
 limitações que o FTP quando tenta passar através de um firewall.
 Felizmente, o PF tem um proxy de TFTP chamado
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+4.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tftp-proxy&amp;sektion=8&amp;manpath=OpenBSD+5.2"
 >tftp-proxy(8)</a>.
 
 <p>
@@ -288,10 +275,10 @@ configurado na seção
 
 <blockquote>
 <tt>
-nat on $ext_if from $int_if -&gt; ($ext_if)<br>
-rdr-anchor "tftp-proxy/*"<br>
-rdr on $int_if proto udp from $int_if to port tftp -&gt; \<br>
-&nbsp;&nbsp;&nbsp;&nbsp;127.0.0.1 port 6969<br>
+match out on $ext_if from $int_if nat-to ($ext_if)<br>
+anchor "tftp-proxy/*"<br>
+pass in quick on $int_if inet proto udp from $int_if to port tftp \<br>
+&nbsp;&nbsp;&nbsp;&nbsp;divert-to 127.0.0.1 port 6969<br>
 <br>
 anchor "tftp-proxy/*"
 </tt>
@@ -305,7 +292,7 @@ servidores TFTP na rede externa.
 O último passo é habilitar o tftp-proxy no
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=inetd.conf&amp;sektion=5"
 >inetd.conf(5)</a>
-para que ele escute na mesma porta que a regra <tt>rdr</tt> especificada
+para que ele escute na mesma porta que a regra <tt>divert-to</tt> especificada
 acima, nesse caso a porta 6969.
 
 <blockquote>
@@ -332,10 +319,10 @@ de Autenticação</a>]
 <br>
 <small>
 <!--
-Originally [OpenBSD: index.html,v 1.29 ]<br>
-$Translation: ftp.html,v 1.11 2009/10/18 16:52:52 alan Exp $<br>
+Originally [OpenBSD: index.html,v 1.37 ]<br>
+$Translation: ftp.html,v 1.12 2013/01/04 19:08:08 egypcio Exp $<br>
 -->
-$OpenBSD: ftp.html,v 1.11 2009/10/19 09:39:59 ajacoutot Exp $
+$OpenBSD: ftp.html,v 1.12 2013/01/05 15:19:49 ajacoutot Exp $
 </small>
 
 </body>
