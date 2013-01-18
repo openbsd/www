@@ -541,7 +541,19 @@ específica através do uso da palavra-chave <tt>queue</tt>:
 <tt>pass out on fxp0 proto tcp to port 22 queue ssh</tt>
 </blockquote>
 
-
+<p>
+Quando uma entrada na tabela de estados é criada por esta regra, o PF irá registrar 
+a fila pertencente a esta entrada da tabela de estados; isso será 
+utilizado por outros pacotes permitidos pela seguinte entrada:
+<blockquote>
+<tt>pass in on fxp0 proto tcp to port 80 queue http</tt>
+</blockquote>
+Com essa regra, pacotes pertencentes a conexões stateful e trafegando 
+de volta por <tt>fxp0</tt> que  vão acabar na fila <tt>http</tt>.
+Percebe-se, então, que mesmo que a <tt>queue</tt> esteja sendo utilizada
+em uma regra de filtragem de tráfego de entrada, o objetivo é 
+especificar uma fila para o tráfego de saída correspondente; a regra 
+acima não adiciona pacotes de entrada a uma fila.
 
 <p>
 Ao usar a palavra-chave <tt>queue</tt> com diretivas <tt>block</tt>,
@@ -557,15 +569,16 @@ altq on fxp0 cbq bandwidth 2Mb queue { std, ftp }<br>
 queue std bandwidth 500Kb cbq(default)<br>
 queue ftp bandwidth 1.5Mb<br>
 <br>
-pass in on dc0 from any to any port 21 queue ftp<br>
+pass in on dc0 proto tcp to port 21 queue ftp<br>
 </tt>
 </blockquote>
 
 <p>
 O enfileiramento está habilitado em <tt>fxp0</tt>, mas a designação
 acontece em <tt>dc0</tt>.
-Se os pacotes que correspondem à regra <tt>pass</tt> sairem pela
-interface <tt>fxp0</tt>, eles serão enfileirados na fila <tt>ftp</tt>.
+Se os pacotes que correspondem à regra <tt>pass</tt> (ou ao estado 
+correspondente a esta regra) sairem pela interface <tt>fxp0</tt>, 
+eles serão enfileirados na fila <tt>ftp</tt>.
 Esse tipo de enfileiramento pode ser muito útil em roteadores.
 
 <p>
@@ -609,25 +622,6 @@ fila raiz para um valor como 600Kb deve resultar em uma melhora de
 desempenho. Tentativas e erros mostram a melhor configuração de
 <tt>bandwidth</tt>.
 
-<p>
-Ao utilizar a palavra-chave <tt>queue</tt> com regras
-<tt>keep state</tt> (que mantêm o estado), como:
-<blockquote>
-<tt>
-pass in on fxp0 proto tcp from any to any port 22 flags S/SA \<br>
-&nbsp;&nbsp;&nbsp;keep state queue ssh
-</tt>
-</blockquote>
-
-<p>
-O PF grava uma entrada para a fila na tabela de estados, de forma que
-pacotes saindo pela <tt>fxp0</tt> que correspondam à conexão "stateful"
-serão enviados para a fila <tt>ssh</tt>. Perceba que apesar da
-palavra-chave <tt>queue</tt> estar sendo utilizada em uma regra
-que está filtrando tráfego de entrada, o objetivo é especificar uma
-fila para o tráfego de saída correspondente; a regra acima não enfileira
-pacotes que estão chegando.
-
 <a name="example1"></a>
 <h2>Exemplo 1: Rede Pequena, doméstica</h2>
 <pre>
@@ -663,10 +657,7 @@ A política de enfileiramento para essa rede:
 <p>
 Abaixo o conjunto de regras adequado à política da rede. Perceba
 que somente diretivas <tt>pf.conf</tt> que se aplicam diretamente à
-política descrita acima estão presentes;
-<a href="nat.html"><tt>nat</tt></a>,
-<a href="rdr.html"><tt>rdr</tt></a>, <a href="options.html">opções</a>,
-etc., não são mostradas.
+política descrita acima estão presentes.
 
 <p>
 <table border="0" width="650">
@@ -730,15 +721,14 @@ block in on fxp0 all
 
 # Regras de filtragem para o tráfego de saída em fxp0
 block out on fxp0 all
-pass  out on fxp0 inet proto tcp from (fxp0) to any flags S/SA \
-	keep state queue(std_out, tcp_ack_out)
-pass  out on fxp0 inet proto { udp icmp } from (fxp0) to any keep state
-pass  out on fxp0 inet proto { tcp udp } from (fxp0) to any port domain \
-	keep state queue dns_out
-pass  out on fxp0 inet proto tcp from (fxp0) to any port $ssh_ports \
-	flags S/SA keep state queue(std_out, ssh_im_out)
-pass  out on fxp0 inet proto tcp from (fxp0) to any port $im_ports \
-	flags S/SA keep state queue(ssh_im_out, tcp_ack_out)
+pass  out on fxp0 inet proto tcp from (fxp0) queue(std_out, tcp_ack_out)
+pass  out on fxp0 inet proto { udp icmp } from (fxp0)
+pass  out on fxp0 inet proto { tcp udp } from (fxp0) to port domain \
+	queue dns_out
+pass  out on fxp0 inet proto tcp from (fxp0) to port $ssh_ports \
+	queue(std_out, ssh_im_out)
+pass  out on fxp0 inet proto tcp from (fxp0) to port $im_ports \
+	queue(ssh_im_out, tcp_ack_out)
 
 # Regras de filtragem para o tráfego de entrada em dc0
 block in on dc0 all
@@ -746,14 +736,14 @@ pass  in on dc0 from $local_net
 
 # Regras de filtragem para o tráfego de saída em dc0
 block out on dc0 all
-pass  out on dc0 from any to $local_net
-pass  out on dc0 proto { tcp udp } from any port domain to $local_net \
-	queue dns_in
-pass  out on dc0 proto tcp from any port $ssh_ports to $local_net \
-	queue(std_in, ssh_im_in)
-pass  out on dc0 proto tcp from any port $im_ports to $local_net \
-	queue ssh_im_in
-pass  out on dc0 from any to $bob queue bob_in
+pass  out on dc0 to $local_net
+pass  out on dc0 proto { tcp udp } from port domain to $local_net \
+ 	queue dns_in
+pass  out on dc0 proto tcp from port $ssh_ports to $local_net \
+ 	queue(std_in, ssh_im_in)
+pass  out on dc0 proto tcp from port $im_ports to $local_net \
+ 	queue ssh_im_in
+pass  out on dc0 to $bob queue bob_in
 </pre>
 </td></tr>
 </table>
@@ -902,36 +892,32 @@ block on { fxp0, fxp1, dc0 } all
 
 # Regras de filtragem para o tráfego de entrada em fxp0
 pass in on fxp0 proto tcp from any to $wwwserv port { 21, \
-	&gt; 49151 } flags S/SA keep state queue www_ext_misc
-pass in on fxp0 proto tcp from any to $wwwserv port 80 \
-	flags S/SA keep state queue www_ext_http
+	&gt; 49151 } queue www_ext_misc
+pass in on fxp0 proto tcp from any to $wwwserv port 80 queue www_ext_http
 
 # Regras de filtragem para o tráfego de saída em fxp0
-pass out on fxp0 from $int_nets to any keep state
-pass out on fxp0 from $boss to any keep state queue boss_ext
+pass out on fxp0 from $int_nets
+pass out on fxp0 from $boss queue boss_ext
 
 # Regras de filtragem para o tráfego de entrada em dc0
-pass in on dc0 from $int_nets to any keep state
-pass in on dc0 from $it_net to any queue it_int
-pass in on dc0 from $boss to any queue boss_int
+pass in on dc0 from $int_nets
+pass in on dc0 from $it_net queue it_int
+pass in on dc0 from $boss queue boss_int
 pass in on dc0 proto tcp from $int_nets to $wwwserv port { 21, 80, \
-	&gt; 49151 } flags S/SA keep state queue www_int
+	&gt; 49151 } queue www_int
 
 # Regras de filtragem para o tráfego de saída em dc0
 pass out on dc0 from dc0 to $int_nets
 
 # Regras de filtragem para o tráfego de entrada em fxp1
-pass in on fxp1 proto { tcp, udp } from $wwwserv to any port 53 \
-	keep state
+pass in on fxp1 proto { tcp, udp } from $wwwserv to port 53
 
 # Regras de filtragem para o tráfego de saída em fxp1
-pass out on fxp1 proto tcp from any to $wwwserv port { 21, \
-	&gt; 49151 } flags S/SA keep state queue net_dmz_misc
-pass out on fxp1 proto tcp from any to $wwwserv port 80 \
-	flags S/SA keep state queue net_dmz_http
+pass out on fxp1 proto tcp to $wwwserv port { 21, \
+	&gt; 49151 } queue net_dmz_misc
+pass out on fxp1 proto tcp to $wwwserv port 80 queue net_dmz_http
 pass out on fxp1 proto tcp from $int_nets to $wwwserv port { 80, \
-	21, &gt; 49151 } flags S/SA keep state queue internal_dmz
-</pre>
+	21, &gt; 49151 } queue internal_dmz</pre>
 </td></tr>
 </table>
 
@@ -947,10 +933,10 @@ pass out on fxp1 proto tcp from $int_nets to $wwwserv port { 80, \
 <br>
 <small>
 <!--
-Originally [OpenBSD: queueing.html,v 1.38 ]<br>
-$Translation: queueing.html,v 1.15 2012/12/18 16:37:29 renato Exp $<br>
+Originally [OpenBSD: queueing.html,v 1.44 ]<br>
+$Translation: queueing.html,v 1.16 2013/01/13 20:11:22 egypcio Exp $<br>
 -->
-$OpenBSD: queueing.html,v 1.15 2012/12/19 19:53:39 ajacoutot Exp $
+$OpenBSD: queueing.html,v 1.16 2013/01/18 07:15:55 ajacoutot Exp $
 </small>
 
 </body>

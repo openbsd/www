@@ -65,10 +65,8 @@ Priorização</a>]
 Um grupo de endereços é como um estoque de dois ou mais endereços
 que têm seu uso compartilhado entre um grupo de usuários.
 Um grupo de endereços pode ser especificado como
-endereço de redirecionamento em regras
-<a href="rdr.html"><tt>rdr</tt></a>, como o endereço de tradução em
-regras <a href="nat.html"><tt>nat</tt></a> e como o endereço alvo de
-regras de <a href="filter.html">filtragem</a> com opções
+endereços de destino nas opções para 
+<a href="filter.html">regras</a> <tt>nat-to</tt>, <tt>rdr-to</tt>, 
 <tt>route-to</tt>, <tt>reply-to</tt> e <tt>dup-to</tt>.
 
 <p>
@@ -76,7 +74,7 @@ Existem quatro métodos de uso de grupos de endereços:
 <ul>
 <li><tt>bitmask</tt> - monta a porção de rede do endereço do grupo
     no endereço sendo modificado (endereço de origem para regras
-    <tt>nat</tt>, endereço de destino para regras <tt>rdr</tt>).
+    <tt>nat-to</tt>, endereço de destino para regras <tt>rdr-to</tt>).
     Exemplo: se o grupo de endereços é 192.0.2.1/24 e o endereço
     sendo modificado é 10.0.0.50, o endereço resultante será
     192.0.2.50. Se o grupo de endereços for 192.0.2.1/25
@@ -90,7 +88,7 @@ Existem quatro métodos de uso de grupos de endereços:
     A chave usada pelo algoritmo de dispersão pode ser opcionalmente
     especificada após a palavra-chave <tt>source-hash</tt>, em formato
     hexadecimal ou como uma string. Por padrão, o
-    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+4.6"
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+5.2"
     >pfctl(8)</a> gera uma chave aleatória toda vez que o
     conjunto de regras é carregado.
 <li><tt>round-robin</tt> - executa um laço através do
@@ -117,7 +115,7 @@ mesmo endereço de redirecionamento.
 <a name="nat"></a>
 <h2>Grupos de Endereços NAT</h2>
 Um grupo de endereços pode ser usado como endereço de
-tradução em regras <a href="nat.html"><tt>nat</tt></a>.
+tradução em regras <a href="nat.html"><tt>nat-to</tt></a>.
 As conexões terão seus endereços de origem traduzidos para
 um endereço no grupo baseando-se no método escolhido.
 Isso pode ser útil em situações onde o PF faz NAT para uma rede
@@ -132,7 +130,7 @@ usado para traduzir pacotes que saem da rede. Para cada conexão
 o PF alterna entre os endereços utilizando o método round robin.
 <blockquote>
 <tt>
-nat on $ext_if inet from any to any -&gt; { 192.0.2.5, 192.0.2.10 }
+match out on $ext_if inet nat-to { 192.0.2.5, 192.0.2.10 }
 </tt>
 </blockquote>
 
@@ -149,12 +147,12 @@ endereços deve ser um bloco de rede
 <a href="http://public.pacbell.net/dedicated/cidr.html">CIDR</a>.
 <blockquote>
 <tt>
-nat on $ext_if inet from any to any -&gt; 192.0.2.4/31 source-hash
+match out on $ext_if inet nat-to 192.0.2.4/31 source-hash
 </tt>
 </blockquote>
 
 <p>
-Essa regra <tt>nat</tt> usa o grupo de endereços 192.0.2.4/31
+Essa regra usa o grupo de endereços 192.0.2.4/31
 (192.0.2.4 - 192.0.2.5) como seu endereço de tradução
 para pacotes saindo da rede. Cada endereço interno será sempre
 traduzido para o mesmo endereço de tradução por causa da palavra-chave
@@ -169,7 +167,7 @@ podem ser distribuídos entre vários servidores.
 <tt>
 web_servers = "{ 10.0.0.10, 10.0.0.11, 10.0.0.13 }"<br>
 <br>
-rdr on $ext_if proto tcp from any to any port 80 -&gt; $web_servers \<br>
+match in on $ext_if proto tcp to port 80 rdr-to $web_servers \<br>
 &nbsp;&nbsp;&nbsp;&nbsp;round-robin sticky-address
 </tt>
 </blockquote>
@@ -212,22 +210,19 @@ ext_if2 = "fxp1"<br>
 ext_gw1 = "68.146.224.1"<br>
 ext_gw2 = "142.59.76.1"<br>
 <br>
-pass in on $int_if route-to \<br>
-&nbsp;&nbsp;&nbsp;{ ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) } round-robin \<br>
-&nbsp;&nbsp;&nbsp;from $lan_net to any keep state
-</tt>
+pass in on $int_if from $lan_net \<br>
+&nbsp;&nbsp;&nbsp;route-to { ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) }\<br>
+&nbsp;&nbsp;&nbsp;round-robin</tt>
 </blockquote>
 
 <p>
 A opção <tt>route-to</tt> é utilizada no tráfego chegando/entrando
 (<i>in</i>) na interface <i>interna</i> para especificar as interfaces
 de saída entre as quais será balanceado o tráfego, bem como seus
-respectivos gateways. Note que a opção <tt>route-to</tt> deve estar
-presente em <i>cada</i> regra de filtragem que o tráfego deva ser
-balanceado.
-Pacotes de retorno serão roteados de volta na mesma interface
-externa em que eles saíram (isso é feito pelos ISPs) e será
-roteado de volta para a rede interna normalmente.
+respectivos gateways.
+Note que a opção <tt>route-to</tt> deve estar presente em 
+<i>cada</i> regras de filtragem cujo tráfego esteja sendo balanceado
+(essa opção não pode ser usada com regras do tipo <tt>match</tt>).
 
 <p>
 Para ter certeza de que pacotes com endereço de origem pertencentes
@@ -236,10 +231,10 @@ a <tt>$ext_if1</tt> são sempre roteados para <tt>$ext_gw1</tt>
 as duas regras a seguir devem ser inseridas no conjunto de regras:
 <blockquote>
 <tt>
-pass out on $ext_if1 route-to ($ext_if2 $ext_gw2) from $ext_if2 \<br>
-&nbsp;&nbsp;&nbsp;to any<br>
-pass out on $ext_if2 route-to ($ext_if1 $ext_gw1) from $ext_if1 \<br>
-&nbsp;&nbsp;&nbsp;to any
+pass out on $ext_if1 from $ext_if2 \<br>
+&nbsp;&nbsp;&nbsp;route-to ($ext_if2 $ext_gw2)<br>
+pass out on $ext_if2 from $ext_if1 \<br>
+&nbsp;&nbsp;&nbsp;route-to ($ext_if1 $ext_gw1) 
 </tt>
 </blockquote>
 
@@ -247,8 +242,8 @@ pass out on $ext_if2 route-to ($ext_if1 $ext_gw1) from $ext_if1 \<br>
 Finalmente, NAT pode ser usada em cada interface de saída:
 <blockquote>
 <tt>
-nat on $ext_if1 from $lan_net to any -&gt; ($ext_if1)<br>
-nat on $ext_if2 from $lan_net to any -&gt; ($ext_if2)
+match out on $ext_if1 from $lan_net nat-to ($ext_if1)<br>
+match out on $ext_if2 from $lan_net nat-to ($ext_if2)
 </tt>
 </blockquote>
 
@@ -268,38 +263,36 @@ ext_if2 = "fxp1"
 ext_gw1 = "68.146.224.1"
 ext_gw2 = "142.59.76.1"
 
-# Faz nat em conexões de saída, em ambas as interfaces da Internet
-nat on $ext_if1 from $lan_net to any -&gt; ($ext_if1)
-nat on $ext_if2 from $lan_net to any -&gt; ($ext_if2)
+# nat em conexões de saída para cada interface de Internet
+match out on $ext_if1 from $lan_net nat-to ($ext_if1)
+match out on $ext_if2 from $lan_net nat-to ($ext_if2)
 
 # Nega por padrão
-block in  from any to any
-block out from any to any
+block in
+block out
 
 # Passa todo o tráfego de saída na interface interna
-pass out on $int_if from any to $lan_net
+pass out on $int_if to $lan_net
 # Aceita e passa direto quaisquer pacotes destinados ao próprio gateway
 pass in quick on $int_if from $lan_net to $int_if
-# Faz balanceamento de carga no tráfego TCP de saída da rede interna.
-pass in on $int_if route-to \
-    { ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) } round-robin \
-    proto tcp from $lan_net to any flags S/SA modulate state
-# Balanceamento de carga em tráfego udp e icmp vindo da rede interna
-pass in on $int_if route-to \
-    { ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) } round-robin \
-    proto { udp, icmp } from $lan_net to any keep state
+# Balanceamento do tráfego de saída partindo da rede interna.
+pass in on $int_if from $lan_net \
+    route-to { ($ext_if1 $ext_gw1), ($ext_if2 $ext_gw2) } \
+    round-robin
+# Manter tráfego HTTPS por apenas umas das conexões de saída para Internet;
+#  algumas aplicações "mais seguras" não permitem alteração das sessões HTTPS
+pass in on $int_if proto tcp from $lan_net to port https \
+    route-to ($ext_if1 $ext_gw1)
 
 # Regras gerais de permissão de tráfego de saída para as
 # interfaces externas
-pass out on $ext_if1 proto tcp from any to any flags S/SA modulate state
-pass out on $ext_if1 proto { udp, icmp } from any to any keep state
-pass out on $ext_if2 proto tcp from any to any flags S/SA modulate state
-pass out on $ext_if2 proto { udp, icmp } from any to any keep state
+pass out on $ext_if1
+pass out on $ext_if2
 
 # Roteia pacotes de quaisquer IPs na $ext_if1 para $ext_gw1, e faz
 # o mesmo para $ext_if2 e $ext_gw2
-pass out on $ext_if1 route-to ($ext_if2 $ext_gw2) from $ext_if2 to any
-pass out on $ext_if2 route-to ($ext_if1 $ext_gw1) from $ext_if1 to any
+pass out on $ext_if1 from $ext_if2 route-to ($ext_if2 $ext_gw2)
+pass out on $ext_if2 from $ext_if1 route-to ($ext_if1 $ext_gw1)
 </pre>
 </td></tr>
 </table>
@@ -317,10 +310,10 @@ Priorização</a>]
 <br>
 <small>
 <!--
-Originally [OpenBSD: pool.html,v 1.24 ]<br>
-$Translation: pools.html,v 1.14 2009/10/18 16:52:52 alan Exp $<br>
+Originally [OpenBSD: pool.html,v 1.32 ]<br>
+$Translation: pools.html,v 1.15 2013/01/13 20:11:22 egypcio Exp $<br>
 -->
-$OpenBSD: pools.html,v 1.14 2009/10/19 09:39:59 ajacoutot Exp $
+$OpenBSD: pools.html,v 1.15 2013/01/18 07:15:55 ajacoutot Exp $
 </small>
 
 </body>
