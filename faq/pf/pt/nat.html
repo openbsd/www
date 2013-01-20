@@ -51,7 +51,6 @@ please, use a max of 72 chars per line -->
 <ul>
 <li><a href="#intro">Introdução</a>
 <li><a href="#works">Como Funciona a NAT</a>
-<li><a href="#filter">NAT e Filtragem de Pacotes</a>
 <li><a href="#ipfwd">IP Forwarding</a>
 <li><a href="#config">Configuração da NAT</a>
 <li><a href="#binat">Mapeamento Bidirecional (mapeamento 1:1)</a>
@@ -140,24 +139,8 @@ máquina interna.
 A tradução de pacotes ICMP ocorre de maneira similar, mas sem alteração
 da porta de origem.
 
-<a name="filter"></a>
-<h2>NAT e Filtragem de Pacotes</h2>
-<p>
-<font color="#ff0000">NOTA:</font> Pacotes traduzidos ainda devem
-passar pelo sistema de filtragem e serão aceitos ou bloqueados
-baseando-se nas regras de filtragem definidas.
-A <i>única</i> exceção à regra se dá quando a palavra-chave
-<tt>pass</tt> é usada em uma regra <tt>nat</tt>.
-Isso faz com que os pacotes "NATeados" passem direto pelo sistema
-de filtragem.
-
-<p>
-Saiba também que, como a tradução ocorre <i>antes</i> da filtragem, o
-sistema de filtragem enxerga o pacote já <i>traduzido</i> para o
-endereço IP e porta conforme explicado em
-<a href="#works">Como Funciona a NAT</a>.
-
 <!-- legacy anchor; can eventually be removed -->
+<a name="filter"></a>
 <a name="enable"></a>
 <a name="ipfwd"></a>
 <h2>IP Forwarding</h2>
@@ -194,27 +177,50 @@ O IP forwarding será habilitado quando a máquina for reinicializada.
 
 <a name="config"></a>
 <h2>Configuração da NAT</h2>
-A forma geral de regras NAT no arquivo <tt>pf.conf</tt> se parece com:
+<font color="#ff0000">NOTA:</font> Estas informações são relevantes apenas ao OpenBSD 4.7.
+As configurações de NAT são significativamente diferentes nas versões mais atuais.
+<p>
+
+O uso de NAT é especificado através do uso do parâmetro opcional 
+<tt>nat-to</tt> atrelado a uma regra <tt>pass</tt> de saída.
+Geralmente, em vez de ser definida diretamente numa regra 
+<tt>pass</tt>, uma regra de <tt>match</tt> é utilizada.
+
+Quando um pacote é selecionado/marcado por uma regra <tt>match</tt>, 
+parâmetros (como o <tt>nat-to</tt>)presentes naquela regra são 
+armazenados e são aplicados ao pacote quando este pacote bate 
+com a regra de <tt>pass</tt>.
+
+Isso permite que uma grande quantidade de pacotes seja gerenciada por uma única regra <tt>match</tt> e então decisões específicas podem ser aplicadas através de regras <tt>block</tt> ou <tt>pass</tt>.
+<p>
+Regras contidas no arquivo <tt>pf.conf</tt> teriam as seguintes sintaxes:
 <blockquote>
 <tt>
-nat [pass] [log] on <i>interface</i> [<i>fam_de_end</i>] from <i>end_de_or</i>
-[port <i>porta_de_or</i>] to \<br>
-&nbsp;&nbsp;&nbsp;<i>end_de_dest</i> [port <i>porta_de_dest</i>] -&gt;
-<i>end_ext</i> [<i>tipo_de_grupo</i>] [static-port]
-</tt>
+match out on <i>interface</i> [<i>af</i>] \<br>
+&nbsp;&nbsp;&nbsp;from <i>src_addr</i> to <i>dst_addr</i> \<br>
+&nbsp;&nbsp;&nbsp;nat-to <i>ext_addr</i> [<i>pool_type</i>] [static-port]<br>
+...<br>
+pass out [log] on <i>interface</i> [<i>af</i>] [proto <i>protocol]</i> \<br>
+&nbsp;&nbsp;&nbsp;from <i>ext_addr</i> [port <i>src_port</i>] \<br>
+&nbsp;&nbsp;&nbsp;to <i>dst_addr</i> [port <i>dst_port</i>]</tt>
 </blockquote>
 
 <dl>
-<dt><tt>nat</tt>
-<dd>A palavra-chave que inicia uma regra NAT.
+<dt><tt>match</tt>
+<dd>When a packet traverses the ruleset and matches a <tt>match</tt>
+rule, any optional parameters specified in that rule are remembered
+for future use (made "sticky").
 
 <dt><tt>pass</tt>
-<dd>Faz com que pacotes traduzidos passem direto pelas regras de
-filtragem.
++<dd>This rule allows the packet to be transmitted.
++If the packet was previously matched by a <tt>match</tt> rule where
++parameters were specified, they will be applied to this packet.
++<tt>pass</tt> rules may have their own parameters; these take
++priority over parameters specified in a <tt>match</tt> rule.
 
 <dt><tt>log</tt>
 <dd>Pacotes que corresponderam são registrados via
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+4.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+5.2"
 >pflogd(8)</a>.
 Normalmente, apenas o primeiro pacote que corresponde é registrado.
 Para registrar todos os pacotes que corresponderam, use
@@ -222,12 +228,17 @@ Para registrar todos os pacotes que corresponderam, use
 
 <dt><tt><i>interface</i></tt>
 <dd>O nome ou grupo da interface de rede onde os pacotes devem ser
-traduzidos.
+transmitidos.
 
 <dt><tt><i>fam_de_end</i></tt>
 <dd>A família de endereços, <tt>inet</tt> para IPv4 ou
 <tt>inet6</tt> para IPv6. Normalmente o PF pode determinar essa
 informação com base no(s) endereço(s) de origem/destino.
+
+<dt><tt><i>protocol</i></tt>
+<dd>The protocol (e.g. tcp, udp, icmp) of packets to allow.
+If <i>src_port</i> or <i>dst_port</i> is specified, the protocol
+<em>must</em> also be given.
 
 <dt><tt><i>end_de_or</i></tt>
 <dd>O endereço de origem (interno) dos pacotes que serão
@@ -323,16 +334,17 @@ serão traduzidos. O endereço externo pode ser especificado como:
     <a href="http://public.pacbell.net/dedicated/cidr.html">CIDR</a>.
 <li>Um nome de domínio totalmente qualificado que será resolvido pelo
     servidor DNS quando a regra for carregada.
-<li>O nome da interface de rede externa. Quaisquer endereços IP
-    atribuídos à interface serão substituídos na regra quando for
-    carregada.
-<li>O nome da interface de rede externa entre parêntesis
+<li>O nome de uma interface ou de um grupo de interfaces da rede externa.
+    Quaisquer endereços IP atribuídos à interface serão substituídos 
+    na regra quando for carregada.
+<li>O nome de uma interface ou de um grupo de interfaces da rede externa entre parêntesis
     <tt>( )</tt>. Isso informa ao PF para atualizar a regra caso o(s)
     endereço(s) da interface sofra(m) alterações. É muito útil quando a
     interface externa tem seu endereço IP atribuído via DHCP ou discada,
     pois o conjunto de regras não precisa ser recarregado toda vez que
     o endereço mudar.
-<li>O nome da interface de rede seguido de um destes modificadores:
+<li>O nome de uma interface ou de um grupo de interfaces de rede, 
+    seguidos de um destes modificadores:
   <ul>
   <li><tt>:network</tt> - substitui o bloco de rede CIDR (por exemplo,
       192.168.0.0/24)
@@ -341,7 +353,7 @@ serão traduzidos. O endereço externo pode ser especificado como:
   </ul>
   <dl>
   <dd>Além disso, o modificador <tt>:0</tt> pode ser acrescentado a um
-  nome de interface ou a qualquer um dos modificadores acima para
+  nome/grupo de interfaces ou a qualquer um dos modificadores acima para
   indicar que o PF não deve incluir apelidos de endereços IP na
   substituição.
   Esses modificadores também podem ser usados quando a interface está
@@ -363,10 +375,17 @@ UDP.
 </dl>
 
 <p>
-Isso nos levaria à criação de uma regra básica similar a esta:
+Isso nos levaria à criação de regras básicas similares como estas:
 <blockquote>
 <tt>
-nat on tl0 from 192.168.1.0/24 to any -&gt; 24.5.0.5
+match out on tl0 from 192.168.1.0/24 to any nat-to 24.5.0.5<br>
+pass on tl0 from 192.168.1.0/24 to any
+</tt>
+</blockquote>
+ou você poderia simplesmente usar algo como:
+<blockquote>
+<tt>
+pass out on tl0 from 192.168.1.0/24 to any nat-to 24.5.0.5
 </tt>
 </blockquote>
 
@@ -385,7 +404,7 @@ Faça a comparação com uma linha que facilita um pouco a
 manutenção (<tt>tl0</tt> é externa, <tt>dc0</tt> interna):
 <blockquote>
 <tt>
-nat on tl0 from dc0:network to any -&gt; tl0
+pass out on tl0 from dc0:network to any nat-to tl0
 </tt>
 </blockquote>
 
@@ -406,7 +425,7 @@ endereço de tradução automaticamente, colocando o nome da interface
 entre parêntesis:
 <blockquote>
 <tt>
-nat on tl0 from dc0:network to any -&gt; (tl0)
+pass out on tl0 from dc0:network to any nat-to (tl0)
 </tt>
 </blockquote>
 
@@ -415,16 +434,18 @@ Esse método funciona para tradução tanto de endereços IPv4 quanto IPv6.
 
 <a name="binat"></a>
 <h2>Mapeamento Bidirecional (mapeamento 1:1)</h2>
-Um mapeamento bidirecional pode ser estabelecido através do uso da
-regra <tt>binat</tt>. Uma regra <tt>binat</tt> estabelece o mapeamento
-um para um entre um endereço IP interno e um endereço externo.
-Isso pode ser útil, por exemplo, para disponibilizar um servidor Web
-na rede interna que possua seu próprio IP externo.
-As conexões vindas da Internet para esse endereço externo serão
-traduzidas para o endereço interno e as conexões do servidor Web
-(como pesquisas DNS) serão traduzidas para o endereço externo.
-Portas TCP e UDP nunca são alteradas por regras <tt>binat</tt> como
-acontece com regras <tt>nat</tt>.
+A bidirectional mapping can be established by using the 
+<tt>binat-to</tt> parameter.
+A <tt>binat-to</tt> rule establishes a one to one mapping between
+an internal IP address and an external address.
+This can be useful, for example, to provide a web server on
+the internal network with its own external IP address.
+Connections from the Internet to the external address will
+be translated to the internal address and connections from
+the web server (such as DNS requests) will be translated
+to the external address.
+TCP and UDP ports are never modified with <tt>binat-to</tt>
+rules as they are with <tt>nat</tt> rules.
 
 <p>
 Exemplo:
@@ -433,19 +454,20 @@ Exemplo:
 web_serv_int = "192.168.1.100"<br>
 web_serv_ext = "24.5.0.6"<br>
 <br>
-binat on tl0 from $web_serv_int to any -&gt; $web_serv_ext<br>
+pass on tl0 from $web_serv_int to any binat-to $web_serv_ext<br>
 </tt>
 </blockquote>
 
 <a name="except"></a>
 <h2>Exceções em Regras de Tradução</h2>
-Exceções às regras de tradução podem ser feitas usando-se a
-palavra-chave <tt>no</tt>. Por exemplo, se o exemplo de NAT acima fosse
-alterado para:
+If you need to translate most traffic, but provide exceptions in
+some cases, make sure that the exceptions are handled by a filter rule
+which does not include the nat-to parameter.
+For example, if the NAT example above was modified to look like this:
 <blockquote>
 <tt>
-no nat on tl0 from 192.168.1.208 to any<br>
-nat on tl0 from 192.168.1.0/24 to any -&gt; 24.2.74.79
+pass out on tl0 from 192.168.1.0/24 to any nat-to 24.2.74.79<br>
+pass out on tl0 from 192.168.1.208 to any<br>
 </tt>
 </blockquote>
 
@@ -453,16 +475,10 @@ nat on tl0 from 192.168.1.0/24 to any -&gt; 24.2.74.79
 Então toda a rede 192.168.1.0/24 teria seus pacotes traduzidos para
 o endereço externo 24.2.74.79, exceto a máquina 192.168.1.208.
 
-<p>
-Note que a primeira regra que corresponde vence; se for uma regra
-<tt>no</tt>, o pacote não é traduzido. A palavra-chave <tt>no</tt>
-também pode ser usada com regras <tt>binat</tt> e
-<a href="rdr.html"><tt>rdr</tt></a>.
-
 <a name="status"></a>
 <h2>Verificação do Status da NAT</h2>
 O
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+4.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8&amp;manpath=OpenBSD+5.2"
 >pfctl(8)</a>
 com a opção <tt>-s state</tt> é usado para verificar as traduções
 NAT ativas.
@@ -470,8 +486,8 @@ Essa opção lista todas as sessões NAT ativas:
 
 <pre>
    # pfctl -s state
-   fxp0 TCP 192.168.1.35:2132 -&gt; 24.5.0.5:53136 -&gt; 65.42.33.245:22 TIME_WAIT:TIME_WAIT
-   fxp0 UDP 192.168.1.35:2491 -&gt; 24.5.0.5:60527 -&gt; 24.2.68.33:53   MULTIPLE:SINGLE
+   fxp0 tcp 192.168.1.35:2132 (24.5.0.5:53136) -&gt; 65.42.33.245:22 TIME_WAIT:TIME_WAIT
+   fxp0 udp 192.168.1.35:2491 (24.5.0.5:60527) -&gt; 24.2.68.33:53   MULTIPLE:SINGLE
 </pre>
 
 <p>
@@ -528,9 +544,9 @@ está se conectando.
 <small>
 <!--
 Originally [OpenBSD: nat.html,v 1.31 ]<br>
-$Translation: nat.html,v 1.12 2009/11/12 10:00:47 alan Exp $<br>
+$Translation: nat.html,v 1.13 2013/01/19 02:36:06 egypcio Exp $<br>
 -->
-$OpenBSD: nat.html,v 1.12 2009/11/16 12:38:13 ajacoutot Exp $
+$OpenBSD: nat.html,v 1.13 2013/01/20 07:39:01 ajacoutot Exp $
 </small>
 
 </body>
