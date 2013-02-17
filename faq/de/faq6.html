@@ -1367,7 +1367,7 @@ nicht extern administrierbar oder wartbar sein (was auch ein Feature sein
 kann).
 
 <p>
-<h3>Ein Beispiel einer Bridgeanwendung</h3>
+<h3>Ein einfaches Beispiel einer Bridgeanwendung</h3>
 
 <p>
 Eines meiner Computerracks hat eine Anzahl alter Systeme, von denen
@@ -1446,6 +1446,95 @@ fließen ja in beide Richtungen.
 
 <p>
 Das war es! Starte neu und du wirst eine funktionierende Bridge haben.
+
+<p>
+<h3>Eine als DHCP-Server fungierende Brücke</h3>
+
+<p>
+Angenommen, wir verfügen über ein kleines System, das vier
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vr&amp;sektion=4"
+>vr(4)</a> Schnittstellen besitzt, vr0 bis vr3.
+Wir möchten vr1, vr2 und vr3 mit einer Brücke verbinden, und vr0 als
+Netzanbindung (z.&nbsp;B. für ein Kabelmodem) auslassen.
+Ebenso möchten wir IP-Adressen durch DHCP über die verbrückten Schnittstellen
+anbieten.
+Als DHCP-Server und Router für die Netzanbindung muss die Maschine über eine
+IP-Adresse in dem verbrückten Netzwerk verfügen (im Gegensatz zum vorigen
+Beispiel, in welchem die überbrückende Maschine im Netzwerk nicht sichtbar
+war).
+
+<p>
+Es ist nicht möglich, einer
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridge&sektion=4"
+>bridge(4)</a>-Schnittstelle eine IP-Adresse direkt zuzuweisen.
+Die IP-Adresse sollte einem der teilnehmenden Schnittstellen hinzugefügt
+werden, jedoch können wir keine physische Schnittstelle benutzen, da keine
+aktive Anbindung an das Netz vorhanden sein könnte, in welchem Falle die
+Adresse nicht erreichbar wäre.
+Glücklicherweise, beginnend mit OpenBSD 4.7, gibt es einen Treiber für eine
+virtuelle Ethernet-Schnittstelle, nämlich
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vether&sektion=4"
+>vether(4)</a>, der für diese Zweck genutzt werden kann.
+Wir fügen ihn der Brücke hinzu, weisen ihm die IP-Adresse zu, und lassen
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dhcpd&sektion=8"
+>dhcpd(8)</a> dort auf Anfragen warten.
+
+<p>
+Bemerkungen:
+
+<ul>
+<li>Die <a href="#DHCPserver">DHCP-Server-Konfiguration</a> wird hier nicht
+noch einmal beschrieben, da das Adressschemata das gleiche ist.
+<li>Dies wird ebenfalls der Router für die Netzanbindung unseres überbrückten
+Netzwerks, sodass wir die IP-Adresse 192.168.1.1 nutzen, um der
+DHCP-Serverkonfiguration zu entsprechen.
+<li>Wir besprechen hier weder die Konfiguration der Netzanbindung, des Routings
+noch der Firewall.</li>
+</ul>
+
+<p>Als erstes kennzeichne vr1, vr2 and vr3 als aktiv:
+
+<blockquote><pre>
+$ <b>cat /etc/hostname.vr1</b>
+up
+$ <b>cat /etc/hostname.vr2</b>
+up
+$ <b>cat /etc/hostname.vr3</b>
+up
+</pre></blockquote>
+
+<p>
+Erzeuge dann die Konfiguration für vether0:
+
+<blockquote><pre>
+$ <b>cat /etc/hostname.vether0</b>
+inet 192.168.1.1 255.255.255.0 192.168.1.255
+up
+</pre></blockquote>
+
+<p>
+Wir konfigurieren die Brückenschnittstelle, sodass sie alle oben aufgeführten
+Schnittstellen enthält:
+
+<blockquote><pre>
+$ <b>cat /etc/hostname.bridge0</b>
+add vether0
+add vr1
+add vr2
+add vr3
+up
+</pre></blockquote>
+
+<p>
+Und schlussendlich lassen wir dhcpd(8) auf der vether0-Schnittstelle lauschen:
+
+<blockquote><pre>
+$ <b>grep ^dhcpd_flags= /etc/rc.conf.local</b>
+dhcpd_flags="vether0"
+</pre></blockquote>
+
+<p>
+Starte den Computer neu -- und voil&agrave;!
 
 <p>
 <h3>Filtern auf der Bridge</h3>
@@ -2067,13 +2156,11 @@ Aironet Communications 4500/4800.
 <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ath&amp;sektion=4">ath(4)</a>
 driver for Atheros 802.11a/b/g. <sup>(AP)</sup>
 <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=athn&amp;sektion=4">athn(4)</a>
-driver for Atheros 80211/a/g/n devices.
+driver for Atheros 802.11/a/g/n devices.
 <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=atu&amp;sektion=4">atu(4)</a>
 Atmel AT76C50x USB 802.11b
 <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=atw&amp;sektion=4">atw(4)</a>
 ADMtek ADM8211.
-<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=awi&amp;sektion=4">awi(4)</a>
-AMD 802.11 PCnet Mobile.
 <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bwi&amp;sektion=4">bwi(4)</a>
 Broadcom AirForce 802.11b/g
 <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=cnw&amp;sektion=4">cnwi(4)</a>
@@ -2267,10 +2354,10 @@ Routingtabelle dementsprechend anzupassen.
 <br>
 <small>
 <!--
-Originally [OpenBSD: faq6.html,v 1.304 ]<br>
-$Translation: faq6.html,v 1.169 2012/11/02 23:41:47 steffen Exp $<br>
+Originally [OpenBSD: faq6.html,v 1.306 ]<br>
+$Translation: faq6.html,v 1.171 2013/02/16 12:22:52 steffen Exp $<br>
 -->
-$OpenBSD: faq6.html,v 1.138 2012/11/04 08:15:48 ajacoutot Exp $
+$OpenBSD: faq6.html,v 1.139 2013/02/17 08:05:41 ajacoutot Exp $
 </small>
 
 </body>
