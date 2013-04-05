@@ -69,7 +69,7 @@ please, use a max of 72 chars per line -->
 Filtragem de pacotes é o bloqueio ou liberação de maneira seletiva da
 passagem de pacotes de dados, conforme eles atravessam uma interface de
 rede. O critério que o
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+4.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf&amp;sektion=4&amp;manpath=OpenBSD+5.2"
 >pf(4)</a> usa quando inspeciona pacotes é baseado na Camada 3
 (<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ip&amp;sektion=4"
 >IPv4</a> e
@@ -129,7 +129,7 @@ ou <tt>block return</tt> na regra.
 
 <dt><tt>log</tt>
 <dd>Especifica que o pacote deve ser registrado via
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+4.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+5.2"
 >pflogd(8)</a>. Se a regra cria um estado, somente o pacote que
 estabeleceu o estado é registrado.
 Para registrar todos pacotes, use <tt>log (all)</tt>.
@@ -180,7 +180,7 @@ informação com base no(s) endereço(s) de origem e/ou destino do pacote.
 especificados como:
 <ul>
 <li>Um único endereço IPv4 ou IPv6.
-<li>Um bloco de rede <a href="http://public.pacbell.net/dedicated/cidr.html"
+<li>Um bloco de rede <a href="http://public.swbell.net/dedicated/cidr.html"
     >CIDR</a>.
 <li>Um nome de domínio totalmente qualificado que será resolvido pelo
     DNS quando o conjunto de regras for carregado. Todos os endereços IP
@@ -265,16 +265,20 @@ são especificados como:
 <tt>flags <i>a_verificar</i>/<i>máscara</i></tt>. Por exemplo: <tt>flags
 S/SA</tt> - instrui o PF a verificar somente os sinalizadores S e A
 (SYN e ACK) e corresponder somente se apenas o sinalizador SYN estiver
-"ligado". No OpenBSD 4.1 e versões recentes, os sinalizadores padrão
+"ligado" (e é aplicado, por padrão, em todas as regras que referenciem 
+o protocolo TCP). No OpenBSD 4.1 e versões recentes, os sinalizadores padrão
 <tt>S/SA</tt> são aplicados em todas as regras de filtragem TCP.
+<tt>flags <i>any</i></tt> diz ao PF para não checar as flags.
 
 <dt><tt><i>estado</i></tt>
 <dd>Especifica se a informação de estado deve ser mantida em pacotes
 que correspondam à regra.
 <ul>
+<li><tt>no state</tt> - funciona com TCP, UDP e ICMP. Assim o PF 
+não tratará a conexão como statefull. Para conexões TCP, o uso 
+de <tt>flags any</tt> também é necessário.
 <li><tt>keep state</tt> - funciona com TCP, UDP e ICMP.
-    No OpenBSD 4.1 e versões recentes, essa opção é o padrão para todas
-    as regras de filtragem.
+    Essa opção é o padrão para todas as regras de filtragem.
 <li><tt>modulate state</tt> - funciona apenas com TCP. O PF irá gerar
     Números de Sequência Inicial (ISN - "Initial Sequence Number")
     seguros para os pacotes que correspondam à regra.
@@ -352,7 +356,7 @@ Vejamos alguns exemplos:
 Errado:
 <blockquote>
 <tt>
-block in on fxp0 proto tcp from any to any port ssh<br>
+block in on fxp0 proto tcp to port ssh<br>
 pass &nbsp;in all
 </tt>
 </blockquote>
@@ -365,7 +369,7 @@ algum, pois é seguida de uma linha que permite a passagem de tudo.
 Melhor:
 <blockquote>
 <tt>
-block in quick on fxp0 proto tcp from any to any port ssh<br>
+block in quick on fxp0 proto tcp to port ssh<br>
 pass &nbsp;in all
 </tt>
 </blockquote>
@@ -406,14 +410,11 @@ conjunto de regras, mas também os pacotes de resposta do receptor
 para o transmissor.
 
 <p>
-A partir do OpenBSD 4.1, todas as regras de filtragem criam
-automaticamente uma entrada de estado quando um pacote corresponde à
-regra.
-Em versões antigas do OpenBSD, a regra de filtragem tinha que
-usar explicitamente a opção <tt>keep state</tt>.
+Todas as regras <i>pass</i> automaticamente criam um registro 
+de estado quando um pacote corresponde aquela regra. 
+Esse comportamento pode ser explicitamente desabilitado 
+utilizando <tt>no state</tt>.
 
-<p>
-Exemplo de uso no OpenBSD 4.1 e versões recentes:
 <blockquote>
 <tt>
 pass out on fxp0 proto tcp from any to any
@@ -421,20 +422,12 @@ pass out on fxp0 proto tcp from any to any
 </blockquote>
 
 <p>
-Exemplo de uso no OpenBSD 4.0 e versões anteriores:
-<blockquote>
-<tt>
-pass out on fxp0 proto tcp from any to any keep state
-</tt>
-</blockquote>
-
-<p>
-Isso permite qualquer tráfego TCP saindo pela interface <tt>fxp0</tt>,
-bem como o tráfego retornando em resposta ao firewall. Além do recurso
-de manter estado ser uma excelente característica, seu uso ainda
-melhora o desempenho do firewall, pois pesquisas na tabela de estados
-são muito mais rápidas do que passar o pacote por todas as regras de
-filtragem.
+Isso permite que qualquer tráfego TCP saia pela interface <tt>fxp0</tt>,
+bem como o tráfego retornando em resposta ao firewall. 
+Manter estados de conexões dão um aumento significativo na performance 
+do seu firewall, uma vez que consultas aos registros de estados já 
+existentes é muito mais rápido que fazer o pacote percorrer outras 
+regras de filtragem.
 
 <p>
 A opção <tt>modulate state</tt> funciona como a <tt>keep state</tt>,
@@ -443,8 +436,10 @@ exceto que ela se aplica apenas a pacotes TCP. Com
 de conexões saindo do firewall é aleatório.
 Isso é útil para proteger conexões iniciadas por certos
 sistemas operacionais que não fazem um bom trabalho ao escolher ISNs.
-Desde o OpenBSD 3.5, a opção <tt>modulate state</tt> pode ser usada
-também em regras que especifiquem protocolos diferentes do TCP.
+Com intuito de criar conjuntos de regras mais simples, utilizar 
+<tt>modulate state</tt> como uma opção na regra pode ser feito para 
+regras que não especifiquem o protocolo TCP; nesses casos o PF 
+tratará a regra como <tt>keep state</tt>.
 
 <p>
 Para manter o estado em pacotes TCP, UDP e ICMP, e modular ISNs TCP:
@@ -482,15 +477,6 @@ pass out on fxp0 proto { tcp, udp, icmp } from any \<br>
 <p>
 Essa regra define que para um pacote corresponder à entrada na tabela de
 estados, ele deve estar transitando na interface <tt>fxp0</tt>.
-
-
-<p>
-Perceba que para regras
-<a href="nat.html"><tt>nat</tt></a>,
-<a href="nat.html#binat"><tt>binat</tt></a> e
-<a href="rdr.html"><tt>rdr</tt></a> é implícita
-a criação de estados para conexões válidas desde que os pacotes tenham
-passado pelo conjunto de regras de filtragem.
 
 <a name="udpstate"></a>
 <h2>Mantendo o Estado Para UDP</h2>
@@ -699,55 +685,33 @@ O uso da palavra-chave <tt>any</tt> permite que qualquer combinação de
 sinalizadores esteja definida no cabeçalho.
 <blockquote>
 <tt>
-pass in on fxp0 proto tcp from any to any port ssh flags S/SA
+pass in on fxp0 proto tcp from any to any port ssh flags S/SA <br>
+pass in on fxp0 proto tcp from any to any port ssh
 </tt>
 </blockquote>
 
 <p>
-A regra acima autoriza tráfego TCP com o sinalizador SYN definido, mas
-verifica somente os sinalizadores SYN e ACK. Um pacote com os
-sinalizadores SYN e ECE corresponderia à regra acima, enquanto um pacote
-com SYN e ACK ou somente ACK não corresponderia.
+Como <tt>flags S/SA</tt> é utilizado por padrão, ambas as regras 
+são equivalentes. As duas regras acima deixam passar o tráfego TCP 
+com a flag SYN habilitada, preocupando-se em checar apenas as 
+flags SYN e ACK. Um pacote que tenha as flags SYN e ECE habilitadas 
+também cairá nas regras acima, enquanto um pacote com ambas as flags 
+habilitadas (SYN+ACK) ou apenas com a flag ACK habilitada não 
+corresponderá a nenhuma das regras acima.
 
 <p>
-No OpenBSD 4.1 e versões recentes, os sinalizadores aplicados por padrão
-nas regras TCP são <tt>flags S/SA</tt>.
-Combinando com o padrão do OpenBSD 4.1 de "<tt>keep state</tt>" (manter
-o estado) nas regras de filtragem, estas duas regras se tornaram
-equivalentes:
-<blockquote>
-<tt>
-pass out on fxp0 proto tcp all flags S/SA keep state<br>
-pass out on fxp0 proto tcp all
-</tt>
-</blockquote>
+O sinalizador de flags padrão pode ser sobrescrito usando a 
+opção <tt>flags</tt> conforme descrito anteriormente.
 
 <p>
-Cada regra corresponde à pacotes TCP com o sinalizador SYN marcado
-e o sinalizador ACK desmarcado, e cada uma cria um estado para os
-pacotes que corresponderam.
-Os sinalizadores padrão podem ser sobrescritos usando a opção
-<tt>flags</tt> conforme descrito acima.
-
-<p>
-No OpenBSD 4.0 e versões anteriores, não existiam sinalizadores padrão
-aplicados a nenhuma regra de filtragem.
-Cada regra tinha que especificar qual(is) sinalizador(es) corresponder,
-e também tinha que explicitar o uso da opção <tt>keep state</tt>.
-<blockquote>
-<tt>
-pass out on fxp0 proto tcp all flags S/SA keep state
-</tt>
-</blockquote>
-
-<p>
-Deve-se tomar cuidado ao usar sinalizadores -- entenda o que você está
-fazendo e o porquê, e tenha cuidado com conselhos dados pelos outros,
-pois grande parte deles são incorretos. Algumas pessoas sugerem a
-criação de estado "somente se o sinalizador SYN estiver marcado, e
-nenhum outro". Essa regra deve ficar assim:
+Deve-se tomar cuidado ao usar sinalizadores - entenda o que você está
+fazendo e o porquê de estar fazendo isso - tenha cuidado com 
+conselhos dados pelos outros, pois grande parte deles são incorretos.
+Algumas pessoas sugerem a criação de estado 
+"somente se o sinalizador SYN estiver marcado, e nenhum outro". 
+Fique atento! Se seguir esse conselho, a regra ficaria assim:
 <pre>
-     . . . flags S/FSRPAUEW  <i>má ideia!!</i>
+. . . flags S/FSRPAUEW <i>UMA PÉSSIMA IDÉIA!!!</i>
 </pre>
 
 <p>
@@ -767,13 +731,13 @@ então esta combinação seria segura:
 </blockquote>
 
 <p>
-Além de ser prático e seguro, também não é necessário verificar os
-sinalizadores FIN e RST caso o tráfego passe antes por regras de
-<!--XXX scrub-->
-scrub. No processo de normalização o PF descarta quaisquer pacotes que
-cheguem com combinações de sinalizadores TCP inválidas (como SYN e RST)
-e normaliza combinações ambíguas em potencial (como SYN e FIN).
-
+<!--XXX scrub changes may have invalidated this-->
+Embora seja prático e seguro, também é totalmente desnecessário verificar os
+sinalizadores FIN e RST caso o tráfego passe antes por regras de <tt>scrub</tt>. 
+O processo de normalização adotado pelo uso de <tt>scrub</tt> fará com que o 
+PF discarte quaisquer combinações ilegais nas flags do protocolo TCP 
+(tais como SYN+RST) e normalizará potenciais combinações ambiguas 
+(tais como SYN+FIN).
 
 <a name="synproxy"></a>
 <h2>Proxy de Pacotes TCP SYN</h2>
@@ -786,11 +750,16 @@ da forma como eles vieram. O PF, porém, possui a habilidade de fazer
 proxy no aperto de mão. Com o uso de proxy no aperto de mão, o próprio
 PF completa o aperto de mão com o cliente, inicia um aperto de mão com
 o servidor, e então transfere pacotes entre os dois.
-O benefício desse procedimento é que nenhum pacote é enviado ao servidor
-antes do cliente completar o aperto de mão.
-Isso evita que ataques de inundação de pacotes TCP SYN falsificados
-atinjam o servidor porque uma conexão falsificada não conseguirá
-completar o aperto de mão.
+No caso de um ataque de flood SYN em TCP (jamais ocorrerá o "handshake" 
+completo) os pacotes de flood nunca chegarão ao servidor protegido, 
+mas clientes verdadeiros que tentem se conectar ao servidor 
+terão uma conexão estabelecida normalmente.
+Isso minimiza o impacto de floods de SYN em TCP forjados (spoofados) 
+destinados ao serviço protegido, tratando dos pacotes diretamente no PF. 
+O uso rotineiro desta opção não é recomendado, pois ele quebra o 
+comportamento esperado do protocolo TCP quando o servidor não pode 
+processar a solicitação e quando existe algum tipo de balanceamento de 
+carga relacionado so serviço provido por um determinado servidor.
 
 <p>
 O proxy de pacotes TCP SYN é habilitado usando as palavras-chave
@@ -798,8 +767,7 @@ O proxy de pacotes TCP SYN é habilitado usando as palavras-chave
 
 <blockquote>
 <tt>
-pass in on $ext_if proto tcp from any to $web_server port www \<br>
-&nbsp;&nbsp;&nbsp;flags S/SA synproxy state
+pass in on $ext_if proto tcp to $web_server port www synproxy state
 </tt>
 </blockquote>
 
@@ -839,7 +807,7 @@ antispoof [log] [quick] for <i>interface</i> [<i>fam_de_end</i>]
 <dt><tt>log</tt>
 <dd>Especifica que os pacotes que correspondam à regra devem ser
 registrados via
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+4.6"
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd&amp;sektion=8&amp;manpath=OpenBSD+5.2"
 >pflogd(8)</a>.
 
 <dt><tt>quick</tt>
@@ -927,8 +895,7 @@ de entrada em <i>todas</i> as interfaces.
 <h2>Unicast Reverse Path Forwarding</h2>
 
 <p>
-A partir do <a href="../../../40.html">OpenBSD 4.0</a>, o PF oferece o
-recurso de "Unicast Reverse Path Forwarding" (uRPF).
+O PF oferece o recurso de "Unicast Reverse Path Forwarding" (uRPF).
 Quando um pacote passa por uma verificação uRPF, o endereço
 de origem do pacote é procurado na tabela de roteamento.
 Se a interface de saída encontrada na entrada da tabela de roteamento
@@ -971,7 +938,7 @@ características do pacote TCP SYN contra um
 <a href="options.html#fingerprints">arquivo de impressões digitais</a>,
 que por padrão é o
 <a
-href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.os&amp;sektion=5&amp;manpath=OpenBSD+4.6"
+href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.os&amp;sektion=5&amp;manpath=OpenBSD+5.2"
 ><tt>/etc/pf.os</tt></a>.
 Quando o PF está habilitado, a lista atual de impressões digitais pode
 ser vista com o comando:
@@ -991,10 +958,10 @@ de filtragem, a palavra-chave <tt>os</tt> é usada:
 
 <blockquote>
 <tt>
-pass &nbsp;in on $ext_if from any os OpenBSD keep state<br>
-block in on $ext_if from any os "Windows 2000"<br>
-block in on $ext_if from any os "Linux 2.4 ts"<br>
-block in on $ext_if from any os unknown
+pass &nbsp;in on $ext_if proto tcp from any os OpenBSD keep state<br>
+block in on $ext_if proto tcp from any os "Windows 2000"<br>
+block in on $ext_if proto tcp from any os "Linux 2.4 ts"<br>
+block in on $ext_if proto tcp from any os unknown
 </tt>
 </blockquote>
 
@@ -1035,7 +1002,7 @@ pass in quick on fxp0 all allow-opts
 Abaixo está um exemplo de conjunto de regras de filtragem. A máquina
 executando o PF funciona como firewall entre uma pequena rede interna
 e a Internet. São mostradas apenas as regras de filtragem; regras de
-<a href="queueing.html">enfileiramento</a>,
+<a href="queueing.html"><tt>enfileiramento</tt></a>,
 <a href="nat.html"><tt>nat</tt></a>,
 <a href="rdr.html"><tt>rdr</tt></a>,
 etc., foram deixadas de fora deste exemplo.
@@ -1074,8 +1041,8 @@ block return in quick on $int_if proto tcp from ! 192.168.0.15 \
 # Permite tráfego indo para e vindo da rede interna.
 # Estas regras criam entradas na tabela de estados devido
 # à opção padrão "keep state" que é aplicada automaticamente.
-pass in  on $int_if from $lan_net to any
-pass out on $int_if from any to $lan_net
+pass in  on $int_if from $lan_net
+pass out on $int_if to $lan_net
 
 # Permite tráfego tcp, udp e icmp saindo pela interface externa (Internet).
 # Conexões tcp serão moduladas, udp/icmp manterão o estado.
@@ -1084,11 +1051,11 @@ pass out on $ext_if proto { tcp udp icmp } all modulate state
 # Permite conexões ssh na interface externa contanto que NÃO sejam
 # destinadas ao firewall (ou seja, conexões destinadas à máquinas na
 # rede local). Registra o pacote inicial para que mais tarde possamos
-# saber quem tentou se conectar. Usa o tcp syn proxy nas conexões.
-# Os sinalizadores "S/SA" padrão serão aplicados automaticamente na
-# regra pelo PF.
-pass in log on $ext_if proto tcp from any to ! &lt;firewall&gt; \
-   port ssh synproxy state
+# saber quem tentou se conectar. 
+# Descomente a última parte (synproxy state) para utilizar o synproxy 
+# para gerenciar a conexão.
+pass in log on $ext_if proto tcp to ! &lt;firewall&gt; \
+   port ssh # synproxy state
 </pre>
 </td></tr>
 </table>
@@ -1105,10 +1072,10 @@ pass in log on $ext_if proto tcp from any to ! &lt;firewall&gt; \
 <br>
 <small>
 <!--
-Originally [OpenBSD: filter.html,v 1.53 ]<br>
-$Translation: filter.html,v 1.16 2009/11/30 09:29:57 alan Exp $<br>
+Originally [OpenBSD: filter.html,v 1.66 ]<br>
+$Translation: filter.html,v 1.17 2013/04/03 22:35:05 egypcio Exp $<br>
 -->
-$OpenBSD: filter.html,v 1.16 2009/11/30 13:23:49 ajacoutot Exp $
+$OpenBSD: filter.html,v 1.17 2013/04/05 08:24:21 ajacoutot Exp $
 </small>
 
 </body>
