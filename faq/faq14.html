@@ -61,7 +61,7 @@
 <li><a href="#DiskOpt"    >14.18 - Optimizing disk performance</a>
 <li><a href="#Async"      >14.19 - Why aren't we using async mounts?</a>
 <li><a href="#altroot"    >14.20 - Duplicating your root partition: altroot</a>
-
+<li><a href="#softraid"   >14.21 - How do I use softraid(4)?</a>
 </ul>
 <hr>
 
@@ -2605,6 +2605,451 @@ For this reason, you may want to specify the root and altroot in
 <tt>/etc/fstab</tt> as a device name, not a DUID.
 
 
+<a name="softraid"></a>
+<h2>14.21 - How do I use softraid(4)?</h2>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=softraid&amp;sektion=4">Softraid(4)</a> 
+works by emulating a 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=scsibus&amp;sektion=4">scsibus(4)</a>
+with
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sd&amp;sektion=4">sd(4)</a>
+devices made by combining a number of OpenBSD
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=disklabel&amp;sektion=8">disklabel(8)</a>
+partitions ("chunks") into a virtual disk ("volume") with the desired
+RAID strategy ("discipline"), such as RAID0, RAID1, RAID4, RAID5 or
+Crypto.
+(Note: only RAID0, RAID1 and Crypto are fully supported at the moment.)
+
+<p>
+This virtual disk is treated as any other disk -- first
+partitioned with <a href="#fdisk">fdisk(8)</a> (on fdisk platforms)
+and then with <a href="#disklabel">disklabel(8)</a>, partitions have file
+systems made, mounted, then used.
+
+<p>
+<h4>Some words on RAID in general:</h4>
+<ul>
+<li>Before implementing any RAID solution, understand what it will and
+will not do for you.
+It is not a replacement for a good backup strategy.
+It will not keep your system running through every hardware failure.
+It may not keep your system running through a simple disk failure.
+In the case of software RAID, it won't guarantee the ability to boot
+from the surviving drive if your computer could not otherwise do so.
+
+<li>Before going into production, you must understand how you use your
+RAID solution to recover from failures.
+The time to do this is BEFORE your system has had a failure event.
+Poorly implemented RAID will often cause more down time than it will 
+prevent.
+This is even more true if it has caused you to become complacent on your
+backups or other disaster planning.
+
+<li>The bigger your RAIDed partitions are, the longer it will take to 
+recover from an "event".
+In other words, this is an especially bad time to allocate all of your 
+cheap 500G drives just because they are there.
+Remirroring 500G drives takes a much longer time than mirroring the
+4G that you actually use.
+One advantage of software mirroring is one can control how much of
+those "huge" drives is actually used in a RAID set.
+
+<li>There is a reflex to try to RAID as much of your system as possible.
+Mirroring your boot partition in a software RAID system is difficult,
+and often pointless, as most PC hardware has difficulty booting from any
+drive other than its primary boot drive.
+Even hardware which CAN boot from other drives will often have difficulty
+determining when a drive has failed to avoid booting from it.
+OpenBSD's "<a href="#altroot">altroot</a>" system can actually be BETTER
+for some applications, as it provides a copy of old configuration
+information in case a change does not work quite as intended.
+
+<li>RAID provides redundancy only for the disk system.
+Many applications need more redundancy than just the disks, and for some
+applications, RAID can be just added complication, rather than a real
+benefit.
+An example of this is a <a href="faq6.html#CARP">CARP'd</a> set of
+firewalls provide complete fail over redundancy.
+In this case, adding RAID (either via hardware or softraid) is just
+added complication.
+</ul>
+
+<h3>14.21.1 - Doing the install</h3>
+Softraid disk space can be created using free (or added!) chunks of
+disk space after install, but that is just a special (and simple)
+case of adding softraid during install.
+
+<p>
+The tools to assemble your softraid system are in the basic OpenBSD
+install (for adding softraid devices after install), but they are
+also available on the CD-ROM and <a href="faq4.html#bsd.rd">bsd.rd</a>
+installation kernels.
+They do not exist on the floppies due to space issues; one simple
+work-around is to do a very minimal OpenBSD install from floppy, then
+boot from bsd.rd on your installed system and re-build as desired.
+
+<p>
+The installation process will be a little different than the standard
+OpenBSD <a href="faq4.html">install</a>, as you will want to drop to
+the shell and create your softraid(4) drive before doing the install.
+Once the softraid(4) disk is created, you will perform the install
+relatively normally, placing the partitions you wish to be RAIDed on
+the newly configured drive.
+
+<p>
+You can just pre-create the just the RAID partitions and let the
+installer do the rest, but it is probably easier to create your root,
+swap and RAID partitions before invoking the installer.
+
+<p>
+This does mean you will have to carefully set up the disk before
+invoking the installer, making sure you manually do a few steps that the
+installer normally takes you through.
+
+<p>
+The install kernel only has the <tt>/dev</tt> entries for one wd(4)
+device and one sd(4) device on boot, so you will need to create more
+disk devices to set up your softraid device.
+
+This process is normally done automatically by the installer, but you
+haven't yet run the installer, and you will be adding a disk that didn't
+exist at boot.
+For example, if we needed to support a second and third wd(4) device
+and a second sd(4) device (remember, the softraid devices will be sd(4)
+devices), you could do the following from the shell prompt:
+
+<blockquote><pre>
+# <b>cd /dev</b>
+# <b>sh MAKEDEV wd1 wd2 sd1</b>
+</pre></blockquote>
+
+You now have full support for sd0, sd1, wd0, wd1 and wd2.
+
+<p>
+You will need to properly <a href="#fdisk">fdisk(1)</a> the physical
+drives (if appropriate for your platform -- make sure you set up the
+second disk so it is bootable!) and then use
+<a href="#disklabel">disklabel</a> to set up the partitions.
+
+<p>
+The fdisk(8) steps below will put an MBR on the disk and an OpenBSD
+partition on the disk.
+IF you wish to use the entire disk for OpenBSD (i.e., have NOTHING else
+on the disk), you can do this with a simple one-liner for each drive:
+
+<blockquote><pre>
+# <b>fdisk -iy wd0</b>
+# <b>fdisk -iy wd1</b>
+</pre></blockquote>
+
+(Do be sure you understand what those lines do to any data that was on
+your disk before using it blindly!)
+Otherwise, you will need to create an OpenBSD partition within the new
+disks.
+
+<h4>Create the partitions for softraid</h4>
+When creating the softraid(4) partition, give it the type of "RAID"
+rather than the normal "4.2BSD" or "swap".
+In this case, we will create our desired partitions on wd0:
+
+<ul>
+<li>wd0a  500M /
+<li>wd0b  500M swap
+<li>wd0m  10G RAID
+</ul>
+
+<blockquote><pre>
+# <b>disklabel -E wd0</b>
+Label editor (enter '?' for help at any prompt)
+> <b>a a</b>
+offset: [64] <b><i>ENTER</i></b> 
+size: [30282461] <b>500m</b>
+Rounding to cylinder (16065 sectors): 1028096
+FS type: [4.2BSD] <b><i>ENTER</i></b> 
+> <b>a b</b>
+offset: [1028160]  <b><i>ENTER</i></b> 
+size: [29254365] <b>500m</b>
+Rounding to cylinder (16065 sectors): 1028160
+FS type: [swap] <b><i>ENTER</i></b> 
+> <b>a m</b>
+offset: [3148740]  <b><i>ENTER</i></b>
+size: [28226205] <b>10g</b>
+Rounding to cylinder (16065 sectors): 20980890
+FS type: [4.2BSD] <b>RAID</b>
+> <b>q</b>
+Write new label?: [y] <b><i>ENTER</i></b>
+</pre></blockquote>
+
+<p>
+Now, we need to prep out the second disk to match key parts of the first
+disk's layout.
+Since we are using the <tt>/altroot</tt> system, we will want an 'a'
+partition on the secondary disk the same size as the primary's 'a'.
+We want the system to run off the second drive as it would the first,
+so we will want to have a similar sized swap partition (though a little
+bigger or smaller will not hurt).
+We will also want a RAID partition the same size as the primary.
+If the RAID partitions are not the same size, the smaller of the two
+will dictate the final RAID volume size.
+
+<p>
+In short...you really want to just repeat the above allocation process
+on the second drive, wd1.
+
+<h4>Assembling the RAID volume</h4>
+We will assume that your two RAID partitions are on wd0m and wd1m.
+Note that the RAID partition letter is arbitrary, it does not need to be
+the same letter on the secondary drive, but it will make keeping track
+of things that much easier for you if you keep them the same.
+
+<p>
+Note that since softraid(4) has to look around a bit to find evidence
+of arrays it needs to assemble, if your disk has been used for softraid
+previously, you may find it very helpful to use dd(1) to clear the first
+megabyte or so from each partition before going any further:
+
+<blockquote><pre>
+# <b>dd if=/dev/zero of=/dev/rwd0m bs=1m count=1</b>
+   ...
+# <b>dd if=/dev/zero of=/dev/rwd1m bs=1m count=1</b>
+   ...
+</pre></blockquote>
+
+<p>
+We now create our new softraid(4) disk using
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bioctl&amp;sektion=8">bioctl(8)</a>:
+
+<blockquote><pre>
+# <b>bioctl -c 1 -l /dev/wd0m,/dev/wd1m softraid0</b>
+</pre></blockquote>
+
+This creates a RAID1 volume ("<tt>-c 1</tt>"), using the listed
+partitions ("<tt>-l /dev/wd0m,/dev/wd1m</tt>"), using the
+<tt>softraid0</tt> driver.
+If there are no other sd(4) devices on this system, this will become
+sd0.
+Note that if you are creating multiple RAID devices, either on one disk
+or on multiple devices, you are always going to be using the softraid0
+virtual disk interface driver, you won't be using "softraid1" or others.
+Remember, the "softraid0" there is a virtual RAID controller, you can
+hang many virtual disks off this controller.
+
+<p>
+This will create a new disk, "sd0" (assuming there are no other sd(4)
+devices on your system).
+This device will now show on the system console and dmesg as a newly
+installed device:
+
+<blockquote><pre>
+scsibus1 at softraid0: 1 targets
+sd0 at scsibus2 targ 0 lun 0: &lt;OPENBSD, SR RAID 1, 005&gt; SCSI2 0/direct fixed
+sd0: 10244MB, 512 bytes/sec, 20980362 sec total
+</pre></blockquote>
+
+showing that we now have a new SCSI bus, and a new disk.
+This volume will be automatically detected and assembled from this point
+onwards when the system boots.
+
+<p>
+Because the new device probably has a lot of garbage where you expect
+a MBR and disklabel, zeroing the first chunk of the new disk is highly
+recommended, if you didn't zero the component parts above:
+
+<blockquote><pre>
+# dd if=/dev/zero of=/dev/rsd0c bs=1m count=1
+</pre></blockquote>
+
+You are now ready to install OpenBSD on your system.
+Perform the install as normal by invoking "install" at the boot media
+command prompt.
+Be careful to select "custom" layout for disklabel when prompted,
+otherwise your RAID partition will be overwritten!
+Use the 'n' option of disklabel to define the mount point for your root
+partition, and create all the partitions on your new softraid disk (sd0
+in our example here) that should be there, rather than on your non-RAID
+disks.
+
+<p>
+Now you can reboot your system, and if you have done all properly, it
+will automatically assemble your RAID set, and mount the appropriate
+partitions.
+
+<h3>14.21.3 - Softraid notes</h3>
+<h4>Complications when other sd(4) disks exist</h4>
+Softraid disks are assembled <i>after</i> all other IDE, SATA, SAS and
+SCSI disks are attached.
+As a result, if the number of sd(4) devices changes (either by adding
+or removing devices -- or if a device fails), the identifier of the
+softraid disk will change.
+For this reason, it is very important to use <a href="faq14.html">DUID</a>s
+(Disklabel Unique Identifiers) rather than drive names in your
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fstab&amp;sektion=5">fstab(5)</a>
+file.
+
+<p>
+You may not want to specify the root device by DUID.
+
+<h4>Three disk RAID1?</h4>
+Softraid supports RAID1 with more than two "chunks", and the man page
+examples show a three disk RAID1 configuration.
+RAID1 simply duplicates the data across all the chunks of storage, two
+gives full redundancy, three gives additional fault tolerance.
+The advantage of RAID1 with three (or more!) disks or chunks is that in
+event of one disk failure, you STILL have complete redundancy.
+Think of it as a hot spare that doesn't need time to rebuild!
+In theory, a three disk RAID1 is slower on writes than a two disk,
+though should be much faster on writes than a rebuilding two disk RAID1.
+
+<a name="softraidDR"></a>
+<h3>14.21.4 - Disaster recovery</h3>
+This is the section you want to skip over, but don't.
+This is the reason for RAID -- if disks never failed, you wouldn't add
+the complexity of RAID to your system!
+Unfortunately, as failures are very difficult to list comprehensively,
+there is a strong probability that the event you experience won't be
+described exactly here, but if you take the time to understand the
+strategies here, and the WHY, hopefully you can use them to recover
+from whatever situations come your way.
+
+<p>
+Keep in mind, failures are often not simple.
+The author of this article had a drive in a hardware RAID solution develop
+a short across the power feed, which in addition to the drive itself,
+also required replacing the power supply, the RAID enclosure and a power
+supply on a second computer he used to verify the drive was actually
+dead, and the data from backup as he didn't properly configure the
+replacement enclosure.
+
+<p>
+The steps needed for system recovery can be performed in 
+<a href="faq8.html#LostPW">singe user mode</a>, or from the
+<a href="faq4.html#bsd.rd">install kernel (bsd.rd)</a>.
+
+<p>
+If you plan on practicing softraid recovery (and we HIGHLY suggest you
+do so!), you may find it helpful to zero a drive you remove from the
+array before you attempt to return it to the array.
+Not only does this more accurately simulate replacing the drive with a
+new one, it will avoid the confusion that can result when the system
+detects the remains of a softraid array.
+
+<p>
+
+Recovery from a failure will often be a two-stage event -- the first
+stage is bringing the system back up to a running state, the second
+stage is to rebuild the failed array.
+The two stages may be separated by some time if you don't have a
+replacement drive handy.
+
+<h4>Recovery from drive failure: secondary</h4>
+This is relatively easy.
+You may have to remove the failed disk to get the system back up.
+
+<p>
+When you are ready to repair the system, you will replace the failed
+drive, create the RAID and other disklabel partitions, then rebuild the
+mirror.
+Assuming your RAID volume is <tt>sd0</tt>, and you are replacing the
+failed device with <tt>wd1m</tt>, the following process should work:
+
+<ul>
+<li>Boot the system back up.
+<li>Create appropriate partitions on your new drive
+<li>Rebuild your RAID partition:
+<blockquote><pre>
+# <b>bioctl -R /dev/wd1m sd0</b> 
+</pre></blockquote>
+<li>reboot
+</ul>
+
+<h4>Recovery from drive failure: primary</h4>
+Many PC-like computers can not boot from a second drive if the primary
+drive has failed, but still attached unless it is so dead it isn't
+detected.
+Many can not boot from a drive that isn't the "primary", even if there
+is no other drive.
+
+<p>
+In general, if your primary drive fails, you will have to remove it, and
+in many cases "promote" your secondary drive to primary configuration
+before the system will boot.
+This may involve re-jumpering the disk, plugging the disk into another
+port or some other variation.
+Of course, what is on the secondary disk has to not only include your RAID
+partition, but also has to be functionally bootable.
+
+<p>
+Once you have the system back up on the secondary disk and a new
+disk in place, you rebuild as above.
+
+
+<h4>Recovery from "shuffling" your disks</h4>
+What if you have four disks in your system, say, sd0, sd1, sd2, and sd3,
+and for reasons of hardware replacement or upgrade, you end up with the
+drives out of the machine, and lose track of which was which?
+
+<p>
+Fortunately, softraid handles this very well, it considers the disks
+"roaming", but will successfully rebuild your arrays.
+However, the boot disk in the machine has to be bootable, and if you
+just made changes in the root partition before doing this, you probably
+want to be sure you didn't boot from your altroot partition by mistake.
+OpenBSD's "<a href="#altroot">altroot</a>" system
+can actually be BETTER for some applications, as it provides a copy
+of old configuration information in case a change does not work quite as
+intended.
+
+<h3>14.21.5 - Softraid Crypto</h3>
+
+Cryptographic softraid(4) volumes are set up rather simply:
+
+<ul>
+<li>Create the desired partition with disklabel(8) as type RAID
+<li>Zero the head of the partition as above.
+<li><tt># <b>bioctl -c C -l /dev/sd0m softraid0</b><br>
+New passphrase: <b><i>My Crypto Pass Phrase</i></b><br>
+Re-type passphrase: <b><i>My Crypto Pass Phrase</i></b><br>
+softraid0: CRYPTO volume attached as sd1</tt>
+<li>fdisk(8), disklabel(8) and newfs(8) this new volume, sd1 as desired.
+</ul>
+
+Once this is set up, you can then "unlock" the crypto volume when desired
+with:
+<blockquote><pre>
+# <b>bioctl -c C -l /dev/sd1m</b>
+Passphrase: <b><i>My Crypto Pass Phrase</i></b>
+softraid0: CRYPTO volume attached as sd1
+</pre></blockquote>
+You can then mount the encrypted volume's partitions using mount as usual.
+
+<p>
+To disconnect a crypto volume (rendering it unusable again), dismount
+any file systems and use the following (where the encrypted volume is
+sd1):
+<blockquote><pre>
+# <b>bioctl -d sd1</b>
+</pre></blockquote>
+
+The man page for this looks a little scary, as the -d command is
+described as "deleting" the volume, but in the case of crypto, it just
+deactivates encrypted volume so it can't be accessed until it is
+activated again with the passphrase.
+
+<p>
+Many other options are available with softraid, and new features are
+being added and improvements made, so do consult the man pages for
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bioctl&amp;sektion=8">bioctl(8)</a>
+and
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=softraid&amp;sektion=4">softraid(4)</a>
+on your system.
+
+<h4>I forgot my passphrase!</h4>
+Sorry.
+This is real encryption, there's not a back door or magic unlocking
+tool.
+If you lose your passphrase, your data on your softraid crypto volume
+will be unusable.
+
+
 <p>
 <font color= "#0000e0">
 <a href= "index.html">[FAQ Index]</a>
@@ -2617,7 +3062,7 @@ For this reason, you may want to specify the root and altroot in
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq14.html,v 1.232 2013/05/31 16:46:32 nick Exp $</small>
+<small>$OpenBSD: faq14.html,v 1.233 2013/06/01 18:40:21 nick Exp $</small>
 
 </body>
 </html>
