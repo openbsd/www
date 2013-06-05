@@ -73,6 +73,7 @@
     Warum verwenden wir keine »async«hrone Einhängemodi?</a>
 <li><a href="#altroot"    >14.20 -
 		Duplikation deiner Wurzelpartition: »altroot«</a>
+<li><a href="#softraid"   >14.21 - Wie nutze ich softraid(4)?</a>
 </ul>
 <hr>
 
@@ -2739,7 +2740,7 @@ Zeitdauer des Prozesses zu reduzieren.
 
 <p>
 Für vollständige Redundanz sollten die übrigen Partitionen ebenfalls dupliziert
-werden, was mit Hilfe von <a href="#softraid">softraid</a>-Medien,
+werden, was mit Hilfe von »<a href="#softraid">softraid</a>«-Medien,
 dump(8)/restore(8), rsync etc. bewerkstelligt werden kann.
 Dies ist sowohl manuell möglich, als auch als Teil eines regelmäßigen
 Zeitplans, wie z.&nbsp;B. mit Hilfe der <tt>weekly.local</tt>,
@@ -2762,6 +2763,506 @@ Aus diesem Grund möchtest du eventuell sowohl die Wurzelpartition als auch jene
 von »altroot« in <tt>/etc/fstab</tt> über den Laufwerksnames anstatt einer DUID
 ansprechen.
 
+<a name="softraid"></a>
+<h2>14.21 - Wie nutze ich softraid(4)?</h2>
+
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=softraid&amp;sektion=4"
+>Softraid(4)</a> emuliert einen
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=scsibus&amp;sektion=4"
+>scsibus(4)</a> mit angeschlossenen
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sd&amp;sektion=4"
+>sd(4)</a>-Geräten, die mit Hilfe einer Anzahl von OpenBSD
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=disklabel&amp;sektion=8"
+>disklabel(8)</a>-Partitionen (»chunks«) zu einem virtuellen Datenträger
+(»volume«) kombiniert wurden, und zwar mit Hilfe der gewünschten RAID Strategie
+(»discipline«), wie, z.&nbsp;B., RAID0, RAID1, RAID4, RAID5 oder Crypto.
+(Anmerkung: nur RAID0, RAID1 und Crypto werden im Moment voll unterstützt.)
+
+<p>
+Dieser virtuelle Datenträger wird wie jedes andere Laufwerk behandelt --
+zuerst wird es mittels <a href="#fdisk">fdisk(8)</a> (auf fdisk-Plattformen)
+und dann <a href="#disklabel">disklabel(8)</a> partitioniert, Partitionen
+werden in Dateisysteme aufgebrochen, eingehängt, dann genutzt.
+
+<p>
+<h4>Einige generelle Worte zu RAID:</h4>
+<ul>
+<li>
+Bevor du eine RAID-Lösung implementierst, solltest du verstehen was es für dich
+tun kann, und was nicht.
+Es ist kein Ersatz für eine gute Datensicherungs-Strategie.
+Es wird dein System nicht sicher durch jeden Hardware-Ausfall leiten.
+Es mag sein, dass es noch nicht einmal dein System sicher über einen einfachen
+Laufwerksausfall hinübergeleitet.
+Im Falle von in Software implementierten RAID kann es nicht garantieren, dass
+das System vom überlebenden Laufwerk gestartet werden kann, wenn dein Computer
+es nicht auf andere Weise konnte.
+
+<li>
+Bevor du sie im Produktiv-Einsatz verwendest, solltest du verstehen, wie du
+mit deiner RAID-Lösung deine Daten im Fehlerfalle wieder herstellen kannst.
+Die Zeit, dies zu tun, ist BEVOR dein System einen Zwischenfall hatte.
+Schlecht implementiertes RAID produziert oft mehr Ausfallzeit als es nützt.
+Dies ist umso wahrer, solltes du selbstgefällig mit deiner Datensicherung oder
+deiner Fehlerfallplanung umgehen.
+
+<li>
+Je größer deine im RAID-Verbund eingebundenen Partitionen sind, je länger wird
+es dauern, sie nach einem »Zwischenfall« wiederherzustellen.
+In anderen Worten, dies ist eine denkbar schlechte Zeit, den gesamten
+Speicherplatz deiner billigen 500 G Laufwerke zu nutzen, nur, weil er da ist.
+Die Wiederherstellung von 500 G Laufwerken dauert viel länger, als jene der
+4 G, die du tatsächlich nutzt.
+Ein Vorteil von in Software implementierter Datenspiegelung ist, dass du es
+kontrollieren kannst, wie viel dieser »riesigen« Laufwerke tatsächlich für
+einen RAID-Verbund genutzt werden.
+
+<li>
+Es gibt diesen Reflex, so viel wie möglich von deinem System via RAID
+abzusichern.
+Das Spiegeln deiner Wurzelpartition ist mit einem Software-RAID schwer zu
+machen, und oft zwecklos, das ein nicht unbeträchtlicher Teil der PC-Hardware
+Schwierigkeiten hat, von einer anderen als der primären Startpartition zu
+starten.
+Sogar Hardware, die von anderen Laufwerken starten KANN, hat oft
+Schwierigkeiten festzustellen, wann ein Laufwerk einen Zwischenfall hatte, und
+daraufhin vermeidet, davon zu starten.
+OpenBSD's »<a href="#altroot">altroot</a>«-System kann für einige Anwendungen
+BESSER sein, da es eine Kopie alter Konfigurationsdaten vorhält, sollte ein
+Wechsel nicht wie erwartet funktionieren.
+
+<li>
+RAID bietet Redundanz einzig für Laufwerke.
+Viele Anwendungen benötigen mehr Redundanz als nur für Laufwerke, und für
+einige Anwendungen kann RAID auch nichts anderes als Verkomplizierung der Dinge
+anstatt eines echten Mehrwerts bedeuten.
+Ein Beispiel dafür wäre ein Verbund von <a href="faq6.html#CARP">CARP</a>
+Firewalls, der eine komplette Ausfallredundanz bietet.
+In diesem Fall bedeutet RAID (ob via Hard- oder Software) einzig hinzugefügte
+Verkomplizierung.
+</ul>
+
+<h3>14.21.1 - Installation</h3>
+TODO Softraid disk space can be created using free (or added!) chunks of<br>
+TODO disk space after install, but that is just a special (and simple)<br>
+TODO case of adding softraid during install.
+
+<p>
+Die Werkzeuge, die benötigt werden, um dein »softraid«-System
+zusammenzustellen, finden sich sämtlich in einer OpenBSD-Basisinstallation (zum
+Hinzufügen von »softraid«-Geräten nach der Installation), sind jedoch ebenfalls
+Teil der CD-ROM- und <a href="faq4.html#bsd.rd">bsd.rd</a>-Installationskernel.
+Aus Platzgründen finden sie sich nicht auf den Disketten;
+ein einfacher Weg, diese Restriktion zu umschiffen, ist die Installation eines
+minimalen OpenBSD von Diskette, gefolgt vom Start des bsd.rd des installierten
+Systems, gefolgt von einer Neuübersetzung mit allen gewünschten Eigenschaften.
+
+<p>
+Der Installationsprozess wird ein wenig anders sein als eine standardmäßige
+OpenBSD-<a href="faq4.html">Installation</a>, da du währenddessen zum
+Kommandozeileninterpreter wechseln und deine softraid(4)-Geräte erzeugen musst,
+und zwar bevor die eigentliche Installation startet.
+Sind die softraid(4)-Laufwerke erst einmal erzeugt, so kannst du die
+Installation relativ normal durchführen, und die von dir gewünschten
+Partitionen als RAID auf den neu konfigurierten Laufwerken platzieren.
+
+<p>
+TODO You can just pre-create the just the RAID partitions and let the<br>
+TODO installer do the rest, but it is probably easier to create your root,<br>
+TODO swap and RAID partitions before invoking the installer.
+
+<p>
+Dies bedeutet, dass du das Laufwerk vorsichtig vorbereiten musst, bevor du den
+Installationsprozess startest, und sicherstellst, dass du einige wenige
+Schritte manuell unternimmst, die dir normalerweise vom Installationsprogramm
+abgenommen werden.
+
+<p>
+Der Installationskernel besitzt in <tt>/dev</tt> zur Systemstartzeit nur
+Einträge für ein wd(4)- und ein sd(4)-Gerät, sodass du mehr
+Laufwerksgerätedateien erzeugen musst, um dein »softraid«-Gerät einrichten zu
+können.
+
+Dieser Prozess wird zwar normalerweise vom Installationsprogramm automatisch
+vollzogen, jedoch ist dieses noch gar nicht gelaufen, und außerdem wirst du
+ein Laufwerk erzeugen, dass zur Systemstartzeit noch gar nicht existierte.
+Zum Beispiel, wenn wir ein zweites und gar drittes wd(4)-Gerät, und ein zweites
+sd(4)-Gerät benötigen würden (erinnere den Umstand, dass »softraid«-Geräte als
+sd(4)-Geräte geführt werden), so könnten wir Folgendes am
+Kommandozeileninterpreter-Prompt eingeben:
+
+<blockquote><pre>
+# <b>cd /dev</b>
+# <b>sh MAKEDEV wd1 wd2 sd1</b>
+</pre></blockquote>
+
+Danach besteht vollständige Unterstützung für sd0, sd1, wd0, wd1 und wd2.
+
+<p>
+Sodann ist es notwendig die physischen Laufwerke korrekt zu
+»<a href="#fdisk">fdisk(1)</a>en« (wenn dies für deine Plattform approbat ist
+-- stelle sicher, das zweite Laufwerk so einzurichten, dass von ihm gestartet
+werden kann!), um dann mit Hilfe von <a href="#disklabel">disklabel</a> die
+Partitionen einzurichten.
+
+<p>
+Die unten gezeigten fdisk(8) Schritte platzieren einen MBR und eine
+OpenBSD-Partition auf dem Laufwerk.
+WENN du die Gesamtheit des Laufwerks für OpenBSD nutzen willst (d.&nbsp;h., du
+möchtest NICHTS anderes dortselbst sehen), so ist exakt dies mit einem
+einfachen Einzeiler für jedes Laufwerk möglich:
+
+<blockquote><pre>
+# <b>fdisk -iy wd0</b>
+# <b>fdisk -iy wd1</b>
+</pre></blockquote>
+
+(Sei dir bewußt und verstehe, was diese Zeilen mit allen vorher auf dem
+Laufwerk vorhandenen Daten anstellen, bevor du sie blind benutzt!)
+Anderenfalls musst du OpenBSD-Partitionen innerhalb der neuen Laufwerke
+erzeugen.
+
+<h4>Erzeuge die Partitionen für »softraid«</h4>
+
+Wenn du die softraid(4)-Partition erzeugst, gib ihr den Typ »RAID« anstatt der
+normalen »4.2BSD« oder »swap«.
+In diesem Fall werden wir unsere Wunschpartitionen auf wd0 erzeugen:
+
+<ul>
+<li>wd0a  500M /
+<li>wd0b  500M swap
+<li>wd0m  10G RAID
+</ul>
+
+<blockquote><pre>
+# <b>disklabel -E wd0</b>
+Label editor (enter '?' for help at any prompt)
+> <b>a a</b>
+offset: [64] <b><i>ENTER</i></b> 
+size: [30282461] <b>500m</b>
+Rounding to cylinder (16065 sectors): 1028096
+FS type: [4.2BSD] <b><i>ENTER</i></b> 
+> <b>a b</b>
+offset: [1028160]  <b><i>ENTER</i></b> 
+size: [29254365] <b>500m</b>
+Rounding to cylinder (16065 sectors): 1028160
+FS type: [swap] <b><i>ENTER</i></b> 
+> <b>a m</b>
+offset: [3148740]  <b><i>ENTER</i></b>
+size: [28226205] <b>10g</b>
+Rounding to cylinder (16065 sectors): 20980890
+FS type: [4.2BSD] <b>RAID</b>
+> <b>q</b>
+Write new label?: [y] <b><i>ENTER</i></b>
+</pre></blockquote>
+
+<p>
+Nun müssen wir das zweite Laufwerk so aufbereiten, dass es an den
+Schlüsselstellen dem Layout des ersten Laufwerks entspricht.
+Da wir das <tt>/altroot</tt>-System nutzen, möchten wir eine Partition »a« auf
+dem zweiten Laufwerk, die dieselbe Größe hat wie die Partition »a« des ersten
+Laufwerks.
+Wir möchten, dass das System von dem zweiten Laufwerk exakt so läuft, wie es
+das von dem ersten macht, weshalb wir gleichsam eine ähnlich dimensionierte
+Auslagerungspartition benötigen (ein wenig größer oder kleiner spielt in diesem
+Fall eine untergeordnete Rolle).
+Wir möchten ebenso, dass die RAID-Partition dieselbe Größe aufweist wie die der
+Primären.
+Besitzen die RAID-Partitionen nicht dieselbe Größe, so wird die kleinere der
+Beiden am Ende die Größe des RAID Datenträgers bestimmen.
+
+<p>
+Zusammengefasst ... wiederhole einfach den kompletten, oben beschriebenen
+Aufteilungsprozess für das zweite Laufwerk, wd1.
+
+<h4>Zusammenstellung des RAID Datenträgers</h4>
+
+Wir nehmen im Folgenden an, dass sich deine zwei RAID-Partitionen auf wd0m und
+wd1m befinden.
+Beachte, dass der RAID-Partitionsbuchstabe beliebig ist, es muss auf dem
+zweiten Laufwerk nicht derselbe Buchstabe sein, aber natürlich machst du dir
+die Dinge deutlich übersichtlicher, wenn es doch so ist.
+
+<p>
+Beachte außerdem das softraid(4) sich ein wenig nach Hinweisen auf Bereiche
+umschaut, die es zusammenzustellen hat, sodass du es, für den Fall, dass dein
+Laufwerk bereits für softraid(4) genutzt wurde, hilfreich finden könntest,
+das erste Megabyte jeder Partition mit Hilfe von dd(1) zu löschen:
+
+<blockquote><pre>
+# <b>dd if=/dev/zero of=/dev/rwd0m bs=1m count=1</b>
+   ...
+# <b>dd if=/dev/zero of=/dev/rwd1m bs=1m count=1</b>
+   ...
+</pre></blockquote>
+
+<p>
+Wir erzeugen nun unser neues softraid(1)-Laufwerk mit Hilfe von
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bioctl&amp;sektion=8"
+>bioctl(8)</a>:
+
+<blockquote><pre>
+# <b>bioctl -c 1 -l /dev/wd0m,/dev/wd1m softraid0</b>
+</pre></blockquote>
+
+Dies erzeugt einen RAID1 Datenträger (»<tt>-c 1</tt>«) unter Einbeziehung der
+aufgeführten Partitionen (»<tt>-l /dev/wd0m,/dev/wd1m</tt>«) und Nutzung des 
+<tt>softraid0</tt>-Treibers.
+Befinden sich keine weiteren sd(4)-Geräte auf diesem System, so wird es als sd0
+ansprechbar sein.
+Für den Fall, dass du mehrere RAID Geräte auf einem Laufwerk oder auf mehreren
+Geräten erzeugen möchtest, ist anzumerken, dass du stets den virtuellen
+softraid0 Laufwerksschnittstellen-Treiber zu nutzen hast, nicht jedoch
+»softraid1« oder andere.
+Merke dir, dass »softraid0« ein virtueller RAID-Steuerbaustein ist, an den du
+viele virtuelle Laufwerke anhängen kannst.
+
+<p>
+Dies wird ein neues Laufwerk erzeugen, »sd0« (immer noch in der Annahme, dass
+sich keine weiteren sd(4)-Geräte auf diesem System befinden).
+Dieses Gerät wird nun auf der Systemkonsole und in der »dmesg« als neu
+installiertes Gerät auftauchen:
+
+<blockquote><pre>
+scsibus1 at softraid0: 1 targets
+sd0 at scsibus2 targ 0 lun 0: &lt;OPENBSD, SR RAID 1, 005&gt; SCSI2 0/direct
+ fixed
+sd0: 10244MB, 512 bytes/sec, 20980362 sec total
+</pre></blockquote>
+
+Dies zeigt, dass wir nun sowohl einen neuen SCSI-Datenbus als auch ein neues
+Laufwerk haben.
+Dieser Datenträger wird von nun an automatisch erkannt und zusammengestellt,
+wenn das System startet.
+
+<p>
+Solltest du die Komponentenabschnitte nicht gelöscht haben, so wie weiter oben
+gezeigt, ist es sehr empfehlenswert, nun den ersten Abschnitt des neuen
+Laufwerks zu löschen, da das neue Gerät möglicherweise dort eine Menge Müll
+enthält, wo eigentlich ein MBR und ein disklabel erwartet werden:
+
+<blockquote><pre>
+# dd if=/dev/zero of=/dev/rsd0c bs=1m count=1
+</pre></blockquote>
+
+An diesem Punkt bist du bereit dazu, OpenBSD auf deinem System zu installieren.
+Führe die Installation wie üblich durch die Ausführung von »install« am
+Kommandozeileninterpreter-Prompt des Startmediums durch.
+Sei vorsichtig und wähle den »custom« Belegungsplan für disklabel, wenn du
+danach gefragt wirst, sonst wird deine RAID-Partition überschrieben!
+Nutze die Option »n« innerhalb von disklabel, um den Einhängepunkt für deine
+Wurzelpartition zu definieren, und erzeuge alle gewünschten Partitionen auf
+deinem neuen softraid-Laufwerk (sd0 in unserem Beispiel hier), anstatt dies auf
+deinen nicht-RAID Laufwerken zu tun.
+
+<p>
+Nun kannst du dein System neu starten, und wenn du alles ordentlich gemacht
+hast, so wird es deinen RAID Datenträger automatisch zusammenstellen, und die
+dazugehörigen Partitionen in das System einhängen.
+
+<h3>14.21.3 - Bemerkungen zu »softraid«</h3>
+
+<h4>Komplikationen, wenn andere sd(4)-Laufwerke existieren</h4>
+
+»Softraid«-Laufwerke werden zusammengestellt, <i>nachdem</i> alle anderen IDE,
+SATA, SAS und SCSI Laufwerke zugewiesen wurden.
+Als Resultat davon ändert sich die Identifikation des »softraid«-Laufwerks,
+wenn sich die Nummer des sd(4)-Geräts ändert (entweder weil Geräte hinzugefügt
+oder entfernt wurden -- oder weil ein Gerät ausfällt).
+Aus diesem Grunde ist es sehr wichtig, <a href="faq14.html">DUID</a>s
+(»Disklabel Unique Identifiers«, eindeutige »disklabel« Kennungen) in deiner
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fstab&amp;sektion=5"
+>fstab(5)</a>-Datei zu nutzen.
+
+<p>
+Du möchtest vielleicht nicht das Wurzelverzeichnis per DUID ansprechen.
+
+<h4>Ein Drei-Laufwerke RAID1?</h4>
+
+»softraid« unterstützt RAID1 mit mehr als zwei »Stücken«, und die Beispiele der
+Handbuchseite zeigen auch eine RAID1 Konfiguration mit drei Laufwerken.
+RAID1 dupliziert einfach die Daten über alle angeschlossenen Speicherstücke,
+sodass deren zwei volle Redundanz und deren drei zusätzliche Fehlertoleranz
+ergeben.
+Der Vorteil von RAID mit drei (oder mehr!) Laufwerken oder Speicherstücken ist,
+dass im Falle des Ausfalls eines Laufwerks IMMER NOCH komplette Redundanz
+gegeben ist.
+Betrachte es als Ersatzlaufwerk das keinerlei Zeit zum Neuaufbau benötigt!
+Theoretisch ist ein Drei-Laufwerks RAID1 beim Schreiben langsamer als ein
+Verbund aus zwei Laufwerken, jedoch sollte es beim Schreiben viel schneller
+sein, als der Neuaufbau eines Zwei-Laufwerks RAID1.
+
+<a name="softraidDR"></a>
+<h3>14.21.4 - Notfallwiederherstellung</h3>
+
+Dies ist die Rubrik, die du überspringen möchtest, jedoch -- tue es nicht.
+Dies ist der Existenzgrund für RAID -- wenn Laufwerke niemals ausfallen würden,
+so würdest du deinem System nicht die Verkomplizierung durch RAID zukommen
+lassen!
+Da es sehr schwierig ist, Ausfälle umfassend aufzuführen, besteht leider die
+große Wahrscheinlichkeit, dass das Ereignis, dass du erlebst, hier nicht exakt
+beschrieben wird, aber wenn du dir die Zeit nimmst, die hier aufgeführten
+Strategien zu verstehen, und das WARUM, so kannst du sie hoffentlich nutzen, um
+aus jedweder Situation einen rettenden Weg zu finden.
+
+<p>
+Behalte im Hinterkopf das Ausfälle oft nicht einfach sind.
+Der Author dieses Artikels hatte einen Kurzschluss an der Stromzuführung eines
+in eine Hardware-RAID-Lösung eingebundenen Laufwerks, was, zusätzlich zu dem
+Laufwerk selbst, den Ersatz des Netzteils, des RAID-Gehäuses und des Netzteils
+eines zweiten Computers, den er nutzte, um zu verifizieren, dass das Laufwerk
+tatsächlich verendet war, als auch, da er das Ersatzgehäuse nicht ordentlich
+konfigurierte, die Wiederherstellung der Daten aus der Datensicherung
+erforderte.
+
+<p>
+Die Schritte, die zur Wiederherstellung des Systems erforderlich sind, können
+sowohl im <a href="faq8.html#LostPW">Einbenutzermodus</a> als auch ausgehend
+von einem <a href="faq4.html#bsd.rd">Installationskernel (bsd.rd)</a>
+vorgenommen werden.
+
+<p>
+Solltest du vorhaben, die Wiederherstellung von »softraid« zu trainieren (und
+dies wird von uns HÖCHSTENS empfohlen!), so magst du es hilfreich finden, ein
+Laufwerk, dass du aus dem Verbund nimmst, komplett zu löschen, bevor du
+versuchst, es wieder dem Verbund hinzuzufügen.
+Nicht nur, dass dies den Grad der Simulation des Ersetzens eines Laufwerks mit
+einem neuen erhöht, es vermeidet ebenso die Konfusion, die daraus resultieren
+kann, dass das System Überreste eines »softraid«-Verbundes vorfindet.
+
+<p>
+Die Wiederherstellung nach einem Ausfall wird oftmals ein zweistufiger Vorgang
+sein -- die erste Stufe ist es, das System in einen lauffähigen Zustand
+zurückzubringen, die Zweite ist der Neuaufbau des ausgefallenen Verbundes.
+Diese zwei Stufen können eine gewisse zeitliche Distanz aufweisen, wenn du kein
+Ersatzlaufwerk zu Hand hast.
+
+<h4>Wiederherstellung nach einem Laufwerksfehler: Sekundär</h4>
+
+Dies ist relativ einfach.
+Es kann sein, dass du das ausgefallene Laufwerk entfernen musst, um das System
+wieder anfahren zu können.
+
+<p>
+Wenn du bereit dazu bist, das System zu reparieren, so wirst du das
+ausgefallene Laufwerk ersetzen, die RAID- und andere disklabel-Partitionen
+erzeugen, und dann den Spiegelverbund neu aufbauen.
+Angenommen dein RAID-Datenträger is <tt>sd0</tt>, und du ersetzt das
+ausgefallene Laufwerk mit <tt>wd1m</tt>, so sollte das folgende Verfahren
+funktionieren:
+
+<ul>
+<li>Starte das System neu.
+<li>Erzeuge die entsprechenden Partitionen auf deinem neuen Laufwerk.
+<li>Stelle deine RAID-Partition wieder her:
+<blockquote><pre>
+# <b>bioctl -R /dev/wd1m sd0</b> 
+</pre></blockquote>
+<li>Starte neu.
+</ul>
+
+<h4>Wiederherstellung nach einem Laufwerksfehler: Primär</h4>
+
+Viele PC-ähnliche Computer können nicht von einem sekundären Laufwerk starten,
+wenn das Primäre ausgefallen, aber immer noch angeschlossen ist, es sei denn es
+ist so tot, dass es nicht erkannt wird.
+Viele können von keinem Laufwerk starten, das nicht als »primär« markiert
+wurde, selbst wenn kein anderes Laufwerk vorhanden ist.
+
+<p>
+Generell gesagt, wenn dein primäres Laufwerk ausfällt, so wirst du es
+entfernen, und in vielen Fällen dein sekundäres Laufwerk zu einem primären
+Solchen »befördern« müssen, damit dein System starten kann.
+Dies mag auch das Umstecken von Steckbrücken (»Jumper«) des Laufwerks, das
+Anschließen des Laufwerks an einen anderen Anschluß oder einige andere
+Variationen beinhalten.
+Es ist selbstverständlich, dass das, was sich auf dem sekundären Laufwerk
+befindet, nicht nur deine RAID-Partition beinhalten, sondern auch funktional
+startfähig sein muss.
+
+<p>
+Läuft dein System erst einmal wieder auf dem sekundären Laufwerk, und ist ein
+neues Laufwerk an Ort und Stelle, verfahre wie oben beschrieben.
+
+<h4>Wiederherstellung nach dem »Mischen« deiner Laufwerke</h4>
+
+Wenn du vier Laufwerke in deinem System besitzt, sagen wir mal, sd0, sd1, sd2
+und sd3, und du endest, aus Gründen des Ersetzens von Hardware oder einer
+Aufrüstung, mit ausgebauten Laufwerken, und hast vergessen, welches jetzt
+welches war?
+
+<p>
+Glücklicherweise kann »softraid« mit dieser Situation sehr gut umgehen, da es
+die Laufwerke als »frei schwebend« betrachtet, und wird daher deine Verbünde
+erfolgreich wiederherstellen.
+Das Startlaufwerk deiner Maschine jedoch muss startfähig sein, und wenn du
+gerade erst Änderungen an deiner Wurzelpartition vorgenommen hast, bevor du in
+diese Situation geraten bist, so möchtest du sicherlich nicht aus einem Irrtum
+heraus von deiner »altroot«-Partition starten.
+OpenBSD's »<a href="#altroot">altroot</a>«-System kann für einige Anwendungen
+sehr viel BESSER sein, da es eine Kopie der alten Konfigurationsinformationen
+vorhält, für den Fall, dass eine Änderung nicht wie gewünscht funktioniert.
+
+<h3>14.21.5 - »softraid crypto«</h3>
+
+Das Einrichten von kryptographischen softraid(4) Datenträgern ist ziemlich
+einfach:
+
+<ul>
+<li>Erzeuge die gewünschte Partition mit disklabel(8) als Typ RAID.
+<li>Lösche den Beginn der Partition, wie oben beschrieben.
+<li><tt># <b>bioctl -c C -l /dev/sd0m softraid0</b><br>
+New passphrase: <b><i>My Crypto Pass Phrase</i></b><br>
+Re-type passphrase: <b><i>My Crypto Pass Phrase</i></b><br>
+softraid0: CRYPTO volume attached as sd1</tt>
+<li>fdisk(8), disklabel(8) und newfs(8) diesen neuen Datenträger, sd1, wie
+	gewünscht.
+</ul>
+
+Nachdem dies eingerichtet ist, kannst du den »crypto«-Datenträger, wenn
+gewünscht, freischalten, und zwar mit:
+
+<blockquote><pre>
+# <b>bioctl -c C -l /dev/sd1m</b>
+Passphrase: <b><i>My Crypto Pass Phrase</i></b>
+softraid0: CRYPTO volume attached as sd1
+</pre></blockquote>
+
+Danach kannst du die Partitionen des verschlüsselten Datenträgers wie üblich in
+das System einhängen.
+
+<p>
+Um den verschlüsselten Datenträger auszuhängen (und ihn damit wieder
+unbenutzbar zu machen), hänge alle eingehängten Dateisysteme aus und mache
+Folgendes (angenommen, der verschlüsselte Datenträger wäre sd1):
+
+<blockquote><pre>
+# <b>bioctl -d sd1</b>
+</pre></blockquote>
+
+Die entsprechende Handbuchseite sieht ein wenig beängstigend aus, da
+beschrieben wird, dass das Kommando -d den Datenträger »löscht«, aber im Falle
+von »crypto« wird einzig und alleine der verschlüsselte Datenträger
+deaktiviert, sodass solange nicht wieder auf ihn zugegriffen werden kann, bis
+er mit der Passphrase erneut aktiviert wird.
+
+<p>
+Es sind viele andere Optionen für »softraid« verfügbar, neue Eigenschaften
+werden hinzugefügt und Verbesserungen gemacht, sodass eine Konsultation der
+Handbuchseiten von
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bioctl&amp;sektion=8"
+>bioctl(8)</a> und
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=softraid&amp;sektion=4"
+>softraid(4)</a> auf deinem System empfohlen wird.
+
+<h4>Ich habe meine Passphrase vergessen!</h4>
+
+Bedaure.
+Dies ist echte Verschlüsselung, es gibt keinerlei Hintertür oder ein
+magisches Entriegelungswerkzeug.
+Solltest du deine Passphrase vergessen, so sind deine auf dem
+»softraid-crypto«-Datenträger gespeicherten Daten unbenutzbar geworden.
+
 <p>
 <font color= "#0000e0">
 <a href= "index.html">[FAQ-Index]</a>
@@ -2776,10 +3277,10 @@ ansprechen.
 <br>
 <small>
 <!--
-Originally [OpenBSD: faq14.html,v 1.232 ]<br>
-$Translation: faq14.html,v 1.111 2013/05/31 18:07:33 steffen Exp $<br>
+Originally [OpenBSD: faq14.html,v 1.234 ]<br>
+$Translation: faq14.html,v 1.112 2013/06/04 21:32:54 steffen Exp $<br>
 -->
-$OpenBSD: faq14.html,v 1.93 2013/06/02 19:35:33 ajacoutot Exp $
+$OpenBSD: faq14.html,v 1.94 2013/06/05 12:30:47 ajacoutot Exp $
 </small>
 
 </body>
