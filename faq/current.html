@@ -48,13 +48,14 @@
 <li><a href="#20130607b">2013/06/07 - inteldrm(4) ABI break</a>
 <li><a href="#20130617">2013/06/17 - KerberosV update needs build tools to be compiled first</a>
 <li><a href="#20130618">2013/06/18 - Removed /usr/include/pcap-int.h header</a>
-<li><a href="#20130621">2013/06/21 - Several files are not needed after the KerberosV update</h3>
+<li><a href="#20130621">2013/06/21 - Several files are not needed after the KerberosV update</a>
 <li><a href="#20130705">2013/07/05 - vax port switches to ELF</a>
 <li><a href="#20130710">2013/07/10 - Default KerberosV database directory has moved</a>
 <li><a href="#20130806">2013/08/06 - Ports: net/nagios/nsca update</a>
 <!-- 5.4 cutoff point is here. Please keep following entries when rotating this file -->
 <li><a href="#20130806">2013/08/06 - vax port switches to gcc 3</a>
 <li><a href="#20130812">2013/08/12 - kernel modesetting in radeondrm(4)</a>
+<li><a href="#20130813">2013/08/13 - system ABI break: time_t and others changed</a>
 <!-- New additions go on the bottom, please -->
 </ul>
 
@@ -479,7 +480,7 @@ independant of the implementation.<br>
 before performing the upgrade.</b><br>
 Before upgrading, stop the Kerberos services and copy the database directory
 to the new location:
-<pre><blockquote>
+<blockquote><pre>
 /etc/rc.d/kadmind stop
 /etc/rc.d/kpasswdd stop
 /etc/rc.d/kdc stop
@@ -488,7 +489,7 @@ cp -Rp /var/heimdal /var/kerberosV
 Then proceed with the upgrade as usual...<br>
 After upgrading, check that Kerberos services are working properly then
 remove the old database directory:
-<pre><blockquote>
+<blockquote><pre>
 rm -rf /var/heimdal
 </pre></blockquote>
 
@@ -575,11 +576,106 @@ for a snapshot or follow the steps below:
 <li>Reboot
 </ul>
 
+<p>
+<a name="20130813"></a>
+<h3>2013/08/13 - system ABI break: time_t and others changed</h3>
+The system ABI has been changed to expand time_t, ino_t, and
+clock_t and the <i>ident</i> and <i>data</i> members of struct
+kevent to 64bit types.  A GENERIC kernel with this change will not
+run old binaries and the /etc/{pwd,spwd}.db files must be regenerated
+after updating the system binaries.  Rolling back to stock 5.3 or
+5.4 will require reinstalling.
+<br>
+You are <b>strongly</b> recommended to wait until snapshots and
+packages with this change are available and then update with them.
+Updating with source is (obviously) possible, but if you're not
+completely careful you'll leave it unable to finish booting or to
+login afterwards.
+<br>
+The recommended steps for updating with a snapshot are:
+<ol>
+<li>Save a record of what packages you had installed, manually and
+automatically:
+<pre>
+    pkg_info -mq >/root/pkg_list_manual
+    pkg_info -q >/root/pkg_list_full
+</pre>
+</li>
+<li>While their uninstall programs can still execute, remove all packages
+<pre>
+    pkg_delete -X
+</pre>
+</li>
+<li>Install/upgrade to the new snapshot.
+If you upgrade instead of doing a fresh install,
+then <b>BEFORE</b> rebooting, run
+<pre>
+    /mnt/usr/sbin/pwd_mkdb -d /mnt/etc /mnt/etc/master.passwd
+    cp /dev/null /mnt/var/log/lastlog
+    cp /dev/null /mnt/var/run/utmp
+</pre>
+</li>
+<li>Now that the base and X are updated, install new packages:
+<pre>
+    pkg_add -z -l /root/pkg_list_manual
+    pkg_add -za -l /root/pkg_list_full
+</pre>
+</li>
+</ol>
+<br>
+If you're foolhardy and want to update via source, your best bet are these
+steps:
+<ol>
+<li>While their uninstall programs can still execute, remove all packages
+<pre>
+    pkg_delete -X
+</pre>
+</li>
+<li>Configure and build a custom kernel named T32 with these
+additional options:
+<pre>
+    option          T32
+    rmoption        SYSVMSG
+    rmoption        SYSVSEM
+    rmoption        SYSVSHM
+    rmoption        COMPAT_O48
+    rmoption        COMPAT_O51
+</pre>
+Reboot to that kernel.  Note that this kernel should be considered
+only good enough for building the system and shouldn't be trusted
+with anything beyond that.  Do this on an internal network and don't
+expose it to untrusted traffic or any users but yourself.
+</li>
+<li>Open a root shell on that and keep it open across the following
+</li>
+<li>Build the base system
+</li>
+<li><b>BEFORE REBOOTING</b>, run the following using that root shell
+from two steps back:
+<pre>
+    pwd_mkdb /etc/master.passwd
+    cp /dev/null /var/log/lastlog
+    cp /dev/null /var/run/utmp
+</pre>
+</li>
+<li>Reboot
+</li>
+<li>Arrrgh, you forgot to run pwd_mkdb and now you can't login!  Reboot
+into single user mode and fix it.  If you really screwed things up,
+you may have to use an old bsd.rd to recover.  Good luck!
+</li>
+<li>Build a GENERIC/GENERIC.MP kernel (<b>without</b> the T32 option)
+and reboot to it
+</li>
+<li>Build X, ports, whatever else, etc.
+</li>
+</ol>
+
 <hr>
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: current.html,v 1.410 2013/08/12 19:05:56 matthieu Exp $</small>
+<small>$OpenBSD: current.html,v 1.411 2013/08/13 06:55:04 guenther Exp $</small>
 
 </body>
 </html>
