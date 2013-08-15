@@ -24,7 +24,7 @@
 </font>
 
 <h1><font color="#e00000">14 - Configuration des disques</font></h1><hr>
-<!-- UNCOMMENT ONLY WHEN THE FILE IS OUT OF SYNC -->
+<!-- UNCOMMENT ONLY WHEN THE FILE IS OUT OF SYNC
 
 <hr>
 <p>
@@ -36,11 +36,11 @@
 Si vous souhaitez contribuer à l'effort de traduction, prière de consulter
 <a href="../../fr/translation.html">la page de traduction</a>.
 
-<!-- -->
+-->
 
 <h3>Table des matières</h3>
 <ul>
-<li><a href="#intro"  >14.1 - Disques et Partitions</a>
+<li><a href="#intro"      >14.1 - Disques et Partitions</a>
 <li><a href="#fdisk"      >14.2 - Utilisation de fdisk(8) sous OpenBSD</a>
 <li><a href="#disklabel"  >14.3 - Utilisation de disklabel(8) sous OpenBSD</a>
 <li><a href="#NewDisk"    >14.4 - Ajout de nouveaux disques sous OpenBSD</a>
@@ -71,14 +71,16 @@ périphérique de masse ('flash memory device') sous OpenBSD ?</a>
   <ul>
   <li><a href="#flashmemPortable">14.17.1 - Mémoire Flash comme périphérique
   de stockage portable</a> 
-  <li><a href="#flashmemBoot">14.17.2 -  Mémoires Flash comme disque de
+  <li><a href="#flashmemBoot"    >14.17.2 -  Mémoires Flash comme disque de
   démarrage</a>
-  <li><a href="#flashmemLive">14.17.3 - Comment puis-je créer un
+  <li><a href="#flashmemLive"    >14.17.3 - Comment puis-je créer un
   périphérique de démarrage USB "Live" ?</a>
   </ul>
-<li><a href="#DiskOpt">14.18 - Optimiser les performances des disques durs</a>
-<li><a href="#Async">14.19 - Pourquoi nous n'utilisons pas de Montage
+<li><a href="#DiskOpt"    >14.18 - Optimiser les performances des disques durs</a>
+<li><a href="#Async"      >14.19 - Pourquoi nous n'utilisons pas de Montage
 Asynchrone ?</a>
+<li><a href="#altroot"    >14.20 - Dupliquer sa partition root: altroot</a>
+<li><a href="#softraid"   >14.21 - Comment puis-je utiliser softraid(4)?</a>
 
 </ul>
 <hr>
@@ -138,10 +140,10 @@ confusions.
 <p>
 Les deux types de "partitions" sont:
 <ul>
-<li> "disklabel partitions" créées avec 
+<li> "disklabel partitions" créées avec
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=disklabel&amp;sektion=8">disklabel(8)</a>
 (souvent appelées "filesystem partitions").
-<li> "fdisk partitions" créées avec 
+<li> "fdisk partitions" créées avec
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fdisk&amp;sektion=8&amp;arch=i386">fdisk(8)</a>
 (souvent appelées "partition table partitions" ou "Master Boot Record (MBR) partitions").
 </ul>
@@ -2617,6 +2619,536 @@ les partitions
 sont montées en mode asynchrone vu que de toute façon, elles vont être
 écrasées et recréées après un redémarrage.
 
+<a name="altroot"></a>
+<h2>14.20 - Dupliquer sa partition root: altroot</h2>
+OpenBSD fournit un dispositif "altroot" dans les scripts
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=daily&amp;sektion=8">daily</a>.
+Si la variable d'environnement <tt>ROOTBACKUP=1</tt> est définie
+soit dans <tt>/etc/daily.local</tt> soit dans le
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=crontab&amp;sektion=5">crontab(5)</a>
+de l'utilisateur root, et qu'une partition est spécifiée dans
+<tt>/etc/fstab</tt> comme étant à monter dans <tt>/altroot</tt> avec les
+options de montage "xx", le contenu entier de la partition root sera dupliqué
+chaque nuit sur la partition <tt>/altroot</tt>.
+En supposant que l'on veuille sauvegarder notre partition root vers
+wd1a, nous devons ajouter les lignes suivantes dans <tt>/etc/fstab</tt>
+
+<blockquote><pre>
+/dev/wd1a /altroot ffs xx 0 0
+</pre></blockquote>
+
+et définir la variable d'environnement appropriée dans <tt>/etc/daily.local</tt>:
+<blockquote><pre>
+# <b>echo ROOTBACKUP=1 >>/etc/daily.local</b>
+</pre></blockquote>
+
+Étant donné que le processus altroot va également <i>capturer</i> le dossier
+<tt>/etc</tt>, les changements dans les fichiers de configuration seront mis
+à jour quotidiennement.
+
+<p>
+C'est une copie d'"image disque" effectuée avec dd(8), et non pas une copie
+fichier-par-fichier. La taille de votre partition <tt>/altroot</tt> doit
+être exactement la même que celle de la partition root, ou plus grande.
+Aussi, les partitions root très grandes devraient être évitées pour ne pas
+que le processus prenne trop de temps.
+
+<p>
+Pour une redondance complète, le reste des partitions devrait être
+dupliqué également, via <a href="#softraid">softraid</a>, dump(8)/restore(8),
+rsync, etc.
+Cela peut être effectué manuellement ou automatiquement, par exemple avec
+les scripts <tt>weekly.local</tt>, <tt>daily.local</tt>, ou <tt>monthly.local</tt>.
+
+<p>
+De manière générale, vous préférerez que votre partition "altroot" soit
+sur un disque différent qui a été configuré pour être pleinement bootable,
+au cas où le disque primaire crasherait.
+Il est possible de disposer d'une partition "altroot" sur le même disque,
+mais les bénéfices d'une telle configuration sont limités.
+
+<p>
+Notez que nous n'avons pas spécifié le périphérique altroot par son DUID,
+mais par son nom de périphérique.
+Nous voudrons probablement passer du périphérique primaire au périphérique
+secondaire en cas de problème, et il est possible que ce périphérique
+secondaire change si l'ordre des disques change également. Pour cette
+raison, nous avons spécifié les partitions root et altroot dans
+<tt>/etc/fstab</tt> par leurs noms de périphériques, et pas par leurs
+DUIDs.
+
+
+<a name="softraid"></a>
+<h2>14.21 - Comment puis-je utiliser softraid(4)?</h2>
+Le fonctionnement de
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=softraid&amp;sektion=4">Softraid(4)</a>
+se définit par l'émulation d'un
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=scsibus&amp;sektion=4">scsibus(4)</a>
+avec des périphériques
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sd&amp;sektion=4">sd(4)</a>
+effectuée en combinant un certain nombre de partitions
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=disklabel&amp;sektion=8">disklabel(8)</a>
+("chunks") dans un disque virtuel ("volume") avec la configuration RAID désirée (aussi
+appelée "discipline"), comme par exemple RAID0, RAID1, RAID4, RAID5 ou Crypto.
+(Note: pour le moment, seules les configurations RAID0, RAID1 et Crypto sont
+pleinement supportées.)
+
+<p>
+Ce disque virtuel est traité comme tout autre disque; il est d'abord
+partitionné avec <a href="#fdisk">fdisk(8)</a> (sur les plates-formes
+qui disposent de fdisk) et avec <a href="#disklabel">disklabel(8)</a>,
+puis il peut être monté et utilisé.
+
+<p>
+<h4>Quelques mots sur RAID en général:</h4>
+<ul>
+<li>Avant d'implémenter une solution RAID, comprenez bien ce que cela
+    va et ne va pas faire pour vous.
+    RAID n'est pas un remplacement pour une bonne stratégie de sauvegarde.
+    RAID ne va pas forcément empêcher votre système de planter si
+    une erreur de hardware survient.
+    En fait, RAID pourrait ne pas empêcher un plantage du système après
+    une simple erreur de disque.
+    Dans le cas d'une solution RAID logicielle, cela ne va pas garantir
+    la capacité à booter sur le disque qui a <i>survécu</i> si votre
+    ordinateur ne peut pas faire autrement.
+
+<li>Avant de mettre RAID en production, vous devez comprendre comment
+    utiliser RAID pour prendre en charge les erreurs de disques.
+    Il faut comprendre cela AVANT qu'une erreur survienne. Les RAID
+    mal implémentés vont causer plus de dégâts qu'ils n'en empêcheront.
+    Et c'est d'autant plus vrai si RAID vous fait croire que vous pouvez
+    dormir sur vos deux oreilles sans craindre de désastre.
+
+<li>Plus vos partitions RAID seront grosses, plus le temps de récupération
+    d'une erreur sera long.
+    En d'autres termes, évitez d'allouer la totalité de vos disques de
+    500GO juste parce qu'ils sont disponibles.
+    Remirrorer des disques de 500GO prend bien plus de temps que de
+    remirrorer les 4GO que vous utilisez réellement.
+    Un avantage des miroirs logiciels est que l'on peut contrôler
+    quelle quantité de ces "grands" disques est réellement utilisée
+    dans un RAID.
+
+<li>Il y a un réflexe à vouloir RAIDer son système le plus possible.
+    Mirrorer sa partition de boot dans un RAID logiciel est difficile,
+    et souvent inutile, étant donné que la plupart des hardware PC ont
+    des difficultés à booter sur un disque qui n'est pas le disque de
+    boot primaire.
+    Même le matériel qui PEUT booter sur d'autres disques va souvent
+    avoir des difficultés à déterminer quand est-ce qu'un disque a
+    planté pour éviter de booter dessus.
+    Le système "<a href="#altroot">altroot</a>" d'OpenBSD peut s'avérer
+    plus efficace pour certaines applications, étant donné qu'il fournit
+    une copie des vieilles informations de configuration au cas où un
+    changement ne fonctionnerait pas comme on s'y attendrait.
+
+<li>RAID fournit de la redondance uniquement pour le système de disque.
+    Plein d'installations ont besoin d'une redondance qui va au-delà de
+    la simple redondance des disques, et pour certaines de ces installations,
+    RAID pourrait s'avérer néfaste.
+    Par exemple, prenons un ensemble de pare-feux <a href="faq6.html#CARP">CARP</a>és
+    fournissant une redondance complète en cas d'erreur. Ici, l'ajout
+    d'un RAID (matériel ou logiciel) ne fera que compliquer la
+    configuration.
+</ul>
+
+<h3>14.21.1 - Effectuer l'installation</h3>
+Les disques softraid peuvent être créés en utilisant les chunks
+libres (ou ajoutés) après l'installation, mais ce qui suit est juste
+un cas particulier (et simple) de l'ajout de softraid durant
+l'installation.
+
+<p>
+Les outils pour assembler votre système softraid sont fournis dans
+le système de base d'OpenBSD (pour ajouter des périphériques softraid
+après l'installation), mais ils sont également disponibles sur le
+CD-ROM et les kernels d'installation <a href="faq4.html#bsd.rd">bsd.rd</a>.
+Ils ne sont pas fournis sur les disquettes par manque d'espace; mais
+pour contourner le problème vous pouvez installer OpenBSD depuis votre
+disquette, et ensuite booter depuis bsd.rd sur votre système installé
+et poursuivre comme voulu.
+
+<p>
+Le processus d'installation diffère légèrement de celui
+<a href="faq4.html">habituel</a>, car il faudra ici ouvrir un shell et
+créer un disque softraid(4) avant d'effectuer l'installation. Une
+fois le disque softraid(4) créé, vous pourrez poursuivre l'installation
+(qui ne différera pas du processus habituel); vous prendrez toutefois
+garde à bien placer les partitions que vous voulez RAIDer dans le
+disque softraid que vous avez précédemment configuré.
+
+<p>
+Vous pouvez simplement pré-créer les partitions RAID, les assembler
+dans un volume softraid(4) et laisser l'installeur se charger du reste,
+mais il est probablement plus facile de créer vos partitions root, swap
+et RAID avant d'invoquer l'installeur.
+
+<p>
+Cela signifie que vous allez devoir configurer soigneusement le disque
+avant de lancer l'installeur.
+
+<p>
+Au démarrage, le kernel d'installation a des entrées <tt>/dev</tt> seulement
+pour un périphérique wd(4) et un périphérique sd(4), donc vous allez devoir
+créer plus de disques pour mettre en place votre périphérique softraid.
+
+Ceci est normalement effectué automatiquement par l'installeur, mais vous
+n'avez pas encore lancé l'installeur, et vous allez ajouter un disque
+qui n'existait pas au démarrage.
+
+Par exemple, si vous avez besoin d'un deuxième ou troisième périphérique
+wd(4) et d'un deuxième périphérique sd(4) (souvenez-vous, les périphériques
+softraid seront des périphériques sd(4)), vous pouvez taper ceci à
+l'invite:
+
+<blockquote><pre>
+# <b>cd /dev</b>
+# <b>sh MAKEDEV wd1 wd2 sd1</b>
+</pre></blockquote>
+
+Vous aurez maintenant un support complet pour sd0, sd1, wd0, wd1 et wd2.
+
+<p>
+Vous allez devoir <a href="#fdisk">fdisk(1)</a>er les disques physiques
+(si approprié pour votre plate-forme -- soyez sûr de configurer le
+deuxième disque de telle façon qu'il soit bootable!) et utiliser ensuite
+<a href="#disklabel">disklabel</a> pour configurer les partitions.
+
+<p>
+Les étapes fdisk(8) qui suivent vont placer un MBR sur le disque et
+une partition OpenBSD sur ce même disque.
+Si vous souhaitez utiliser le disque entier pour OpenBSD (c'est-à-dire
+que vous n'avez RIEN d'autre sur le disque), vous pouvez taper:
+
+<blockquote><pre>
+# <b>fdisk -iy wd0</b>
+# <b>fdisk -iy wd1</b>
+</pre></blockquote>
+
+(Soyez sûr de comprendre ce que ces lignes signifient vis-à-vis de vos
+données avant de les taper aveuglément!)
+Sinon, vous allez devoir créer une partition OpenBSD à l'intérieur des
+nouveaux disques.
+
+<h4>Créer les partitions pour softraid</h4>
+Lors de la création de la partition softraid(4), donnez-lui le type
+"RAID" au lieu des habituels "4.2BSD" et "swap". Dans notre exemple,
+nous allons créer nos partitions sur wd0:
+
+<ul>
+<li>wd0a  500M /
+<li>wd0b  500M swap
+<li>wd0m  10G RAID
+</ul>
+
+<blockquote><pre>
+# <b>disklabel -E wd0</b>
+Label editor (enter '?' for help at any prompt)
+> <b>a a</b>
+offset: [64] <b><i>ENTER</i></b> 
+size: [30282461] <b>500m</b>
+Rounding to cylinder (16065 sectors): 1028096
+FS type: [4.2BSD] <b><i>ENTER</i></b> 
+> <b>a b</b>
+offset: [1028160]  <b><i>ENTER</i></b> 
+size: [29254365] <b>500m</b>
+Rounding to cylinder (16065 sectors): 1028160
+FS type: [swap] <b><i>ENTER</i></b> 
+> <b>a m</b>
+offset: [3148740]  <b><i>ENTER</i></b>
+size: [28226205] <b>10g</b>
+Rounding to cylinder (16065 sectors): 20980890
+FS type: [4.2BSD] <b>RAID</b>
+> <b>q</b>
+Write new label?: [y] <b><i>ENTER</i></b>
+</pre></blockquote>
+
+<p>
+Maintenant, nous devons préparer le deuxième disque pour qu'il corresponde
+à l'agencement du premier disque.
+Étant donné que l'on utilise le système <tt>/altroot</tt>, nous voudrons
+une partition 'a' sur le deuxième disque dont la taille sera la même que
+celle de la partition 'a' du premier disque. 
+On veut que le système puisse fonctionner avec le deuxième disque autant
+qu'il fonctionne avec le premier, donc nous voudrons une partition swap
+de taille similaire (bien qu'une taille un peu plus grande ou un peu plus
+petite n'ait pas d'impact).
+Nous voudrons également une partition RAID de la même taille que pour le
+premier disque. Si les partitions RAID ne sont pas de la même taille, la
+plus petite de ces deux partitions dictera la taille du volume RAID.
+
+<p>
+En clair, il suffit de répéter l'opération précédente sur le deuxième
+disque, wd1.
+
+<h4>Assembler le volume RAID</h4>
+On suppose ici que vos deux partitions RAID sont wd0m et wd1m. Notez que
+la lettre de la partition RAID est arbitraire, et n'est pas nécessairement
+la même sur le deuxième disque; mais garder les mêmes lettres simplifie
+bien souvent la résolution de problèmes.
+
+<p>
+Étant donné que softraid(4) cherche les disques qu'il doit assembler,
+si votre disque a déjà été utilisé pour softraid, il est souvent
+préférable d'utiliser dd(1) pour effacer le premier octet de chaque
+partition avant d'aller plus loin:
+
+<blockquote><pre>
+# <b>dd if=/dev/zero of=/dev/rwd0m bs=1m count=1</b>
+   ...
+# <b>dd if=/dev/zero of=/dev/rwd1m bs=1m count=1</b>
+   ...
+</pre></blockquote>
+
+<p>
+Maintenant on crée notre nouveau disque softraid(4) en utilisant
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bioctl&amp;sektion=8">bioctl(8)</a>:
+
+<blockquote><pre>
+# <b>bioctl -c 1 -l /dev/wd0m,/dev/wd1m softraid0</b>
+</pre></blockquote>
+
+Cela va créer un volume RAID1 ("<tt>-c 1</tt>") utilisant les
+partitions listées ("<tt>-l /dev/wd0m,/dev/wd1m</tt>"), via
+le driver <tt>softraid0</tt>.
+S'il n'y a pas de périphériques sd(4) sur le système, cela va
+devenir sd0.
+Notez que si vous créez plusieurs périphériques RAID, soit sur un disque
+soit sur plusieurs disques, vous devrez toujours utiliser le driver de
+disque virtuel softraid0, et non pas "softraid1".
+Retenez bien que "softraid0" est un contrôleur RAID virtuel; vous pouvez
+gérer plusieurs disques virtuels via ce contrôleur.
+
+<p>
+Cela va donc créer un nouveau disque: "sd0" (si l'on suppose qu'il n'y
+a pas d'autre périphérique sd(4) sur votre système).
+Ce périphérique va désormais apparaître dans le dmesg en tant que nouveau
+périphérique installé:
+
+<blockquote><pre>
+scsibus1 at softraid0: 1 targets
+sd0 at scsibus2 targ 0 lun 0: &lt;OPENBSD, SR RAID 1, 005&gt; SCSI2 0/direct fixed
+sd0: 10244MB, 512 bytes/sec, 20980362 sec total
+</pre></blockquote>
+
+montrant que nous avons maintenant un nouveau bus SCSI, et un nouveau disque.
+Dorénavant, ce volume sera automatiquement détecté et assemblé au démarrage
+du système.
+
+<p>
+À cause du fait que le nouveau périphérique puisse avoir des octets aléatoires
+là où vous vous attendriez à un MBR et un disklabel, zéroer (c'est-à-dire
+écrire des octets nuls, ou égaux à zéro) les premiers octets du nouveau
+disque est hautement recommandé, si vous ne l'avez pas fait précédemment:
+
+<blockquote><pre>
+# dd if=/dev/zero of=/dev/rsd0c bs=1m count=1
+</pre></blockquote>
+
+Vous êtes maintenant prêt à installer OpenBSD sur votre système.
+Continuez l'installation selon la méthode habituelle en invoquant
+"install" à l'invite de commande.
+Prenez soin de sélectionner "custom" pour disklabel, sinon votre
+partition RAID sera écrasée!
+Utilisez l'option 'n' de disklabel pour définir le point de montage
+pour votre partition root, et créez les partitions sur votre nouveau
+disque softraid (sd0 dans notre exemple) au lieu des disques non-RAID.
+
+<p>
+Maintenant vous pouvez redémarrer votre système, et si vous avez tout
+fait correctement, il va automatiquement assembler l'ensemble RAID, et
+monter les partitions appropriées.
+
+<h3>14.21.3 - Notes à propos de Softraid</h3>
+<h4>Complications quand d'autres disques sd(4) sont déjà présents</h4>
+Les disques softraid sont assemblés <i>après</i> les disques IDE, SATA,
+SAS et SCSI.
+De ce fait, si le nombre de périphériques sd(4) change (ajout ou suppression
+de périphérique -- ou si un périphérique plante), l'identifiant du disque
+softraid va changer.
+
+Pour cette raison, il est vraiment important d'utiliser les
+<a href="faq14.html#DUID">DUID</a>s plutôt que les noms de disques dans
+votre fichier
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fstab&amp;sektion=5">fstab(5)</a>.
+
+<p>
+Cependant, vous ne voudrez probablement pas spécifier le périphérique root
+par son DUID.
+
+<h4>RAID1 avec trois disques?</h4>
+Softraid supporte le RAID1 avec plus de deux "chunks", et les exemples de
+la page de manuel montrent une configuration RAID1 à trois disques.
+Le RAID1 duplique simplement les données sur tous les chunks; deux chunks
+offrent une redondance complète, trois proposent une meilleure tolérance
+à la panne. L'avantage de RAID1 avec trois disques (ou plus!) ou chunks est
+que si l'un des disques tombe en panne, vous avez TOUJOURS une redondance
+complète.
+Voyez cela comme un hot spare qui n'a pas besoin de se reconstruire!
+En théorie, un RAID1 avec trois disques est plus lent à l'écriture qu'un
+RAID1 à deux disques, bien qu'il soit plus rapide à l'écriture que de
+reconstruire deux disques en RAID1.
+
+<a name="softraidDR"></a>
+<h3>14.21.4 - Récupérer d'un désastre</h3>
+C'est la section que vous voudrez passer, mais ne la passez pas.
+C'est la raison de RAID: si les disques ne tombaient jamais en panne,
+vous n'ajouteriez pas un RAID complexe à votre système !
+Malheureusement, étant donné que les pannes sont difficiles à lister,
+il y a une forte probabilité pour que le problème que vous rencontrez
+ne soit pas décrit de manière exacte ici, mais si vous prenez le temps
+de comprendre les stratégies ici et le pourquoi du comment, vous pouvez
+espérer récupérer convenablement de n'importe quelle panne qui puisse
+survenir.
+
+<p>
+Gardez à l'esprit que les pannes ne sont pas souvent simples à gérer.
+
+L'auteur de cet article avait un disque dans une solution RAID hardware,
+et lorsqu'un court-circuit est survenu il a dû remplacer d'une part le
+disque, mais également l'alimentation électrique, l'enclos RAID et
+l'alimentation électrique d'un second ordinateur dont le disque était
+aussi tombé en panne. Il a également dû dire adieu aux sauvegardes,
+étant donné qu'il avait mal configuré l'enclos de remplacement.
+<!-- Hum hum hum ... -->
+
+<p>
+Les étapes nécessaires pour recouvrer le système peuvent êtres appliquées
+en <a href="faq8.html#LostPW">mode utilisateur unique</a> ou depuis le
+<a href="faq4.html#bsd.rd">noyau d'installation (bsd.rd)</a>.
+
+<p>
+Si vous avez l'intention de vous entraîner à récupérer d'une erreur
+softraid (et nous vous incitons VIVEMENT à le faire !), vous
+trouverez sans doute utile de zéroer un disque que vous venez de
+retirer de l'ensemble RAID avant d'essayer de le remettre dans ce
+même ensemble. D'une part, cela simule le remplacement d'un disque
+avec un nouveau; d'autre part, cela évite toute confusion au cas où
+le système détecterait des restes de RAID sur le disque.
+
+<p>
+
+Récupérer d'une panne sera souvent un événement en deux étapes: la
+première est de remettre le système en marche, la seconde de reconstruire
+l'ensemble qui est tombé en panne.
+Ces deux étapes peuvent être séparées par un certain temps si vous
+n'avez pas de disque de remplacement sous la main.
+
+<h4>Récupérer d'une panne: disque secondaire</h4>
+Cela est relativement simple. Vous pourriez avoir à enlever le disque
+qui est tombé en panne pour remettre le système sur pieds.
+
+<p>
+Lorsque vous êtes prêt à réparer le système, vous devrez remplacer
+le disque qui est tombé en panne, créer le RAID et les autres partitions
+disklabel, puis reconstruire l'ensemble RAID.
+
+En supposant que votre volume RAID est <tt>sd0</tt>, et que vous
+souhaitez remplacer le disque qui est tombé en panne par <tt>wd1m</tt>,
+les étapes suivantes devraient fonctionner:
+
+<ul>
+<li>Bootez le système.
+<li>Créez les partitions appropriées sur votre nouveau disque
+<li>Reconstruisez votre partition RAID:
+<blockquote><pre>
+# <b>bioctl -R /dev/wd1m sd0</b> 
+</pre></blockquote>
+<li>Redémarrez.
+</ul>
+
+<h4>Récupérer d'une panne: disque primaire</h4>
+De nombreux ordinateurs ne peuvent pas booter depuis un disque secondaire
+si le disque primaire est tombé en panne et est toujours branché (à moins
+qu'il soit tellement en panne qu'il ne soit même plus détecté...).
+
+Certains ordinateurs ne peuvent tout simplement pas booter sur un disque
+qui n'est pas le disque primaire.
+
+<p>
+En général, si votre disque primaire tombe en panne, vous devrez l'enlever,
+et bien souvent faire de votre disque secondaire un disque primaire. Cela
+pourrait impliquer de <i>re-jumper</i> le disque (le <i>jumper</i> étant
+une pièce métallique), ou de le brancher sur un autre port.
+Bien évidemment, votre disque secondaire doit inclure votre partition RAID
+et doit être bootable.
+
+<p>
+Une fois que votre système est remis en marche sur le disque secondaire
+et qu'un nouveau disque a été introduit, reconstruisez votre RAID comme
+décrit précédemment.
+
+
+<h4>Récupérer d'un "mélangeage" de vos disques</h4>
+Que se passe-t-il si vous avez quatre disques, disons sd0, sd1, sd2 et sd3,
+et que pour quelque raison d'upgrade ou autre, vous en venez à enlever
+tous vos disques et à ne plus vous souvenir du quel était lequel ?
+
+<p>
+Heureusement, softraid gère ce cas à merveille: il considère les
+disques comme étant "vagabonds", mais sait tout de même reconstruire
+l'ensemble RAID.
+Cependant, le disque de boot de la machine doit être bootable, et si vous
+avez effectué des changements dans la partition root avant de faire cela,
+vous voudrez probablement vous assurer que vous n'avez pas booté sur votre
+partition altroot par erreur.
+Le système "<a href="#altroot">altroot</a>" d'OpenBSD peut s'avérer
+plus efficace pour certaines applications, étant donné qu'il fournit
+une copie des vieilles informations de configuration au cas où un
+changement ne fonctionnerait pas comme on s'y attendrait.
+
+<h3>14.21.5 - Softraid Crypto</h3>
+Les volumes softraid(4) cryptés peuvent être mis en place très simplement:
+
+<ul>
+<li>Créez la partition désirée avec disklabel(8) et assignez-lui le type RAID
+<li>Zéroez le début de la partition comme décrit plus haut.
+<li><tt># <b>bioctl -c C -l /dev/sd0m softraid0</b><br>
+New passphrase: <b><i>My Crypto Pass Phrase</i></b><br>
+Re-type passphrase: <b><i>My Crypto Pass Phrase</i></b><br>
+softraid0: CRYPTO volume attached as sd1</tt>
+<li>fdisk(8)ez, disklabel(8)ez et newfs(8)ez ce nouveau volume.
+</ul>
+
+Une fois cela en place, vous pouvez "déverrouiller" le volume crypto avec:
+<blockquote><pre>
+# <b>bioctl -c C -l /dev/sd1m softraid0</b>
+Passphrase: <b><i>My Crypto Pass Phrase</i></b>
+softraid0: CRYPTO volume attached as sd1
+</pre></blockquote>
+Vous pouvez ensuite monter les partitions du volume crypté en utilisant
+mount, comme d'habitude.
+
+<p>
+Pour déconnecter un disque crypto (et le rendre ainsi inutilisable),
+démontez tous les systèmes de fichiers et utilisez la commande suivante
+(où le volume crypté est sd1):
+<blockquote><pre>
+# <b>bioctl -d sd1</b>
+</pre></blockquote>
+
+La page de manuel pour cette commande peut faire peur, étant donné que la
+commande -d y est décrite comme supprimant ("deleting") le volume; mais
+dans le cas des disques crypto, cela désactive juste le volume encrypté
+de telle façon que les données qu'il contient ne puissent pas être
+accessibles sans mot de passe.
+
+<p>
+Bien d'autres options sont disponibles pour softraid, et de nouvelles
+fonctionnalités apparaissent au fil du temps; prenez donc soin de consulter
+les pages de manuel pour
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bioctl&amp;sektion=8">bioctl(8)</a>
+et
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=softraid&amp;sektion=4">softraid(4)</a>.
+
+<h4>J'ai oublié mon mot de passe!</h4>
+Désolé, mais ça, c'est du vrai cryptage. Il n'y a ni backdoor ni outil
+magique de déverrouillage. Si vous avez perdu le mot de passe de votre
+volume softraid crypté, les données qu'il contient resteront
+inutilisables.
+
+
 <p>
 <font color= "#0000e0">
 <a href= "index.html">[Index de la FAQ]</a>
@@ -2631,10 +3163,10 @@ sont montées en mode asynchrone vu que de toute façon, elles vont être
 <br>
 <small>
 <!--
-Originally [OpenBSD: faq14.html,v 1.230 ]<br>
-$Translation: faq14.html,v 1.106 2013/07/23 03:18:40 rustybsd Exp $<br>
+Originally [OpenBSD: faq14.html,v 1.238 ]<br>
+$Translation: faq14.html,v 1.107 2013/08/15 13:29:45 rustybsd Exp $<br>
 -->
-$OpenBSD: faq14.html,v 1.84 2013/07/23 06:21:49 ajacoutot Exp $
+$OpenBSD: faq14.html,v 1.85 2013/08/15 15:14:54 ajacoutot Exp $
 </small>
 
 </body>
