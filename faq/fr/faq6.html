@@ -1391,7 +1391,7 @@ pas administrable par le réseau (ce qui peut être une fonctionnalité
 voulue).
 
 <p>
-<h3>Exemple d'application d'un pont</h3>
+<h3>Exemple simple d'application d'un pont</h3>
 
 <p>
 Un de mes racks possède un certain nombre d'anciens systèmes, lesquels
@@ -1468,6 +1468,91 @@ symétrique -- les paquets entrent et sortent dans les deux directions.
 
 <p>
 C'est tout ! Redémarrez et vous aurez un pont fonctionnel.
+
+<p>
+<h3>Un pont faisant office de serveur DHCP</h3>
+
+<p>
+Disons que nous avons un petit système qui possède quatre interfaces
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vr&amp;sektion=4">vr(4)</a>,
+de vr0 à vr3. On veut bridger vr1, vr2 et vr3 ensemble, laissant
+vr0 pour un uplink (un câble modem par exemple). On veut également
+servir les adresses IP à travers ce DHCP sur les interfaces bridgées.
+La machine étant un serveur DHCP et un routeur uplink, elle va devoir
+avoir une adresse IP sur le réseau bridgé (contrairement à l'exemple
+précédent dans lequel elle n'était pas visible sur le réseau).
+
+<p>
+Il n'est pas possible d'assigner une adresse IP directement à une interface
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridge&amp;sektion=4">bridge(4)</a>.
+L'adresse IP devrait être ajoutée à l'une des interfaces, mais nous
+ne pouvons pas utiliser une interface physique étant donné que le
+lien pourrait être coupé, rendant l'adresse inatteignable.
+Heureusement, depuis OpenBSD 4.7, il y a un driver d'interface Ethernet
+virtuelle
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vether&amp;sektion=4">vether(4)</a>
+qui peut être utilisé à cet effet. Nous allons l'ajouter au bridge,
+lui assigner une adresse IP et faire en sorte que
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dhcpd&amp;sektion=8">dhcpd(8)</a>
+écoute sur cette interface.
+
+<p>
+Notes:
+
+<ul>
+<li>La <a href="#DHCPserver">configuration du serveur DHCP</a> n'est pas
+    décrite dans cette section, mais le schéma utilisé ici est le même.
+<li>Cela va être aussi le routeur uplink pour votre réseau bridgé, donc
+    nous utiliserons l'adresse IP 192.168.1.1 pour être en adéquation
+    avec la configuration du serveur DHCP.
+<li>Nous ne traiterons pas de la configuration de l'uplink, du routage
+    et du firewalling ici.</li>
+</ul>
+
+<p>Tout d'abord, marquez vr1, vr2 et vr3 en tant que "up":
+
+<blockquote><pre>
+$ <b>cat /etc/hostname.vr1</b>
+up
+$ <b>cat /etc/hostname.vr2</b>
+up
+$ <b>cat /etc/hostname.vr3</b>
+up
+</pre></blockquote>
+
+<p>
+Ensuite, créez la configuration vether0:
+
+<blockquote><pre>
+$ <b>cat /etc/hostname.vether0</b>
+inet 192.168.1.1 255.255.255.0 192.168.1.255
+up
+</pre></blockquote>
+
+<p>
+On configure l'interface bridge de telle façon qu'elle contienne
+toutes les interfaces que l'on a évoquées précédemment:
+
+<blockquote><pre>
+$ <b>cat /etc/hostname.bridge0</b>
+add vether0
+add vr1
+add vr2
+add vr3
+up
+</pre></blockquote>
+
+<p>
+Et pour finir on configure dhcpd(8) pour qu'il écoute sur
+l'interface vether0:
+
+<blockquote><pre>
+$ <b>grep ^dhcpd_flags= /etc/rc.conf.local</b>
+dhcpd_flags="vether0"
+</pre></blockquote>
+
+<p>
+Redémarrez, et voilà!
 
 <p>
 <h3>Le filtrage sur un pont ("filtering bridge")</h3>
@@ -1671,7 +1756,7 @@ ci :
     probing: pc0 com0 com1 apm pxe![2.1] mem[540k 28m a20=on]
     disk: hd0*
     net: mac 00:e0:c5:c8:cf:e1, ip 192.168.1.76, server 192.168.1.252
-    >> OpenBSD/i386 PXEBOOT 3.17
+    >> OpenBSD/i386 PXEBOOT 3.19
     boot>
 </pre>
 
@@ -1680,7 +1765,7 @@ tapez simplement "<tt>bsd.rd</tt>" pour récupérer le fichier <tt>bsd.rd</tt>
 à partir du serveur TFTP.
 
 <pre>
-    >> OpenBSD/i386 PXEBOOT 3.17
+    >> OpenBSD/i386 PXEBOOT 3.19
     boot> bsd.rd
     booting tftp:bsd.rd: 4375152+733120 [58+122112+105468]=0x516d04
     entry point at 0x100120
@@ -1688,9 +1773,9 @@ tapez simplement "<tt>bsd.rd</tt>" pour récupérer le fichier <tt>bsd.rd</tt>
     Copyright (c) 1982, 1986, 1989, 1991, 1993
             The Regents of the University of California.  All rights reserved.
 
-    Copyright (c) 1995-2012 OpenBSD.  All rights reserved.  http://www.OpenBSD.org
-    
-    OpenBSD 5.2 (RAMDISK_CD) #207: Wed Aug  1 10:19:00 MDT 2012
+    Copyright (c) 1995-2013 OpenBSD.  All rights reserved.  http://www.OpenBSD.org
+
+    OpenBSD 5.3 (RAMDISK_CD) #49: Tue Mar 12 18:50:37 MDT 2013
       ...
 </pre>
 
@@ -2104,13 +2189,11 @@ Aironet Communications 4500/4800.
 <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ath&amp;sektion=4">ath(4)</a>
 pilote pour Atheros 802.11a/b/g. <sup>(AP)</sup>
 <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=athn&amp;sektion=4">athn(4)</a>
-pilote pour Atheros 80211/a/g/n.
+pilote pour Atheros 802.11/a/g/n.
 <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=atu&amp;sektion=4">atu(4)</a>
 Atmel AT76C50x USB 802.11b
 <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=atw&amp;sektion=4">atw(4)</a>
 ADMtek ADM8211.
-<li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=awi&amp;sektion=4">awi(4)</a>
-AMD 802.11 PCnet Mobile.
 <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bwi&amp;sektion=4">bwi(4)</a>
 Broadcom AirForce 802.11b/g
 <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=cnw&amp;sektion=4">cnwi(4)</a>
@@ -2310,10 +2393,10 @@ border="0" alt="[back]"></a>
 <br>
 <small>
 <!--
-Originally [OpenBSD: faq6.html,v 1.304 ]<br>
-$Translation: faq6.html,v 1.145 2013/07/15 06:25:31 rustybsd Exp $<br>
+Originally [OpenBSD: faq6.html,v 1.307 ]<br>
+$Translation: faq6.html,v 1.146 2013/08/25 18:18:02 rustybsd Exp $<br>
 -->
-$OpenBSD: faq6.html,v 1.117 2013/07/15 06:56:19 ajacoutot Exp $
+$OpenBSD: faq6.html,v 1.118 2013/08/29 06:30:41 ajacoutot Exp $
 </small>
 
 </body>
