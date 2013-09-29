@@ -1,0 +1,623 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>OpenBSD Upgrade Guide 5.4</title>
+<link rev="made" href="mailto:www@openbsd.org">
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="resource-type" content="document">
+<meta name="description"   content="OpenBSD Upgrade Process for 5.3 -> 5.4">
+<meta name="keywords"      content="openbsd,faq,upgrade,5.4">
+<meta name="distribution"  content="global">
+<meta name="copyright"     content="This document copyright 2013 by OpenBSD">
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+<a href="../index.html">
+<img alt="[OpenBSD]" height=30 width=141 src="../images/smalltitle.gif" border="0">
+</a>
+<p>
+<font color="#0000e0">
+<a href="upgrade41.html">[4.0 -> 4.1]</a> |
+<a href="upgrade42.html">[4.1 -> 4.2]</a> |
+<a href="upgrade43.html">[4.2 -> 4.3]</a> |
+<a href="upgrade44.html">[4.3 -> 4.4]</a> |
+<a href="upgrade45.html">[4.4 -> 4.5]</a> |
+<a href="upgrade46.html">[4.5 -> 4.6]</a> |
+<br>
+<a href="upgrade47.html">[4.6 -> 4.7]</a> |
+<a href="upgrade48.html">[4.7 -> 4.8]</a> |
+<a href="upgrade49.html">[4.8 -> 4.9]</a> |
+<a href="upgrade50.html">[4.9 -> 5.0]</a> |
+<a href="upgrade51.html">[5.0 -> 5.1]</a> |
+<a href="upgrade52.html">[5.1 -> 5.2]</a> |
+<br>
+<a href="upgrade53.html">[5.2 -> 5.3]</a> |
+<a href="index.html">[FAQ Index]</a>
+</font>
+
+<h1><font color="#e00000">
+Upgrade Guide: 5.4 to 5.3
+</font></h1>
+<hr>
+
+<i>Note: Upgrades are only supported from one release to the release
+immediately following it.
+Do not skip releases.</i>
+
+<p><i>
+It is highly recommended that you read through and fully understand
+this process before attempting it.
+If you are doing it on a critical or physically remote machine, it is
+recommended that you test this process on an identical, local system to
+verify its success before attempting on a critical or remote computer.
+</i>
+
+<p>
+Upgrading is a convenient way to bring your OpenBSD system up to the most
+recent version.
+However, the results are not intended to precisely match the results of
+a wipe-and-reload installation.
+Old library files in particular are not removed in the upgrade process,
+as they may be required by older applications that may or may not be
+upgraded at this time.
+If you REALLY wish to get rid of all these old files, you are probably
+better off reinstalling from scratch.
+
+<p>
+Table of Contents:
+<ul>
+<li><a href="#before">Before upgrading</a>
+  <ul>
+  <li><a href="#kerberos">Default KerberosV database directory has moved</a>
+  <li><a href="#fontconfig">fontconfig update</a>
+  <li><a href="#comShuffle">i386, amd64 com(4) port shuffled</a>
+  <li><a href="#pre-rc.dcompat">rc.conf(8) pre-rc.d(8) backward
+     compatibility removed</a>
+  <li><a href="#drm">Intel DRM</a>
+  <li><a href="#headsup">Advanced notice: Big changes for 5.5</a>
+  </ul>
+<li><a href="#upgrade">The upgrade process</a>
+<li><a href="#final">Final steps</a>
+  <ul>
+  <li><a href="#sysmerge">Merging changed files via sysmerge(8)</a>
+  <li><a href="#RmFiles">Files to delete</a>
+  <li><a href="#Kernchk">Checking the kernel</a>
+  <li><a href="#Pkgup">Upgrading packages</a>
+  </ul>
+</ul>
+
+<hr>
+<p>
+<a name="before"></a>
+<h2>Before upgrading: things to think about and be aware of</h2>
+This is <i>not</i> a complete list of the changes that took place
+between 5.3 and 5.4, but rather some of the important things that will
+impact a large number of users in the upgrade process.
+For a more complete list of changes, see
+<a href="../plus54.html">plus54.html</a> and the CVS change logs.
+
+<ul>
+<a name="kerberos"></a>
+<li><b>Default KerberosV database directory has moved:</b><br>
+The default database directory for KerberosV has been moved from
+<tt>/var/heimdal</tt> to <tt>/var/kerberosV</tt> which is more generic and
+independent of the implementation.<br>
+<b>Make sure you have a way to log into the machine without using Kerberos
+before performing the upgrade.</b>
+Before upgrading, stop the Kerberos services and copy the database directory
+to the new location:
+<blockquote><pre>
+<b>/etc/rc.d/kadmind stop
+/etc/rc.d/kpasswdd stop
+/etc/rc.d/kdc stop
+cp -Rp /var/heimdal /var/kerberosV</b>
+</pre></blockquote>
+Then proceed with the upgrade as usual...<br>
+After upgrading, check that Kerberos services are working properly then
+remove the old database directory:
+<blockquote><pre>
+<b>rm -rf /var/heimdal</b>
+</pre></blockquote>
+
+<p>
+<a name="fontconfig"></a>
+<li><b>fontconfig update:</b><br>
+Fontconfig in xenocara has been updated to version 2.10.91 and has
+switched to a BSD make build system.
+This new version of fontconfig deprecates the use of
+<tt>~/.fonts.conf</tt> for local configuration. Make sure the users
+who have created this file move it to its new location:
+<blockquote><pre>
+<b>mkdir -p ~/.config/fontconfig
+mv ~/.fonts.conf ~/.config/fontconfig/fonts.conf</b>
+</pre></blockquote>
+
+<p>
+<a name="comShuffle"></a>
+<li><b>i386, amd64 com(4) port shuffled:</b><br>
+Device configuration lines for all four standard
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=isa&sektion=4">isa(4)</a>
+serial ports have been added to the GENERIC kernel configuration on
+these platforms.
+As a result the numbering of
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=com&sektion=4">com(4)</a>
+devices may change on your system.
+Serial ports provided by
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=puc&sektion=4">puc(4)</a>
+or other multi-port serial cards will now start at com4, instead of com3.
+If you are using any of these devices as serial console or in a console
+server setup, please review the appropriate configuration files.
+
+<p>
+<a name="pre-rc.dcompat"></a>
+<li><b>rc.conf(8) pre-rc.d(8) backward compatibility removed:</b><br>
+rc.conf.local(8) now only supports rc.d(8) variables to control
+daemons startup, and no longer supports "legacy" variables.
+The following variables have been renamed to their _flags counterpart:
+<ul>
+<li><tt>amd=YES</tt> becomes <tt>amd_flags=</tt>
+<li><tt>inetd=YES</tt> becomes <tt>inetd_flags=</tt>
+<li><tt>portmap=YES</tt> becomes <tt>portmap_flags=</tt>
+<li><tt>rwhod=YES</tt> becomes <tt>rwhod_flags=</tt>
+</ul>
+The <tt>lockd</tt> variable has been removed.
+Similar functionality can be achieved by setting:
+<ul>
+<li><tt>lockd_flags=</tt>
+<li><tt>statd_flags=</tt>
+</ul>
+
+The <tt>aucat_flags</tt> variable has been renamed to <tt>sndiod_flags</tt>.
+<ul>
+<li><tt>aucat_flags=NO</tt> becomes <tt>sndiod_flags=NO</tt>
+</ul>
+
+<i>Before upgrading</i>, you need to check your rc.conf.local file for
+the old variable names and change them to the new ones, or some services
+that may be important for you (i.e., NFS) may not start on boot.
+Note that these new variables have been supported for a few releases, so
+you may wisht to reboot and verify that your changes here work before
+you do the rest of your upgrade.
+
+<p>
+<a name="drm"></a>
+<li><b>Intel DRM:</a></b><br>
+For 5.4, the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=drm&amp;sektion=4">drm(4)</a>
+driver is now supported with many
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=intel&amp;sektion=4">Intel</a>
+video chips, using the Direct
+Rendering Infrastructure.
+X users should experience better results overall.
+Console users may be somewhat surprised that their screen is no longer
+the traditional 25 lines of 80 characters.
+For the most part, this will not be a problem, and generally is an
+improvement, but some people using old, low-resolution monitors may
+have issues.  If so, you can use
+<a href="faq5.html#BootConfig">User Kernel Configuration (UKC)</a>
+to disable the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=inteldrm&amp;sektion=4">inteldrm(4)</a>
+driver.
+
+
+<p>
+<a name="headsup"></a>
+<li><b>Advanced notice: Big changes coming for 5.5!</b><br>
+OpenBSD 5.5 will be year 2038 ready, but this requires a change to a
+64 bit time type.
+This results in a "flag day" event, where old binaries will not run
+on the new kernel, and the new binaries won't run on the old kernel,
+and some file formats will be changing.
+A remote, no-console process will be provided, but it will be a more
+touchy update process than usual.
+If you can possibly do the next update with a console, this is highly
+recommended.
+Failing that, it is suggested you practice remote upgrades on a similar
+system with similar applications with a local console before remotely
+upgrading critical systems.
+
+</ul>
+
+<p>
+<hr>
+<a name="upgrade"></a>
+<h2>The upgrade process</h2>
+
+<h3>Upgrading by install kernel</h3>
+If you have access to the system's console, the easiest and safest way
+to upgrade is to boot from the install kernel by boot media or
+<a href="faq4.html#bsd.rd">bsd.rd</a> and follow the upgrade steps,
+which are very similar to the <a href="faq4.html">install process</a>.
+
+<p>
+Afterwards, complete the upgrade by following the <a href="#final">final
+steps</a> as detailed below.
+
+<p>
+One easy way to boot from the install kernel is to place the 5.4 version
+version
+of <i>bsd.rd</i> in the root of your boot drive, then instruct the boot loader
+to boot using this new <i>bsd.rd</i> file.
+On amd64 and i386, you do this by entering "<tt>boot bsd.rd</tt>" at the
+initial <tt>boot&gt;</tt> prompt.
+
+<h3>Upgrading without install kernel</h3>
+<i>This is NOT the recommended process.  Use the install kernel method
+if at all possible!</i>
+
+<p>
+Sometimes, one needs to do an upgrade of a machine when one can't easily
+use the normal upgrade process.
+The most common case is when the machine is in a remote location and you
+don't have easy access to the system console.
+One can usually do this by carefully following this process:
+
+<ul>
+<li><b>Place install files in a "good" location</b>.
+Make sure you have sufficient space!
+
+<p>
+<li><b>Become root with ksh(1):</b>
+While using
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sudo&amp;sektion=8">sudo(8)</a>
+before each command is generally a good practice, the sudo(8) command
+will be broken by the last steps, so you should be root before starting
+this process.
+Also, the use of the OpenBSD
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ksh&amp;sektion=1">ksh(1)</a>
+shell is assumed.
+
+<p>
+<li><b>Stop any appropriate applications:</b>
+During this process, all the userland applications will be replaced but
+may not be runnable, and strange things may happen as a result.
+If this is a concern to you, shut down any applications that may
+be impacted.
+There may be other applications which you wish to keep from running
+immediately after the upgrade, stop and disable them as well.
+
+<p>
+<li><b>Disable package daemons and local shutdown commands:</b>
+The last steps in the upgrade process may result in various commands,
+especially those which are dynamically linked, being broken.
+In particular, this may prevent a normal shutdown of daemons listed
+in pkg_scripts, or additional commands in /etc/rc.shutdown, which may
+cause the machine to hang at shutdown.
+Before you proceed with the upgrade, edit /etc/rc.conf.local and
+comment-out any pkg_scripts lines.
+Also inspect /etc/rc.shutdown and comment-out any local shutdown commands.
+These can be reinstated post upgrade.
+
+<p>
+<li><b>Check the kernel:</b>
+Although <b>most people can skip this step</b>, if you had a modified kernel
+in 5.3, it is likely you will need to modify the stock kernel of 5.4.
+Especially when you are performing the upgrade process remotely, now is
+the time to make sure the new kernel will work upon rebooting the machine.
+If any changes must be made to the kernel, the safest thing to do is to
+make those changes on a local 5.4 system.
+This can be as simple as modifying a specific device using config(8),
+or it can involve a recompilation if the option you need is not included
+in the GENERIC kernel.
+Please consult <a href="faq5.html">FAQ 5 - Building the system from source</a>
+before deciding to recompile your kernel.
+
+<p>
+<li><b>Install new kernel(s):</b>
+
+<ul>
+<li>If using a single processor kernel:
+<blockquote><pre>
+<b>export RELEASEPATH=</b><i>/usr/rel</i>   <i># where you put the files</i>
+<b>cd ${RELEASEPATH}</b>
+<b>rm /obsd ; ln /bsd /obsd && cp bsd /nbsd && mv /nbsd /bsd</b>
+<b>cp bsd.rd bsd.mp /</b>
+</pre></blockquote>
+(note: you will get a harmless error message if your platform doesn't
+have a bsd.mp):
+<p>
+
+<li>If you are using the multiprocessor kernel:
+<blockquote><pre>
+<b>export RELEASEPATH=</b><i>/usr/rel</i>   <i># where you put the files</i>
+<b>cd ${RELEASEPATH}</b>
+<b>rm /obsd ; ln /bsd /obsd && cp bsd.mp /nbsd && mv /nbsd /bsd</b>
+<b>cp bsd.rd /</b>
+<b>cp bsd /bsd.sp</b>
+</pre></blockquote>
+</ul>
+
+<p>
+Note the extra steps for copying over the primary kernel: those are done
+to ensure that there is always a valid copy of the kernel on the disk
+that the system can boot from should there be a really badly timed power
+outage or system crash.
+
+<p>
+<li><b>Save a copy of reboot(8), install new userland applications.</b>
+You are still running the old kernel, it is possible the new reboot
+command will not run on the old kernel, so we will start by saving a
+copy of the old reboot command.
+<i>Do NOT install <tt>etc54.tgz</tt> and <tt>xetc54.tgz</tt> now, because
+that will overwrite your current configuration files!</i>
+Note that we are installing base54.tgz LAST, because it will include a new
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tar&amp;sektion=1">tar(1)</a>
+utility, which may or may not run on the old kernel.
+We reboot immediately, as the system is probably barely runnable after
+the unpacking of all the new files.
+
+<blockquote><pre>
+<b>cp /sbin/reboot /sbin/oreboot</b>
+<b>tar -C / -xzphf xserv54.tgz</b>
+<b>tar -C / -xzphf xfont54.tgz</b>
+<b>tar -C / -xzphf xshare54.tgz</b>
+<b>tar -C / -xzphf xbase54.tgz</b>
+<b>tar -C / -xzphf game54.tgz</b>
+<b>tar -C / -xzphf comp54.tgz</b>
+<b>tar -C / -xzphf man54.tgz</b>
+<b>tar -C / -xzphf base54.tgz</b> # Install last!
+<b>/sbin/oreboot</b>
+</pre></blockquote>
+
+Not all file sets will need to be installed for all applications,
+however if you installed a file set originally, you should certainly
+upgrade it with the new file set now.
+
+<p>
+Again, the files in <tt>/etc</tt> are handled separately below, so
+<tt>etc54.tgz</tt> and <tt>xetc54.tgz</tt> are NOT unpacked here.
+
+<p>
+<li><b>After reboot completes, upgrade <tt>/dev</tt>.</b>
+The new
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=MAKEDEV&amp;sektion=8&amp;arch=i386">MAKEDEV</a>
+file was copied to /dev by the installation of
+<tt>base54.tgz</tt>, so you simply need to do the following:
+<blockquote><pre>
+<b>cd /dev</b>
+<b>./MAKEDEV all</b>
+</pre></blockquote>
+
+</ul>
+
+<hr>
+<a name="final"></a>
+<h2>Final steps</h2>
+
+Whether you upgrade by using an install kernel and doing a formal
+"upgrade" process, or do a "in-place" binary upgrade, you need to do a
+few final steps to complete the upgrade.
+
+<p>
+<a name="sysmerge"></a>
+<h3>1. Merging changed files via sysmerge(8)</h3>
+
+<blockquote>
+
+<p>
+The
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysmerge&amp;sektion=8">sysmerge(8)</a>
+utility will compare the files that are actually on your system with
+those that would be installed in a fresh install, and assist you in
+merging the changes into your system.
+There are no assumptions made about
+what is actually on your system, so you can use sysmerge(8) to move
+between more arbitrary <a href="faq5.html#Flavors">points in the
+development process</a>, such as from an earlier <i>5.3-current</i> to
+<i>5.4-release</i> or from one <i>-current</i> to a later one.
+Sysmerge(8) compares the current files on your system with the files
+that would have been installed with a new install, and what would have
+been there from the last run of sysmerge.
+Usually, it can figure out what to do to update your files, but if it
+has difficulty, it will give you the option of keeping the old file,
+installing the new file, or assisting you in the manual merging of the
+old and new files, using
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sdiff&amp;sektion=1">sdiff</a>.
+
+<p>
+Please read the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysmerge&amp;sektion=8">sysmerge(8)</a>
+manual page before using it on your system.
+You are also advised to read the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=diff&amp;sektion=1">diff(1)</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sdiff&amp;sektion=1">sdiff(1)</a>
+and even review
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=more&amp;sektion=1">more(1)</a>
+manual pages before continuing.
+A wide terminal window (i.e., significantly more than 80 characters), if
+available, will make sdiff(1) easier to use.
+
+<p>
+Assuming the <tt>etc54.tgz</tt> and <tt>xetc54.tgz</tt> files exists in
+your ${RELEASEPATH}, run it with:
+
+<blockquote><pre>
+<b>sysmerge -s ${RELEASEPATH}/etc54.tgz -x ${RELEASEPATH}/xetc54.tgz</b>
+</pre></blockquote>
+
+For the files sysmerge(8) can't resolve on its own, it will show you a
+unified
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=diff&amp;sektion=1">diff(1)</a>,
+run through your favorite $PAGER (i.e.,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=more&amp;sektion=1">more(1)</a>)
+and ask you if you wish to:
+<blockquote><pre>
+  Use 'd' to delete the temporary ./var/www/htdocs/index.html
+  Use 'i' to install the temporary ./var/www/htdocs/index.html
+  Use 'm' to merge the temporary and installed versions
+  Use 'v' to view the diff results again
+
+  Default is to leave the temporary file to deal with by hand
+</pre></blockquote>
+
+<p>
+If you wish to retain your existing file, delete the temporary file, if
+you wish to replace your existing file with the new version, install the
+temporary file.
+If you wish to merge the two together, choosing 'm' will put you into
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sdiff&amp;sektion=1">sdiff(1)</a>,
+where you can manually merge the file.
+The default is to come back and deal with the file later, manually.
+
+<p>
+Sysmerge(8) saves all your replaced files into a temporary directory,
+similar to <tt>/var/tmp/sysmerge.24959/backups</tt>, so if you accidentally
+clobber something that was probably not such a good idea, you have a chance
+to recover it. Note that
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=daily&amp;sektion=8">daily(8)</a>
+cleans old files from this directory, but it will survive a reboot.
+
+<!-- p>
+<b>Sysmerge notes for 5.3 -> 5.4:</b><br>
+<ul>
+<li><b><tt>/etc/sysctl.conf</tt>:</b>
+The changes to <tt>sysctl.conf</tt> are all commented out items, so not
+installing the changed file will not directly change your system's
+behavior.
+Blindly installing the new default over your old, customized file
+will often cause significant annoyance.
+However, the new file shows the defaults and common options that are
+available, so you may wish to manually merge the changes into your file,
+or install the new file and put your changes back into the new file.
+
+</ul -->
+</blockquote>
+
+<a name="RmFiles"></a>
+<h3>2. Files to delete</h3>
+A number of files should be deleted from your system.
+Note that some of these may not exist on all systems; that's ok.
+Copy and paste the following lines:
+<blockquote><pre>
+<b>rm -rf /usr/share/locale/*.*
+rm -rf /usr/share/locale/de_AT
+rm -f /usr/include/spinlock.h
+rm -f /usr/libdata/perl5/site_perl/*/spinlock.ph
+rm -f /usr/share/man/man{9/{re,}lookup.9,/_Exit.3}
+rm -f /usr/include/pcap-int.h
+rm -f /usr/libdata/perl5/site_perl/*/pcap-int.ph
+rm -f /etc/kerberosV/README
+rm -f /usr/bin/{afslog,hxtool,kauth,kadmin,ksu,pagsh,kswitch}
+rm -f /usr/lib/lib{heimntlm.*,heimntlm_p.*,hx509.*,hx509_p.*}
+rm -f /usr/libdata/perl5/site_perl/*-openbsd/com_err.ph
+rm -f /usr/libdata/perl5/site_perl/*-openbsd/kerberosV/{crmf_asn1,heimntlm-protos,heimntlm,hx509-private,hdb-private}.ph
+rm -f /usr/libdata/perl5/site_perl/*-openbsd/kerberosV/{hx509-protos,hx509,hx509_err,kx509_asn1,ntlm_err,ocsp_asn1,pkcs10_asn1}.ph
+rm -f /usr/libdata/perl5/site_perl/*-openbsd/kerberosV/{pkcs12_asn1,pkcs8_asn1,pkcs9_asn1,pkinit_asn1,gssapi/gssapi_spnego,spnego_asn1}.ph
+rm -f /usr/libexec/{digest-service,kimpersonate,kdigest,kcm}
+rm -f /usr/include/com_err.h
+rm -f /usr/include/kerberosV/{crmf_asn1,hdb-private,heimntlm-protos,heimntlm,hx509-private}.h
+rm -f /usr/include/kerberosV/{hx509-protos,hx509,hx509_err,kx509_asn1,ntlm_err,ocsp_asn1,pkcs10_asn1,pkcs12_asn1}.h
+rm -f /usr/include/kerberosV/{pkcs8_asn1,pkcs9_asn1,pkinit_asn1,spnego_asn1,gssapi/gssapi_spnego}.h
+rm -f /usr/sbin/kdigest
+cd /usr/X11R6/include/xorg
+rm -f mibstore.h synaptics.h xaa.h xaalocal.h
+cd /usr/X11R6/lib/modules
+rm -f extensions/lib{dbe,dri,dri2,extmod,record}.{la,so}
+rm -f libxaa.{la,so} </b>
+</pre></blockquote>
+
+<a name="Kernchk"></a>
+<h3>3. Checking the kernel</h3>
+Note: <b>most people can skip this step!</b>
+<p>
+If you followed the instructions for the upgrade process without install
+kernel, you have already completed this step.
+However, if you used the install kernel, and if you had a modified kernel
+in 5.3, it is likely you will need to modify the stock kernel of 5.4.
+This can be as simple as modifying a specific device using config(8),
+or it can involve a recompilation if the option you need is not included
+in the GENERIC kernel.
+Please consult <a href="faq5.html">FAQ 5 - Building the system from source</a>
+before considering to recompile your kernel.
+
+<p>
+<a name="Pkgup"></a>
+<h3>4. Upgrading packages</h3>
+If you installed any packages on your system, you should upgrade them
+after completing the upgrade of the base system.
+Be aware, however, many packages will require further setup before
+and/or after upgrading the package.
+Check with the application's upgrade guide for details.
+
+<p>
+The following packages are known to have significant upgrade issues that
+will impact a large number of users.
+The fact that a package is not on this list doesn't mean it will have a
+trivial upgrade.
+You must do some homework on the applications YOU use.
+
+<ul>
+<p>
+
+<p>
+<li><b>mail/roundcubemail:</b>
+Roundcube now uses PDO for database access. Be sure to follow the
+update instructions in /usr/local/share/doc/pkg-readmes/roundcubemail*.
+
+<p>
+<li><b>sysutils/cfengine:</b>
+CFEngine has been updated to version 3.4; this is a major upgrade and
+is not a drop-in replacement for CFEngine 2.
+Existing users should see upstream's
+<a href="https://cfengine.com/manuals/cf3-upgrade">upgrade documentation</a>
+for further information.
+
+<p><li><b>net/nagios/nsca:</b>
+The NSCA update involves a change in packet format to allow longer messages.
+The new server is backwards-compatible and accepts messages from either old
+or new clients, but the new client is not compatible with the old server.
+Therefore, the NSCA server should be updated before updating clients.
+Note that it is strongly recommended that you switch to nsca-ng where
+possible.
+
+</ul>
+
+<p>
+The package tools support in-place updating using <tt>pkg_add -u</tt>.
+For instance, to update all your packages, make sure <tt>PKG_PATH</tt> is
+pointing to the 5.4 packages directory on your CD or nearest FTP mirror,
+and use something like
+
+<blockquote><pre>
+<b>pkg_add -u</b>
+</pre></blockquote>
+
+where the <tt>-u</tt> indicates update mode;
+pkg_add will prompt you for input when it encounters
+some ambiguity.
+Read the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pkg_add&amp;sektion=1&amp;manpath=OpenBSD+5.4">pkg_add(1)</a>
+manual page and the <a href="faq15.html#PkgMgmt">package management</a>
+chapter of the FAQ for more information.
+
+
+<p><br>
+<p>
+<font color="#0000e0">
+<a href="upgrade41.html">[4.0 -> 4.1]</a> |
+<a href="upgrade42.html">[4.1 -> 4.2]</a> |
+<a href="upgrade43.html">[4.2 -> 4.3]</a> |
+<a href="upgrade44.html">[4.3 -> 4.4]</a> |
+<a href="upgrade45.html">[4.4 -> 4.5]</a> |
+<a href="upgrade46.html">[4.5 -> 4.6]</a> |
+<br>
+<a href="upgrade47.html">[4.6 -> 4.7]</a> |
+<a href="upgrade48.html">[4.7 -> 4.8]</a> |
+<a href="upgrade49.html">[4.8 -> 4.9]</a> |
+<a href="upgrade50.html">[4.9 -> 5.0]</a> |
+<a href="upgrade51.html">[5.0 -> 5.1]</a> |
+<a href="upgrade52.html">[5.1 -> 5.2]</a> |
+<a href="index.html">[FAQ Index]</a>
+<br>
+<a href="upgrade53.html">[5.2 -> 5.3]</a> |
+</font>
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../images/back.gif" border="0" alt="[back]"></a>
+<a href="mailto:www@openbsd.org">www@openbsd.org</a>
+<br>
+<small>$OpenBSD: upgrade54.html,v 1.1 2013/09/29 19:42:45 nick Exp $</small>
+
+</body>
+</html>
