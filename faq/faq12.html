@@ -55,24 +55,25 @@ Questions</font></h1>
     OpenBSD/amd64 on processors that support it?</a>
   </ul>
 <li><a href="#armish" >12.4 - ARM-based appliances</a>
-<li><a href="#hp300">12.5 - HP 9000 series 300, 400</a>
-<li><a href="#hppa" >12.6 - HP Precision Architecture (PA-RISC)</a>
-<li><a href="#i386" >12.7 - i386</a>
+<li><a href="#armv7">12.5 - ARMv7-based systems</a>
+<li><a href="#hp300">12.6 - HP 9000 series 300, 400</a>
+<li><a href="#hppa" >12.7 - HP Precision Architecture (PA-RISC)</a>
+<li><a href="#i386" >12.8 - i386</a>
   <ul>
-  <li><a href="#ISANIC">12.7.1 - ISA NICs</a>
-  <li><a href="#FPU">12.7.2 - OpenBSD won't work on my
+  <li><a href="#ISANIC">12.8.1 - ISA NICs</a>
+  <li><a href="#FPU">12.8.2 - OpenBSD won't work on my
        80386/80386SX/80486SX system</a>
-  <li><a href="#IrqShare">12.7.3 - My dmesg shows multiple devices sharing
+  <li><a href="#IrqShare">12.8.3 - My dmesg shows multiple devices sharing
        the same interrupt</a>
-  <li><a href="#i386smouse">12.7.4 - My keyboard/mouse keeps locking
+  <li><a href="#i386smouse">12.8.4 - My keyboard/mouse keeps locking
        up (or goes crazy)!</a>
-  <li><a href="#i386soekris">12.7.5 - My Soekris/Alix/Lanner performs poorly</a>
-  <li><a href="#i386flash">12.7.6 - I get "missing interrupt" errors on
+  <li><a href="#i386soekris">12.8.5 - My Soekris/Alix/Lanner performs poorly</a>
+  <li><a href="#i386flash">12.8.6 - I get "missing interrupt" errors on
        my CF device</a>
-  <li><a href="#i386cpu">12.7.7 - Is this really new CPU supported?</a>
+  <li><a href="#i386cpu">12.8.7 - Is this really new CPU supported?</a>
   </ul>
-<li><a href="#landisk">12.8 - Landisk</a>
-<li><a href="#luna88k">12.9 - Luna88k</a>
+<li><a href="#landisk">12.9 - Landisk</a>
+<li><a href="#luna88k">12.10 - Luna88k</a>
 <li><a href="#macppc">12.11 - MacPPC</a>
   <ul>
   <li><a href="#macppcbm">12.11.1 - My bm(4) network adapter doesn't work!</a>
@@ -365,22 +366,115 @@ over OpenBSD/amd64, even on hardware that supports amd64 code:
 <h2>12.4 - ARM-based appliances</h2>
 [nothing yet]
 
+<a name="armv7"></a>
+<h2>12.5 - ARMv7-based systems (BeagleBoard, PandaBoard, SABRE Lite, Nitrogen6x)</h2>
+For 5.4, this was called the "beagle" platform, but for <i>-current</i>
+and later releases, this platform has been renamed
+"<a href="../armv7.html">armv7</a>".
+This platform is being actively improved; running <i>-current</i> is
+highly recommended.
+
+<p>
+Being this platform is still very much in a state of flux, this article
+will reflect the state of <i>-current</i> rather than the current
+release.
+
+<p>
+<b>Building from source:</b>
+At this moment, the kernel has to be in the FAT boot partition, not the
+root of the file system like other OpenBSD platforms, and this kernel
+must be in a format required by the U-Boot boot loader.
+So, after building your kernel, you must go through some special steps:
+
+<blockquote><pre>
+config GENERIC-OMAP <i># for Beagle; others may use GENERIC-IMX</i>
+cd ../compile/GENERIC-OMAP
+make clean; make
+make bsd.umg            <i># Extra steps start here!</i>
+mount /dev/sd0i /mnt    <i># assuming your FAT partition is 'i'</i>
+cp bsd.umg /mnt
+</pre></blockquote>
+
+
+<p>
+<b>No real time clock:</b> Many of the armv7 devices do not have a
+battery backed real time clock.
+For this reason, using the "-s" option of
+<a href="faq6.html#OpenNTPD">OpenNTPD</a> may be desirable.
+
+<p>
+<b>Distribution kernels must be converted before use:</b>
+The distribution kernels are standard kernels, which can be used
+for the -N option of
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ps&amp;sektion=1">ps(1)</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vmstat&amp;sektion=8">vmstat(8)</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dmesg&amp;sektion=8">dmesg(8)</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=iostat&amp;sektion=8">iostat(8)</a>
+and similar applications, but can not be booted directly by the U-Boot
+bootloader used on this platform.
+
+This can be done using
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mkuboot&amp;sektion=8">mkuboot(8)</a>
+
+<p>
+Typical operation is something along these lines for OMAP/beagle:
+<blockquote><pre>
+mkuboot -a arm -o linux -e 0x80300000 -l 0x80300000 <i>bsd</i> bsd.umg
+</pre></blockquote>
+
+for i.MX6:
+<blockquote><pre>
+mkuboot -a arm -o linux -e 0x10800000 -l 0x10800000 <i>bsd</i> bsd.umg
+</pre></blockquote>
+
+
+where <i>bsd</i> is the name of the kernel you are converting.
+
+<p>
+<b>U-Boot tricks:</b>
+<ul>
+<li>Booting single user (OMAP/beagle):
+<blockquote><pre>
+U-Boot# mmc rescan
+U-Boot# setenv bootargs sd0 -s
+U-Boot# fatload mmc 0 0x82800000 bsd.umg
+U-Boot# bootm 0x82800000
+</pre></blockquote>
+
+<li>Booting single user (i.MX6, mmc storage):
+<blockquote><pre>
+U-Boot# mmc rescan
+U-Boot# setenv bootargs sd0 -s
+U-Boot# fatload mmc 0 0x12000000 bsd.umg
+U-Boot# bootm 0x12000000
+</pre></blockquote>
+
+<li>Booting single user (i.MX6, SATA storage):
+<blockquote><pre>
+U-Boot# sata init
+U-Boot# setenv bootargs sd0 -s
+U-Boot# fatload sata 0 0x12000000 bsd.umg
+U-Boot# bootm 0x12000000
+</pre></blockquote>
+
+</ul>
+
 <p>
 <a name="hp300"></a>
-<h2>12.5 - HP300</h2>
+<h2>12.6 - HP300</h2>
 [nothing yet]
 
 <p>
 <a name="hppa"></a>
-<h2>12.6 - HPPA</h2>
+<h2>12.7 - HPPA</h2>
 [nothing yet]
 
 <p>
 <a name="i386"></a>
-<h2>12.7 - i386</h2>
+<h2>12.8 - i386</h2>
 
 <a name="ISANIC"></a>
-<h3>12.7.1 - ISA NICs</h3>
+<h3>12.8.1 - ISA NICs</h3>
 As OpenBSD runs well on older hardware, users often will end up using
 ISA NICs on OpenBSD systems.
 ISA hardware requires much more configuration and understanding than
@@ -478,7 +572,7 @@ devices are auto-configuring.
 <p>
 <a name="80386"></a>
 <a name="FPU"></a>
-<h3>12.7.2 - OpenBSD won't work on my 80386/80386SX/80486SX system!</h3>
+<h3>12.8.2 - OpenBSD won't work on my 80386/80386SX/80486SX system!</h3>
 <h4>80386SX/DX</h4>
 Support for the 80386DX and 80386SX processors was dropped beginning
 with OpenBSD 4.2.
@@ -496,7 +590,7 @@ The 80486DX and newer chips run OpenBSD fine.
 
 <p>
 <a name="IrqShare"></a>
-<h3>12.7.3 - My dmesg shows multiple devices sharing the same Interrupt
+<h3>12.8.3 - My dmesg shows multiple devices sharing the same Interrupt
 (IRQ)!</h3>
 This is entirely acceptable, and in fact, even desirable for PCI
 devices.
@@ -512,7 +606,7 @@ you must correct this problem.
 
 <p>
 <a name="i386smouse"></a>
-<h3>12.7.4 - My keyboard/mouse keeps locking up (or goes crazy)!</h3>
+<h3>12.8.4 - My keyboard/mouse keeps locking up (or goes crazy)!</h3>
 This is most often seen when using a "switch box" (sometimes called a
 "KVM switch") to attach multiple
 computers to one keyboard, monitor and mouse.
@@ -532,7 +626,7 @@ may wish to consider using a
 
 <p>
 <a name="i386soekris"></a>
-<h3>12.7.5 - My Soekris/Alix/Lanner performs poorly</h3>
+<h3>12.8.5 - My Soekris/Alix/Lanner performs poorly</h3>
 These machines are quiet, low-power, small and modest cost PC class
 systems, and many OpenBSD users are quite pleased with them.
 However, it must be remembered the processors, NICs, and other devices
@@ -543,7 +637,7 @@ performance machines compared to contemporary full-feature machines.
 
 <p>
 <a name="i386flash"></a>
-<h3>12.7.6 - I get "missing interrupt" errors on my CF device</h3>
+<h3>12.8.6 - I get "missing interrupt" errors on my CF device</h3>
 With some CF systems, such as early Soekris 4801 systems and some CF
 adapters, the DMA support is not properly wired up, so you might see
 messages such as:
@@ -570,7 +664,7 @@ ukc&gt; <b>quit</b>
 </pre></blockquote>
 
 <a name="i386cpu"></a>
-<h3>12.7.7 - Is this really new CPU supported?</h3>
+<h3>12.8.7 - Is this really new CPU supported?</h3>
 The issue of support is rarely the CPU itself, it is almost always the
 surrounding and supporting hardware.
 
@@ -584,12 +678,12 @@ If you have problems with new hardware, make sure you try a
 
 <p>
 <a name="landisk"></a>
-<h2>12.8 - Landisk</h2>
+<h2>12.9 - Landisk</h2>
 [nothing yet]
 
 <p>
 <a name="luna88k"></a>
-<h2>12.9 - Luna88k</h2>
+<h2>12.10 - Luna88k</h2>
 [nothing yet]
 
 <p>
@@ -707,6 +801,6 @@ You will need to use a powered USB hub to run these devices.
 <a href= "index.html"><img height= "24" width= "24" src= "../images/back.gif" border= "0" alt="[back]"></a>
 <a href="mailto:www@openbsd.org">www@openbsd.org</a>
 <br>
-<small>$OpenBSD: faq12.html,v 1.108 2013/05/01 13:16:32 nick Exp $</small>
+<small>$OpenBSD: faq12.html,v 1.109 2013/10/06 18:17:18 nick Exp $</small>
 </body>
 </html>
