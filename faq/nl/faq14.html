@@ -63,6 +63,8 @@
   </ul>
 <li><a href="#DiskOpt"    >14.18 - Schijfprestaties optimaliseren</a>
 <li><a href="#Async"      >14.19 - Waarom gebruiken we geen async mounts?</a>
+<li><a href="#altroot"    >14.20 - Dupliceren van uw root-partitie: altroot</a>
+<li><a href="#softraid"   >14.21 - Hoe gebruik ik softraid(4)?</a>
 </ul>
 <hr>
 
@@ -2594,6 +2596,507 @@ partities asynchroon gemount, aangezien ze bij een herstart toch gewist en
 opnieuw gemaakt worden.
 
 
+<a name="altroot"></a>
+<h2>14.20 - Dupliceren van uw root-partitie: altroot</h2>
+OpenBSD biedt een "altroot" voorziening in de
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=daily&amp;sektion=8">daily</a>
+scripts.
+Als de omgevingsvariabele <tt>ROOTBACKUP=1</tt> is gezet in ofwel
+<tt>/etc/daily.local</tt> of root's
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=crontab&amp;sektion=5">crontab(5)</a>
+en er een partitie is gespecificeerd in <tt>/etc/fstab</tt> om te mounten
+op <tt>/altroot</tt> met de optie "xx", dan wordt iedere nacht de gehele
+inhoud van de root-partitie gedupliceerd naar de <tt>/altroot</tt>-partitie.
+Ervan uitgaande dat we onze root-partitie willen backuppen naar wd1a, dan
+voegen we de volgende regel toe aan <tt>/etc/fstab</tt>
+
+<blockquote><pre>
+/dev/wd1a /altroot ffs xx 0 0
+</pre></blockquote>
+
+en zetten we de passende omgevingsvariabele in <tt>/etc/daily.local</tt>:
+<blockquote><pre>
+# <b>echo ROOTBACKUP=1 >>/etc/daily.local</b>
+</pre></blockquote>
+
+Aangezien het altroot-proces uw <tt>/etc</tt> directory omvat, zorgt
+dit ervoor dat wijzigingen in de configuratie dagelijks gebackupt worden.
+
+<p>
+Dit is een kopie van de "disk image" met dd(8), geen kopie van ieder bestand,
+dus zorg ervoor dat uw <tt>/altroot</tt> precies even groot of groter is
+dan uw root-partities.
+Vermijd tevens excessief grote root-partities zodat het proces niet te lang
+duurt.
+
+<p>
+Voor volledige redundantie zouden ook de andere partities gedupliceerd
+moeten worden, met behulp van <a href="#softraid">softraid</a> schijven,
+dump(8)/restore(8), rsync, etc.
+Dit kan handmatig worden gedaan of als onderdeel van een regelmatig schema,
+zoals de <tt>weekly.local</tt>, <tt>daily.local</tt> of <tt>monthly.local</tt>
+scripts.
+
+<p>
+In het algemeen zult u uw "altroot"-partitie op een andere schijf willen
+hebben die is ingesteld om te kunnen opstarten, mocht de primaire schijf
+falen.
+Het is mogelijk om "altroot" op dezelfde schijf te hebben als uw boot-schijf,
+maar de voordelen zijn dan beperkt.
+
+<p>
+Merk op dat we de altroot-schijf niet hebben aangeduid met het DUID maar
+met een device-naam.
+We willen waarschijnlijk een kopie maken van de boot-schijf naar een tweede
+schijf, dit kan echter veranderen als de volgorde van de schijven wordt
+verwisseld.
+Om deze reden vullen we de 'root' en 'altroot' in <tt>/etc/fstab</tt> in
+als een device-naam en niet als DUID.
+
+
+<a name="softraid"></a>
+<h2>14.21 - Hoe gebruik ik softraid(4)?</h2>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=softraid&amp;sektion=4">Softraid(4)</a> 
+werkt door het nabootsen van een
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=scsibus&amp;sektion=4">scsibus(4)</a>
+met
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sd&amp;sektion=4">sd(4)</a>
+apparaten, gemaakt door het combineren van een aantal OpenBSD
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=disklabel&amp;sektion=8">disklabel(8)</a>
+partities ("chunks") tot een virtuele schijf ("volume") met de gewenste
+RAID-strategie ("discipline"), zoals RAID0, RAID1, RAID4, RAID5 of
+Crypto.
+(Merk op dat alleen RAID0, RAID1 en Crypto op dit moment ondersteund worden.)
+
+<p>
+Deze virtuele disk wordt behandeld als iedere andere disk --  eerst wordt
+deze gepartitioneerd met <a href="#fdisk">fdisk(8)</a> (op fdisk-platformen)
+en vervolgens met <a href="#disklabel">disklabel(8)</a>, binnen deze partities
+wordt een bestandssysteem gemaakt, vervolgens gemount en gebruikt.
+
+<p>
+<h4>Enkele algemene woorden over RAID:</h4>
+<ul>
+<li>Bedenk voordat u een RAID-oplossing implementeert wat het wel en niet
+voor u kan doen.
+Het is geen vervanging van een goede backup-strategie.
+Het zorgt er niet voor dat uw systeem blijft draaien bij iedere hardwarefout.
+Het laat uw systeem misschien niet doordraaien bij een eenvoudige schijffout.
+In geval van software-RAID garandeert het niet dat u kunt opstarten van
+de overgebleven schijf als uw computer dat anders ook niet kon.
+
+<li>Voordat u in produktie gaat dient u te begrijpen hoe u uw RAID-oplossing
+gebruikt om te herstellen van fouten.
+Doe dit VOORDAT uw systeem een fout overkomt.
+Een slechte RAID-implementatie zorgt voor meer downtime dan het voorkomt.
+Dit geldt des te meer als het ervoor heeft gezorgd dat u laks bent geworden
+met backups of andere rampenplannen.
+
+<li>Hoe groter de RAID-partitie, hoe langer het duurt om te herstellen van
+een "gebeurtenis".
+Met andere woorden, het is geen goed idee om alle ruimte op uw goedkope
+500G schijven toe te kennen, alleen maar omdat deze beschikbaar is.
+Herstellen van een 500G mirror duurt veel langer dan van de 4G die u
+daadwerkelijk gebruikt.
+Een voordeel van software mirroring is dat u kunt instellen hoe veel van
+deze "gigantische" schijven echt wordt gebruikt in een RAID-set.
+
+<li>Er bestaat een reflex om zoveel mogelijk van uw systeem te gebruiken met
+RAID.
+Het mirroren van uw boot-partitie in een software RAID-systeem is lastig
+en vaak nutteloos omdat de meeste PC-hardware moeite heeft om op te starten
+van alles behalve de primaire schijf.
+Zelfs hardware die KAN opstarten van andere schijven heeft vaak moeite om
+vast te stellen wanneer een schijf defect is om te voorkomen dat deze wordt
+gebruikt om op te starten.
+Het "<a href="#altroot">altroot</a>"-systeem van OpenBSD kan zelfs BETER zijn
+in sommige gevallen, omdat het een kopie van de oude configuratie biedt in
+gevallen waarbij een wijziging niet helemaal werkt zoals bedoeld.
+
+<li>RAID biedt alleen redundantie voor de harde schijven.
+Veel toepassingen hebben meer redundantie nodig dan alleen de schijven en
+voor veel toepassingen betekent RAID alleen maar meer complicaties in plaats
+van een echt voordeel.
+Een voorbeeld hiervan is een set firewalls met <a href="faq6.html#CARP">CARP</a>
+die een complete fail-over redundantie bieden.
+In dit geval voegt RAID (hardware danwel software) alleen maar complicaties toe.
+</ul>
+
+<h3>14.21.1 - De installatie</h3>
+Softraid diskruimte kan worden gemaakt met vrije (of toegevoegde!) stukken
+schijfruimte na de installatie, maar dat is slechts een speciale (en eenvoudige)
+variant op het toevoegen van softraid tijdens de installatie.
+
+<p>
+De hulpmiddelen om een softraid-systeem samen te stellen zitten in het standaard
+OpenBSD systeem (voor het toevoegen van softraid na de installatie), maar
+ze zijn ook beschikbaar op de CD-ROM en <a href="faq4.html#bsd.rd">bsd.rd</a>
+installatie-kernels.
+Ze zijn niet beschikbaar op de floppies vanwege ruimtegebruik; een eenvoudig
+alternatief is om een zeer minimale installatie van OpenBSD te doen vanaf
+floppy, daarna van bsd.rd op te starten vanaf uw zojuist geïnstalleerde
+systeem en de installatie zoals gewenst over te doen.
+
+<p>
+Het installatieproces is iets anders dan de standaard OpenBSD
+<a href="faq4.html">installatie</a>, aangezien u vanuit de shell
+uw softraid(4)-schijf moet aanmaken voordat u verder gaat met de installatie.
+Zodra de softraid(4)-schijf is gemaakt, kunt u de installatie vrijwel normaal
+uitoveren, waarbij u de partities die u in RAID wilt hebben plaatst op
+de nieuw aangemaakte schijf.
+
+<p>
+U kunt van te voren alleen de RAID-partities maken en samenvoegen tot een
+softraid(4) volume en de installer de rest laten doen, maar het is waarschijnlijk
+makkelijker om ook de root en swap-partities te maken voordat u de installer
+start.
+
+<p>
+Dit betekent dat u de schijf nauwkeurig moet indelen voordat u de installer
+start en een aantal handelingen handmatig moet uitvoeren die de installer
+normaliter voor u doet.
+
+<p>
+De installatie-kernel heeft slechts <tt>/dev</tt> ingangen voor één wd(4)
+apparaat en één sd(4) apparaat bij het opstarten, dus u moet meer ingangen
+aanmaken om uw softraid-apparaten te configureren.
+
+Dit proces wordt normaliter automatisch gedaan door de installer, maar u
+heeft de installer nog niet gedraaid en u voegt een schijf toe die niet
+bestond tijdens het opstarten.
+
+Als we bijvoorbeeld een tweede en derde wd(4) apparaat nodig hebben en een
+tweede sd(4) (denk eraan dat softraid apparaten sd(4) apparaten zijn), dan
+kunt u het volgende doen vanuit de shell:
+
+<blockquote><pre>
+# <b>cd /dev</b>
+# <b>sh MAKEDEV wd1 wd2 sd1</b>
+</pre></blockquote>
+
+U heeft nu ondersteuning voor sd0, sd1, wd0, wd1 en wd2.
+
+<p>
+U wilt de fysieke schijf goed indelen met <a href="#fdisk">fdisk(1)</a>
+(indien van toepassing op uw platform -- zorg ervoor dat de tweede schijf
+bootable is!) en vervolgens met <a href="#disklabel">disklabel</a> de
+partities inrichten.
+
+<p>
+De fdisk(8) stappen hierover zetten een MBR en een OpenBSD-partitie op de
+schijf.
+ALS u de volledige schijf wilt gebruiken voor OpenBSD (als er dus NIETS anders
+op de schijf staat), dan kan dat met een enkel commando voor iedere schijf:
+
+<blockquote><pre>
+# <b>fdisk -iy wd0</b>
+# <b>fdisk -iy wd1</b>
+</pre></blockquote>
+
+(Zorg ervoor dat u begrijpt wat die commando's doen met eventuele gegevens
+op uw schijf voordat u ze blindelings uitvoert!)
+In andere gevallen zult u een OpenBSD-partitie moeten maken op de nieuwe
+schijven.
+
+<h4>Partities maken voor softraid</h4>
+Als u softraid(4)-partities maakt, geef ze dan het type "RAID" in plaats van
+"4.2BSD" of "swap".
+In dit geval maken we de gewenste partities op wd0:
+
+<ul>
+<li>wd0a  500M /
+<li>wd0b  500M swap
+<li>wd0m  10G RAID
+</ul>
+
+<blockquote><pre>
+# <b>disklabel -E wd0</b>
+Label editor (enter '?' for help at any prompt)
+> <b>a a</b>
+offset: [64] <b><i>ENTER</i></b> 
+size: [30282461] <b>500m</b>
+Rounding to cylinder (16065 sectors): 1028096
+FS type: [4.2BSD] <b><i>ENTER</i></b> 
+> <b>a b</b>
+offset: [1028160]  <b><i>ENTER</i></b> 
+size: [29254365] <b>500m</b>
+Rounding to cylinder (16065 sectors): 1028160
+FS type: [swap] <b><i>ENTER</i></b> 
+> <b>a m</b>
+offset: [3148740]  <b><i>ENTER</i></b>
+size: [28226205] <b>10g</b>
+Rounding to cylinder (16065 sectors): 20980890
+FS type: [4.2BSD] <b>RAID</b>
+> <b>q</b>
+Write new label?: [y] <b><i>ENTER</i></b>
+</pre></blockquote>
+
+<p>
+Vervolgens moeten we de tweede schijf zo voorbereiden dat deze op de
+belangrijkste punten overeenkomt met de indeling van de eerste schijf.
+Aangezien we het <tt>/altroot</tt>-systeem gebruiken, willen we een 'a'
+partitie op de tweede schijf met dezelfde grootte als de 'a' op de eerste.
+We willen dat het systeem van de tweede schijf draait net als van de eerste,
+dus maken we een even grote swap-partities (al kan die ook wat groter of
+kleiner zijn).
+We willen ook een RAID-partitie met dezelfde grootte als op de eerste schijf.
+Als de RAID-partities niet even groot zijn, dan bepaalt de kleinste de grootte
+van het uiteindelijke RAID volume.
+
+<p>
+Kortom...u moet echt het proces van hierboven  exact herhalen bij de tweede
+schijf, wd1.
+
+<h4>Het RAID volume samenstellen</h4>
+We nemen aan uw RAID-partities op wd0m en wd1m staan.
+Merk op dat de letter van de RAID-partitie om het even is, deze hoeft niet
+gelijk te zijn op beide schijven.  Het maakt het echter een stuk eenvoudiger
+als ze wel gelijk zijn.
+
+<p>
+Merk op dat softraid(4) wat moet rondneuzen om het bewijs te vinden van
+de partities die hij moet samenvoegen.  Als uw schijf eerder is gebruikt
+voor softraid is het daarom raadzaam om met dd(1) de eerste megabyte of zo
+van iedere partitie te wissen voordat we verder gaan:
+
+<blockquote><pre>
+# <b>dd if=/dev/zero of=/dev/rwd0m bs=1m count=1</b>
+   ...
+# <b>dd if=/dev/zero of=/dev/rwd1m bs=1m count=1</b>
+   ...
+</pre></blockquote>
+
+<p>
+Nu maken we onze eerste softraid(4)-schijf met
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bioctl&amp;sektion=8">bioctl(8)</a>:
+
+<blockquote><pre>
+# <b>bioctl -c 1 -l /dev/wd0m,/dev/wd1m softraid0</b>
+</pre></blockquote>
+
+Dit maakt een RAID1-volume ("<tt>-c 1</tt>") met de genoemde partities
+("<tt>-l /dev/wd0m,/dev/wd1m</tt>") en met de <tt>softraid0</tt> driver.
+Als er geen andere sd(4) apparaten op dit systeem zijn, dan wordt dit sd0.
+Merk op dat als u meerdere RAID-apparaten maakt, op één schijf of op meerdere
+schijven, u altijd softraid0 gebruikt als virtuele interface. U gebruikt
+niet softraid1 of hoger.
+Denk eraan dat "softraid0" een virtuele RAID-controller is en u kunt
+vele virtuele schijven aan deze controller hangen.
+
+<p>
+Dit maakt een nieuwe schijf "sd0" (ervan uitgaande dat er geen andere sd(4)
+schijven op uw systeem zijn).
+Dit apparaat wordt nu getoond op de systeemconsole en in dmesg ale een nieuw
+geïstalleerd apparaat:
+
+<blockquote><pre>
+scsibus1 at softraid0: 1 targets
+sd0 at scsibus2 targ 0 lun 0: &lt;OPENBSD, SR RAID 1, 005&gt; SCSI2 0/direct fixed
+sd0: 10244MB, 512 bytes/sec, 20980362 sec total
+</pre></blockquote>
+
+Dit laat zien dat we nu een nieuwe SCSI-bus hebben en een nieuwe schijf.
+Dit volume zal vanaf nu automatisch gevonden en samengesteld worden als
+het systeem opstart.
+
+<p>
+Omdat het nieuwe apparaat waarschijnlijk een hoop rommel heeft waar u
+een MBR en een disklabel verwacht, wordt u sterk aangeraden om het eerste stuk
+te vullen met nullen, als u dat niet heeft gedaan met de losse delen hierboven:
+
+<blockquote><pre>
+# dd if=/dev/zero of=/dev/rsd0c bs=1m count=1
+</pre></blockquote>
+
+U bent nu klaar om OpenBSD te installeren op uw systeem.
+Voer de installatie uit zoals normaal door "install" te typen op de prompt
+van het boot-medium.
+Let erop dat u "custom"-indeling kiest voor het disklabel wanneer hierom
+gevraagd wordt, anders wordt uw RAID-partitie overschreven!
+Gebruik de 'n'-optie van disklabel om het mount-punt van uw root-partitie te
+definiëren en maak alle partities op uw nieuwe softraidschijf (sd0 in het
+voorbeeld hierboven) die aanwezig zou moeten zijn, in plaats van op uw
+niet-RAID-schijven.
+
+<p>
+U kunt nu opnieuw opstarten en als u alles goed heeft gedaan dan worden
+de RAID-delen automatisch samengesteld en worden alle partities op de juiste
+plek gemount.
+
+<h3>14.21.3 - Softraid opmerkingen</h3>
+<h4>Complicaties als er andere sd(4)-schijven zijn</h4>
+Softraid-schijven worden samengesteld <i>nadat</i> alle andere IDE, SATA, SAS
+en SCSI-schijven zijn gekoppeld.
+Daarom verandert de aanduiding van de softraid-schijf als het aandel sd(4)
+schijven verandert (door toevoegen of verwijderen van apparaten -- of als een
+apparaat faalt).
+Om deze reden is het erg belangrijk dat u <a href="faq14.html#DUID">DUID</a>
+(Disklabel Unique Identifiers) gebruikt in plaats van schijfnamen in uw
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fstab&amp;sektion=5">fstab(5)</a>
+bestand.
+
+<p>
+Het root-device kunt u beter niet opgeven met DUID.
+
+<h4>RAID1 met drie schijven?</h4>
+Softraid ondersteunt RAID1 met meer dan twee "delen" en de voorbeelden in de
+manpage laten een configuratie met drie schijven zien.
+RAID1 dupliceert simpelweg de gegevens over alle delen opslag, twee delen
+biedt volledige redundantie, drie geef extra fouttolerantie.
+Het voordeel van RAID met drie (of meer!) schijven is dat het geval van
+het falen van een enkele schijf, u NOG STEEDS volledige redundantie heeft.
+Zie het als een hot spare die geen tijd nodig heeft om te vullen!
+In theorie is een RAID1 met drie schijven langzamer met schrijven dan met
+twee schijven, maar hij is veel sneller met schijven dan een RAID1 met
+twee schijven die aan het herstellen is.
+
+<a name="softraidDR"></a>
+<h3>14.21.4 - Herstellen van rampen</h3>
+Dit is het deel dat u wilt overslaan, maar toch niet overslaat.
+Dit deel is de reden voor RAID -- als schijven nooit zouden falen, dan zou
+u de complexiteit RAID niet aan uw systeem toevoegen!
+Helaas is het erg moeilijk om aan te geven hoe systemen precies falen, dus
+het is zeer waarschijnlijk dat het in uw geval niet precies zal verlopen
+zoals hier vermeld.  Maar als u de tijd neemt om de strategie die hier is
+beschreven te begrijpen en het WAAROM snapt, dan kunt u ze hopelijk gebruiken
+om te herstellen van de situaties die zich in uw geval voordoen.
+
+<p>
+Bedenk dat fouten vaak niet eenvoudig zijn.
+De auteur van dit artikel heeft een schijf in een hardware RAID-behuizing
+gehad met een kortsluiting in de voedingsaansluiting die er niet alleen voor
+zorgde dat de schijf vervangen moest worden, maar ook de RAID-behuizing en de
+voeding van een tweede computer die hij gebruikte om te kijken of de schijf
+echt stuk was.  En omdat hij de vervangende behuizing niet juist had ingesteld,
+moest de data ook vanaf backup worden teruggezet.
+
+<p>
+De stappen die nodig zijn voor het herstel van het systeem kunnen worden
+uitgevoerd in <a href="faq8.html#LostPW">single user mode</a> of vanaf de
+<a href="faq4.html#bsd.rd">installatie kernel (bsd.rd)</a>.
+
+<p>
+Als u van plan bent om te oefenen met softraid-herstel (en we raden STERK aan
+om dat te doen!), dan kan het handig zijn om een schijf die u heeft verwijderd
+uit de RAID-opstelling volledig te wissen voordat u deze terugplaatst.
+Niet alleen bootst dit beter na dat u de schijf vervangt door een nieuwe,
+maar het voorkomt ook de verwarring die kan ontstaan als het systeem
+de restanten van een softraid-indeling ziet.
+
+<p>
+
+Herstel van een fout gebeurt meestal in twee stappen -- de eerste stap
+is om het systeem draaiend te krijgen, de tweede stap is om de defecte
+RAID-array te herstellen.
+Tussen deze twee stappen kan enige tijd zitten als u geen reserve-schijf
+bij de hand hebt.
+
+<h4>Herstel van defecte schijf: secondaire schijf</h4>
+Dit is relatief eenvoudig.
+U kunt de defecte schijf verwijderen om het systeem weer in de lucht te krijgen.
+
+<p>
+Als u klaar bent om het systeem te repareren, kunt u de defecte schijf
+vervangen, te RAID aanmaken en andere disklabel-partieies en dat de mirror
+herstellen.
+Ervan utigaande dat uw RAID-volume <tt>sd0</tt> is en dat u de defecte
+schijf <tt>wd1m</tt> vervangt, dan zou het volgende moeten werken:
+
+<ul>
+<li>Start het systeem op.
+<li>Maakt de juiste partities op de nieuwe schijf
+<li>Herstel uw RAID-partitie:
+<blockquote><pre>
+# <b>bioctl -R /dev/wd1m sd0</b> 
+</pre></blockquote>
+<li>reboot
+</ul>
+
+<h4>Herstel van defecte schijf: primaire schijf</h4>
+Veel PC-achtige computers kunnen niet opstarten van de tweede schijf als de
+eerste defect is maar nog wel aangesloten, behalve als deze zo dood is dat hij
+niet wordt gezien.
+Vele kunnen niet booten als het niet de "eerste" is, ook al is er geen andre
+schijf.
+
+<p>
+Als de eerste schijf faalt, dan moet u deze in het algemeen verwijderen en
+in veel gevallen moet u de tweede schijf "opwaarderen" tot eerste schijf
+voordat het systeem kan opstarten.
+Dit kan betekenen dat u de jumpers anders moet instellen, de schijf op een
+andere poort moet aansluiten of een variant hierop.
+Uiteraard moet de tweede schijf niet alleen uw RAID-partitie bevatten,
+maar ook functioneel kunnen opstarten.
+
+<p>
+Zodra uw systeem draait op de tweede schijf en er een nieuwe schijf in zit,
+dan kunt u de RAID herstellen zoals hierboven.
+
+
+<h4>Herstel van het "schuiven" van uw schijven</h4>
+Stel dat u vier schijven in uw systeem heeft, sd0, sd1, sd2 sn sd3, en dat
+bij een hardware vervanging of upgrade de schijven uit de machine zijn gehaald
+en dat u niet meer weet welke welke was?
+
+<p>
+Gelukkig kan softraid hier goed mee overweg.  Het beschouwt de schijven
+als "zwervend", maar stelt de array succesvol samen.
+De opstartschijf in de machine moet echter wel bootable zijn en als
+u zojuist wijzigingen in de root-partitie heeft gemaakt, dan wilt u
+waarschijnlijk zeker weten dat u niet per ongeluk van uw altroot-partitie start.
+
+<h3>14.21.5 - Softraid Crypto</h3>
+
+Cryptographische softraid(4)-volumes zijn tamelijk eenvoudig in te stellen:
+
+<ul>
+<li>Creëer de gewenste partitie met disklabel(8) als type RAID
+<li>Wis het begin van de partitie zoals hierboven.
+<li><tt># <b>bioctl -c C -l /dev/sd0m softraid0</b><br>
+New passphrase: <b><i>My Crypto Pass Phrase</i></b><br>
+Re-type passphrase: <b><i>My Crypto Pass Phrase</i></b><br>
+softraid0: CRYPTO volume attached as sd1</tt>
+<li>fdisk(8), disklabel(8) en newfs(8) dit nieuwe volume sd1 naar wens.
+</ul>
+
+Als dit gedaan is, kunt u het crypto-volume "ontsleutelen" wanneer nodig met:
+<blockquote><pre>
+# <b>bioctl -c C -l /dev/sd1m softraid0</b>
+Passphrase: <b><i>My Crypto Pass Phrase</i></b>
+softraid0: CRYPTO volume attached as sd1
+</pre></blockquote>
+U kunt de versleutelde partities vervolgens mouten zoasl gebruikelijk.
+
+<p>
+Om een crypto-volume te ontkoppelen (waardoor het weer onbruikbaar wordt),
+dient u alle bestandssystemen te umounten en typt u het volgende (waarbij
+wd1 het versleutelde volume is):
+<blockquote><pre>
+# <b>bioctl -d sd1</b>
+</pre></blockquote>
+
+De manpage hiervoor ziet er een beetje eng uit, aangezien het -d commando
+wordt omschreven als het "verwijderen" van het volume.  Maar in geval van
+crypto deactiveert het slechts het versleutelde volume zodat niet meer
+beanderd kan worden zonder passphrase.
+
+<p>
+Er zijn nog vele andere mogelijkheden met softraid en er worden nieuwe
+eigenschappen toegevoegd en verbeteringen doorgevoerd.  Raadpleeg daarom
+de manpages van
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bioctl&amp;sektion=8">bioctl(8)</a>
+en
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=softraid&amp;sektion=4">softraid(4)</a>
+op uw systeem.
+
+<h4>Ik ben mijn passphrase vergeten!</h4>
+Helaas.
+Dit is echte encryptie en er is geen achterdeur of een magisch hulpmiddel
+om te ontsteutelen.
+Als uw passphrase kwijt is, dan is de data op uw softraid crypto volume
+verloren.
+
+
 <p>
 <font color= "#0000e0">
 <a href= "index.html">[FAQ Index]</a>
@@ -2608,10 +3111,10 @@ opnieuw gemaakt worden.
 <br>
 <small>
 <!--
-Originally [OpenBSD: faq14.html,v 1.230 ]<br>
-$Translation: faq14.html,v 1.96 2013/05/01 17:55:20 maurice Exp $<br>
+Originally [OpenBSD: faq14.html,v 1.239 ]<br>
+$Translation: faq14.html,v 1.98 2013/10/07 17:52:15 maurice Exp $<br>
 -->
-$OpenBSD: faq14.html,v 1.82 2013/05/02 06:05:49 ajacoutot Exp $
+$OpenBSD: faq14.html,v 1.83 2013/10/16 07:49:02 ajacoutot Exp $
 </small>
 
 </body>
