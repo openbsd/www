@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.28 2014/01/14 09:44:26 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.29 2014/01/14 09:53:45 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -90,7 +90,7 @@ sub read_mirrors ($) {
 			# before pushing, else die
 			push(@mirrors, $record) if (int(keys(%$record)));
 			$record = {};		# new empty one
-		} elsif ($line =~ /^([A-Z]{2,3})\s+(.*)/) {
+		} elsif ($line =~ /^([A-Z0-9]{2,3})\s+(.*)/) {
 			($record->{$1})
 				and die "dupe $1 in $filename:$lineno";
 			$record->{$1} = $2;	# add key/value pair
@@ -280,7 +280,8 @@ sub _paste_mirrorlist($$$$$$) {
 			}
 			printf $fh $format{'fingerprints'}."<br>\n"
 				if ($mirror->{'SD'} || $mirror->{'SR'} ||
-					$mirror->{'SO'} || $mirror->{'SE'});
+					$mirror->{'SO'} || $mirror->{'SE'} ||
+					$mirror->{'S2'});
 			print $fh "(RSA1) $mirror->{'SO'}<br>\n"
 				if ($mirror->{'SO'});
 			print $fh "(RSA) $mirror->{'SR'}<br>\n"
@@ -289,6 +290,8 @@ sub _paste_mirrorlist($$$$$$) {
 				if ($mirror->{'SD'});
 			print $fh "(ECDSA) $mirror->{'SE'}<br>\n"
 				if ($mirror->{'SE'});
+			print $fh "(ED25519) $mirror->{'S2'}<br>\n"
+				if ($mirror->{'S2'});
 			print $fh "<p>\n";
 		}
 		elsif ($type eq 'VH') {
