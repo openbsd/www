@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.27 2012/04/20 14:57:19 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.28 2014/01/14 09:44:26 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -22,14 +22,17 @@ $format{'cvsroot'}	= '<strong>CVSROOT=%s@%s:%s</strong>';
 # note: some files are being reused because they would be identical
 my $sources = {
 	'mirrors.dat'	=> 'mirrors.dat',
+
 	'openbsd-ftp-head'	=> 'mirrors/ftp.html.head',
 	'openbsd-ftp-mid1'	=> 'mirrors/ftp.html.mid1',
 	'openbsd-ftp-mid2'	=> 'mirrors/ftp.html.mid2',
 	'openbsd-ftp-end'	=> 'mirrors/ftp.html.end',
+
 	'openbgpd-ftp-head'	=> 'mirrors/openbgpd-ftp.html.head',
 	'openbgpd-ftp-mid1'	=> 'mirrors/ftp.html.mid1',
 	'openbgpd-ftp-mid2'	=> 'mirrors/openntpd-ftp.html.mid2',
 	'openbgpd-ftp-end'	=> 'mirrors/openbgpd-ftp.html.end',
+
 	'openntpd-ftp-head'	=> 'mirrors/openntpd-ftp.html.head',
 	'openntpd-ftp-mid1'	=> 'mirrors/ftp.html.mid1',
 	'openntpd-ftp-mid2'	=> 'mirrors/openntpd-ftp.html.mid2',
@@ -38,6 +41,7 @@ my $sources = {
 	'openntpd-portable-mid1'=> 'mirrors/ftp.html.mid1',
 	'openntpd-portable-mid2'=> 'mirrors/openntpd-ftp.html.mid2',
 	'openntpd-portable-end'	=> 'mirrors/openntpd-ftp.html.end',
+
 	'openssh-ftp-head'	=> 'mirrors/openssh-ftp.html.head',
 	'openssh-ftp-mid1'	=> 'mirrors/ftp.html.mid1',
 	'openssh-ftp-mid2'	=> 'mirrors/openntpd-ftp.html.mid2',
@@ -46,6 +50,7 @@ my $sources = {
 	'openssh-portable-mid1' => 'mirrors/openssh-portable.html.mid1',
 	'openssh-portable-mid2' => 'mirrors/openntpd-ftp.html.mid2',
 	'openssh-portable-end'	=> 'mirrors/openssh-ftp.html.end',
+
 	'anoncvs-head'		=> 'mirrors/anoncvs.html.head',
 	'anoncvs-end'		=> 'mirrors/anoncvs.html.end',
 	'cvsync-head'		=> 'mirrors/cvsync.html.head',
