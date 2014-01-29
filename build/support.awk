@@ -33,7 +33,7 @@ $1 == "C" { country = substr($0, 3);
 	else if (country == "UAE")
 		country = "United Arab Emirates"
 	if (country != oldCountry) {
-		print "<tr><td bgcolor=\"#99FFFF\" colspan=\"2\" align=\"center\">"
+		print "<tr><td bgcolor=\"#E0E0E0\" colspan=\"2\" align=\"center\">"
 		if (country == "United States") {
 			n = split("USA", labels, " ")
 		} else if (country == "United Arab Emirates") {

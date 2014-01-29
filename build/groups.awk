@@ -31,7 +31,7 @@ $1 == "C" { country = substr($0, 3);
 	if (country == "USA")
 		country = "United States"
 	if (country != oldCountry) {
-		print "<tr><td bgcolor=\"#99ffff\" colspan=\"6\" align=\"center\">"
+		print "<tr><td bgcolor=\"#E0E0E0\" colspan=\"6\" align=\"center\">"
 		if (country == "United States") {
 			n = split("USA", labels, " ")
 		} else {
