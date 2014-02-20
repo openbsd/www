@@ -117,6 +117,7 @@ function reset() {
 	fax = ""
 	url = ""
 	note = ""
+	follow = ""
 }
 
 END {
