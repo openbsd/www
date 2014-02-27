@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.30 2014/01/14 10:11:32 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.31 2014/02/27 20:31:30 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -55,12 +55,9 @@ my $sources = {
 	'anoncvs-end'		=> 'mirrors/anoncvs.html.end',
 	'cvsync-head'		=> 'mirrors/cvsync.html.head',
 	'cvsync-end'		=> 'mirrors/cvsync.html.end',
-	'mirrors-head'		=> 'mirrors/mirrors-notes.head',
-	'mirrors-end'		=> 'mirrors/mirrors-notes.end'
 };
 my $targets = {
 	'ftplist'		=> '../ftplist',
-	'mirrors'		=> '../mirrors-notes',
 	'mirror_list'		=> '../mirror_list',
 	'openbsd-ftp'		=> '../ftp.html',
 	'openbgpd-ftp'		=> '../openbgpd/ftp.html',
@@ -139,36 +136,6 @@ sub write_ftplist($$$) {
 		}
 	}
 
-	close($fh) or die "close $filename: $!";
-}
-
-# writes out the ftplist in format for src/distrib/notes/mirrors
-sub write_mirrors($$) {
-	my ($filename, $mirrorref) = @_;
-
-	open(my $fh, '>', $filename) or die "open $filename: $!";
-	_paste_in($fh, $sources->{"mirrors-head"});
-
-	my $oldcountry='';
-	foreach my $mirror (sort _by_country @$mirrorref) {
-		for my $type ('UH', 'UF') {
-			next unless ($mirror->{$type});
-			if($mirror->{'GC'} ne $oldcountry) {
-				printf $fh "\n%s:\n", $mirror->{'GC'};
-				$oldcountry=$mirror->{'GC'};
-			}
-			(my $url = $mirror->{$type}) =~ s,/$,,;
-			my $loc = _get_location ('mirlist2', $mirror);
-			$loc =~ s/&auml;/a/g ;
-			$loc =~ s/&ouml;/o/g ;
-			$loc =~ s/&uuml;/u/g ;
-			$loc =~ s/&eacute;/e/g ;
-			$loc =~ s/&ntilde;/n/g ;
-			printf $fh "    %s%s\n", $url, $loc ? ' ('.$loc.')' : '';
-		}
-	}
-
-	_paste_in($fh, $sources->{"mirrors-end"});
 	close($fh) or die "close $filename: $!";
 }
 
