@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.31 2014/02/27 20:31:30 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.32 2014/03/02 19:37:02 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -387,7 +387,6 @@ if (@ARGV == 2) {
 
 	if ($cmd eq 'ftplist') {
 		write_ftplist($targets->{'ftplist'}, $ver, \@mirrors);
-		write_mirrors($targets->{'mirrors'}, \@mirrors);
 		write_mirror_list($targets->{'mirror_list'}, \@mirrors);
 	} elsif ($cmd eq 'openbsd-ftp' || $cmd eq 'openbgpd-ftp' ||
 		 $cmd eq 'openntpd-ftp' || $cmd eq 'openntpd-portable' ||
