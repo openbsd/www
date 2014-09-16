@@ -41,6 +41,7 @@
   <li><a href="#Setup.chkroute">6.2.6 - Checking routes</a>
   <li><a href="#Setup.forward" >6.2.7 - Setting up your OpenBSD box as a gateway</a>
   <li><a href="#Setup.aliases" >6.2.8 - Setting up aliases on interfaces</a>
+  <li><a href="#Setup.replace" >6.2.9 - Adding and Replacing NICs</a>
 </ul>
 <li><a href= "#PF"    >6.3 - How do I filter and firewall with OpenBSD?</a>
 <li><a href= "#DHCP"  >6.4 - Dynamic Host Configuration Protocol (DHCP)</a>
@@ -544,6 +545,124 @@ dc0: flags=8863&lt;UP,BROADCAST,NOTRAILERS,RUNNING,SIMPLEX,MULTICAST&gt;
         inet 192.168.0.3 netmask 0xffffffff broadcast 192.168.0.3
 </pre></blockquote>
 
+<a name="Setup.replace"></a>
+<h3>6.2.9 - Adding and Replacing NICs</h3>
+You may have to replace or add a network adapter on an OpenBSD system,
+maybe upgrading the capabilities of the system or repairing failed
+hardware.
+This will require some reconfiguration.
+The good news is this is relatively easy, though there are some things
+to be aware of.
+
+<p>
+Key is understanding how OpenBSD names NICs -- we'll ignore "special"
+cases like ISA devices which probably shouldn't be used in important
+applications today.
+Unlike some OSs which try to remember any network adapter the installed
+OS has ever seen, OpenBSD does not remember a NICs identification
+between boots -- it names them in order that they are found.
+In most cases, this is far simpler for you, as the system will always
+identify a NIC the same way in the same hardware configuration, and
+when configurations change, the results are easily understood.
+
+<p>
+Here are some cases:
+<ul>
+<li><b>Replace a NIC with an identical device:</b> This would be the
+case when you move the disk system from a failed machine to another
+identical machine, or install an image or full backup to identical
+hardware.
+In this case, things are easy -- no change in configuration will be
+needed, other than perhaps changing the IP address in the
+<tt>hostname.if</tt> if needed.
+
+<li><b>Replace a NIC with a different device:</b> This would also be
+the case when one moves a disk system to a non-identical machine.
+In this case, simply rename the old <tt>hostname.<i>if</i></tt> file to match
+the new device.
+For example, if you replace an
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fxp&amp;sektion=4">fxp(4)</a>
+device which was fxp0 (first fxp) with a
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=re&amp;sektion=r">re(4)</a>
+device, which would end up as re0, 
+you could rename <tt>/etc/hostname.fxp0</tt> to <tt>/etc/hostname.re0</tt>
+and your new re0 device would take over the configuration of the
+old fxp0 device.
+If you might someday restore the original configuration, you may prefer
+to make the new file a hard link to the original, rather than renaming
+it.
+
+<li><b>Replacing the one of several similar cards with a different type:</b>
+Let's assume you have a machine with fxp0, fxp1 and fxp2, and fxp0
+fails.
+Unfortunately, you don't have a spare similar fxp card, so you need to
+replace it with an
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=em&amp;sektion=4">em(4)</a>
+card.
+This gets a little ugly, as fxp1 and fxp2 will rename themselves:
+<blockquote><pre>
+<b>old  -> new</b>
+fxp0 -> em0
+fxp1 -> fxp0
+fxp2 -> fxp1
+</pre></blockquote>
+Again, you will rename your <tt>/etc/hostname.*</tt> accordingly:
+<blockquote><pre>
+# <b>cd /etc</b>
+# <b>mv hostname.fxp0 hostname.em0</b>
+# <b>mv hostname.fxp1 hostname.fxp0</b>
+# <b>mv hostname.fxp2 hostname.fxp1</b>
+</pre></blockquote>
+
+
+<li><b>Adding a new NIC to an existing system:</b> 
+If your added NIC is of a different type, it will be the "0" device of
+whatever driver it is.
+For example, if you are adding a
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bge&amp;sektion=4">bge(4)</a>
+device to a machine with only a
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rl&amp;sektion=4">rl(4)</a>
+device, life is easy -- the new device will be bge0, create an
+appropriate <tt>/etc/hostname.bge0</tt>.
+<p>
+The more difficult variation is when you are adding a new card of the
+same type as another in the machine.
+Most add-on NICs will have the MAC address of the card somewhere written
+on the card.  Make note of this, insert the card, and look at the dmesg
+and note the identifier of the new NIC and its relationship to the
+earlier NICs.
+You may find that ALL the existing NICs have changed number.
+You may be able to put the new NIC in a different slot to change the
+identifier as desired, but if the earlier devices were on-board, you
+may have no options, and have to adjust the <tt>hostname.<i>if</i></tt>
+files.
+
+<li><b>Total Confusion:</b>  Sometimes, things get totally confused.
+Maybe your new machine has lots of multi-port NICs, or several on-board
+NICs and you aren't quite sure how they are identified, or changes were
+made with less care than might be hoped for, and now you aren't sure
+what is what.
+<p>
+First thing to note is that ifconfig(8) will tell you both the MAC
+address and the link status of each port.
+So first trick might be to mark add-in cards with their MAC addresses.
+Second trick in a confused situation can be to simply attach ONE unknown
+NIC to a switch port at a time, and look for which NIC in ifconfig(8)
+is now showing a link.
+Once you have a few ports identified, you will often figure out the rest
+quickly.
+
+</ul>
+
+In addition to the <tt>hostname.<i>if</i></tt> files, any other file that deals
+with hardware interfaces will have to be adjusted.
+Some likely candidates might include:
+<ul>
+<li><tt>/etc/pf.conf</tt>
+<li>CARP configuration (<tt>/etc/hostname.carp*</tt>)
+<li>Bridge configuration (<tt>/etc/hostname.bridge*</tt>)
+<li>Trunk configuration (<tt>/etc/hostname.trunk*</tt>)
+</ul>
 
 <p>
 <a name="PF"></a>
