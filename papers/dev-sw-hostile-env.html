@@ -1,0 +1,341 @@
+<html>
+<head><title>Developing Software in a Hostile Environment</title></head>
+<body>
+
+<h1>Developing Software in a Hostile Environment</h1>
+Ted Unangst<p>
+tedu@openbsd.org
+
+<h1>intro</h1>
+
+What's this talk about and who is it for? I'll begin by referencing a series
+of talks that Theo has given over the years regarding exploit mitigation. What
+it is, how it works, why you want it. Usually the focus is on stopping the bad
+guys.
+<p>
+I noticed something a bit funny about the exploit mitigation material. On the
+one hand, it's very technical, how exploits work and are mitigated. On the
+other hand, the people most interested in exploit mitigation are more likely
+to be users, stuck running software they don't trust. I wanted to look at
+things from a different viewpoint. How can we help the good guys?
+<p>
+This is a talk about developing software. My examples are all going to come
+from OpenBSD, but that doesn't mean I'm only talking to OpenBSD developers.
+Actually my target audience is everyone who develops software that does, or
+may, run on OpenBSD. In this case, OpenBSD is the hostile environment. If
+you're only now discovering that the internet is a hostile environment, you're
+about 20 years late to the party.
+<p>
+What makes OpenBSD a hostile environment? It doesn't always conform to
+expectations and it certainly doesn't condone many mistakes. Developers talk a
+lot about standards; C standard, posix standard; but there's also real world
+de facto standards and assumptions. Let's challenge some of those assumptions
+and push the boundaries of the standard. A strictly conforming program will
+continue to run just as it should, but a program that takes shortcuts will
+quickly find itself in trouble.
+<p>
+Everybody loves secure software, but as we've maintained for some time, secure
+software is simply a subset of correct software.
+
+<h1>outline</h1>
+
+I'm going to start off by discussing a few features that someone developing
+software on OpenBSD should know about. Then I'm going to discuss some of the
+theory behind these features, and how your design decisions can affect your
+ability to detect bugs. Along the way, I'll mix in a few example bugs that
+were identified and fixed.
+
+<h1>philosophy</h1>
+
+Software has bugs. Everybody knows this. Lots of bugs go unnoticed. That
+does't mean they're harmless; it just means you haven't noticed them. Yet.
+<p>
+Whenever we've added new exploit mitigations to OpenBSD, something always
+seems to stop working. Always. This makes the development of such features
+very exciting, of course. Did I break it, or was it always broken?
+<p>
+From a high level, my philosopy is that instability today leads to stability
+tomorrow. The sooner we can break it, the sooner we can fix. Everybody will
+tell you the same thing, that's it's better to find bugs in development than
+in production. True of course, but that doesn't mean you won't have production
+bugs. Earlier is better there too. There is an unfortunate mindset that once
+something ships, we play it safe and become very conservative. But this only
+delays the inevitable, and it makes me very uncomfortable. Debugging a live
+system running code from two years ago is much more difficult than debugging a
+live system running code from last month. You didn't avoid the bug; you've
+only made it harder to deal with.
+
+<h1>malloc.conf</h1>
+
+Let's turn to some specifics. 
+<p>
+I'm guessing that malloc.conf is the most popular, familiar feature I'm going
+to talk about. It's a good place to start, with the user visible interface to
+malloc, and then we can move along from there to how allocators work.
+<p>
+All BSDs support the malloc.conf feature, which made its appearance in
+phkmalloc.  It was subsequently retained in jemalloc and ottomalloc, although
+with some divergence in the available options. The internal behavior of malloc
+can be controlled by creating a symlink named malloc.conf. The letters in the
+name of the symlink target enable or disable various options.
+<p>
+The J for junk option is the one I'd like to focus on. When enabled, this
+option prefills allocated memory with a non zero pattern and overwrites freed
+memory as well. This catches two different classes of bugs.
+<p>
+First, many program fail to completely initialize heap objects. Many malloc
+implementations, at least for a while after program startup, will return zero
+filled memory for allocations because that's what malloc gets from the kernel.
+Much like an uninitialzed stack variable, you'll probably get lucky until you
+don't. At some point, malloc will switch to returning previously used memory,
+which won't be zero, and the bug manifests. Better to catch it on the first
+allocation.
+<p>
+Second, many use after free bugs rely on the memory remaining unchanged for
+some time after free. Until the memory is recycled, the program can perhaps
+continue using it without consequence. By immediately overwriting the memory,
+we can trigger erroneous behavior.
+<p>
+There's no guarantee that the junking memory will flush out a bug. However, we
+can hope that the junked memory is sufficiently atypical that it causes
+observable deviations.
+<p>
+The man page for malloc.conf unfortunately downplays how signficant and
+helpful it can be. It's not just for testing or debugging, and despite
+whatever warnings you may find in the man page, running with J in production
+isn't such a bad idea. If the program behaves, it won't hurt. There may be a
+performance hit, true, but it may be acceptable. If it does hurt, you probably
+don't want to be running that program in production, regardless of what malloc
+options are in use.
+<p>
+A short while ago, I changed the default on OpenBSD to always junk small
+memory after free. We didn't necessarily want to impose a penalty on all code,
+particularly considering that some memory may still be unmapped zero on demand
+pages, so we restricted it to small chunks. And use after free bugs are
+probably more dangerous and more pervasive than uninitialized memory, so we
+focused the effort there.
+<p>
+Lots of OpenBSD users do run with malloc options enabled, so many of the bugs
+it catches have already been caught, but occasionally some slip through. When
+we started junking memory by default after free, the postgres ruby gem stopped
+working. You can always find more bugs by conscripting more testers.
+<p>
+There is (or was) a related option, Z for zero. It basically does the
+opposite, and always zeros newly malloced memory. jemalloc still has this
+option, but I removed it from OpenBSD because it seems like a crutch for
+poorly written applications. I don't want to help bad programs run; I want to
+stop them from running.
+<p>
+Some other options that may be interesting are the F and U options, also
+designed to help track down use after free bugs. By unmapping the freelist
+whenever possible, it can trigger segfaults when memory is accessed.
+<p>
+The G option enables guard pages. Unlike the others, I don't think this option
+is necessarily a good trade off. By default, the kernel will return randomized
+and well separated pages with unmapped regions between them. The G option
+enforces this behavior from the userland side, but it adds several system
+calls to some important code paths and is mostly redudant. If you're looking
+to conserve performance, skip this one.
+
+<h1>poison</h1>
+
+Another term for junking memory is poisoning. This is the term used in the
+OpenBSD kernel for instance. A little more on the theory behind it and some
+other uses. malloc is a general purpose allocator that deals in memory, but
+others like pool, uma, zone, slab, etc. deal in objects. That's a better way
+to think about what we're doing. Every object has a lifetime. It's allocated,
+used, and then freed (destroyed). Lots of bugs result when the code using an
+object fails to respect the lifetime. We'd like an enforcement mechanism.
+Enter poison.
+<p>
+Poisoning an object can be as simple as overwriting the memory with a simple
+pattern, but it can also be considerably more complex. The fixed pattern can
+be selected (crafted) for maximum invalidity. For example, we might want to
+overwrite pointers with a value that we know is not mapped. Find a hole in the
+address space and use that as the fill value. Use a few different patterns. Bugs
+have a tendency to adapt to whatever fill patterns you use.
+<p> 
+Theo and I had been discussing the possibility that the poison values in use
+might be conveniently aligned with harmless flag values. As an experiment, I
+inverted the bit patterns used.  It wasn't long before the smoke started
+pouring out.  In the OpenBSD kernel, we alternate between two values.
+Unfortunately, the two values happen to be quite similar, and this allowed
+some bugs to escape. The function to establish interrupts on i386 failed to
+initialize a flags argument. This was mostly harmless because the default fill
+value from malloc didn't set any interesting flags. When the bit values were
+inverted, the MP safe flag was set. Marking an interrupt handler as MP safe
+when it is not quickly leads to trouble.
+<p>
+Another thing one can do, and the kernel does this even though userland malloc
+does not, is to check that the poison values are still in place. This can
+detect some use after free writes. When code frees an object, it's immediately
+poisoned. If buggy code later changes the object, that will erase some of the
+poison. When the allocator decides to recycle the object, it checks that all
+the poison is in place. If not, panic.
+
+<h1>recycling</h1>
+
+Any allocator, be it malloc or pool or uma, has a recycling policy. When an
+object is freed, it is returned to the free list where it waits for a
+subsequent allocation. The free list need not actually be a list, but
+regardless of the data structure used, there will be either an explicit or
+implicit policy regarding the selection of the next object.
+<p>
+One common policy is fast recycle. Last in, first out. The most recent object
+freed is the next object allocated. This is great for performance because the
+object is probably already in cache. Unfortunately, it's not so great for
+detecting bugs. When the object is recycled, it will be reinitialized. All the
+poison is washed off. Any dangling pointers to the old freed object will
+instead see the new object. But since the new object is a perfectly legitimate
+object, the buggy code will continue running. Usually until something goes
+really wrong. From a security standpoint, this is also troublesome because
+it's predictable. If the attacker can control the contents of either the new
+or old object, they have some control over the other as well. That's always
+the case, but fast recycle makes it easy to control the interleavings of
+malloc and free as well, to guarantee that old and new objects overlap.
+<p>
+The opposite policy would be slow recycle. First in, first out. Or last in,
+last out. Or LRU. The buffer cache uses slow recycle. This is great for
+detecting bugs. The longer an object remains on the free list, the more
+opportunities you have to check that the poison is intact.
+<p>
+There's also indeterminate recycling, although that may be a poor name. What I
+mean is, it's not immediately obvious what policy is in effect. For instance,
+malloc and pool both operate on a current working page. Freed objects will be
+returned to whatever page they came from, but allocated objects always come
+from the current page. So for some objects, not on the current page, this is
+slow recycling. But for some objects, it's fast recycling. For example, even
+though userland malloc selects a chunk at random, if you allocate the last
+object in a page, then free it, then malloc again, you'll get the same object.
+We addressed this in both pool and malloc by occasionally reselecting a random current page.
+<p>
+Random recycling. First, you can deliberately try to recycle
+objects randomly. In OpenBSD, we do this by keeping a stash of recently freed
+objects. Whenever something is freed, a randomly selected index is used. The
+recently freed something goes into the stash, and the older something that was
+freed comes out and actually goes onto the free list. This was added as a
+security feature, but it's also great at mixing things up in everyday programs
+as well.
+
+<h1>more info</h1>
+
+I'd like to refer you to Google's Project Zero blog, especially two posts. An
+earlier one about Safari and a recent one on Flash. Even if you're not
+interested in exploit development, they do a good job of explaining how the
+heap works, particularly in regards to recycling. Understanding how malloc
+works is good for everyone.
+
+<h1>mostly harmless</h1>
+
+One of the more difficult to integrate mitigation technologies was stack
+smashing protector. Propolice includes not only a stack cookie to detect
+overwrites, but it also rearranges stack frames so that buffers are more
+likely to hit the cookie and not something else. In practice, this means lots
+of even tiny one byte overflows are detected. We had a similar experience
+adding guard pages to malloc.
+<p>
+Whenever a one byte overflow is found, people tend to have this reaction that
+it's harmless. That gets revised to mostly harmless. Then possibly harmless.
+Then maybe not so harmless.
+
+<h1>gcc -fstack-shuffle</h1>
+
+A quick digression to discuss another feature. martynas added a new option to
+gcc that shuffles stack buffers. I already mentioned that the stack protector
+arranges buffers to be near the cookie. But when there are two buffers, it can
+only pick one buffer. This option resorts the buffers so that each compilation
+results in a different ordering. It's compile time, not run time, but it still
+found several bugs in OpenBSD.
+
+<h1>practice</h1>
+
+There are other appraoches to bug detection. Static analysis, of course. Being
+careful, code review. In the category of dynamic tooling, lots of options
+exist. Electric fence is the classic I usually refer to, and of course
+Valgrind. Back in school, we had the chance to use Purify. It worked great,
+but you always had to remember to build with it, then rerun your program. It
+split development in half. You'd play around and get the feature working, then
+you'd start over and run some tests with the purify build. It makes a lot more
+sense to just always use the bug finding build, but that's not human nature.
+So instead, let's make the normal build capable of flushing out bugs as well.
+<p>
+We're not doing anything that electric fence or valgrind can't do, but we do
+it all the time. No matter how robust your test coverage is, it's never going
+to cover everything that happens in the real world.
+
+<h1>putting to use</h1>
+
+The first thing you can try doing is running OpenBSD. There are many reasons
+to pick OpenBSD, but hopefully I've given you one more. Software that works on
+OpenBSD tends to work elsewhere.
+<p>
+The reverse is not always true, and unfortunately I think this affects
+OpenBSD's reputation negatively. "Hey, this program crashes when I run it on
+OpenBSD. OpenBSD sucks." I beg to differ. More likely that it's the program
+that sucks. Just because a program doesn't always crash doesn't mean
+it can't be induced to crash.
+<p>
+If you're developing a library, don't fight the operating system. If you're
+developing an application, be aware of what implicit behaviors the libraries
+you use may have, and how this may mask bugs. Fast recycling is pretty common
+in custom allocators. It hides lots of bugs.  Another OpenBSD developer told
+me that they patched the APR (Apache Portable Runtime) library to simply use
+the system malloc instead of custom pools. subversion stopped working.
+
+<h1>assertions</h1>
+
+Usually we add assertions to code to indicate that something must happen or
+not happen, specfifically past tense though. Something did happen or something
+did not happen. Ocassionally though, we can assert that something is allowed
+to happen. For instance, in the kernel, both pool and malloc take a flag
+indicating whether it is acceptable to wait. Most of the time, the system has
+ample memory and doesn't wait, so the waiting paths are less tested. In an
+effort to smoke out some bugs, I changed malloc to always wait if allowed.
+Boom. This broke nfs, ptrace, and the vm system. There were latent race
+conditions everywhere.
+
+<h1>randomization</h1>
+
+If something can be random, make it random. Process IDs, pids, are one
+example. Originally randomized ages ago to prevent predictable PID race
+conditions, they also helped uncover a bug in libpthread. At the time,
+libpthread had a reaper function which would garbage collect the stack from an
+exited thread, but it relied on the PID returned from kqueue to do that. If a
+newly created thread received the same PID, fireworks. The probability of a
+PID collision was low, so this wasn't noticed for a while, but after receiving
+a bug report and test case, it was easy to reproduce. With sequential PIDs,
+the bug would have been much harder to trigger because you'd need to time the
+creation of the new thread with the exact moment the PID sequence rolled over,
+but it's not impossible. Instead of being detected soon after release, the bug
+would have lain dormant for years, only to topple some 4 year old java process
+and never be seen again.  So ironically, a feature designed to prevent
+exploitation of race conditions helped make another race condition
+reproducible.
+<p>
+Another great bug. I'm going to go light on the details, but the gist of how
+hibernation and resume work is that the hibernating kernel writes its memory
+to swap, then the resuming kernel reads that memory back in, overwriting
+itself. This obviously requires that the two kernels be identical. There was a
+bug that suddenly appeared where the stack protector was being triggered in
+resume. Since the introduction of stack protection for the kernel, it used a
+fixed cookie. Where would it get randomness from? That was recently changed.
+The bootloader now fills in the random data segment of the kernel. What
+happened with resume is that the currently running kernel had a different
+cookie than the saved kernel. As the saved kernel was restored, the cookie
+value was replaced, but the stack value wasn't updated. The real bug was that
+the resume code should have switched to a different stack, but continued
+running with the wrong stack for longer than it should have. Conditions
+changed, assumptions were challenged, a bug was found.
+
+<h1>QA</h1>
+
+Colin: Have you considered returning EINTR for read and write?
+<p>
+That's a good idea. In general, we're limited somewhat by the state of programs.
+We can't break too much at once. Netflix has a program, Chaos Monkey, that goes around
+killing processes to ensure that their redudancy is working. I think that's
+pushing it a little too far. Adding options to aid in debugging is great, but
+it's moving a little farther from the mission of a general purpose OS.
+
+</body>
+</html>
