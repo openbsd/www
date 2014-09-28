@@ -1,0 +1,300 @@
+<html>
+<head><title>LibreSSL: More Than 30 Days Later</title></head>
+<body>
+
+<h1>LibreSSL: More Than 30 Days Later</h1>
+Ted Unangst<p>
+tedu@openbsd.org<p>
+
+LibreSSL was officially announced to the world just about exactly five months
+ago. Bob spoke at BSDCan about the first 30 days. For those who weren't there,
+I'll quickly rehash some of that material. Also, it's always best to start at
+the beginning, but then I'll try to focus on some new material and updates.
+
+<h1>openssl</h1>
+
+LibreSSL is a fork of the popular OpenSSL crypto and TLS library. TLS is the
+standard name for the successor to SSL, that other secure transport protocol
+developed in the 90s. Most notably used for https, but also secure
+imap/smtp/etc. I'd guess there's far more traffic protected by TLS than any
+other means. There are several implementations around, but two that dominate,
+at least in the C universe. OpenSSL is the de facto standard for servers and
+many clients. The alternative is NSS, the Netscape Security Services library,
+used by both Firefox and Chrome, but not many other clients. Oh, if you didn't
+upgrade NSS last week, you should go do that.
+<p>
+Cryptography in general and TLS in particular are pretty difficult to get
+right. So a monoculture isn't strictly a bad thing. Put all your eggs in one
+basket, and then watch that basket very carefully, right? Unfortunately, the
+OpenSSL basket was being watched somewhat less than very carefully. Yeah, it
+has bugs, but surely somebody else will fix them. And worst case scenario,
+since everybody uses the same library, everybody will be affected by the bugs.
+Nobody wants to be alone.
+
+<h1>heartbleed</h1>
+
+Fast forward past a hundred other vulns to Heartbleed, also known as the worst
+bug ever, though that title is heavily contested. I hear even bash has
+announced it is entering the contest.
+<p>
+What was unusual about Heartbleed? It's a vulnerability, not an exploit, with
+a name (and a website!). Previously we'd seen The Internet Worm (when there
+was only one), then Code Red, Blaster, Stuxnet. They all used various
+exploits, but the vulnerabilities didn't have names. Heartbleed can't even be
+considered the worst OpenSSL vuln. Previous bugs have resulted in remote code
+execution. Anybody remember the Slapper worm? That worm exploited an OpenSSL
+bug (which was apparently titled the SSLv2 client master key buffer overflow)
+which revealed not only encrypted data or your private key, but also gave up a
+remote shell on the server, and then it propogated itself. Yeah, I'd say
+that's worse. But no headlines.
+<p>
+I mention this just to reinforce that LibreSSL is not the result of "the worst
+bug ever". I may call you dirty names, but I'm not going to fork your project
+on the basis of a missing bounds check.
+
+<h1>why fork</h1>
+
+Instead, libressl is here because of a tragic comedy of other errors. Let's
+start with the obvious. Why were heartbeats, a feature only useful for the
+DTLS protocol over UDP, built into the TLS protocol that runs over TCP? And
+why was this entirely useless feature enabled by default? Then there's some
+nonsense with the buffer allocator and freelists and exploit mitigation countermeasures, and
+we keep on digging and we keep on not liking what we're seeing. Bob's talk has all
+the gory details.
+<p>
+But why fork? Why not start from scratch? Why not start with some other
+contender? We did look around a bit, but sadly the state of affairs is that
+the other contenders aren't so great themselves. Not long before Heartbleed,
+you may recall Apple dealing with goto fail, aka the worst bug ever,
+but actually about par for the course.
+
+<h1>libressl</h1>
+
+What did we do? We gutted the junk. We started rewriting lots of functions. We
+added some cool new crypto support, for things like ChaCha20.
+
+<h1>posix</h1>
+
+I could spend an hour explaining why supporting obsolete broken systems is
+detrimental, but if I told you all the things I have learned about VMS, it
+would probably violate your human rights. Instead, I think one example will suffice.
+<p>
+<pre>
+#ifdef FIONBIO
+	/* working code */
+#else
+	/* crappy workaround */
+#endif
+</pre>
+<p>
+In theory, this looks like we're going to use the good code on a posix system.
+But there's just one problem. The code is testing for FIONBIO, which is only
+defined if you include the right header. If you forget to include the right
+header, the compiler falls back to the workaround. The mere existence of
+workarounds means they can be picked up accidentally, and you'll never know.
+
+<h1>socklen_t</h1>
+
+OK, I lied. The socklen_t workaround is just too horrible to skip over. Also,
+I love this picture.
+<p>
+<img src="why-must-life-be-hard.gif">
+<p>
+Here's a problem. You want to create a variable the same size as socklen_t.
+One fairly obvious solution would be to declare a variable of type socklen_t.
+That's not how OpenSSL does things, however. Instead, let's create a union of
+a couple different ints, call accept(), then inspect the different union
+members to determine which ones were overwritten by the kernel. Oh, and don't
+forget to check for big endian versus little endian.
+
+<h1>optionmania</h1>
+
+The problem extends beyond just legacy compat code. Even new code in OpenSSL
+can be a byzantine mess.  I'm going to point out two config options for
+OpenSSL, but they're pretty much all like this.
+<p>
+<pre>
+#define OPENSSL_NO_HEARTBEATS
+#define OPENSSL_NO_BUF_FREELISTS
+</pre>
+<p>
+First, the naming convention alone reveals the on by default mentality. Everything
+is on, you have to pick and choose what to disable. Second, this makes testing
+for such options problematic. Old versions without the feature don't have the
+define to disable the feature. Even more bizarrely, this means that future
+releases of LibreSSL will have to track these defines and continue adding more
+of them for every new feature we decide not to import. We plan on not adding
+support for many more features to come.
+
+<h1>apply the brakes</h1>
+
+Slowing down development is a big part of what we're doing. We're trying to
+present a smaller target, not a bigger target. So we've applied the brakes on
+new development.
+<p>
+I'm going to pick on the FreeBSD guys here for a bit, but it's not their
+fault.
+<p>
+2014-08-06 OpenSSL advisory<br>
+2014-09-09 FreeBSD advisory
+<p>
+What were you guys doing? Oh, that's right. You were probably wading through
+the 13,000 lines of diff that OpenSSL decided to drop as part of the new
+release.
+<p>
+Projects need to consider how downstream users will actually deal with their
+copiuous volume of security patches. This goes back to how did heartbeats get
+into the ecosystem? Because nobody could keep track of what's going on.
+<p>
+That's not to say LibreSSL development is frozen. We've added support for a
+few new ciphers, notably chacha20. As we do so, though, we consider what new
+possible failure modes we may introduce. I wouldn't put a buffer overflow
+outside the realm of possibility when implementing a cipher, but it's pretty
+unusual. The inputs to a cipher are quite well defined with little room for
+error. 
+
+<h1>SRP</h1>
+
+Let's look at another timeline.
+<p>
+May 5 - Remove libssl SRP<br>
+Jul 2 - CVE-2014-5139 (ssl) discovered<br>
+Jul 28 - Remove libcrypto SRP<br>
+Jul 31 - CVE-2014-5139 (crypto) discovered<br>
+Aug 6 - OpenSSL 1.0.1i<br>
+Aug 8 - Bug report SRP is broken<br>
+<p>
+On May 5, I removed all the SRP code from
+libssl, along with kerberos and some other protocol extensions. The problem is
+that this code is integrated by sprinkling a dozen ifdefs and crazy nested
+if/else chains into functions that do some pretty critical things, like decide
+how to exchange keys between client and server. Auditing these 1000 line
+monoliths was clearly impossible, so we cut down to the basics. The SRP code
+in libcrypto was left alone because it wasn't directly in the way.
+<p>
+On July 2, OpenSSL received notification about a crash causing bug in the TLS
+SRP code, but this was not publicly known. On July 28, I deleted the
+libcrypto SRP code as well. In my commit message, I mentioned "hey there's a
+bug in here, but the details are secret." This was actually kind of misleading
+because the secret bug was in a different library, in code that had already
+been removed.
+<p>
+Three days later, on July 31, two researchers found a remotely expoitable
+buffer overflow in the libcrypto SRP code. This is like "throw a rock; you're
+guaranteed to hit something." Even when you point people in the wrong
+direction, they still find bugs.
+<p>
+On August 6, 1.0.1i was released with fixes for both of the above issues along
+with about 12800 lines of diff for other stuff. On August 8, a user reported
+that after upgrading, SRP no longer worked. The fix for the first issue was
+broken. The bug was embargoed for over a month, and nobody tested the fix.
+<p>
+What's the lesson here? Don't drop jumbo security patches on users. Anybody
+actually using SRP was in an unfortunate pickle here. They couldn't upgrade to
+get the fix for the buffer overflow, but instead had to pick it out from the
+rest. If the patches had been issued separately, as they were discovered, this
+never would have happened. Nobody's perfect, and I've flubbed a few patches
+myself, but that's exactly why you don't combine them. If the libssl patch had
+been released at the beginning of July, the regression would have been
+discovered and a correct fix hammered out long before the buffer overflow was
+discovered.
+
+<h1>months 2-5</h1>
+
+OK, I still haven't talked too much about we have done since the last update.
+We've mostly stopped deleting code. There's still some scary code left, but
+the good news is it's code you need to run. There was a bit of a summer lull,
+some post hackathon decompression, and then the OpenBSD 5.6 freeze. But
+progress is picking up again. Dig into a directory, open a few files, rewrite
+a function or two. Look at all the points where memory is allocated, and then
+make sure it is freed, exactly one time, no more, no less.
+<p>
+I'm sorry to make it all sound so tame, but avoiding excitement is all part of
+the plan. The first 30 days were all about revolution. Now we've switched into
+evolution mode.
+
+<h1>portable</h1>
+
+Due to quirks of release timing, the first release of LibreSSL was the
+portable version. The first native OpenBSD version won't be released until
+November, when 5.6 comes out.
+<p>
+I personally do not work on the portable version, but I have kept my eye on
+it. A few notes on that. First, you'll be happy to know that libressl portable
+should work on all BSD systems. It works on some other systems, too, but
+enough about them. Most of the extensioned interfaces in OpenBSD are already
+shared with other BSDs. You shouldn't even need the portable build system, if
+you don't like it. The simple BSD makefile build system from OpenBSD will
+probably suit you better.
+<p>
+That's the good news. The bad news, for now, is
+that libressl uses the arc4random function to generate random numbers. Theo has
+a talk coming up all about that, but it's enough for me to say that the
+arc4random implementations in FreeBSD and NetBSD aren't quite state of the art
+anymore. I know there are some patches to update FreeBSD at least, but they've
+stalled out. You're going to want to pick that work up.
+<p>
+We're currently still targeting posix platforms. Windows support isn't out of
+the question.
+
+<h1>ressl</h1>
+
+I'd like to turn now to what I hope is the future. The initial reactions to
+the announcement of LibreSSL included a lot of "the OpenSSL API is so bad it's
+not worth preserving". I'm inclined to agree. We've preserved the API because
+that's what we needed to do to succeed, but we're not married to it long term.
+<p>
+Joel and I have been working on a replacement API for OpenSSL, appropriately
+entitled ressl. Reimagined SSL is how I think of it. Our goals are consistency
+and simplicity. In particular, we answer the question "What would the user
+like to do?" and not "What does the TLS protocol allow the user to do?". You
+can make a secure connection to a server. You can host a secure server. You
+can read and write some data over that connection.
+<p>
+A few goals. First, no OpenSSL types or functions are exposed. In fact, not
+even any ressl internals are exposed. You should never need to contemplate
+X.509 or ASN.1. Those are implementation details far beyond the level of
+caring of most developers or users.  As a consequence of that, the API is easy
+for other languges to bind to.  The ressl interface could almost equally well
+describe transport over ssh tunnels. What do you want? Do you want a secure
+connection? We give you a secure connection.
+<p>
+Perhaps more importantly, it allows the implementation to evolve and change.
+It's not actually tied to LibreSSL. The libressl library will work with
+OpenSSL, and can be adapted to use other implementations as well. Previous
+efforts at replacing OpenSSL usually ended up with compat shims that
+replicated the OpenSSL API. But that's terrible. If we're going to have a
+universal API, it needs to be a good one. And it needs to be sufficiently
+abstract so that others are welcome to the party. Clearly, we've made a claim
+that LibreSSL is, or at least can be, the best quality TLS stack you can get.
+But I think the ecosystem benefits by breaking the monoculture.
+<p>
+The ressl API does provide one noteworthy feature. Hostname verification. In
+order to make a secure TLS connection, you must do two things. Validate the
+certificate and its trust chain. Then verify that the hostname in the cert
+matches the hostname you've connected to. Lots of people don't do the latter
+because OpenSSL doesn't do that latter. You have to do it yourself, which
+requires knowing about things like CommonNames and SubjectAltNames. The
+good news is that popular bindings for languages like python and ruby include
+a function to verify the hostname. The bad news is if you pick a python or
+ruby project at random, they probably forget to do it. Another funny fact is
+that since everybody has to write this code themselves, everybody does it a
+little bit differently. Especially regarding handling of wildcard certificates
+and everybody's favorite, embedded nul bytes. Hostname verification is on by
+default in ressl, and the API is designed so that you always provide a
+hostname; there's no way to accidentally call the function that doesn't do
+verification.
+<p>
+We have the advantage that we can evolve the client and server APIs in sync
+with at least two test programs, the OpenBSD ftp client and httpd. We're not
+nearly ready to call for third party support; that's probably a few months
+away.
+
+<h1>QA</h1>
+
+Q: Where should we discuss changes to the ressl API?
+<p>
+A: The code is in cvs and can be discussed on the tech@ mailing list.
+
+</body>
+</html>
