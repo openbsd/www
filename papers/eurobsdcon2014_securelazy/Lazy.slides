@@ -1,0 +1,724 @@
+Secure (and hopefully efficient) Lazy Binding
+*********************************************
+
+#IMG# flowers.jpg
+
+----------------------------------------------------------------
+
+Plan
+****
+
+#RTIMG# map.png
+
+* What's the problem we're trying to solve?
+
+* What can we do?
+
+* How good is the solution?
+
+* Does the solution create new problems?
+
+* What else should we do?
+
+* Where are we?
+
+----------------------------------------------------------------
+
+Lazy Binding
+************
+
+* Lazy binding is the method by which the dynamic linker defers symbol lookups for function calls until the first time the function is called
+
+  * pro: save effort of symbol lookups that aren't used
+
+  * cons:
+
+    * inconsistent call latency
+
+================================================================
+
+    * violates W^X on some architectures: code or function pointers need to be changed on the fly while being executable!
+
+----------------------------------------------------------------
+
+Goal
+****
+
+#RTIMG# fun.png
+
+* Make it possible for the dynamic linker to perform lazy binding
+
+  * without creating a window of vulnerability
+
+  * while being efficient
+
+----------------------------------------------------------------
+
+Dynamic Linking
+***************
+
+* Executables don't contain the library code but just reference it
+
+  * Executables are smaller
+
+  * Library can be updated without relinking executables
+
+* References are [e[by name]e], e.g., "printf"
+
+* Dynamic linker handles mapping names to final addresses
+
+----------------------------------------------------------------
+
+Relocations
+************
+
+* tables created by the assembler and linker recording how the code or data depends on load location or symbol value
+
+  * [B[R_X86_64_RELATIVE]B]
+    rewrite with load location plus some addend
+
+  * [B[R_X86_64_64]B]
+    rewrite with symbol value plus some addend
+
+================================================================
+
+* relocations used by dynamic linker can be split into two groups:
+
+  * immediate: affect data items, pointers to functions
+
+  * lazy: function calls to or from shared objects
+
+================================================================
+
+    * function call is initially directed to the dynamic linker instead
+
+----------------------------------------------------------------
+
+Position Independent Code
+*************************
+
+* We want to maximize sharing of memory between processes
+
+  * text (code) and read-only memory shouldn't change
+
+  * ...even when the library or executable is loaded at a random location (ASLR)
+
+  * generated code accesses variables and functions using relative addresses or by indirecting through a table
+
+* the mappings needed by a program or library are packed into indirection tables
+
+  * GOT: global offset table
+
+    * stores final addresses of variables and functions
+
+  * PLT: procedure linkage table
+
+    * directly callable stub routines
+
+* many architecture specific details
+
+----------------------------------------------------------------
+
+amd64 Details
+*************
+
+* PLT is never changed
+
+* linker knows offset between GOT and PLT
+
+* PLT code uses "load from %rip-relative address" instructions to get values from GOT
+
+* initial call to a PLT entry gets another address in the PLT, which calls dynamic linker
+
+* dynamic linker just updates the GOT entry used by the function's PLT entry
+
+================================================================
+
+* i386 is similar, but no %eip-relative addressing
+
+  * caller of PLT has to set %ebx to point to GOT
+
+----------------------------------------------------------------
+
+amd64 Example
+*************
+
+      extern int foo;
+      extern int bar(int);
+      int call_bar(void) {
+         return bar(foo);
+      }
+
+================================================================
+
+      movq    foo@GOTPCREL(%rip), %rax	# load foo's address from GOT
+      movl    (%rax), %edi		# read foo's value
+      call    bar@PLT			# call bar's PLT stub
+
+================================================================
+
+      .PLT0: pushq   GOT+8(%rip)	 # push argument for lazy bind code
+             jmp     *GOT+16(%rip)	 # jump to lazy binding entry
+	     ....
+      .PLTn: jmp     *bar@GOTPCREL(%rip) # load address from JUMP_SLOT in GOT
+             pushq   $index1		 # load index of JUMP_SLOT relocation
+             jmp     .PLT0		 # jump to above
+
+----------------------------------------------------------------
+
+Lazy binding
+************
+
+* Lazy binding code:
+
+  * resolve symbol to correct address
+
+  * update GOT entry
+
+================================================================
+
+* GOT and PLT don't need to be written to by application code!
+
+* OpenBSD: after loading, both GOT and PLT are [[mprotect()]]ed to read-only
+
+----------------------------------------------------------------
+
+Lazy binding, revised
+*********************
+
+* Lazy binding code:
+
+  * resolve symbol to correct address
+
+  * [r[mprotect() the GOT to read-write]r]
+
+  * update GOT entry
+
+  * [r[mprotect() the GOT read-only again]r]
+
+================================================================
+
+* but what if a signal is delivered during this and it calls the target function?
+
+----------------------------------------------------------------
+
+Lazy binding, revised again
+***************************
+
+* Lazy binding code:
+
+  * resolve symbol to correct address
+
+  * [p[block all signals with sigprocmask()]p]
+
+  * [r[mprotect() the GOT to read-write]r]
+
+  * update GOT entry
+
+  * [r[mprotect() the GOT read-only again]r]
+
+  * [p[restore signal mask with sigprocmask()]p]
+
+================================================================
+
+* but what if another thread calls the target function?
+
+----------------------------------------------------------------
+
+Lazy binding (threaded)
+***********************
+
+* Lazy binding code:
+
+  * resolve symbol to correct address
+
+  * [p[block all signals with sigprocmask()]p]
+
+  * [b[grab bind spinlock]b]
+
+  * [r[mprotect() the GOT to read-write]r]
+
+  * update GOT or PLT entry
+
+  * [r[mprotect() the GOT read-only again]r]
+
+  * [b[release bind spinlock]b]
+
+  * [p[restore signal mask with sigprocmask()]p]
+
+----------------------------------------------------------------
+
+Lazy binding (trace)
+********************
+
+      CALL  sigprocmask(SIG_BLOCK,~0<>)
+      RET   sigprocmask 0<>
+      CALL  mprotect(0x16bc657ac000,0x3000,0x3<PROT_READ|PROT_WRITE>)
+      RET   mprotect 0
+      CALL  mprotect(0x16bc657ac000,0x3000,0x1<PROT_READ>)
+      RET   mprotect 0
+      CALL  sigprocmask(SIG_SETMASK,0<>)
+      RET   sigprocmask ~0x10100<SIGKILL|SIGSTOP>
+      CALL  ioctl(0,TIOCGETA,0x7f7ffffcbbb0)
+      RET   ioctl 0
+
+----------------------------------------------------------------
+
+[[mprotect()]] costs
+********************
+
+* When you [e[add]e] a permission to a page, the update can be lazy
+
+  * kernel notes the change but doesn't update the hardware mapping
+
+  * when the process tries to use that permission, it faults and the fault handler fixes it up to work
+
+* When you [e[remove]e] a permission from a page, the update must be immediate
+
+  * update the page tables and flush the involved TLB entries
+
+  * if process has threads running on other CPUs, need to force them to do that too
+
+  * not cheap...
+
+================================================================
+
+  * ...and we don't even want other threads to be able to see the change!
+
+----------------------------------------------------------------
+
+Solution: kbind
+***************
+
+* syscall to do PLT/GOT update
+
+  * [[kbind(void *addr, size_t len, void *data)]]
+
+    * address and length of memory to update
+
+    * buffer of copy there
+
+* performs same permission checks and copy-on-write handling as [[mprotect]] and page fault
+
+* uninterruptible: no signal issues
+
+* VM and pmap have to provide whatever locking is necessary in kernel
+
+----------------------------------------------------------------
+
+ld.so: before and after
+***********************
+
+* before:
+
+      /* set the GOT to RW */
+      sigprocmask(SIG_BLOCK, &allsigs, &savedmask);
+      spinlock_lock(&bind_lock);		/* libpthread cb */
+      mprotect(object->got_start, object->got_size, PROT_READ|PROT_WRITE);
+
+      *(Elf_Addr *)addr = newval;
+
+      /* put the GOT back to RO */
+      mprotect(object->got_start, object->got_size, PROT_READ);
+      spinlock_unlock(&bind_lock);		/* libpthread cb */
+      sigprocmask(SIG_SETMASK, &curset, NULL);
+
+================================================================
+
+* after:
+
+      kbind(addr, sizeof(Elf_Addr), &newval);
+
+================================================================
+
+      kbind(0x171d762ebd8,0x8,0x7f7ffffde1f8)
+      kbind 0
+      ioctl(0,TIOCGETA,0x7f7ffffde2f0)
+      ioctl 0
+
+----------------------------------------------------------------
+
+kbind implementation: amd64
+***************************
+
+* OpenBSD/amd64 has "direct pmap": direct map in VA always maps all PA
+
+* Copy new data into buffer in kernel
+
+* [[uvm_fault(map, baseva, VM_FAULT_WIRE, VM_PROT_NONE)]]
+
+  * force copy-on-write resolution
+  * force page to be physically in memory and unpageable
+  * physical page has "maximal" permissions for mapping
+
+* [[pmap_extract(map->pmap, baseva, &paddr)]]
+  [[kva = PMAP_DIRECT_MAP(paddr)]]
+
+  * get kernel's direct mapped address of the underlying physical page
+
+* [[bcopy(buffer, kva + offset, len)]]
+
+  * update the wired-in physical page
+
+* [[uvm_fault_unwire(map, last_baseva, last_baseva + PAGE_SIZE)]]
+
+  * permit page to be paged again
+
+----------------------------------------------------------------
+
+Again, With More Feeling: sparc64
+*********************************
+
+* GOT is never changed after the library is loaded
+
+* initial PLT stubs load index and jump to common stub, which does call to dynamic linker
+
+* dynamic linker updates the PLT code sequence to jump to the final address
+
+  * many possible sequences depending on the relative and absolute address
+
+    * within 2^21 of the PLT entry?  within 2^31 of address zero?
+
+================================================================
+
+    * hard to exercise, ergo buggy: incorrect offset calculations, wrong ASM
+
+================================================================
+
+  * PLT could be called by another thread while changing it
+
+    * instruction sequence must always be safely executable
+
+      * change it in two steps
+
+----------------------------------------------------------------
+
+sparc64 Initial PLT
+*******************
+
+      .PLT1: save   %sp, -176, %sp	# create stack frame
+	     ...			# calculate lazy bind addr and jump
+      ...
+      .PLTn: sethi  (. - .PLT0), %g1	# load offset of entry
+             ba,a   %xcc, .PLT1		# jump to above
+	     nop; nop
+	     nop; nop
+	     nop; nop
+
+----------------------------------------------------------------
+
+sparc64 PLT Update Example
+**************************
+
+ * target address within 2^31 of PLT slot
+
+      .PLTn: sethi  (. - .PLT0), %g1	  # load offset of entry
+             mov    %o7, %g1              # save return address in %g1
+             call   (addr - .)            # relative call
+              mov   %g1, %o7              # restore return address
+             nop; nop
+             nop; nop
+
+================================================================
+
+      .PLTn: sethi  (. - .PLT0), %g1	  # load offset of entry
+#*           mov    %o7, %g1		  # save return address in %g1
+             nop; nop
+             nop; nop
+             nop; nop
+
+
+----------------------------------------------------------------
+
+sparc64 PLT Update Example
+**************************
+
+      .PLTn: sethi  (. - .PLT0), %g1	  # load offset of entry
+             ba,a   %xcc, .PLT1		  # jump to above
+#*           call   (addr - .)            # relative call
+#*            mov   %g1, %o7              # restore return address
+             nop; nop
+             nop; nop
+
+----------------------------------------------------------------
+
+sparc64 PLT Update Example
+**************************
+
+      .PLTn: sethi  (. - .PLT0), %g1	  # load offset of entry
+#*           mov    %o7, %g1              # save return address in %g1
+             call   (addr - .)            # relative call
+              mov   %g1, %o7              # restore return address
+             nop; nop
+             nop; nop
+
+* so we need to pass the kernel two blocks to copy into place
+
+----------------------------------------------------------------
+
+sparc64: kbind again
+********************
+
+  * [[kbind(void *param, size_t plen)]]
+
+     address
+     length
+     new data
+     new data
+     address
+     length
+     new data
+
+
+----------------------------------------------------------------
+
+kbind implementation: sparc64
+*****************************
+
+* Copy new data into buffer in kernel
+
+* for each block:
+
+  * [[uvm_map_extract(map, baseva, PAGE_SIZE, &kva, UVM_EXTRACT_FIXPROT)]]
+
+    * force copy-on-write resolution
+
+    * map that userspace VA into the kernel map, with max permitted permissions
+
+  * [[bcopy(buffer, kva + offset, len)]]
+
+    * update the page via the kernel mapping
+
+    * actually use word-sized writes
+
+  * [[uvm_unmap_remove(kernel_map, kva, kva+PAGE_SIZE, &dead_entries, FALSE, TRUE)]]
+
+    * remove the page from the kernel map
+
+* [[uvm_unmap_detach(&dead_entries, AMAP_REFALL)]]
+
+  * clean up/release references to backing objects
+
+
+----------------------------------------------------------------
+
+How Good Is It
+**************
+
+* 4%
+
+================================================================
+
+* That's the savings in real time for a [[make build]], both amd64 and sparc64
+
+  * much of that is in the [[make install]] step: lots of short-lived processes
+
+================================================================
+
+* current version is not always faster
+
+  * [[kbind()]] only touches the specific page involved, no read-ahead?
+
+----------------------------------------------------------------
+
+Security
+********
+
+#RTIMG# hacker.png
+
+* Sweet, a syscall that can change read-only memory!
+
+  * Hmmm, this is a power that can only be used for Good Or Evil
+
+* Can we make it only capable of resolving lazy bindings to their correct values?
+
+  * Only want dynamic linker to be able to call this
+
+  * Don't want this to be useful as a target of Return-Oriented-Programming
+
+  * Don't want it to be able to change arbitrary memory
+
+----------------------------------------------------------------
+
+Locking it down: ideas
+**********************
+
+* if any check fails, kill the process, uncatchable: [[sigexit()]]
+
+  * only permit [[kbind()]] syscall from one address
+
+  * pass a per-process cookie
+
+  * pass a per-thread cookie that the kernel updates on each call
+
+  * pass the kernel both the expected old data and the new data
+
+  * mark the mappings which [[kbind()]] is allowed to alter with a new [[mprotect()]] bit
+
+  * mark the GOT and PLT as not permitting further [[mprotect()]] changes
+
+  * mark dynamic linker code and data as not permitting [[munmap()]] or further [[mprotect()]] changes
+
+
+----------------------------------------------------------------
+
+Locking it down: locked down PC
+*******************************
+
+* only permit [[kbind()]] syscall from one address
+
+  * [[struct process]] has [[caddr_t ps_kbind_addr]]
+
+    * copied on [[fork()]], zeroed on [[execve()]]
+
+  * [[kbind()]] extracts the return address from the syscall trap frame
+
+    * if [[ps_kbind_addr]] is zero, this is first call, so set it
+
+    * otherwise, if they don't match then [[sigexit(SIGILL)]]
+
+  * if called with [[NULL]] parameters ("change nothing"), then set [[ps_kbind_addr]] to impossible address
+
+    * C startup code for static executables can use that to disable [[kbind()]] for them
+
+  * dynamic linker has syscall as inline ASM and is built with -fstack-protector
+
+    * if you jump into the middle of [[_dl_bind()]] to get to the syscall, on return the stack protector will catch you
+
+----------------------------------------------------------------
+
+Locking it down: per-process cookie
+***********************************
+
+* pass a per-process cookie
+
+* kernel saves value from first call in [[struct process]], [[ps_kbind_cookie]]
+
+  * mismatch in later call?  [[sigexit(SIGILL)]]
+
+* variable placed in [[PT_OPENBSD_RANDOMIZE]] segment, filled with random bytes by kernel
+
+* [[_dl_bind()]] loads the cookie [i[before]i] calculating the GOT/PLT changes to pass to the kernel
+
+  * attacker can't use ld.so's "load the cookie" code with its own changes
+
+  * ...but the variable's address is static offset within ld.so memory
+
+----------------------------------------------------------------
+
+Locking it down: per-thread cookie
+***********************************
+
+* pass a per-thread cookie [i[and]i] its address
+
+* kernel saves value from first call in each thread in [[struct proc]], [[p_kbind_cookie]]
+
+  * mismatch in later call?  [[sigexit(SIGILL)]]
+
+  * generate new value and copy it out to supplied address
+
+* reserve space for the cookie in TCB
+
+================================================================
+
+* problems:
+
+  * have to (finally...) push TCB management code into ld.so
+
+  * cookie is easy to find; lots of code in [[libpthread]] has to access it, probably plenty of ROP gadgets
+
+  * probably will remove
+
+----------------------------------------------------------------
+
+Locking it down: pass old data too
+**********************************
+
+* pass the kernel both the expected old data and the new data
+
+  * compare each word against both old and new
+
+    * already new?  do nothing
+
+    * matches old?  update to new
+
+    * match neither?  [[sigexit(SIGILL)]]
+
+* sounds nice, but the kernel isn't really checking the data for validity
+
+================================================================
+
+* there's a corner case where an entry can legitimately change the value it should resolve to
+
+  * will remove
+
+----------------------------------------------------------------
+
+Locking it down: marked mappings
+********************************
+
+* mark the mappings which [[kbind()]] is allowed to alter with a new [[mprotect()]] bit
+
+  * [[mprotect(got_addr, got_len, PROT_READ | __PROT_KBIND)]]
+
+  * [[kbind()]] verifies that that bit is set, else [[sigexit(SIGILL)]]
+
+================================================================
+
+* mark the GOT and PLT as not permitting further [[mprotect()]] changes
+
+  * [[mprotect(got_addr, got_len, PROT_READ | __PROT_KBIND | __PROT_LOCKPROT)]]
+
+* [[kbind()]] can only change those pages; those pages can only be changed by [[kbind()]]
+
+----------------------------------------------------------------
+
+Locking it down: permanent mappings
+***********************************
+
+* [[mmap()]] and [[munmap()]] can effectively override [[mprotect()]] by remapping over protected page
+
+* doesn't make sense to unmap dynamic linker
+
+  * or libc, for that matter
+
+  * test for [[DT_FLAGS_1 NODELETE]]
+
+* new [[mmap()]] or [[madvise()]] flag to mark a mapping as permanent and only removable via [[execve()]]?
+
+----------------------------------------------------------------
+
+Status
+******
+
+* Not committed yet
+
+* Have working code on amd64, sparc64, and i386
+
+  * powerpc will require converting to "secure PLT" ABI
+
+  * haven't dug into the others (alpha, m88k, mips64, sh, hppa) yet
+
+* Need to update the security measures implemented
+
+* Performance should be consistently better
+
+----------------------------------------------------------------
+
+What else should we do?
+***********************
+
+* better shared library symbol management
+
+  * ELF [[hidden]] visibility: libraries can bind directly to their own symbols
+
+  * OpenBSD/amd64 libc.so has 771 PLT entries, but only a few are necessary
+
+----------------------------------------------------------------
+
+Questions?  Thank you!
+**********************
+
+#IMG# goodbye.gif
+
+----------------------------------------------------------------
