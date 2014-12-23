@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.32 2014/03/02 19:37:02 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.33 2014/12/23 15:44:23 naddy Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -87,6 +87,12 @@ sub read_mirrors ($) {
 			# before pushing, else die
 			push(@mirrors, $record) if (int(keys(%$record)));
 			$record = {};		# new empty one
+		} elsif ($line =~ /^(S[DER2])\s+(.*)/) {
+			if ($record->{$1}) {
+				$record->{$1} .= ", <tt>".$2."</tt>";	# append key/value pair
+			} else {
+				$record->{$1} = "<tt>".$2."</tt>";	# add key/value pair
+			}
 		} elsif ($line =~ /^([A-Z0-9]{2,3})\s+(.*)/) {
 			($record->{$1})
 				and die "dupe $1 in $filename:$lineno";
