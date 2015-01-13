@@ -973,8 +973,7 @@ may have changed.
 <h3>Applying patches.</h3>
 
 <p>
-Patches for the OpenBSD Operating System are distributed as "Unified
-diffs", which
+Patches for OpenBSD are distributed as unified diffs, which
 are text files that hold differences to the original source code.
 They are <b>NOT</b> distributed in binary form.
 This means that to apply a patch you must have the source code
@@ -982,81 +981,93 @@ from the <b>RELEASE</b> version of your system available.
 In general, it is advisable to acquire the entire source tree before applying
 a patch.
 If you are running a release from an official CDROM, the source trees are 
-available as files on disk 3, these can also be downloaded from the
+available as files on disk 3, and these can also be downloaded from the
 <a href="../ftp.html">FTP servers</a>.
 We will assume you have the entire tree checked out.
 
 <p>
-For our example here, we will look at patch 001 for OpenBSD 3.6 dealing
-with the
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=st&amp;sektion=4">st(4)</a>
-driver, which handles tape drives.
-Without this patch, recovering data from backups was quite difficult.
-People using a tape drive <i>needed</i> this patch, however those without
-a tape drive may have had no particular need to install it.
+For our example here, we will look at patch 011 for OpenBSD 5.6, dealing with 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi/OpenBSD-current/man4/pppoe.4">pppoe(4)</a>
+connections.
+Without this patch, MAC addresses could get corrupted.
+People using PPPOE <i>needed</i> this patch, however those who
+didn't may have had no particular need to install it.
 Let's look at the patch:
 
 <blockquote><pre>
-# <b>more 001_st.patch</b>
-Apply by doing:
-        cd /usr/src
-        patch -p0 < 001_st.patch
+# <b>more 011_pppoe.patch.sig</b>
+Apply patch using:
 
-Rebuild your kernel.
+    signify -Vep /etc/signify/openbsd-56-base.pub -x 011_pppoe.patch.sig \
+        -m - | (cd /usr/src && patch -p0)
 
-Index: sys/scsi/st.c
+Then build and install a new kernel.
+
+Index: sys/net/if_ethersubr.c
 ===================================================================
-RCS file: /cvs/src/sys/scsi/st.c,v
-retrieving revision 1.41
-retrieving revision 1.41.2.1
-diff -u -p -r1.41 -r1.41.2.1
---- sys/scsi/st.c       1 Aug 2004 23:01:06 -0000       1.41
-+++ sys/scsi/st.c       2 Nov 2004 01:05:50 -0000       1.41.2.1
-@@ -1815,7 +1815,7 @@ st_interpret_sense(xs)
-        u_int8_t skey = sense->flags & SSD_KEY;
-        int32_t info;
+RCS file: /cvs/src/sys/net/if_ethersubr.c,v
+retrieving revision 1.174
+diff -u -p -r1.174 if_ethersubr.c
+--- sys/net/if_ethersubr.c	12 Jul 2014 18:44:22 -0000	1.174
++++ sys/net/if_ethersubr.c	1 Dec 2014 17:48:55 -0000
+@@ -673,7 +673,12 @@ decapsulate:
+ 			goto done;
  
--       if (((sense->flags & SDEV_OPEN) == 0) ||
-+       if (((sc_link->flags & SDEV_OPEN) == 0) ||
-            (serr != 0x70 && serr != 0x71))
-                return (EJUSTRETURN); /* let the generic code handle it */
+ 		eh_tmp = mtod(m, struct ether_header *);
+-		memcpy(eh_tmp, eh, sizeof(struct ether_header));
++		/*
++		 * danger!
++		 * eh_tmp and eh may overlap because eh
++		 * is stolen from the mbuf above.
++		 */
++		memmove(eh_tmp, eh, sizeof(struct ether_header));
+ #ifdef PIPEX
+ 		if (pipex_enable) {
+ 			struct pipex_session *session;
 </pre></blockquote>
 
 As you will note, the top of the patch includes brief instructions on
-applying it.
-We will assume you have put this patch into the <tt>/usr/src</tt>
-directory, in which case, the following steps are used:
+applying it. As of OpenBSD 5.5, patches are cryptographically signed
+with the <a href="http://www.openbsd.org/cgi-bin/man.cgi/OpenBSD-current/man1/signify.1">signify(1)</a> tool.
+We will assume you have put this patch into your current working
+directory, in which case the following steps are used:
 
 <blockquote><pre>
-# <b>cd /usr/src</b>
-# <b>patch -p0 &lt; 001_st.patch</b>
+# <b>signify -Vep /etc/signify/openbsd-56-base.pub -x 011_pppoe.patch.sig \
+  -m - | (cd /usr/src && patch -p0)</b>
 Hmm...  Looks like a unified diff to me...
 The text leading up to this was:
 --------------------------
-|Apply by doing:
-|        cd /usr/src
-|        patch -p0 < 001_st.patch
 |
-|Rebuild your kernel.
+|OpenBSD 5.6 errata 11, Dec 5, 2014:
 |
-|Index: sys/scsi/st.c
+|An incorrect memcpy call would result in corrupted MAC addresses when
+|using PPPOE.
+|
+|Apply patch using:
+|
+|    signify -Vep /etc/signify/openbsd-56-base.pub -x 011_pppoe.patch.sig \
+|        -m - | (cd /usr/src && patch -p0)
+|
+|Then build and install a new kernel.
+|
+|Index: sys/net/if_ethersubr.c
 |===================================================================
-|RCS file: /cvs/src/sys/scsi/st.c,v
-|retrieving revision 1.41
-|retrieving revision 1.41.2.1
-|diff -u -p -r1.41 -r1.41.2.1
-|--- sys/scsi/st.c      1 Aug 2004 23:01:06 -0000       1.41
-|+++ sys/scsi/st.c      2 Nov 2004 01:05:50 -0000       1.41.2.1
+|RCS file: /cvs/src/sys/net/if_ethersubr.c,v
+|retrieving revision 1.174
+|diff -u -p -r1.174 if_ethersubr.c
+|--- sys/net/if_ethersubr.c     12 Jul 2014 18:44:22 -0000      1.174
+|+++ sys/net/if_ethersubr.c     1 Dec 2014 17:48:55 -0000
 --------------------------
-Patching file sys/scsi/st.c using Plan A...
-Hunk #1 succeeded at 1815.              <i>&lt;-- Look for this message!</i>
+Patching file sys/net/if_ethersubr.c using Plan A...
+Hunk #1 succeeded at 673.              <i>&lt;-- Look for this message!</i>
 done
 </pre></blockquote>
 
 Note the "<tt>Hunk #1 succeeded</tt>" message above.
 This indicates the patch was applied successfully.
 Many patches are more complex than this one, and will involve multiple
-hunks and multiple files, in which case, you should verify that all
+hunks and multiple files, in which case you should verify that all
 hunks succeeded on all files.
 If they did not, it normally means your source tree was different in
 some way from the release source tree the patch was created from, or you
@@ -1074,18 +1085,18 @@ Not all patches are for the kernel.
 In some cases, you will have to rebuild individual utilities. At other
 times, will require recompiling all utilities statically linked to a
 patched library.
-Follow the guidance in the header of the patch, and if uncertain,
+Follow the guidance in the header of the patch and, if uncertain,
 rebuild the entire system.
 
 <p>
 Patches that are irrelevant to your particular system need not be
 applied -- usually.
-For example, if you did not have a tape drive on your system, you would
+For example, if you did not use PPPOE connections on your system, you would
 not benefit from the above patch.
 However, patches are assumed to be applied "in order" -- it is possible
 that a later patch is dependent upon an earlier one.
 Be aware of this if you elect to "pick and choose" which patches you
-apply, and if in doubt, apply them all, in order.
+apply, and if in doubt, apply them all in order.
 
 <h2 id="rootshell">10.17 - Can I change the root shell?</h2>
 It is sometimes said that one should never change the root shell, though
