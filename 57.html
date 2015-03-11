@@ -79,6 +79,7 @@ to 5.7.
     <li>The <a href="http://www.openbsd.org/cgi-bin/man.cgi/OpenBSD-current/man4/ppb.4?query=ppb&sec=4">ppb(4)</a> driver now supports PCI bridges that support subtractive decoding (fixes PCMCIA behind the ATI SB400 PCI bridge), and devices with 64-bit BARs behind PCI-PCI bridges as seen on SPARC T5-2 systems.
     <li>The <a href="http://www.openbsd.org/cgi-bin/man.cgi/OpenBSD-current/man4/pucdata.4?query=pucdata&sec=4">pucdata(4)</a> driver now supports Winchiphead CH382 devices.
     <li>The <a href="http://www.openbsd.org/cgi-bin/man.cgi/OpenBSD-current/man4/sdmmc.4?query=sdmmc&sec=4">sdmmc(4)</a> driver now supports eMMC storage devices larger than 2GB.
+    <li>The <a href="http://www.openbsd.org/cgi-bin/man.cgi/OpenBSD-current/man4/sdhc.4?query=sdhc&sec=4">sdhc(4)</a> driver can properly resume on Ricoh controllers.
     <li>The <a href="http://www.openbsd.org/cgi-bin/man.cgi/OpenBSD-current/man4/sdhc.4?query=sdhc&sec=4">sdhc(4)</a> driver now supports Ricoh R5U822 and R5U823 card readers.
     <li>The <a href="http://www.openbsd.org/cgi-bin/man.cgi/OpenBSD-current/man4/mfii.4?query=mfii&sec=4">mfii(4)</a> driver now supports the Megaraid 3008 (Fury) and 3108 (Invader) cards.
     <li>The <a href="http://www.openbsd.org/cgi-bin/man.cgi/OpenBSD-current/man4/myx.4?query=myx&sec=4">myx(4)</a> driver runs less code under big lock.
@@ -115,6 +116,7 @@ to 5.7.
     <li>Traffic destinated to link-local IPv6 addresses can now be seen with tcpdump(8).
     <li> ...
     </ul>
+<p>
 
 <li>Installer improvements:
     <ul>
@@ -139,6 +141,7 @@ to 5.7.
     <li>
     <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fdisk&amp;sektion=8">fdisk(8)</a> now zeros out GPT signatures found when writing out an MBR that has been re-initialzed and has no EFI or EFISYS partition.
     <li>Fixed manipulation of 'ro' and 'rw' fstab options to avoid damage to other options that happen to contain 'ro' or 'rw'.
+    <l>The ramdisk binary (one binary contains all the commands) is now compiled without optimization and security features.  The benefit is a substantial savings in space, allowing more features in the future.
     </ul>
 <p>
 
@@ -158,9 +161,31 @@ to 5.7.
 
 <li>Security improvements:
     <ul>
-    <li>Stricter enforcement of W^X in the kernel address space.
+    <li>Stricter enforcement of W^X in the kernel address space, especially on architectures with the right featureset (amd64, in particular has seen substantial improvements).
     <li>Support for loadable kernel modules has been removed.
     <li>procfs has been removed.
+    <li>Comprehensive audit of the tree to use the <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=reallocarray&amp;sektion=3">reallocarray(3)</a> idiom throughout.
+    <li>Many conversions from <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=select&amp;sektion=2">select(2)</a> to <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=poll&amp;sektion=2">poll(2)</a>.
+    <li>/var/tmp is now a symbolic link to /tmp, as a first step towards reducing the "fill it up" attack surface against the /var partition.
+    <li><a href="http://www.openbsd.org/cgi-bin/man.cgi?query=memcpy&amp;sektion=3">memcpy(3)</a> with overlapping arguments now aborts a program (with a syslog report), allowing these problems to be found.  Overlapping copies should use <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=memmove&amp;sektion=3">memmove(3)</a>.  Sometime after 5.7 release, having learned more about the situation and repairing instances that are discovered by users during release use, we will go back to the optimized version.
+    <li>Change
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=rand&amp;sektion=3">rand(3)</a>,
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=random&amp;sektion=3">random(3)</a>,
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=drand48&amp;sektion=3">drand48(3)</a>,
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=lrand48&amp;sektion=3">lrand48(3)</a>,
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mrand48&amp;sektion=3">mrand48(3)</a>,
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=srand48&amp;sektion=3">srand48(3)</a>
+    to return non-deterministic strong random values by default, sourced from
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=arc4random&amp;sektion=3">arc4random(3)</a>.
+    New functions
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=srand_deterministic&amp;sektion=3">srand_deterministic(3)</a>,
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=srandom_deterministic&amp;sektion=3">srandom_deterministic(3)</a>,
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=seed48_deterministic&amp;sektion=3">seed48_deterministic(3)</a>,
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=lcong48_deterministic&amp;sektion=3">lcong48_deterministic(3)</a>,
+    are added for cases where determinism must be requested.
+    <li>At resume (or unhibernate) time, use a variety of methods to reseed the random number generator.  This also works on VM's which wake up (if a wakeup event is seen).
+    <li>All architectures have been transitioned so to static PIE, meaning the statically linked binaries in /bin and /sbin now have randomly located text segments.
+    <li>Allow larger .openbsd.randomdata ELF segments.
     <li>...
     </ul>
 <p>
@@ -215,6 +240,12 @@ to 5.7.
     <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dhclient&amp;sektion=8">dhclient(8)</a>.
     <li>Private number conversion functions in
     <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dhclient&amp;sektion=8">dhclient(8)</a> eliminated in favour of standard library functions.
+    <li>Further signal race cleanups in 
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp&amp;sektion=1">ftp(1)</a>.
+    <li>BIND has been retired, encouraging use of
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=nsd&amp;sektion=8">nsd(8)</a> and
+    <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=unbound&amp;sektion=8">unbound(8)</a>.
+    <li>Significant namespace cleanup in the /usr/include files, especially related to &lt;sys/param.h&gt; and &lt;limits.h&gt;.
     <li>...
     </ul>
 <p>
