@@ -1,0 +1,291 @@
+<!doctype html>
+<html>
+<head>
+<title>Pruning and Polishing: Keeping OpenBSD Modern</title>
+<style>
+body {
+	max-width: 720px;
+	padding: 2em;
+}
+.title {
+	text-align: center;
+}
+.main {
+	font-size: 1em;
+	line-height: 2em;
+	text-align: justify;
+}
+em {
+	font-style: normal;
+	font-family: monospace;
+}
+</style>
+<style id=bonus>
+</style>
+<script>
+document.getElementById("bonus").innerHTML = 'body { font-family: "Comic Sans MS", "Chalkboard SE", "Comic Neue", cursive, sans-serif; }'
+window.onscroll = function() {
+document.getElementById("bonus").innerHTML = 'body { font-family: serif; }'
+window.onscroll = null
+}
+</script>
+</head>
+<body>
+<div class=title>
+<p style=font-size:2em>
+Pruning and Polishing:<br>
+Keeping OpenBSD Modern
+<p>
+Ted Unangst &lt;tedu@openbsd.org>
+<p>
+AsiaBSDCon 2015
+</div>
+<div class=main>
+<p>
+<h2>Introduction</h2>
+<p>
+Owing to its historic roots as a derivative of the original Berkeley Systems
+Distribution (BSD), OpenBSD includes a great deal of old code. Many files bear
+copyright notices from the year 1980, and in some cases, even older. Although
+not explicitly stated as a project goal, keeping OpenBSD modern is an
+important part of satisyfing other goals, such as portability and correctness.
+<p>
+To that end, something must be done about all the legacy code that we have
+inherited. Actually, two somethings, <i>pruning</i> and <i>polishing</i>. In this paper,
+I'll explain what I mean by these terms, how the OpenBSD Project goes about
+pruning and polishing, and lessons learned in the process.
+<h2>Pruning</h2>
+<p>
+Simply put, pruning is deleting code. I use the term pruning to encompass
+more than just the simple act of deleting code, but also the process of
+identifying which code should be. Some legacy code is useful; some is not.
+<p>
+Opinions vary as to the costs associated with keeping legacy code. At the low
+end, there is the argument that if it's not in the way, there's no harm. At
+the high end, Knight Capital went bankrupt after losing $400 million in 45
+minutes after eight year old deactived code was accidentally reactivated.
+Realistically, typical costs are in most cases closer to the low end.
+<p>
+Merely having old code in the source tree does imply that it is potentially in
+the way. The old code is still fetched during source checkouts, and if
+enabled, still takes time to compile. These costs are minimal in isolation,
+but when multiplied by the frequency with such activies take place, take their
+toll.
+<p>
+More importantly, many developer operations take place across the entire tree.
+For instance, as will be discussed further in the polishing section, a
+developer may run a tree wide grep for a particular programming idiom that has
+recently been determined to be harmful. Each result must be inspected and corrected.
+While theoretically possible to ignore, at least temporarily, results in legacy
+code, that is in itself another decision that must be made. Additionally,
+postponement mostly serves to obfuscate when a task is completed. It is
+important that the question, Are we done?, have a definitive answer.
+<p>
+Examples of tree wide changes include changing internal kernel interfaces. One
+example is the introduction of <i>ALTQ</i>, which added a new macro <em>IFQ_ENQUEUE</em> in
+parallel with the existing macro <em>IF_ENQUEUE</em>. More recently, <em>ether_input</em> has
+been replaced by <em>if_input</em>. Completing such changes requires modifying every
+network driver. But with hundreds of drivers to modify, more frequently what
+happens is that some drivers, those for which developers have access to
+hardware, receive updates while drivers for older hardware that has fallen out
+of use remain untouched. This leads to a fragmented API in the kernel, where
+old and new APIs exist side by side. Multiple APIs is a common and well tested
+transition strategy, but as the transition drags on and on, the existence of
+the old API becomes a source of confusion. Network drivers are often ported
+from FreeBSD or NetBSD, which may continue using the traditional API. When
+such code is ported to OpenBSD, it continues to work, but fails to take
+advantage of the new API. In this way, the continued existence of old code
+hampers the introduction of new code.
+<p>
+A second example are the <em>simplelock</em> locks once prevalent in the kernel. These
+locks, which were really macros which expanded to nothing, were introduced
+long before the kernel was actually capable of multiprocessor operation in a
+case of premature optimism. When SMP support was finally added, intervening
+code changes meant that many of the lock and unlock operations were
+incorrectly placed. In other cases, new developers were not always aware that
+the locks were empty macros and would attempt to use them in code which
+required functioning locks. Considerable developer effort was expended moving
+the locks around and trying to maintain the comments describing the necessary
+locking protocols in code which had never been tested. Arguments in favor of
+keeping the simplelocks were that they served as a guide to where real locks
+should one day be introduced. However, it was becoming increasing clear over
+time that any attempt at correct locking would be better off ignoring the
+simplelocks and starting fresh from first principles. Finally, the simplelocks
+were deleted entirely from the tree.
+<p>
+Determining what code can safely be deleted is an important part of the
+pruning process. The obvious approach would be to ask a representative group,
+such as the user mailing list, if anybody is using the code in question. This
+frequently results in false positives, however. Any question about whether
+anyone is using a particular ISA network adapter will reveal that somebody has
+a 486 with such an adapter in it in their garage. It hasn't been turned on in
+three years, but now that the question has been asked, maybe they think they
+will. In general, the people who do not have to actually maintain ancient
+drivers appear much more optimistic about their future utility. (Also, human
+memory is far from infallible, and it frequenly turns out the 486 in the
+garage did not have the adapter in question. After all these years, who can
+remember whether their 3COM ISA adapter was supported by <i>ec</i>, <i>ef</i>, 
+<i>eg</i>, <i>el</i>, or <i>ep</i>?)
+<p>
+A better approach is to confer with a smaller group of developers,
+particularly those interested in maintaining support for older systems, and
+ask them about the current availability of such hardware. A quick search of
+the second hand market, such as eBay, can also help identify whether such
+support is likely to be useful in the future. Low end testing has been helpful
+in many instances, so the goal is not to relegate all 486 era hardware to the
+scrap heap. Rather, it is to identify the 486 era hardware that is available
+to the vintage enthusiast seeking to assemble a working system today.
+<p>
+Failing hardware may even cause entire architectures to become unsupported.
+Long before flooding in Thailand resulted in a shortage of multi-terabyte
+drives, the OpenBSD project suffered from a shortage of adequate 50-pin SCSI
+drives. Interest in m68k platforms was already waning due to a lack of
+upstream toolchain support and the limited performance of the platform, but
+after all the known working systems suffered hard drive failures, it was
+finally time to retire the port and send its code to the attic.
+<p>
+Userland code is also subject to pruning. In the early days of BSD, the CSRG
+was a small group of developers with similar needs. If a program were useful
+to them, it would be included in the source tree as a matter of course. Thirty
+years later, however, the typical OpenBSD user does not need to reformat
+Fortran source code for printing.
+<p>
+In some cases, the removed functionality may still be useful, but has been
+subsumed by better features elsewhere. <i>TCP wrappers</i> was still included long
+after most users probably migrated to <i>pf</i> for network access control. Wrappers
+had also fallen out of favor with new developers. So for example, while one
+could use <em>hosts.deny</em> with <i>sshd</i>, it wouldn't work with <i>nginx</i>.
+Where possible, such inconsistencies should be avoided. pf works consistently with more
+servers, and so TCP wrappers were removed.
+<p>
+In other cases, the removed program has fallen victim to changing project
+priorities. In the early years of the project, the ports tree was not as fully
+developed, making it more difficult to assemble third party software. The set
+of programs that constituted a complete unix system was also smaller. In the
+90s, an OpenBSD server with <i>sendmail</i> and <i>popa3d </i>was all that a small company
+or ISP may need to provide email access. In the decades since, the <em>POP</em>
+protocol has faded in popularity compared to <em>IMAP</em> and more recently webmail.
+The necessary components and dependencies are too great to provide a simple
+out of the box experience, however. Reevaluation of situation revealed that
+OpenBSD was, by contemporary standards, no longer a complete mail server
+solution, but merely a complete POP mail server solution. As the POP server
+niche shrank, it was no longer compelling for OpenBSD to continue to provide
+POP service, and the popa3d daemon was removed.
+<p>
+Note that removing a program from base doesn't entirely end its availability.
+Many removed programs find an afterlife in the ports tree.
+<p>
+Occasionally the delete first, ask questions later technique has caused
+problems. One notable example is the <i>rmail</i> program. A remnant of the long gone
+UUCP support, it was deleted without notice under the assumption that nobody
+could possibly be using it. Immediately after deletion, however, an OpenBSD
+developer remarked that he did in fact use rmail (but without UUCP) as part of
+his usual email fetching pipeline. Nevertheless, it was determined that ports
+was a better home for rmail, but some disruption and stress could have been
+avoided with advance notice.
+<h2>Polishing</h2>
+<p>
+Keeping the code that's left up to date with modern development practices is
+an important part of OpenBSD's mission to deliver a quality operating system.
+While 80s developers were certainly aware of security vulneratbilities, the
+danger of many programming constructs was not fully realized at the time. As
+time passes, categories of vulnerability wax and wane in popularity. In
+response, OpenBSD developers adapt their code style to avoid unsafe idioms and
+prefer safer ones, and to replace dangerous functions with safer variants.
+<p>
+The <em>strlcpy</em> and <em>strlcat</em> functions were introduced early in the OpenBSD Project's history
+in response to perhaps the most prominent of C's vulneratbilities. High
+priority code such as ssh was reworked to use these functions first, followed
+by a broader audit. The OpenBSD base tree, minus certain third party
+components, has now been completely free from plain <em>strcpy</em> and <em>strcat</em> calls
+for several years.
+<p>
+The <em>strtonum</em> function was introduced after it was observed that many userland
+programs handled numeric command line arguments poorly. The predominant
+function, <em>atoi</em>, will happily accept garbage leading to unexpected results when
+a simple typo is processed. The standard replacement function, <em>strtol</em>, makes
+it possible to perform error checking, however the tedium of doing so meant
+that it was rarely used in practice. Developers would prefer to close their
+eyes and use atoi than write out all the necessary code for proper strtol use.
+There are now approximately 550 calls to strtonum in OpenBSD.
+<p>
+Although integer overflows can occur in many contexts, they are particularly
+likely to occur and particularly devastating when associated with memory
+allocation. Correct overflow checking in C is made difficult by the fact that
+many naive attempts will result in undefined behavior, rendering them moot and
+subject to compiler optimizer elimination. Initially, the OpenBSD policy was
+to identify and replace problematic allocations with the standard <em>calloc</em>
+function. Unfortunately, this function incurred the additional cost of zeroing
+memory unnecessarily and also lacked the flexibility needed to replace
+realloc. A new function, <em>reallocarray</em>, was introduced that solves both
+problems. Originally introduced to assist in checking overflows in LibreSSL,
+it's usage quickly spread throughout the tree, and there are now approximately
+650 reallocarray calls in the tree, plus an additional 250 mallocarray calls
+in the kernel.
+<p>
+Another polishing effort is refactoring of header files. Over time, header
+files inevitably accumulate more and more declarations, often becoming
+entangled in circular dependencies. Eventually the set of header files
+necessary to compile a file can no longer be inferred from the source, and
+deelopers simply copy and paste known working sets of headers from one file to
+another. The immediate downside of this is that even minor changes to any
+header require rebuilding the entire kernel. The long term downside is that
+once entangled, source files only become more tightly bound, making it harder
+to reverse the trend. There are no simple procedures here, but judicious use
+of forward declarations and opaque types can reduce the coupling between
+headers.
+<p>
+A side effect of the polishing effort is homogenization. The original BSD
+code base had only a few authors, and thanks to the KNF style guidelines,
+a very consistent look and feel throughout. Over time, new code is added from
+various sources, which is not always entirely consistent. However, the
+polishing effort smooths out many of those differences, restoring consistency.
+Consistency throughout the code enables existing developers and newcomers
+alike to quickly familiarize themselves with any part of the tree and begin
+hacking.
+<h2>Games</h2>
+<p>
+The games directory deserves special mention. It's filled with some of the
+oldest code in OpenBSD, and unlike most of the source tree, was collected from
+a variety of sources outside the original CSRG. As a result, the code in games
+has an eclectic mix of styles. Many of the games programs are of questionable
+utility. It would seem this directory would be the ideal target for some
+relentless pruning, but it's not. The games directory is instead something of
+a proving ground for polishing techniques.
+<p>
+The variation in syle in games means it is more representative of code outside
+OpenBSD, such as that found in the ports tree. But unlike the ports tree it
+is still under full OpenBSD control. And so, for example, when Theo undertook
+a project to eradicate deterministic <em>random </em>from libc, the games directory was
+one of the first places he looked. Nearly all calls to random in main source
+tree had long since been converted to use <em>arc4random</em>. Some games, however,
+save random seeds in game save files and want to restore them later, making
+them useful tests for the new <em>srand_deterministic</em> function.
+<h2>Conclusions</h2>
+<p>
+Hopefully the reader has gained some insight into the OpenBSD development process,
+especially with regard to the pruning and polishing process. Keeping the
+source code modern helps us to deliver quality releases, and also makes
+hacking fun.
+<h2>References</h2>
+<p>
+<a href="http://dougseven.com/2014/04/17/knightmare-a-devops-cautionary-tale/">
+Knightmare: A DevOps Cautionary Tale
+</a>
+<p>
+<a href="http://www.sudo.ws/todd/papers/strlcpy.html">
+strlcpy and strlcat - consistent, safe, string copy and concatenation
+</a>
+<p>
+<a href="http://www.tedunangst.com/flak/post/the-design-of-strtonum">
+the design of strtonum
+</a>
+<p>
+<a href="http://lteo.net/blog/2014/10/28/reallocarray-in-openbsd-integer-overflow-detection-for-free/">
+reallocarray() in OpenBSD: Integer Overflow Detection for Free
+</a>
+<p>
+<a href="http://www.tedunangst.com/flak/post/random-in-the-wild">
+random in the wild
+</a>
+</div>
