@@ -6,8 +6,8 @@ PREV_VERSION=	5.5
 OPENBGPD_VERSION=		4.6
 OPENNTPD_PORTABLE_VERSION=	5.7p3
 
-OPENSSH_VERSION=		6.7
-OPENSSH_PORTABLE_VERSION=	6.7p1
+OPENSSH_VERSION=		6.8
+OPENSSH_PORTABLE_VERSION=	6.8p1
 
 all: ../groups.html ../support.html ../pkg-stable.html \
 	../pkg-stable${PREV_VERSION:S/.//}.html \
