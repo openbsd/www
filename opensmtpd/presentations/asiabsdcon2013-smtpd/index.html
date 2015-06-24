@@ -1,0 +1,859 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+  <meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0">
+
+  <title>OpenSMTPD: We deliver!</title>
+  <meta name="author" content="Eric Faurot">
+
+  <script src="modernizr.custom.js"></script>
+  <script src="jquery-1.7.2.min.js"></script>
+  <script src="jquery.svg.min.js"></script>
+  <script src="jquery.svganim.min.js"></script>
+  <script src="display-latex2.user.js"></script>
+  <script src="deck.js"></script>
+
+  <link rel="stylesheet" href="style.css">
+  <style type="text/css">
+    .deck-container { font-size: 1.5em; }
+    .comment { color: #999; }
+    .center { text-align: center; }
+    .concl { text-align: center; font-weight: bold; }
+    .deck-container pre { font-family: "DejaVu Sans Mono"; border: none; }
+  </style>
+
+  <script>$(function() {$.deck('.slide');});
+  </script>
+
+</head>
+<body>
+This text should not be displayed if everything goes well: use left/right arrow keys to browse the presentation.
+<br/>
+
+<div class="deck-container">
+
+<!-- ********************************************************************* -->
+<section class="slide">
+	<!-- <img src="logo_black.jpg" style="width: 60%;"/> -->
+	<img src="logo.jpg" style="width: 60%;"/>
+	<h3 class="center">Éric Faurot</h3>
+	<h3 class="center" style="font-size: 14pt;">AsiaBSDCon 2013 - March 17, Tokyo, Japan</h3>
+</section>
+
+<section class="smart">
+
+ = Plan =
+
+ * SMTP
+ * OpenSMTPD
+ ** Configuration, Queue
+ * Internals
+ ** Design, Workflow, Backends
+ * General remarks
+
+== SMTP ==
+
+ = SMTP =
+ 
+ * Venerable protocol
+ * Exchange Internet messages
+ ** as defined by RFC5322 (used to be 822)
+ ** between mailboxes
+ * Everybody has heard of it
+ * Not going away anytime soon
+ ** outlived Google Wave
+ ** outlived Google Reader
+ ** probably more to come
+
+</section>
+
+<section class="slide">
+ <h2>SMTP</h2>
+ <object type="deckjs/svg" class="svgitem">
+   <param name="src" value="smtp_generala.svg" />
+   <param name="height" value="440" />
+ </object>
+</section>
+
+<section class="slide">
+ <h2>SMTP</h2>
+
+ Next relay is found using:
+ <ul>
+	<li>Specific route</li>
+	<li>DNS lookup for domain MXs</li>
+ </ul>
+<pre>$ dig -t mx poolp.org
+ <span class="comment">... some stuff...</span>
+ ;; ANSWER SECTION:
+ poolp.org.  3589  IN   MX   200  poolp.no-ip.org.
+ poolp.org.  3589  IN   MX     0  mx1.poolp.org.
+ poolp.org.  3589  IN   MX    50  mx2.poolp.org.
+ poolp.org.  3589  IN   MX   100  mx3.poolp.org.
+ <span class="comment">... more stuff...</span></pre>
+
+</section>
+<section class="smart">
+
+ = SMTP Protocol =
+
+ * Simple Client/Server protocol
+ ** Line-oriented protocol
+ ** RFCs 5321 + some extensions
+ ** Command / Response
+
+ * Three phases
+ ** Initial handshake (connection and banner)
+ ** Session parameters negociation (tls, auth)
+ ** Mail transfer: SMTP Transaction
+
+ = SMTP Protocol =
+
+ Transaction: foo@bar.com mails gilles@poolp.org 
+
+ *C: MAIL FROM: &lt;foo@bar.com&gt;
+ *S: 250 Ok
+ *C: RCPT TO: &lt;gilles@poolp.org&gt;
+ *S: 250 Ok
+ *C: DATA
+ *S: 354 Go ahead
+ *C: <em>message content</em>
+ *C: .
+ *S: 250 OK
+
+ = SMTP server =
+
+ * Role of a SMTP server : route mails
+ ** Receive incoming mail
+ ** Deliver to local mailbox
+ ** Transfer to next relay
+ * Sounds easy
+ * Seen as a difficult thing to setup, why?
+ 
+ == OpenSMTPD ==
+
+ = OpenSMTPD =
+
+ * Part of the OpenBSD project
+ * Started a long time ago by gilles@
+ * 3 main developers
+ * Very active in the last 12 months
+ * Philosophy:
+ ** Make simple things simple
+ ** Routing logic easy to describe
+ ** Clean flexible design
+ ** Nice license (ISC)
+</section>
+
+<section class="slide"><h2>Configuration</h2>
+<h3>Minimalist setup</h3>
+<pre>
+listen on lo0
+
+table aliases db:/etc/mail/aliases.db
+
+accept for local alias &lt;aliases&gt; deliver to mbox
+accept for any relay
+</pre>
+</section>
+
+
+<section class="slide"><h2>Configuration</h2>
+<h3>Primary domain</h3>
+<pre>
+listen on egress
+
+table aliases db:/etc/mail/aliases.db
+
+accept from any for domain "example.org" \
+		 alias &lt;aliases&gt; deliver to mbox
+accept for local alias &lt;aliases&gt; deliver to mbox
+accept for any relay
+</pre>
+</section>
+
+<section class="smart">
+ = Configuration =
+
+ * Simple ruleset
+ * Syntax inspired by pf.conf
+ * First match wins
+ * Describe the routing logic
+ ** Listeners
+ ** Routing rules: conditions + action
+ </section>
+
+ 
+<section class="slide"><h2>Configuration</h2>
+<h3>Using a smarthost</h3>
+<pre>
+listen on lo0
+
+<span class="comment"># format:  "label   login:password"</span>
+table secrets file:/etc/mail/secrets
+table aliases db:/etc/mail/aliases.db
+
+accept for local alias &lt;aliases&gt; deliver to mbox
+accept for any relay                    \
+    via smtps+auth://label@smtps.my.isp \
+    auth &lt;secrets&gt;
+</pre>
+</section>
+
+
+<section class="slide"><h2>Configuration</h2>
+<h3>Backup server</h3>
+<pre>
+listen on egress
+
+table poolp { poolp.org, opensmtpd.org }
+
+accept for local deliver to mbox
+
+accept from any for domain example.org relay \
+    backup mx4.example.org
+	
+accept from any for domain &lt;poolp&gt; relay \
+    backup mx2.poolp.org
+</pre>
+</section>
+
+
+<section class="slide"><h2>Configuration</h2>
+ <h3>Signing outgoing mail with DKIM proxy</h3>
+ 
+<pre>
+listen on lo0
+listen on lo0 port 10029 tag DKIM
+
+accept for local deliver to mbox
+accept tagged DKIM for any relay
+accept for any relay via smtp://127.0.0.1:10028
+</pre>
+</section>
+
+<section class="slide"><h2>Configuration</h2>
+ <h3>Authenticating relay</h3>
+ 
+<pre>
+listen on egress port submission tls \
+                 certificate my.cert auth
+
+accept from any for domain "opensmtpd.org" \
+                 deliver to maildir
+
+accept for any relay
+</pre>
+</section>
+
+<section class="slide"><h2>Configuration</h2>
+ <h3>Deliver to virtual users</h3>
+ 
+<pre>
+listen on egress
+
+table usr { "alice" = "100:100:/var/vusers/alice",
+            "bob" = "100:100:/var/vusers/bob" }
+			   
+accept from any for domain "wonderland.org" \
+       userbase &lt;usr&gt; deliver to maildir
+	   
+accept for any relay
+</pre>
+</section>
+
+
+<section class="smart">
+
+ = Configuration =
+
+ * Very easy to read
+ * Can express complex routing strategies efficiently
+ * Beware of the rule order though
+ * Quite a lot of features
+ ** authentication in and out, backup server, virtual domains, virtual users, selectable binding address, ... 
+ * Flexible table model
+ 
+ = Tables =
+ 
+ * Abstractions for list and mappings
+ * Provide different <em>services</em>
+ ** domain names, aliases, userbase, creds...
+ ** depends on  the context
+ * Implemented by <em>backends</em>
+ ** static
+ ** file
+ ** db
+ ** sqlite, ldap (experimental)
+ 
+</section>
+
+
+
+<section class="slide"><h2>Queue</h2>
+<ul style="margin-bottom: 0;">
+	<li>Set of mails the server is responsible for</li>
+	<li>Message
+		<ul style="margin-bottom: 0;">
+			<li>Unique 32bit id</li>
+			<li>Content of a mail</li>
+		</ul>
+	</li>
+	<li>Envelope
+		<ul style="margin-bottom: 0;">
+			<li>Unique 64bit id</li>
+			<li>Destination to route the message</li>
+			<li>Types: relay, local delivery, bounce</li>
+		</ul>
+	</li>
+</ul>
+</section>
+
+<section class="slide"><h2>Queue</h2>
+<pre style="padding-top: 0;"># find -f /var/spool/smptd/queue
+/var/spool/smtpd/queue/90/90fa32a2/90fa32a23acab696
+/var/spool/smtpd/queue/90/90fa32a2/90fa32a273da3247
+/var/spool/smtpd/queue/90/90fa32a2/message
+/var/spool/smtpd/queue/34/3475fa58/3475fa584b7239a9
+/var/spool/smtpd/queue/34/3475fa58/message
+</pre>
+</section>
+
+
+<section class="slide"><h2>Queue</h2>
+<pre style="font-size: 14pt;"># cat /var/spool/smtpd/queue/34/3475fa58/3475fa584b7239a9
+version: 1
+helo: shear.ucar.edu
+hostname: lists.openbsd.org
+sockaddr: 192.43.244.163
+sender: owner-misc+M130340=mailing=poolp.org@openbsd.org
+rcpt: mailing@poolp.org
+dest: mailing@poolp.org
+ctime: 1363275217
+expire: 345600
+type: mda
+mda-method: mda
+mda-usertable: &lt;getpwnam&gt;
+mda-buffer: /home/mailing/archiver.py
+mda-user: mailing
+last-bounce: 1363289617
+retry: 113
+errorline: "Exception: 403"
+</pre>
+</section>
+
+<section class="smart">
+
+= Administration =
+
+* Through /usr/sbin/smtpctl
+** Local enqueuer (sendmail)
+** Queue inspection
+** Mail removal
+** Pause/resume
+** Retrieve stats
+** Monitor server activity
+** etc.
+
+* Talk to /var/run/smtpd.sock
+
+</section>
+
+<section class="smart">
+ 
+== Internals ==
+
+ = Design =
+
+ * OpenBSD daemon style
+ ** Multiple processes
+ ** Privilege separation
+ ** Talk via imsg(3)
+ ** FD passing
+
+ * Split the general task into small units of work
+</section>
+
+<section class="slide">
+<h2>Process layout</h2>
+    <object type="deckjs/svg" class="svgitem">
+        <param name="src" value="smtpd_layout.svg" />
+		<param name="height" value="440" />
+    </object>
+</section>
+
+<section class="smart">
+
+= Process layout =
+
+ <h3>SMTP</h3>
+
+ * Server-side SMTP sessions
+ * Supports:
+ ** TLS, smtps
+ ** Auth: PLAIN and LOGIN
+ * Automagically limits incoming sessions
+ * Force disconnect if client hog the session
+ 
+ * Runs unprivileged
+ * Chrooted to /var/empty
+
+= Process layout =
+
+ <h3>FILTER</h3>
+
+ * Perform SMTP filtering
+ * Manage chained processes
+ * Mostly there
+
+ * Unprivileged
+ * Chrooted to /var/empty
+
+ = Process layout =
+
+ <h3>TRANSFER</h3>
+ 
+ * Client SMTP sessions for relaying
+
+ * Unprivileged
+ * Chrooted to /var/empty
+
+ 
+= Process layout =
+
+ <h3>DELIVERY</h3>
+
+ * Handle local deliveries
+ ** mbox
+ ** maildir
+ ** mda
+ ** lmtp (new)
+ * All through parent
+
+ * Unprivileged
+ * Chrooted to /var/empty
+
+ 
+= Process layout =
+
+ <h3>CONTROL</h3>
+
+ * Handle smtpctl connections
+ * Gather statistics
+ 
+ * Unprivileged
+ * Chrooted
+
+= Process layout =
+ 
+ <h3>LOOKUP</h3>
+
+ * Performs all lookups:
+ ** DNS (asynchronous)
+ ** user credentials
+ ** certificate verification
+ ** ruleset evaluation
+ ** alias expansion
+
+ * Unprivileged
+ * Not chrooted (needs /etc/resolv.conf)
+
+
+= Process layout =
+
+ <h3>PARENT</h3>
+
+ * Setup everything: read config, fork others, open listeners, enqueue offline mails
+ * Specific privileged tasks
+ ** Fork mda for the delivery agent
+ ** Performs privileged auth checking
+ ** Open .forward files
+
+ * Runs as superuser
+ * Not chrooted
+
+ 
+= Process layout =
+
+ <h3>SCHEDULER</h3>
+
+ * Knows all exisiting envelopes
+ * No persitent data
+ * Decide when to relay/deliver an envelope
+ * Can be queried by the admin
+ ** Get state
+ ** Force scheduling/removal
+ ** Pause/resume
+
+ * Unprivileged
+ * Chrooted to /var/empty
+
+ = Process layout =
+ 
+ <h3>QUEUE</h3>
+
+ * Manage access to persistent storage
+ ** messages
+ ** envelopes
+ * Feed the scheduler on startup
+ * Enqueue bounced messages
+ 
+ * Unprivileged
+ * Chrooted to spool directory
+ * Can run as a separate user
+
+</section>
+
+
+
+<section class="slide">
+<h2>Enqueueing</h2>
+    <object type="deckjs/svg" class="svgitem">
+        <param name="src" value="smtpd_enqueueing_0a.svg" />
+		<param name="height" value="440" />
+    </object>
+	<div class="anim-show slide" data-what=".svgitem #phase0"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase1"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase2"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase3"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase4"></div>
+</section>
+<section class="slide">
+<h2>Enqueueing</h2>
+    <object type="deckjs/svg" class="svgitem">
+        <param name="src" value="smtpd_enqueueing_1a.svg" />
+		<param name="height" value="440" />
+    </object>
+	<div class="anim-show slide" data-what=".svgitem #phase0"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase1"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase2"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase3"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase4"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase5"></div>
+</section>
+<section class="slide">
+<h2>Enqueueing</h2>
+    <object type="deckjs/svg" class="svgitem">
+        <param name="src" value="smtpd_enqueueing_2a.svg" />
+		<param name="height" value="440" />
+    </object>
+	<div class="anim-show slide" data-what=".svgitem #phase0"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase1"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase2"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase3"></div>
+</section>
+<section class="slide">
+<h2>Enqueueing</h2>
+    <object type="deckjs/svg" class="svgitem">
+        <param name="src" value="smtpd_enqueueing_3a.svg" />
+		<param name="height" value="440" />
+    </object>
+	<div class="anim-show slide" data-what=".svgitem #phase0"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase1"></div>
+	<div class="anim-hide slide" data-what=".svgitem #phase1b"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase2"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase3"></div>
+</section>
+
+<section class="slide">
+<h2>Envelope expansion</h2>
+    <object type="deckjs/svg" class="svgitem">
+        <param name="src" value="smtpd_expanda.svg" />
+		<param name="height" value="440" />
+    </object>
+	<div class="anim-show slide" data-what=".svgitem #phase0"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase0b"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase1"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase2"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase3"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase4"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase5"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase6"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase7"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase8"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase9"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase10"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase11"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase12"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase13"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase14"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase15"></div>
+</section>
+
+<section class="slide">
+<h2>Scheduling</h2>
+    <object type="deckjs/svg" class="svgitem">
+        <param name="src" value="smtpd_schedulinga.svg" />
+		<param name="height" value="260" />
+    </object>
+	<div class="anim-show slide" data-what=".svgitem #phase0"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase1"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase2"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase3"></div>
+	<div class="anim-show slide" data-what=".svgitem #phase4"></div>
+	<div class="anim-hide slide" data-what=".svgitem #phase0"></div>
+
+	<div>
+	On temporary failure:
+	<ul>
+		<li>Quadratic delay: <span class="latex">d = \frac{k.n^2}{2}</span></li>
+		<li>May bounce a warning</li>
+	</ul>
+	</div>
+</section>
+
+<section class="smart">
+= Relaying =
+
+ * Handled by TRANSFER
+ * Maintain a list of tasks (transactions) per destination
+ * Establish sessions with relays
+ ** Limit connections to the same host
+ ** Wait a bit between each connection
+ ** Sessions pick job
+ * Loop detection
+
+= Delivering =
+
+ * Handled by DELIVERY
+ * Maintain a per-user list of deliveries
+ * Request a fd to write the content
+ ** PARENT forks a mda
+ * Limit number of running deliveries
+ * Loop detection
+ </section>
+
+
+ <section class="smart">
+= Bouncing =
+
+ * Notification that something went wrong
+ * Bounces happen:
+ ** On permanent errors when delivering/relaying an envelope
+ ** When an envelope expires
+ ** When an envelope is stuck (delayed)
+ * Two types:
+ ** Failure
+ ** Notice
+</section>
+
+
+<section class="slide">
+ <h2>Bouncing</h2>
+ <object type="deckjs/svg" class="svgitem">
+   <param name="src" value="smtp_bouncea.svg" />
+   <param name="height" value="440" />
+ </object>
+</section>
+
+ <section class="smart">
+= Bouncing =
+
+ * How bounces are handled:
+ ** Specific envelope type for bounce request
+ ** Re-injected through internal SMTP session
+ ** Grouping when possible
+</section>
+
+<section class="slide">
+ <h2>Bouncing</h2>
+ <object type="deckjs/svg" class="svgitem">
+   <param name="src" value="smtpd_bouncinga.svg" />
+   <param name="height" value="440" />
+ </object>
+ <div class="anim-show slide" data-what=".svgitem #cross1, .svgitem #cross2"></div>
+ <div class="anim-show slide" data-what=".svgitem #arrow1, .svgitem #bounce1"></div>
+ <div class="anim-hide slide" data-what=".svgitem #cross1, .svgitem #evp1, .svgitem #arrow1"></div>
+ <div class="anim-show slide" data-what=".svgitem #arrow2, .svgitem #bounce2"></div>
+ <div class="anim-hide slide" data-what=".svgitem #cross2, .svgitem #evp2, .svgitem #arrow2"></div>
+ 
+ <div class="anim-show slide" data-what=".svgitem #star1, .svgitem #star2"></div>
+ 
+ <div class="anim-show slide" data-what=".svgitem #messageB, .svgitem #starB"></div>
+ <div class="anim-show slide" data-what=".svgitem #evpB"></div>
+ <div class="anim-show slide" data-what=".svgitem #bodyB"></div>
+ <div class="anim-hide slide" data-what=".svgitem #starB"></div>
+ 
+ <div class="anim-hide slide" data-what=".svgitem #star1, .svgitem #star2, .svgitem #bounce1, .svgitem #bounce2"></div>
+ 
+</section>
+
+
+<section class="smart">
+= Backends =
+
+ * Queue and scheduler have backends
+ * Functionality implemented using a simple internal API
+ * Enforce a semantics
+ * Any compliant implemention can be used
+ 
+</section>
+
+<section class="slide"><h2>Backends: queue API</h2>
+<pre style="font-size: 15pt;">enum queue_op {
+  QOP_CREATE,
+  QOP_DELETE,
+  QOP_UPDATE,
+  QOP_WALK,
+  QOP_COMMIT,
+  QOP_LOAD,
+  QOP_FD_RW,
+  QOP_FD_R,
+  QOP_CORRUPT,
+};
+
+struct queue_backend {
+  int (*init)(int);
+  int (*message)(enum queue_op, uint32_t *);
+  int (*envelope)(enum queue_op, uint64_t *, char *, size_t);
+};</pre>
+</section>
+
+<section class="slide"><h2>Backends: scheduler API</h2>
+<pre style="font-size: 15pt;">struct scheduler_backend {
+  void   (*init)(void);
+  void   (*insert)(struct scheduler_info *);
+  size_t (*commit)(uint32_t);
+  size_t (*rollback)(uint32_t);
+  void   (*update)(struct scheduler_info *);
+  void   (*delete)(uint64_t);
+  void   (*batch)(int, struct scheduler_batch *);
+
+  size_t (*messages)(uint32_t, uint32_t *, size_t);
+  size_t (*envelopes)(uint64_t, struct evpstate *, size_t);
+  void   (*schedule)(uint64_t);
+  void   (*remove)(uint64_t);
+};</pre>
+</section>
+
+<section class="smart">
+
+ = Backends =
+
+ * Scheduler backends
+ ** ramqueue (default)
+ ** null
+ * Queue backends
+ ** fs (default)
+ ** null
+ ** ram
+ ** REST (PoC)
+ 
+ * Useful to validate APIs and run tests
+
+ == General remarks ==
+
+ = Security =
+
+ * Technical means
+ ** Privilege revocation
+ ** Chroot
+ ** No auth on unsecure connections
+ ** Queue can run as specific user
+ ** Limited superuser delivery options
+
+ * Design principles
+ ** Simple and compact config
+ ** Spot errors just by reading aloud
+ ** Sane defaults
+
+ = Reliability =
+
+ <strong>Nobody likes to lose mails</strong>
+ <br/><br/>
+
+ * There might be bugs
+ ** Lots have been fixed already
+ ** Well tested
+ ** Please report weird behavior
+ 
+ = Reliability =
+ 
+ * Transient errors
+ ** Can happen during lookup, IO, etc...
+ ** Rollback is always possible
+ ** Robust to admin intervention
+ 
+ * Unlucky shutdown? What might happen:
+ ** Client could not be notified of accepted mail
+ ** Queue missed a transfer/delivery notification
+ ** <strong>At worse, a duplicate</strong>
+
+ = Performances =
+
+ * Not specifically designed for performance
+ * Stands the comparison with other servers
+ * Benchmarks show that bottleneck is the FS
+ * Real-world deployment:
+ ** Large infrastructure
+ ** Relayed millions of mails
+ ** Very satisfying rate
+ ** Low memory usage
+ * Not really an issue
+
+ = Good and ba^Wless good  =
+
+ * Advantages
+ ** Simple to configure and administer
+ ** Handle complex routing setups
+ ** Low memory footprint
+
+ * Limitations
+ ** Fewer features (for now)
+ ** Limited built-in spam filtering
+ ** No real support for masquerading
+
+ <p class="center"><strong>Well suited for lots of use-cases</strong></p>
+
+ = Portability =
+
+ * Main development on OpenBSD
+
+ * Portable version (thanks chl@)
+ ** Added features (PAM support)
+ ** Runs on multiple systems
+ *** NetBSD, FreeBSD (in ports)
+ *** Linux (gentoo, archlinux, debian)
+ *** MacOS X
+ *** Nokia N900!
+
+ <p class="center"><strong>We are looking for packagers!</strong></p>
+
+ = Roadmap =
+
+ * First stable release now
+ * Will ship with OpenBSD 5.3
+ * Next major release in about six months
+ ** More cleanups
+ ** Filter infrastructure in place
+ ** More table backends
+ ** External queue and scheduler backends
+
+
+==Thank you!<br/><small>Questions?</small>==
+
+</section>
+
+
+<!-- ********************************************************************* -->
+
+<a href="." title="Permalink to this slide" class="deck-permalink">#</a>
+<!-- deck.status snippet -->
+<p class="deck-status">
+  <span class="deck-status-current"></span>
+  /
+  <span class="deck-status-total"></span>
+</p>
+
+<form action="." method="get" class="goto-form">
+  <label for="goto-slide">Go to slide:</label>
+  <input type="text" name="slidenum" id="goto-slide" list="goto-datalist">
+  <datalist id="goto-datalist"></datalist>
+  <input type="submit" value="Go">
+</form>
+</div> <!-- end of deck container -->
+</body>
+</html>
