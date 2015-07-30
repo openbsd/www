@@ -1,0 +1,160 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>Using OpenSSH with legacy software</title>
+<style>
+pre {
+	display: inline-block;
+	width: auto;
+	border: 2px solid #666;
+	padding: 0.5em 1em;
+	background-color: #E0EBF5;
+	margin: 0px auto;
+}
+</style>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="description" content="OpenSSH legacy support">
+<meta name="copyright" content="This document copyright 2015 by OpenBSD.">
+</head>
+
+<body bgcolor="#ffffff" text="#000000" link="#23238e">
+<a href="index.html"><img alt="[OpenSSH]" height="30" width="141" src="images/smalltitle.gif" border="0"></a>
+<p>
+<h2><font color="#e00000">Using OpenSSH with legacy SSH implementations</font></h2>
+<hr>
+
+<p>
+OpenSSH implements all of the cryptographic algorithms needed for
+compatibility with standards-compliant SSH implementations, but since
+some of the older algorithms have been been found weak not all are
+algorithms are enabled by default. This page describes what to do when
+OpenSSH refuses to connect with an implementation that only supports
+legacy algorithms.
+</p>
+
+<p>
+When a SSH client connects to a server, each side offers lists of connection
+parameters to the other. These include the ciphers to encrypt the connection,
+the message authentication codes (MACs) used to detect traffic modification,
+the public key algorithms that the server can use to authenticate itself
+to the client and the key exchange methods that are used to generate
+per-connection keys. In a successful connection, there is at least one
+mutually-supported choice for each parameter.
+</p>
+
+<p>
+If the client and server are unable to agree on a mutual set of parameters
+then the connection will fail.  OpenSSH (7.0 and greater) will produce an
+error message like this:
+</p>
+
+<pre>
+Unable to negotiate with 127.0.0.1: no matching key exchange method found.
+Their offer: diffie-hellman-group1-sha1
+</pre>
+
+<p>
+In this case, the client and server were unable to agree on the key
+exchange algorithm. The server offered only a single method
+<tt>diffie-hellman-group1-sha1</tt>. OpenSSH supports this method,
+but does not enable it by default because is weak and within theoretical
+range of the so-called Logjam attack.
+</p>
+
+<p>
+The best resolution for these failures is to upgrade the software at
+the other end. OpenSSH only disables algorithms that we actively
+recommend against using because they are known to be weak. In
+some cases, this might not be immediately possible so you may need to
+temporarily re-enable the weak algorithms to retain access.
+</p>
+
+<p>
+For the case of the above error message, OpenSSH can be configured to enable
+the <tt>diffie-hellman-group1-sha1</tt>
+key exchange algorithm (or any other that is disabled by default) using
+the <tt>KexAlgorithm</tt> option - either on the command-line:
+</p>
+
+<pre>
+ssh -oKexAlgorithms=+diffie-hellman-group1-sha1 user@127.0.0.1
+</pre>
+
+<p>
+or in the <tt>~/.ssh/config</tt> file:
+</p>
+
+<pre>
+Host somehost.example.org
+	KexAlgorithms +diffie-hellman-group1-sha1
+</pre>
+
+<p>
+The '+' before the list instructs ssh to <strong>append</strong>
+the algorithm to the client's default set rather than replacing the
+default. By appending, you will automatically upgrade to the best
+supported algorithm when the server starts supporting it.
+</p>
+
+<p>
+Another example, this time where the client and server fail to agree on
+a public key algorithm for host authentication:
+</p>
+
+<pre>
+Unable to negotiate with 127.0.0.1: no matching host key type found.
+Their offer: ssh-dss
+</pre>
+
+<p>
+OpenSSH 7.0 and greater similarly disables the <tt>ssh-dss</tt> (DSA)
+public key algorithm. It too is weak and we recommend against its use.
+It can be re-enabled using the <tt>HostkeyAlgorithms</tt> configuration
+option:
+</p>
+
+<pre>
+ssh -oHostKeyAlgorithms=+ssh-dss user@127.0.0.1
+</pre>
+
+<p>
+or in the <tt>~/.ssh/config</tt> file:
+</p>
+
+<pre>
+Host somehost.example.org
+	HostkeyAlgorithms ssh-dss
+</pre>
+
+<p>
+Depending on the server configuration, it's possible for other connection
+parameters to fail to negotiate. You might find the <tt>Ciphers</tt> and/or
+<tt>MACs</tt> configuration options useful for enabling these. It's
+also possible to query which algorithms ssh supports:
+</p>
+
+<pre>
+ssh -Q cipher       # List supported ciphers
+ssh -Q mac          # List supported MACs
+ssh -Q key          # List supported public key types
+ssh -Q kex          # List supported key exchange algorithms
+</pre>
+
+<p>
+Finally, it's also possible to query the configuration that ssh is acutally
+using when it is attempting to connect to a specific host using the <tt>-G</tt>
+option. For example:
+</p>
+
+<pre>
+ssh -G user@somehost.example.com
+</pre>
+
+<p>
+Will list all the configuration options, including the chosen values for
+the <tt>Ciphers</tt>, <tt>MACs</tt>, <tt>HostkeyAlgorithms</tt> and
+<tt>KexAlgorithms</tt> parameters.
+</p>
+
+</body>
+</html>
