@@ -9,9 +9,7 @@ OPENNTPD_PORTABLE_VERSION=	5.7p4
 OPENSSH_VERSION=		7.1
 OPENSSH_PORTABLE_VERSION=	7.1p1
 
-all: ../groups.html ../support.html ../pkg-stable.html \
-	../pkg-stable${PREV_VERSION:S/.//}.html \
-	../ftp.html
+all: ../groups.html ../support.html ../ftp.html
 
 # Build the user groups page.
 ../groups.html:	groups.dat groups.awk groups.skel Makefile mkcountries
