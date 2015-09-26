@@ -1,0 +1,574 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>OpenBSD Upgrade Guide: 5.7 to 5.8</title>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="description"   content="OpenBSD Upgrade Process for 5.7 -> 5.8">
+<meta name="copyright"     content="This document copyright 2015 by OpenBSD">
+
+<style type="text/css">
+  .hidden  { display: none; }
+  .visible { display: block; }
+</style>
+<script type="text/javascript">
+function onload() {
+    var ids = [ 'before', 'InstKern', 'NoInstKern', 'RunSysmerge', 'RmFiles',
+        'PkgTips' ];
+
+    for (id = 0; id < ids.length; id++) {
+        var item = document.getElementById(ids[id]);
+        if (item) {
+            item.className = 'hidden';
+        }
+    }
+}
+
+function flip_visibility(id) {
+    var item = document.getElementById(id);
+    if (item) {
+        item.className = (item.className === 'hidden') ? 'visible' : 'hidden';
+    }
+}
+</script>
+
+<link rel="canonical" href="http://www.openbsd.org/faq/upgrade58.html">
+</head>
+
+<body bgcolor="#ffffff" text="#000000" onload="javascript:onload()">
+<a href="../index.html">
+<img alt="[OpenBSD]" height=30 width=141 src="../images/smalltitle.gif" border="0">
+</a>
+<p>
+<font color="#0000e0">
+<a href="upgrade41.html">[4.0 -> 4.1]</a> |
+<a href="upgrade42.html">[4.1 -> 4.2]</a> |
+<a href="upgrade43.html">[4.2 -> 4.3]</a> |
+<a href="upgrade44.html">[4.3 -> 4.4]</a> |
+<a href="upgrade45.html">[4.4 -> 4.5]</a> |
+<a href="upgrade46.html">[4.5 -> 4.6]</a> 
+<br>
+<a href="upgrade47.html">[4.6 -> 4.7]</a> |
+<a href="upgrade48.html">[4.7 -> 4.8]</a> |
+<a href="upgrade49.html">[4.8 -> 4.9]</a> |
+<a href="upgrade50.html">[4.9 -> 5.0]</a> |
+<a href="upgrade51.html">[5.0 -> 5.1]</a> |
+<a href="upgrade52.html">[5.1 -> 5.2]</a>
+<br>
+<a href="upgrade53.html">[5.2 -> 5.3]</a> |
+<a href="upgrade54.html">[5.3 -> 5.4]</a> |
+<a href="upgrade55.html">[5.4 -> 5.5]</a> |
+<a href="upgrade56.html">[5.5 -> 5.6]</a> |
+<a href="index.html">[FAQ Index]</a>
+</font>
+
+<h1><font color="#e00000">
+Upgrade Guide: 5.7 to 5.8
+</font></h1>
+<hr>
+<a name="Intro"></a>
+
+<i>Note: Upgrades are only supported from one release to the release
+immediately following it.
+Do not skip releases.
+If you got lucky skipping releases in the past, you may not be lucky
+this time.</i>
+
+<p><i>
+It is highly recommended that you read through and fully understand
+this process before attempting it.
+If you are doing it on a critical or physically remote machine, it is
+recommended that you test this process on an identical, local system to
+verify its success before attempting on a critical or remote computer.
+</i>
+
+<p>
+Note that if your browser supports Javascript, details you may not need
+are hidden, but can be revealed by clicking on the links marked with
+"**", like this one immediately below.
+
+<p>
+<a href="#before" onclick="javascript:flip_visibility('before')">
+** Before upgrading: things to think about and be aware of 
+</a>
+<div id="before" class="visible">
+<blockquote>
+This is <i>not</i> a complete list of the changes that took place
+between 5.7 and 5.8, but rather some of the important things that will
+impact users in the upgrade process.
+For a more complete list of changes, see
+<a href="../plus58.html">plus58.html</a> and the CVS change logs.
+
+<ul>
+<li><b>sudo replaced with doas</b><br>
+<a name="doas"></a>
+sudo has been replaced by the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=doas&amp;sektion=1">doas(1)</a>
+command.
+Usage is similar, but the program itself is much simpler (and thus,
+hopefully more secure) and the 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=doas.conf&amp;sektion=5">configuration file</a>
+is also much simpler.
+However, <b>you should make sure you have direct access to the root
+account when doing the upgrade, as the old sudo may not work and the new
+doas won't be configured.</b>
+For example, some people completely disable the root account and relied
+on sudo to provide root-level access; this would be bad after this
+upgrade!
+Sudo, if desired, is available in ports.
+
+<p>
+<li><b>tip removed</b>
+<a name="tipgone"></a>
+tip(1) has been removed.
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=cu&amp;sektion=1">cu(1)</a>
+(in the base install) has the functionality of tip.
+
+<p>
+<li><b>pf_rules and ipsec_rules variables</b><br>
+<a name="rcconfrules"></a>
+rc.conf no longer uses the pf_rules and ipsec_rules variables.
+If you relied on those to have a different path to those files, you must
+either move your rules to the standard locations, or create a file in
+the standard location which "include"s your file.
+
+<p>
+<li><b>spamd rule change</b><br>
+<a name="spamdrules"></a>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=&amp;sektion=">spamd(8)</a>
+now uses "divert-to" rules rather than "rdr-to".  Simple replacement of
+"rdr-to" with "divert-to" should work for you. 
+
+</ul>
+</blockquote>
+</div>
+
+<p>
+<hr>
+<a name="upgrade"></a>
+<h2>The upgrade process</h2>
+
+If you have access to the system's console, the easiest and safest way
+to upgrade is to boot from the install kernel by boot media or
+<a href="faq4.html#bsd.rd">bsd.rd</a> and follow the upgrade steps,
+which are very similar to the <a href="faq4.html">install process</a>.
+This is not always possible. 
+
+<p>
+Afterwards, complete the upgrade by following the <a href="#final">final
+steps</a> as detailed below.
+Pick one of the following install processes:
+
+<p>
+<a href="#upgrade" onclick="javascript:flip_visibility('InstKern')">
+** Upgrade using Install Kernel (RECOMMENDED)</a>
+<div id="InstKern" class="visible">
+
+<blockquote>
+<p>
+This involves booting from the install kernel,
+<a href="faq4.html#bsd.rd">bsd.rd</a>.
+This can be done by booting from an install floppy, CD, or file system image,
+or you can place the 5.7 version of <tt>bsd.rd</tt> in the root of your
+File system, and instructing the boot loader to boot this kernel instead
+of your usual kernel (<tt>bsd</tt>).
+On amd64 and i386, you do this by entering "<tt>boot bsd.rd</tt>" at the
+initial <tt>boot&gt;</tt> prompt.
+
+<p>
+Once this kernel is booted, chose the "Upgrade" option, and follow the
+prompts.
+The upgrade process is very much like the installation process, though
+it retains all your configuration. info.
+
+</blockquote>
+</div>
+
+<a href="#upgrade" onclick="javascript:flip_visibility('NoInstKern')">
+** Upgrade without the Install Kernel</a>
+<div id="NoInstKern" class="visible">
+<blockquote>
+<i>This is NOT the recommended process.  Use the install kernel method
+if at all possible!</i>
+
+<p>
+Sometimes, one needs to do an upgrade of a machine when one can't easily
+use the normal upgrade process.
+The most common case is when the machine is in a remote location and you
+don't have easy access to the system console.
+One can usually do this by carefully following this process:
+
+<ul>
+<li><b>Place install files in a "good" location</b>.
+Make sure you have sufficient space!
+Running out of space on a remote upgrade could be...unfortunate.
+Note that using softdeps can exaggerate the situation as deleted and
+overwritten files do not release their space immediately.
+Having at least 200MB free on /usr would be recommended.
+
+<p>
+<li><b>Become root with ksh(1):</b>
+While using
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sudo&amp;sektion=8">sudo(8)</a>
+before each command is generally a good practice, the sudo(8) command
+will be broken by the last steps, so you should be root before starting
+this process.
+Note that since sudo is replaced by "doas" in this release, and doas
+will not be configured, might be good to verify your access to root
+using a method OTHER than sudo at this point.
+Also, the use of the OpenBSD
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ksh&amp;sektion=1">ksh(1)</a>
+shell is assumed.
+
+<p>
+<li><b>Stop and/or disable any appropriate applications:</b>
+During this process, all the userland applications will be replaced but
+may not be runnable, and strange things may happen as a result.
+You may also have issues with DNS resolution during the first reboot, so
+PF rules and NFS mounts dependent upon DNS may cause boot-up problems.
+There may be other applications which you wish to keep from running
+immediately after the upgrade, stop and disable them as well.
+
+<p>
+<li><b>Install new boot blocks:</b>
+This should actually be done at the end of any upgrade, but we will
+assume this has been neglected.
+Failure to do this may break serial console or other things, depending
+on platform.
+
+<blockquote><pre>
+<b>installboot -v sd0</b>
+</pre></blockquote>
+
+<p>
+<li><b>Install new kernel(s):</b>
+<ul>
+<li>If you are using the multiprocessor kernel:
+<blockquote><pre>
+<b>export RELEASEPATH=</b><i>/usr/rel</i>   <i># where you put the files</i>
+<b>cd ${RELEASEPATH}</b>
+<b>rm /obsd ; ln /bsd /obsd && cp bsd.mp /nbsd && mv /nbsd /bsd</b>
+<b>cp bsd.rd /</b>
+<b>cp bsd /bsd.sp</b>
+</pre></blockquote>
+
+<li>If using a single processor kernel:
+<blockquote><pre>
+<b>export RELEASEPATH=</b><i>/usr/rel</i>   <i># where you put the files</i>
+<b>cd ${RELEASEPATH}</b>
+<b>rm /obsd ; ln /bsd /obsd && cp bsd /nbsd && mv /nbsd /bsd</b>
+<b>cp bsd.rd bsd.mp /</b>
+</pre></blockquote>
+(note: you will get a harmless error message if your platform doesn't
+have a bsd.mp):
+
+</ul>
+
+<p>
+Note the extra steps for copying over the primary kernel: those are done
+to ensure that there is always a valid copy of the kernel on the disk
+that the system can boot from should there be a really badly timed power
+outage or system crash.
+
+<p>
+<li><b>Save a copy of reboot(8), install new userland applications.</b>
+You are still running the old kernel, it is possible the new reboot
+command will not run on the old kernel, so we will start by saving a
+copy of the old reboot command.
+Note that we are installing base58.tgz LAST, because it will include a new
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=tar&amp;sektion=1">tar(1)</a>
+utility, which may or may not run on the old kernel.
+We reboot immediately, as the system is probably barely runnable after
+the unpacking of all the new files.
+
+<blockquote><pre>
+<b>cp /sbin/reboot /sbin/oreboot</b>
+<b>tar -C / -xzphf xserv58.tgz</b>
+<b>tar -C / -xzphf xfont58.tgz</b>
+<b>tar -C / -xzphf xshare58.tgz</b>
+<b>tar -C / -xzphf xbase58.tgz</b>
+<b>tar -C / -xzphf game58.tgz</b>
+<b>tar -C / -xzphf comp58.tgz</b>
+<b>tar -C / -xzphf man58.tgz</b>
+<b>tar -C / -xzphf base58.tgz</b> # Install last!
+<b>/sbin/oreboot</b>
+</pre></blockquote>
+
+Not all file sets will need to be installed for all applications,
+however if you installed a file set originally, you should certainly
+upgrade it with the new file set now.
+
+<p>
+<li><b>After reboot completes, upgrade <tt>/dev</tt>.</b>
+The new
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=MAKEDEV&amp;sektion=8&amp;arch=i386">MAKEDEV</a>
+file was copied to /dev by the installation of
+<tt>base58.tgz</tt>, so you simply need to do the following:
+<blockquote><pre>
+<b>cd /dev</b>
+<b>./MAKEDEV all</b>
+</pre></blockquote>
+
+<li><b>Install the upgraded boot loader:</b>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=installboot&amp;sektion=8">installboot(8)</a>
+has been "unified" across platforms, so a common (and simplified!) syntax
+can be used:
+<blockquote><pre>
+<b>installboot -v sd0</b>
+</pre></blockquote>
+assuming "sd0" is your boot disk.
+
+<p>
+<li><b>Upgrading firmware:</b>
+There may be new firmware for your system.
+Update it with
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fw_update&amp;sektion=1">fw_update(1)</a>:
+<blockquote><pre>
+<b>fw_update</b>
+</pre></blockquote>
+
+</ul>
+</blockquote>
+</div>
+
+<hr>
+<a name="final"></a>
+<h2>Final steps</h2>
+
+Whether you upgrade by using an install kernel and doing a formal
+"upgrade" process, or do a "in-place" binary upgrade, you need to do a
+few final steps to complete the upgrade.
+
+<p>
+<a name="sysmerge"></a>
+<h3>1.
+<a href="#sysmerge" onclick="javascript:flip_visibility('RunSysmerge')">
+** Run sysmerge(8)
+</a></h3>
+<div id="RunSysmerge" class="visible">
+<blockquote>
+The
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysmerge&amp;sektion=8">sysmerge(8)</a>
+utility will compare the files that are actually on your system with
+those that would be installed in a fresh install, and assist you in
+merging the changes into your system.
+There are no assumptions made about
+what is actually on your system, so you can use sysmerge(8) to move
+between more arbitrary <a href="faq5.html#Flavors">points in the
+development process</a>, such as from an earlier <i>5.7-current</i> to
+<i>5.8-release</i> or from one <i>-current</i> to a later one.
+Sysmerge(8) compares the current files on your system with the files
+that would have been installed with a new install, and what would have
+been there from the last run of sysmerge.
+Usually, it can figure out what to do to update your files.
+If it has difficulty, it will give you the option of keeping the old
+file, installing the new file, or assisting you in the manual merging of
+the old and new files, using
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sdiff&amp;sektion=1">sdiff</a>.
+
+<p>
+Please read the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysmerge&amp;sektion=8">sysmerge(8)</a>
+manual page before using it on your system.
+You are also advised to read the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=diff&amp;sektion=1">diff(1)</a>,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sdiff&amp;sektion=1">sdiff(1)</a>
+and even review
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=more&amp;sektion=1">more(1)</a>
+manual pages before continuing.
+A wide terminal window (i.e., significantly more than 80 characters), if
+available, will make sdiff(1) easier to use.
+
+<p>
+Sysmerge(8) is run simply by invoking it as root:
+
+<blockquote><pre>
+# <b>sysmerge</b>
+</pre></blockquote>
+
+For the files sysmerge(8) can't resolve on its own, it will show you a
+unified
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=diff&amp;sektion=1">diff(1)</a>,
+run through your favorite $PAGER (i.e.,
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=more&amp;sektion=1">more(1)</a>)
+and ask you if you wish to:
+<blockquote><pre>
+  Use 'd' to delete the temporary ./var/www/htdocs/index.html
+  Use 'i' to install the temporary ./var/www/htdocs/index.html
+  Use 'm' to merge the temporary and installed versions
+  Use 'v' to view the diff results again
+
+  Default is to leave the temporary file to deal with by hand
+</pre></blockquote>
+
+<p>
+If you wish to retain your existing file, delete the temporary file.
+If you wish to replace your existing file with the new version, install the
+temporary file.
+If you wish to merge the two together, choosing 'm' will put you into
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sdiff&amp;sektion=1">sdiff(1)</a>,
+where you can manually merge the file.
+The default is to come back and deal with the file later, manually.
+
+<p>
+Sysmerge(8) saves all your replaced files into a temporary directory,
+similar to <tt>/var/tmp/sysmerge.24959/backups</tt>, so if you accidentally
+clobber something that was probably not such a good idea, you have a chance
+to recover it. Note that
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=daily&amp;sektion=8">daily(8)</a>
+cleans old files from this directory, but it will survive a reboot.
+</blockquote></div>
+
+<a name="RmFiles"></a>
+<h3>2.
+Files to delete and move
+</h3>
+Some files should be deleted from your system. <!--, and others
+must be moved or updated.
+Note that some of these may not exist on all systems; that's ok.
+The list of commands to run is broken up into modest size blocks; some
+slower hardware will have trouble keeping up with one large copy/paste. -->
+<blockquote><pre>
+<b>
+rm -f /usr/bin/sudo /usr/bin/sudoedit /usr/sbin/visudo
+rm -f /usr/share/man/man8/sudo.8 /usr/share/man/man8/sudoedit.8
+rm -f /usr/share/man/man8/visudo.8 /usr/share/man/man5/sudoers.5
+rm -f /usr/libexec/sudo_noexec.so
+rm -f /etc/sudoers
+</b></pre></blockquote>
+
+
+<p>
+<a name="Pkgup"></a>
+<h3>3. Upgrading packages</h3>
+If you installed any packages on your system, you should upgrade them
+after completing the upgrade of the base system.
+Be aware, however, many packages will require further setup before
+and/or after upgrading the package.
+Check with the application's upgrade guide for details.
+
+<p><a href="#Pkgup" onclick="javascript:flip_visibility('PkgTips')"
+>** Package Upgrade Tips</a>
+<div id="PkgTips" class="visible">
+<blockquote>
+The following packages are known to have significant upgrade issues that
+will impact users.
+The fact that a package is not on this list doesn't mean it will have a
+trivial upgrade.
+You must do some homework on the applications YOU use.
+
+<ul>
+<li><b>rc script name changes.</b><br>
+The rc scripts for some ports have changed their name to better match
+the original upstream names and/or binary name:
+<ul>
+  <li><tt>dbus_daemon</tt> -> <tt>messagebus</tt>
+  <li><tt>puppetmasterd</tt> -> <tt>puppetmaster</tt>
+  <li><tt>puppetd</tt> -> <tt>puppet</tt>
+  <li><tt>radiusd</tt> -> <tt>freeradius</tt>
+</ul>
+
+Modify <tt>/etc/rc.conf.local</tt> accordingly:
+<pre>
+	perl -pi -e 's/dbus_daemon/messagebus/;' -e 's/puppetmasterd/puppetmaster/;' -e 's/puppetd/puppet/;' -e 's/radiusd/freeradius/;' /etc/rc.conf.local
+</pre>
+
+
+<li><b>www/apache-httpd updated to 2.4.12.</b><br>
+Apache HTTPD is now at 2.4.12. When upgrading from 2.2.x releases manual
+configuration changes may be required. See the <a href="http://httpd.apache.org/docs/2.4/upgrading.html">Apache HTTPD 2.4 upgrade guide</a> for details.
+<br>
+The ap2-mod_fastcgi and ap2-mod_fcgid ports have been superseded by
+mod_proxy_fcgi which ships with Apache HTTPD 2.4 out of the box.
+
+
+<p>
+<li><b>CUPS GTK+2 plugin is now in a separate package</b><br>
+The plugin to allow printer selection from GTK+2 applications, previously in
+the main GTK+2 package, has now been separated.
+To be able to use CUPS printers from these applications (including GIMP,
+Firefox, etc), install the gtk+2-cups package.
+
+<p>
+<li><b>default PHP version switched to 5.6</b><br>
+The default version of PHP has been switched to 5.6.
+After updating to new packages, you will need to move the configuration
+across from 5.5.
+Check for local changes in /etc/php-5.5.ini and apply them to php-5.6.ini,
+and create new symbolic links for any required extensions in /etc/php-5.6.
+For the common case where you would like to keep existing extensions
+you can do this:
+<pre>
+# cd /etc/php-5.5
+# for i in *; do ln -s ../php-5.6.sample/$i ../php-5.6/; done
+</pre>
+Note that pkg_add -u will <b>not</b> move to the newer php-fpm release
+version; most users will need to manually pkg_delete php-fpm and then
+pkg_add the new version.<p>
+Additionally note that there have been <a href="http://php.net/manual/en/migration56.openssl.php">changes
+to PHP 5.6's SSL/TLS support</a>.
+When a PHP script makes an SSL/TLS client connection, peer certificates
+are now verified by default, which was not the case previously.
+Since the standard CA certificate bundle is outside the chroot jail
+frequently used with PHP on OpenBSD, you may need to copy this across
+to allow client connections to function.
+<pre>
+# mkdir -p /var/www/etc/ssl
+# cp /etc/ssl/cert.pem /var/www/etc/ssl/
+</pre>
+
+
+</ul>
+</blockquote>
+</div>
+
+<p>
+The package tools support in-place updating using <tt>pkg_add -u</tt>.
+For instance, to update all your packages, make sure <tt>PKG_PATH</tt> is
+pointing to the 5.7 packages directory on your CD or nearest FTP mirror,
+and use something like
+
+<blockquote><pre>
+<b>pkg_add -u</b>
+</pre></blockquote>
+
+where the <tt>-u</tt> indicates update mode;
+pkg_add will prompt you for input when it encounters
+some ambiguity.
+Read the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pkg_add&amp;sektion=1&amp;manpath=OpenBSD+5.7">pkg_add(1)</a>
+manual page and the <a href="faq15.html#PkgMgmt">package management</a>
+chapter of the FAQ for more information.
+
+
+<p><br>
+<p>
+<font color="#0000e0">
+<a href="upgrade41.html">[4.0 -> 4.1]</a> |
+<a href="upgrade42.html">[4.1 -> 4.2]</a> |
+<a href="upgrade43.html">[4.2 -> 4.3]</a> |
+<a href="upgrade44.html">[4.3 -> 4.4]</a> |
+<a href="upgrade45.html">[4.4 -> 4.5]</a> |
+<a href="upgrade46.html">[4.5 -> 4.6]</a>
+<br>
+<a href="upgrade47.html">[4.6 -> 4.7]</a> |
+<a href="upgrade48.html">[4.7 -> 4.8]</a> |
+<a href="upgrade49.html">[4.8 -> 4.9]</a> |
+<a href="upgrade50.html">[4.9 -> 5.0]</a> |
+<a href="upgrade51.html">[5.0 -> 5.1]</a> |
+<a href="upgrade52.html">[5.1 -> 5.2]</a>
+<br>
+<a href="upgrade53.html">[5.2 -> 5.3]</a> |
+<a href="upgrade54.html">[5.3 -> 5.4]</a> |
+<a href="upgrade55.html">[5.4 -> 5.5]</a> |
+<a href="upgrade56.html">[5.5 -> 5.6]</a> |
+<a href="index.html">[FAQ Index]</a>
+</font>
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../images/back.gif" border="0" alt="[back]"></a>
+<br>
+<small>$OpenBSD: upgrade58.html,v 1.1 2015/09/26 17:44:09 nick Exp $</small>
+
+</body>
+</html>
