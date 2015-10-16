@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.33 2014/12/23 15:44:23 naddy Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.34 2015/10/16 13:45:39 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -120,26 +120,24 @@ sub write_ftplist($$$) {
 
 	open(my $fh, '>', $filename) or die "open $filename: $!";
 
-	for my $type ('UH', 'UF') {
-		foreach my $mirror (sort _by_country @$mirrorref) {
-			next unless ($mirror->{$type});
-			my $loc = '';
-			$loc .= "$mirror->{'GT'}, " if $mirror->{'GT'};
-			$loc .= "$mirror->{'GS'}, " if $mirror->{'GS'};
-			$loc .= "$mirror->{'GC'}" if $mirror->{'GC'};
-			$loc =~ s/&auml;/a/g ;
-			$loc =~ s/&ouml;/o/g ;
-			$loc =~ s/&uuml;/u/g ;
-			$loc =~ s/&eacute;/e/g ;
-			$loc =~ s/&ntilde;/n/g ;
-			(my $url = $mirror->{$type}) =~ s,/$,,;
-			my $pad = $MAXWIDTH - length($url) - 1;
-			# + 4 for aesthetics; force some whitespace
-			if (length($url) + length($loc) + 4 > $MAXWIDTH) {
-				die "Entry for $url too long";
-			}
-			printf $fh "%s %" . $pad . "s\n", $url, $loc;
+	foreach my $mirror (sort _by_country @$mirrorref) {
+		next unless ($mirror->{'UH'});
+		my $loc = '';
+		$loc .= "$mirror->{'GT'}, " if $mirror->{'GT'};
+		$loc .= "$mirror->{'GS'}, " if $mirror->{'GS'};
+		$loc .= "$mirror->{'GC'}" if $mirror->{'GC'};
+		$loc =~ s/&auml;/a/g ;
+		$loc =~ s/&ouml;/o/g ;
+		$loc =~ s/&uuml;/u/g ;
+		$loc =~ s/&eacute;/e/g ;
+		$loc =~ s/&ntilde;/n/g ;
+		(my $url = $mirror->{'UH'}) =~ s,/$,,;
+		my $pad = $MAXWIDTH - length($url) - 1;
+		# + 4 for aesthetics; force some whitespace
+		if (length($url) + length($loc) + 4 > $MAXWIDTH) {
+			die "Entry for $url too long";
 		}
+		printf $fh "%s %" . $pad . "s\n", $url, $loc;
 	}
 
 	close($fh) or die "close $filename: $!";
