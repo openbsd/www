@@ -27,6 +27,7 @@
 <li><a href="#wheel"         >10.1 - When I try to su to root it says that I'm in the wrong group.</a>
 <li><a href="#DupFS"         >10.2 - How do I duplicate a filesystem?</a>
 <li><a href="#rc"            >10.3 - How do I start daemons with the system? (Overview of rc(8))</a>
+<li><a href="#doas"          >10.4 - Introducing doas(1) -- or -- what happened to sudo?</a>
 <li><a href="#vipw"          >10.8 - I made changes to /etc/passwd with an editor, but the changes didn't seem to take place. Why?</a>
 <li><a href="#AddDelUser"    >10.9 - How do I add a user? Or delete a user?</a>
 <li><a href="#FTPOnly"       >10.10 - How do I create a ftp-only account?</a>
@@ -76,8 +77,8 @@ wheel:*:0:root,ericj
 
 <p>
 If you want to give access to superuser
-privileges without adding users to the <kbd>wheel</kbd> group, use
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sudo&amp;sektion=8">sudo(8)</a>.
+privileges without adding users to the <kbd>wheel</kbd> group, you can use
+<a href="#doas">doas(1)</a>.
 
 <h2 id="DupFS">10.2 - How do I duplicate a filesystem?</h2>
 
@@ -298,6 +299,140 @@ and adding the daemon name to the <tt>pkg_scripts</tt> variable in
 <p>
 <i>/etc/rc.shutdown</i> is a script that is run at shutdown. Anything
 you want done before the system shuts down should be added to this file.
+
+<h2 id="doas">10.4 - Introducing doas(1) -- or -- What happened to sudo?</h2>
+<h3>10.4.1 - What is doas(1)?</h3>
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=doas&amp;sektion=1">doas(1)</a>
+allows a user to temporarily run commands as the root (or other) user.
+For example, if appropriately configured,
+<blockquote><pre>
+$ doas fdisk sd1
+</pre></blockquote>
+allows you to run the command
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fdisk&amp;sektion=8">fdisk(8)</a>
+as if you were root.
+Key words there are "appropriately configured", of course.
+You don't want average users to be able to get root privileges for any
+command they wish to run!
+Typically, though certainly not required, users in the "wheel" group
+are given permission to run commands with doas.
+
+<h3>10.4.2 - Why doas(1)?</h3>
+One common challenge when professionally administering computers is
+the contradictory requirements of multiple people being able to manage
+every machine and that account passwords should not shared.
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=doas&amp;sektion=1">doas(1)</a>
+solves this problem by permitting a certain subset of your users (for
+example, members of the "wheel" group) to run predetermined commands
+(often, all commands) as another user (often root).
+Now, anyone can run administrative commands, only needing to authenticate
+as themselves, they do not need to use the root account or know the
+root password.
+
+<p>
+An added advantage of "doas" is all activity is logged.
+It is possible to find out who ran an application.
+
+<p>
+Using a properly configured doas(1) on OpenBSD, one can completely
+disable the root account, eliminating all root password management
+issues.
+
+<p>
+It is also considered good practice by many to use doas when absolutely
+necessary to run a command as root, rather than sitting at a root
+console prompt.  This way, an erroneously typed command is less likely
+to have catastrophic results.
+However, this is subject to some debate.
+It is possible to cause as much chaos and havoc with a "finger-memory"
+(or just incorrect command) invocation of doas as it is when logged in as
+root.
+For this reason, we do not blindly side with those that chant "always
+use 'doas', never use 'root'!" or spend hours making things happen
+without root.
+Notably, if you set doas to not require a the confirmation of your
+password, any script or application running as you can invoke doas(1)
+to make any changes to your system as root.
+For this reason, for personal systems, it is probably better to either
+just use
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=su&amp;sektion=1">su(1)</a>
+to elevate one's self to root status, or use doas(1) with the password
+option.
+
+<h3>10.4.3 - "Sounds like sudo!"</h3>
+Yes, doas(1) was inspired by <a href="http://www.sudo.ws/">sudo</a>.
+doas(1) is OpenBSD's replacement for the sudo command.
+
+<p>
+The complexity of sudo has prevented the importing of the most
+current versions, and the complexity of the sudoers config file
+has discouraged many users from doing anything other than uncomment one
+line in the conf file.
+In short, sudo's code is too complicated for the way most users use it,
+and its configuration is too difficult for more advanced uses.
+
+<p>
+doas(1) is intended to have a simpler, and thus hopefully more secure
+code base and a simpler configuration file.
+From a user standpoint, the two are very similar.
+
+<p>
+For those needing the functionality of sudo, it's available as a
+<a href="faq15.html">package</a>
+
+<h3>10.4.4 - Using doas(1) -- basic doas.conf(5)</h3>
+<p>
+A very basic
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=doas.conf&amp;sektion=5">doas.conf</a>
+might look like this:
+<blockquote><pre>
+permit keepenv { PKG_PATH ENV PS1 SSH_AUTH_SOCK } :wheel
+</pre></blockquote>
+
+This file gives users in the wheel group no password root-level access
+to all commands, with the environment variables PKG_PATH, ENV, PS1, and
+SSH_AUTH_SOCK passed through to the program you are invoking.
+The user will be asked to verify their password before the command is
+run.
+
+<p>
+A more sophisticated dosas.conf(5) file which would permit you to build
+OpenBSD from source using doas(1) without entering your password every
+time might be:
+
+<blockquote><pre>
+permit nopass keepenv { PKG_PATH ENV PS1 SSH_AUTH_SOCK } :wheel
+permit nopass keepenv { \
+    FTPMODE PKG_CACHE PKG_PATH SM_PATH SSH_AUTH_SOCK \
+    DESTDIR DISTDIR FETCH_CMD FLAVOR GROUP MAKE MAKECONF \
+    MULTI_PACKAGES NOMAN OKAY_FILES OWNER PKG_DBDIR \
+    PKG_DESTDIR PKG_TMPDIR PORTSDIR RELEASEDIR SHARED_ONLY \
+    SUBPACKAGE WRKOBJDIR SUDO_PORT_V1 } :wsrc
+</pre></blockquote>
+
+While the "nopass" option makes using "doas" very easy, it can also be
+invoked by any script or program, without the user's knowledge or
+permission.
+For this reason, systems used as general purpose workstations should
+probably not use the "nopass" option, if using doas(1) at all.
+The alternative is using <a href="#wheel">su(1)</a> and the root
+password to use the root account.
+
+<p>
+If you don't like the idea of any script or program you run being able
+to silently invoke doas(1) to run something as root, but you find typing
+your password over and over annoying, you may want to create a user
+for administrative tasks, such as "admin", and have a <tt>doas.conf</tt>
+file like this:
+<blockquote><pre>
+permit :wheel as admin
+permit nopass admin
+</pre></blockquote>
+
+Now, anyone who is in the wheel group can become "admin" with just one
+entry of their password, and then admin can run the commands they wish
+without a password until they drop back to their normal user.
+
 
 <h2 id="vipw">10.8 - I edited /etc/passwd, but the changes didn't seem to take
 place. Why?</h2>
