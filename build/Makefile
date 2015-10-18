@@ -1,9 +1,12 @@
 # Makefile for WWW subdirectory.
 
-STABLE_VERSION=	5.7
-PREV_VERSION=	5.6
+STABLE_VERSION=	5.8
+PREV_VERSION=	5.7
 
+# also update mirrors/openbgpd-ftp.html.head
 OPENBGPD_VERSION=		4.6
+
+# also update mirrors/openntpd-ftp.html.head
 OPENNTPD_PORTABLE_VERSION=	5.7p4
 
 OPENSSH_VERSION=		7.1
@@ -56,4 +59,4 @@ cvsync: mirrors.pl mirrors.dat mirrors/cvsync.html.{end,head}
 	perl mirrors.pl cvsync ${STABLE_VERSION}
 
 clean:
-		rm -f *.countries
+	rm -f *.countries
