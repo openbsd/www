@@ -1,14 +1,13 @@
 <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
 <html>
 <head>
-<title>PF: Example: Firewall for Home or Small Office</title>
+<title>Building an OpenBSD Router</title>
+<meta name="description" content="The Ultimate OpenBSD Router">
 <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
-<meta name="description"   content="the OpenBSD FAQ page">
 <link rel="canonical" href="http://www.openbsd.org/faq/pf/example1.html">
 </head>
-
 <!--
-Copyright (c) 2003, 2004 Joel Knight <enabled@myrealbox.com>
+Copyright (c) 2016 tj@mrsk.me
 
 Permission to use, copy, modify, and distribute this documentation for
 any purpose with or without fee is hereby granted, provided that the
@@ -23,406 +22,380 @@ PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
 TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS DOCUMENTATION
 -->
-
 <body bgcolor="#ffffff" text="#000000">
-<!-- Passes validator.w3.org, please keep it this way;
-please, use a max of 72 chars per line -->
-
 <a href="../../index.html">
 <img alt="[OpenBSD]" height=30 width=141 src="../../images/smalltitle.gif" border="0">
 </a>
 <p>
 [<a href="carp.html">Previous: Firewall Redundancy with CARP and pfsync</a>]
 [<a href="index.html">Contents</a>]
-
 <p>
-<h1><font color="#e00000">PF: Example: Firewall for Home or Small Office</font></h1>
+<h1><font color="#e00000">Building an OpenBSD Router</font></h1>
 <hr>
-
 <h3>Table of Contents</h3>
 <ul>
-<li><a href="#scenario">The Scenario</a>
-	<ul>
-	<li><a href="#network">The Network</a>
-	<li><a href="#objective">The Objective</a>
-	<li><a href="#prep">Preparation</a>
-	</ul>
-<li><a href="#ruleset">The Ruleset</a>
-	<ul>
-	<li><a href="#macros">Macros</a>
-	<li><a href="#options">Options</a>
-	<li><a href="#rules">Firewall Rules</a>
-	</ul>
-<li><a href="#allrules">The Complete Ruleset</a>
+<li><a href="#background">Background</a>
+<li><a href="#net">Networking</a>
+<li><a href="#dhcp">DHCP</a>
+<li><a href="#pf">Firewall</a>
+<li><a href="#dns">DNS</a> (optional)
 </ul>
-
 <hr>
-
-<h2 id="scenario">The Scenario</h2>
-In this example, PF is running on an OpenBSD machine acting as a
-firewall and NAT gateway for a small network in a home or office. The
-overall objective is to provide Internet access to the network and to
-allow limited access to the firewall machine from the Internet, and 
-expose an internal web server to the external Internet.  This document
-will go through a complete ruleset that does just that.
-
-<h3 id="network">The Network</h3>
-The network is setup like this:
-
-<pre>
-    
-  [ COMP1 ]    [ COMP3 ]
-      |            |                               
-   ---+------+-----+------- xl0 [ OpenBSD ] fxp0 -------- ( Internet )
-             |
-         [ COMP2 ]
-
-</pre>
-
+<h2 id="background">Background</h2>
+This guide will show you how to turn an ordinary OpenBSD box into a router.
+First, we'll define what our router (also called a gateway) will actually do
+in this context, since everyone has different requirements. In this example,
+there are three computers that need to share an internet connection. One of
+them is a web server that needs to be accessed remotely, but otherwise we
+don't want any of the local systems open to the internet. The router will
+be doing the following things:
 <p>
-There are a number of computers on the internal network; the diagram
-shows three but the actual number is irrelevant.  These computers are
-regular workstations used for web surfing, email, chatting, etc., except
-for COMP3 which is also running a small web server.
-The internal network is using the 192.168.0.0 / 255.255.255.0 network block.
-
+<li>Performing network address translation (NAT)
+<li>Giving a laptop and server static IPs based on their MAC address
+<li>Handing out IP addresses via DHCP to other clients
+<li>Allowing (some) incoming connections to the server and gateway
+<li>Optionally, doing local DNS caching and DNSCrypt
 <p>
-The OpenBSD firewall is a Celeron 300 with two network cards: a 3com
-3c905B (<tt>xl0</tt>) and an Intel EtherExpress Pro/100 (<tt>fxp0</tt>).
-The firewall has
-a cable connection to the Internet and is using NAT to share this
-connection with the internal network. The IP address on the external
-interface is dynamically assigned by the Internet Service Provider.
-
-<h3 id="objective">The Objective</h3>
-The objectives are:
-<ul>
-<li>Provide unrestricted Internet access to each internal computer.
-<li>Use a "default deny" filter ruleset.
-<li>Allow the following incoming traffic to the firewall from the
-Internet:
-	<ul>
-	<li>SSH (TCP port 22): this will be used for external maintenance of
-	the firewall machine.
-	<li>Auth/Ident (TCP port 113): used by some services such as SMTP
-	and IRC.
-	<li>ICMP Echo Requests: the ICMP packet type used by
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ping&amp;sektion=8"
->ping(8)</a>.
-	</ul>
-<li>Redirect TCP port 80 connection attempts (which are attempts to
-access a web server) to computer COMP3.
-Also, permit TCP port 80 traffic destined for COMP3 through the
-firewall.
-<li>Log filter statistics on the external interface.
-<li>By default, reply with a TCP RST or ICMP Unreachable for blocked
-packets.
-<li>Make the ruleset as simple and easy to maintain as possible.
-</ul>
-
-<h3 id="prep">Preparation</h3>
-This document assumes that the OpenBSD host has been properly configured
-to act as a router, including verifying IP networking setup, Internet
-connectivity, and setting the 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl&amp;sektion=3"
->sysctl(3)</a> variables <tt>net.inet.ip.forwarding</tt> and/or 
-<tt>net.inet6.ip6.forwarding</tt> to "<tt>1</tt>".
-You must also have enabled PF using 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pfctl&amp;sektion=8"
->pfctl(8)</a> or by setting the appropriate variable in
-<tt>/etc/rc.conf.local</tt>.
-PF is enabled by default on OpenBSD 4.6 and newer releases.
-
-<h2 id="ruleset">The Ruleset</h2>
-The following will step through a ruleset that will accomplish the above
-goals.
-
-<h3 id="macros">Macros</h3>
-The following macros are defined to make maintenance and reading of
-the ruleset easier:
+We'll assume you've already got a standard OpenBSD installation. This guide
+will be using hardware with four NICs that use the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=em">em(4)</a> driver,
+so replace <tt>em0</tt>, <tt>em1</tt>, <tt>em2</tt> and <tt>em3</tt> with
+the names of the interfaces in your system. Using this example, <tt>em0</tt>
+will be for the
+<a href="https://en.wikipedia.org/wiki/Wide_area_network">WAN</a>
+and the others for the
+<a href="https://en.wikipedia.org/wiki/Local_area_network">LAN</a>.
+Some sample configuration files are provided, but you're encouraged to read
+the man pages of each one to understand their full capability.
+<p>
+<hr>
+<h2 id="net">Networking</h2>
+Two possible hardware setups are described on this page. The first details
+an "all-in-one" solution in which clients will be directly connected to the
+gateway, without the need for a switch. Software-based switching is done by
+bridging NICs with the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=vether">vether(4)</a>
+virtual interface. The second details the same thing, but using an external
+(hardware) switch, rather than bridging. Only two interfaces are required in
+that case. We'll begin with some initial
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=hostname.if">
+network configuration</a>, using a <b>192.168.1.0/24</b> subnet.
+<p>
 <blockquote><pre>
-int_if="xl0"
-
-tcp_services="{ 22, 113 }"
-icmp_types="echoreq"
-
-comp3="192.168.0.3"
+# <b>echo dhcp > /etc/hostname.em0</b> # if you have a static IP, use that instead
+# <b>echo up   > /etc/hostname.em1</b>
+# <b>echo up   > /etc/hostname.em2</b>
+# <b>echo up   > /etc/hostname.em3</b>
 </pre></blockquote>
-
 <p>
-The first line defines the internal network interface that filtering
-will happen on.
-By defining it here, if we have to move this system to another 
-machine with different hardware, we can change only this line, and 
-the rest of the rule set will be still usable.
-(For this example, the external interface will be handled by using the
-<tt>egress</tt> interface group.
-This is automatically set on any interface holding a default route,
-in this case, fxp0).
-The second and third lines list the TCP port numbers of the services
-that will be opened up to the Internet (SSH and ident/auth) and the ICMP
-packet types that will be accepted at the firewall machine. 
-Finally, the last line defines the IP address of COMP3.
-
+If you plan on using 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridge">bridge(4)</a>
+for software-based switching, create the interfaces.
 <p>
-<b>Note</b>: If the Internet connection required
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pppoe&amp;sektion=4"
->PPPoE</a>, then filtering and NAT would have to take place on the
-<tt>pppoe0</tt> interface and <i>not</i> on the egress interface (<tt>fxp0</tt>).
-
-<h3 id="options">Options</h3>
-The following two options will set the default response for
-<tt>block</tt> filter rules and turn statistics logging "on" for the
-external interface:
 <blockquote><pre>
-set block-policy return
+# <b>echo 'inet 192.168.1.1 255.255.255.0 192.168.1.255' > /etc/hostname.vether0</b>
+# <b>vi /etc/hostname.bridge0</b>
+</pre></blockquote>
+<p>
+And add the following lines:
+<p>
+<blockquote><pre>
+add vether0
+add em1
+add em2
+add em3
+blocknonip vether0
+blocknonip em1
+blocknonip em2
+blocknonip em3
+up
+</pre></blockquote>
+<p>
+If you plan on using a physical switch, give your secondary interface the
+network information instead.
+<blockquote><pre>
+# <b>echo 'inet 192.168.1.1 255.255.255.0 192.168.1.255' > /etc/hostname.em1</b>
+</pre></blockquote>
+<p>
+In either case, IP forwarding must be enabled to allow passing packets
+between interfaces.
+<p>
+<blockquote><pre>
+# <b>echo 'net.inet.ip.forwarding=1' >> /etc/sysctl.conf</b>
+</pre></blockquote>
+<p>
+This change will take effect upon the next reboot.
+<p>
+<hr>
+<h2 id="dhcp">DHCP</h2>
+Clients need IP addresses, so we'll set 
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dhcpd">dhcpd(8)</a>
+to start on boot. Configuration is done via the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dhcpd.conf">
+dhcpd.conf(5)</a> file.
+<p>
+<blockquote><pre>
+# <b>rcctl enable dhcpd</b>
+# <b>rcctl set dhcpd flags vether0</b> # replace vether0 with your secondary interface if not bridging
+# <b>vi /etc/dhcpd.conf</b>
+</pre></blockquote>
+<p>
+Take this example and adjust to fit your needs:
+<p>
+<blockquote><pre>
+option domain-name-servers 192.168.1.1;
+subnet 192.168.1.0 netmask 255.255.255.0 {
+	option routers 192.168.1.1;
+	range 192.168.1.4 192.168.1.254;
+	host myserver {
+		fixed-address 192.168.1.2;
+		hardware ethernet 00:00:00:00:00:00;
+		}
+	host mylaptop {
+		fixed-address 192.168.1.3;
+		hardware ethernet 11:11:11:11:11:11;
+		}
+}
+</pre></blockquote>
+<p>
+Use the MAC addresses of certain clients if they require static IPs.
+You can specify another <a href="https://tools.ietf.org/html/rfc1918">
+RFC 1918</a> address space here if you prefer, or even a public IP block
+if you have one. Using this example, clients will query a local DNS server,
+detailed in a later section. If you don't plan on using a local DNS server,
+replace <tt>192.168.1.1</tt> in the <tt>option routers</tt> line with the
+address of your preferred upstream DNS server (<tt>8.8.8.8</tt>, for example).
+<p>
+<hr>
+<h2 id="pf">Firewall</h2>
+The centerpiece of this guide is the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf">pf.conf(5)</a>
+file. It's highly recommended to familiarize yourself with it, and
+<a href="index.html">PF in general</a>, before copying this example.
+Each section will be explained in more detail.
+<p>
+<blockquote><pre>
+# <b>vi /etc/pf.conf</b>
+</pre></blockquote>
+<p>
+A configuration for a gateway system might look like this:
+<p>
+<blockquote><pre>
+int_if="{ vether0 em1 em2 em3 }"
+table &lt;martians&gt; { 0.0.0.0/8 10.0.0.0/8 127.0.0.0/8 169.254.0.0/16     \
+	 	   172.16.0.0/12 192.0.0.0/24 192.0.2.0/24 224.0.0.0/3 \
+	 	   192.168.0.0/16 198.18.0.0/15 198.51.100.0/24        \
+	 	   203.0.113.0/24 }
+set block-policy drop
 set loginterface egress
-</pre></blockquote>
-
-<p>
-Every Unix system has a "loopback" interface.
-It's a virtual network interface that is used by applications to talk to
-each other inside the system.
-On OpenBSD, the loopback interface is 
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=lo&amp;sektion=4"
->lo(4)</a>.
-It is considered best practice to disable all filtering on loopback
-interfaces.
-Using <a href="options.html#skip">set skip</a> will accomplish this.
-<blockquote><pre>
-set skip on lo
-</pre></blockquote>
-<!-- XXX this should be interface groups, but PF (at least up to
-4.8) just does a substring match on the interface name -->
-Note that we are skipping for all <tt>lo</tt> interfaces, this
-way, should we later add additional loopback interfaces, we won't have
-to worry about altering this portion of our existing rules file.
-
-<h3 id="rules">Firewall Rules</h3>
-
-We will start with rules to support the use of
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8"
->ftp-proxy(8)</a> so that FTP clients on the local network can
-connect to FTP servers on the Internet.
-This works by dynamically inserting rules when an ftp connection
-is made.
-This is done using an <a href="anchors.html">anchor</a>:
-<blockquote><pre>
-anchor "ftp-proxy/*"
-</pre></blockquote>
-
-<p>
-Now we will add the rule needed to divert FTP connections so
-they are seen by ftp-proxy(8):
-<blockquote><pre>
-pass in quick on $int_if inet proto tcp to any port ftp \
-    divert-to 127.0.0.1 port 8021
-</pre></blockquote>
-
-<p>
-This rule will intercept FTP connections to port 21 and divert them
-to an ftp-proxy(8) instance running on port 8021 and, through the use
-of the <tt>quick</tt> keyword, matching packets will not be further
-checked against the rest of the ruleset.
-If users regularly connect to FTP servers on other ports, then a
-list should be used to specify the destination port, for example:
-<tt>to any port { 21, 2121 }</tt>.
-
-<p>
-Note that both the <a href="anchors.html">anchor</a> and the
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=ftp-proxy&amp;sektion=8"
->ftp-proxy(8)</a> divert rule need to be located before any
-<tt>match</tt> rules for NAT or the ftp-proxy(8) will not work
-as expected.
-
-<p>
-Now we move on to some <tt>match</tt> rules.
-By itself, a <tt>match</tt> rule doesn't determine whether or
-not a packet is allowed to pass.
-Instead, packets matching this rule will have the parameters
-remembered; they will then be used in any <tt>pass</tt> rules
-which handle these packets.
-
-<p>
-This is powerful: parameters such as <a href="nat.html">NAT</a>
-or queueing can be applied to certain
-classes of packet, and then access permissions can be defined
-separately.
-
-<p>
-To perform NAT for the entire internal network the following
-<tt>match</tt> rule is used:
-<blockquote><pre>
+set skip on lo0
+match in all scrub (no-df random-id max-mss 1440)
 match out on egress inet from !(egress:network) to any nat-to (egress:0)
+block in quick on egress from &lt;martians&gt; to any
+block return out quick on egress from any to &lt;martians&gt;
+block all
+pass out quick inet
+pass in on $int_if inet
+pass in on egress inet proto tcp from any to (egress) port 22
+pass in on egress inet proto tcp from any to (egress) port { 80 443 } rdr-to 192.168.1.2
 </pre></blockquote>
-
 <p>
-In this case, the "<tt>!(egress:network)</tt>" could easily be
-replaced by a "<tt>$int_if:network</tt>", but if you added multiple
-internal interfaces, you would have to add additional NAT rules,
-whereas with this structure, NAT will be handled on all protected
-interfaces.
-
+Now we'll break this ruleset down and explain what each section is for.
 <p>
-Since the IP address on the external interface is assigned dynamically,
-parenthesis are placed around the translation interface so that PF
-will notice when the address changes.
-The :0 suffix is used so that, if the external interface has multiple
-addresses, only the first address is used for translation.
-
-<p>
-Lastly, the protocol family <tt>inet</tt> (IPv4) is specified.
-This avoids translating any <tt>inet6</tt> (IPv6) packets which may
-be received.
-
-<p>
-Now the rules to control access permissions.
-Start with the default deny:
 <blockquote><pre>
-block in log
+int_if="{ vether0 em1 em2 em3 }"
 </pre></blockquote>
-
 <p>
-At this point all traffic attempting to come into an interface will
-be blocked, even that from the internal network.
-These packets will also be logged.
-Later rules will open up the firewall as per
-the objectives above as well as open up any necessary virtual
-interfaces.
-
+This is a <a href="macros.html">macro</a>, used to make overall maintenance
+easier. Macros can be referenced throughout the ruleset after being defined.
+The <tt>int_if</tt> macro is a list of internal interfaces, including the
+virtual ethernet interface. If you're using an external switch instead of
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=bridge">bridge(4)</a>,
+replace <tt>{ vether0 em1 em2 em3 }</tt> with your secondary interface name.
 <p>
-Keep in mind, pf can block traffic coming into or leaving out of an
+<blockquote><pre>
+table &lt;martians&gt; { 0.0.0.0/8 10.0.0.0/8 127.0.0.0/8 169.254.0.0/16     \
+	 	   172.16.0.0/12 192.0.0.0/24 192.0.2.0/24 224.0.0.0/3 \
+	 	   192.168.0.0/16 198.18.0.0/15 198.51.100.0/24        \
+	 	   203.0.113.0/24 }
+</pre></blockquote>
+<p>
+This is a <a href="tables.html">table</a> of non-routable private addresses
+that will be used later.
+<p>
+<blockquote><pre>
+set block-policy drop
+set loginterface egress
+set skip on lo0
+</pre></blockquote>
+<p>
+PF allows certain <a href="options.html">options</a> to be set at runtime.
+The <tt>block-policy</tt> decides whether rejected packets should return
+a TCP RST or be silently dropped. The <tt>loginterface</tt> is exactly
+what it sounds like: which interface should have packet and byte statistics
+collection enabled. In this case, we're using the <tt>egress</tt> group
+rather than a specific interface. The <tt>egress</tt> keyword automatically
+chooses the interface that holds the default route, or the <tt>em0</tt> WAN
+interface in our example. Finally, <tt>skip</tt> allows you to completely
+omit a given interface from packet processing. The firewall will ignore
+loopback traffic on the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=lo">lo(4)</a>
 interface.
-It can simplify your life if you choose to filter traffic in one
-direction, rather than trying to keep it straight when filtering some
-things in, and some things out.
-In our case, we'll opt to filter the inbound traffic, but once the
-traffic is permitted into an interface, we won't try to obstruct it
-leaving, so we will do the following:
-
+<p>
 <blockquote><pre>
-pass out quick
-</pre></blockquote>
-
-By using <tt>quick</tt>, outbound packets can avoid being checked
-against the following rules, improving performance.
-
-<p>
-It is good to use the <a href="filter.html#antispoof">spoofed address
-protection</a>:
-<blockquote><pre>
-antispoof quick for { lo $int_if }
-</pre></blockquote>
-
-<p>
-Now open the ports used by those network services that will be available
-to the Internet.
-First, the traffic that is destined to the firewall itself:
-
-<blockquote><pre>
-pass in on egress inet proto tcp from any to (egress) \
-    port $tcp_services
-</pre></blockquote>
-
-<p>
-Specifying the network ports in the macro <tt>$tcp_services</tt> makes
-it simple to open additional services to the Internet by simply editing
-the macro and reloading the ruleset. UDP services can also be opened up
-by creating a <tt>$udp_services</tt> macro and adding a filter rule,
-similar to the one above, that specifies <tt>proto udp</tt>.
-
-<p>
-The next rule catches any attempts by someone on the Internet to
-connect to TCP port 80 on the firewall. 
-Legitimate attempts to access this port will be from users trying to
-access the network's web server.
-These connection attempts need to be redirected to COMP3:
-
-<blockquote><pre>
-pass in on egress inet proto tcp to (egress) port 80 rdr-to $comp3
-</pre></blockquote>
-
-<p>
-ICMP traffic needs to be passed:
-<blockquote><pre>
-pass in inet proto icmp all icmp-type $icmp_types
-</pre></blockquote>
-
-<p>
-Similar to the <tt>$tcp_services</tt> macro, the <tt>$icmp_types</tt>
-macro can easily be edited to change the types of ICMP packets that will
-be allowed to reach the firewall. Note that this rule applies to all
-network interfaces.
-
-<p>
-Now traffic must be passed to and from the internal network.
-We'll assume that the users on the internal network know what
-they are doing and aren't going to be causing trouble.  This is not
-necessarily a valid assumption; a much more restrictive ruleset would
-be appropriate for many environments.
-<blockquote><pre>
-pass in on $int_if
-</pre></blockquote>
-
-<p>
-TCP, UDP, and ICMP traffic is permitted to exit the firewall towards the
-Internet due to the earlier "<tt>pass out</tt>" line.
-State information is kept so that the returning packets will be passed
-back in through the firewall.
-
-<h2 id="allrules">The Complete Ruleset</h2>
-<table border=0 width="650">
-<tr><td nowrap bgcolor="#EEEEEE">
-<pre>
-# macros
-
-int_if="xl0"
-
-tcp_services="{ 22, 113 }"
-icmp_types="echoreq"
-
-comp3="192.168.0.3"
-
-# options
-
-set block-policy return
-set loginterface egress
-set skip on lo
-
-# FTP Proxy rules
-
-anchor "ftp-proxy/*"
-
-pass in quick on $int_if inet proto tcp to any port ftp \
-    divert-to 127.0.0.1 port 8021
-
-# match rules
-
+match in all scrub (no-df random-id max-mss 1440)
 match out on egress inet from !(egress:network) to any nat-to (egress:0)
+</pre></blockquote>
+<p>
+The <tt>match</tt> rules used here accomplish two things: normalizing incoming
+packets and performing network address translation, with the <tt>egress</tt>
+interface between the LAN and the public internet. For a more detailed
+explanation of <tt>match</tt> rules and their different options, refer to the
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf">pf.conf(5)</a>
+manual.
+<p>
+<blockquote><pre>
+block in quick on egress from &lt;martians&gt; to any
+block return out quick on egress from any to &lt;martians&gt;
+</pre></blockquote>
+<p>
+Packets coming in on the <tt>egress</tt> interface should be dropped if they
+appear to be from the list of unroutable addresses we defined. Such packets
+were likely sent due to misconfiguration, or possibly as part of a spoofing
+attack. Similarly, our clients should not attempt to connect to such addresses.
+We'll specify the "return" action to prevent annoying timeouts for users.
+<p>
+<blockquote><pre>
+block all
+</pre></blockquote>
+<p>
+The firewall will set a "default deny" policy for all traffic. This means we
+will only allow incoming and outgoing connections that we explicitly put in
+our ruleset.
+<p>
+<blockquote><pre>
+pass out quick inet
+</pre></blockquote>
+<p>
+With the previous rule in mind, there are obviously some types of traffic we
+want to <tt>pass</tt> in our setup. This line allows outgoing IPv4 traffic
+from both the gateway itself and the LAN clients.
+<p>
+<blockquote><pre>
+pass in on $int_if inet
+</pre></blockquote>
+<p>
+Allow all internal LAN traffic to pass.
+<p>
+<blockquote><pre>
+pass in on egress inet proto tcp from any to (egress) port 22
+pass in on egress inet proto tcp from any to (egress) port { 80 443 } rdr-to 192.168.1.2
+</pre></blockquote>
+<p>
+Allow incoming connections to the router itself (on TCP port 22, for SSH)
+and forward incoming connections (on TCP ports 80 and 443, for a web server)
+to our machine at 192.168.1.2. This is merely an example of port forwarding.
+<p>
+<hr>
+<h2 id="dns">DNS</h2>
+At this point, clients should be assigned IP addresses and granted access to
+the internet, while being protected by the firewall. If that's all you need,
+you're done and can reboot now. With that said, a common addition to a
+gateway system is a DNS cache.
+<p>
+Setting up local DNS caching is very simple with
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=unbound">unbound(8)</a>.
+Outgoing lookups can optionally be encrypted with
+<a href="https://dnscrypt.org/">dnscrypt-proxy</a>, installed from the OpenBSD
+<a href="faq15.html">package system</a>. When clients issue a DNS query,
+they'll first hit the cache. If unbound doesn't have the answer, it goes out
+(via an encrypted channel, if using dnscrypt-proxy) to the upstream resolver
+that you've configured. Results are then fed to the client and cached for a
+period of time, making future lookups of the same address much quicker. 
+If you choose to use DNSCrypt, be aware that you are trusting whichever
+upstream resolver is used to provide accurate responses.
+<p>
+<blockquote><pre>
+# <b>rcctl enable unbound</b>
+# <b>vi /var/unbound/etc/unbound.conf</b>
+</pre></blockquote>
+<p>
+Something like this should work for most setups:
+<p>
+<blockquote><pre>
+server:
+	interface: 192.168.1.1
+	interface: 127.0.0.1
+	access-control: 192.168.1.0/24 allow
+	do-not-query-localhost: no
+	hide-identity: yes
+	hide-version: yes
 
-# filter rules
-
-block in log
-pass out quick
-
-antispoof quick for { lo $int_if }
-
-pass in on egress inet proto tcp from any to (egress) \
-    port $tcp_services
-
-pass in on egress inet proto tcp to (egress) port 80 rdr-to $comp3
-
-pass in inet proto icmp all icmp-type $icmp_types
-
-pass in on $int_if
-</pre>
-</td></tr>
-</table>
-
+forward-zone:
+        name: "."
+        forward-addr: 127.0.0.1@40
+</pre></blockquote>
+<p>
+Further configuration options can be found in
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=unbound.conf">
+unbound.conf(5)</a>. Now we'll set up dnscrypt-proxy. It's <b>not</b> part
+of the base system, so you need to install it from packages. If you'd like
+to use a normal authoritative DNS server instead, replace <tt>127.0.0.1@40</tt>
+in the <tt>forward-addr</tt> line with the address of the server you want
+to use (<tt>8.8.8.8@53</tt>, for example). Otherwise, it's just a matter of
+installing the tool and choosing a resolver.
+<p>
+<blockquote><pre>
+# <b>export PKG_PATH=http://ftp.openbsd.org/pub/OpenBSD/$(uname -r)/packages/$(uname -m)</b>
+# <b>pkg_add dnscrypt-proxy</b>
+# <b>rcctl enable dnscrypt_proxy</b>
+</pre></blockquote>
+<p>
+The dnscrypt-proxy utility won't use any server (and thus won't work) by
+default; you need to specify one with the <tt>-R</tt> flag. The
+<a href="https://github.com/jedisct1/dnscrypt-proxy/blob/master/dnscrypt-resolvers.csv">
+included documentation</a> has a list of supported resolvers. We'll set it
+to listen for connections on localhost, port 40.
+<p>
+<blockquote><pre>
+# <b>rcctl set dnscrypt_proxy flags -l /dev/null -R dnscrypt.eu-dk -a 127.0.0.1:40</b>
+</pre></blockquote>
+<p>
+If you're using DNSCrypt to prevent information leakage, the following
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pf.conf">pf.conf(5)</a>
+rule may be used as an additional safety belt:
+<blockquote><pre>
+block return log in on $int_if inet proto { tcp udp } from any to ! 192.168.1.1 port 53
+</pre></blockquote>
+<p>
+As configured in a previous section, our DHCP server will give users a default
+DNS address to query. Unless they explicitly define another public DNS server,
+all the outgoing lookups should be encrypted. This PF rule will block any
+outgoing connections on port 53 if they aren't destined for our DNS cache.
+The <tt>log</tt> keyword is used so that the admin can easily investigate
+such connections with
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=pflogd">pflogd(8)</a>.
+<p>
+Finally, we want the gateway to use the caching resolver for lookups too.
+<p>
+<blockquote><pre>
+# <b>echo 'nameserver 127.0.0.1' > /etc/resolv.conf</b>
+# <b>echo 'supersede domain-name-servers 127.0.0.1;' >> /etc/dhclient.conf</b>
+</pre></blockquote>
+<p>
+In this case, we'll append the <tt>supersede domain-name-servers</tt> line to
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dhclient.conf">
+dhclient.conf(5)</a> so that it
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dhcp-options">
+doesn't overwrite</a> the nameserver setting next time
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dhclient">
+dhclient(8)</a> polls the upstream DHCP server. If you're using a static IP
+for the gateway's external interface, this shouldn't be needed.
+<p>
+<hr>
 <p>
 [<a href="carp.html">Previous: Firewall Redundancy with CARP and pfsync</a>]
 [<a href="index.html">Contents</a>]
-
 <p>
 </body>
-</html> 
+</html>
