@@ -1,0 +1,111 @@
+OpenSSH 7.1p2 has just been released. It will be available from the
+mirrors listed at http://www.openssh.com/ shortly.
+
+OpenSSH is a 100% complete SSH protocol 2.0 implementation and
+includes sftp client and server support. OpenSSH also includes
+transitional support for the legacy SSH 1.3 and 1.5 protocols
+that may be enabled at compile-time.
+
+Once again, we would like to thank the OpenSSH community for their
+continued support of the project, especially those who contributed
+code or patches, reported bugs, tested snapshots or donated to the
+project. More information on donations may be found at:
+http://www.openssh.com/donations.html
+
+Changes since OpenSSH 7.1p1
+===========================
+
+ * SECURITY: ssh(1): The OpenSSH client code between 5.4 and 7.1
+   contains experimential support for resuming SSH-connections (roaming).
+
+   The matching server code has never been shipped, but the client
+   code was enabled by default and could be tricked by a malicious
+   server into leaking client memory to the server, including private
+   client user keys.
+
+   The authentication of the server host key prevents exploitation
+   by a man-in-the-middle, so this information leak is restricted
+   to connections to malicious or compromised servers.
+
+   MITIGATION: For OpenSSH >= 5.4 the vulnerable code in the client
+   can be completely disabled by adding 'UseRoaming no' to the gobal
+   ssh_config(5) file, or to user configuration in ~/.ssh/config,
+   or by passing -oUseRoaming=no on the command line.
+
+   PATCH: See below for a patch to disable this feature (Disabling
+   Roaming in the Source Code).
+
+   This problem was reported by the Qualys Security Advisory team.
+
+ * SECURITY: Eliminate the fallback from untrusted X11-forwarding
+   to trusted forwarding for cases when the X server disables
+   the SECURITY extension. Reported by Thomas Hoger.
+
+ * SECURITY: Fix an out of-bound read access in the packet handling
+   code. Reported by Ben Hawkes.
+
+ * PROTOCOL: Correctly interpret the 'first_kex_follows' option during
+   the intial key exchange. Reported by Matt Johnston.
+
+ * Further use of explicit_bzero has been added in various buffer
+   handling code paths to guard against compilers aggressively
+   doing dead-store removal.
+
+
+Checksums:
+==========
+
+ - SHA1 (openssh-7.1p2.tar.gz) = 9202f5a2a50c8a55ecfb830609df1e1fde97f758
+ - SHA256 (openssh-7.1p2.tar.gz) = dd75f024dcf21e06a0d6421d582690bf987a1f6323e32ad6619392f3bfde6bbd
+
+Please note that the SHA256 signatures are base64 encoded and not
+hexadecimal (which is the default for most checksum tools). The PGP
+key used to sign the releases is available as RELEASE_KEY.asc from
+the mirror sites.
+
+Reporting Bugs:
+===============
+
+- Please read http://www.openssh.com/report.html
+  Security bugs should be reported directly to openssh@openssh.com
+
+OpenSSH is brought to you by Markus Friedl, Niels Provos, Theo de Raadt,
+Kevin Steves, Damien Miller, Darren Tucker, Jason McIntyre, Tim Rice and
+Ben Lindstrom.
+
+Disabling Roaming in the Source Code:
+=====================================
+
+--- readconf.c	30 Jul 2015 00:01:34 -0000	1.239
++++ readconf.c	13 Jan 2016 23:17:23 -0000
+@@ -1648,7 +1648,7 @@ initialize_options(Options * options)
+ 	options->tun_remote = -1;
+ 	options->local_command = NULL;
+ 	options->permit_local_command = -1;
+-	options->use_roaming = -1;
++	options->use_roaming = 0;
+ 	options->visual_host_key = -1;
+ 	options->ip_qos_interactive = -1;
+ 	options->ip_qos_bulk = -1;
+@@ -1819,8 +1819,7 @@ fill_default_options(Options * options)
+ 		options->tun_remote = SSH_TUNID_ANY;
+ 	if (options->permit_local_command == -1)
+ 		options->permit_local_command = 0;
+-	if (options->use_roaming == -1)
+-		options->use_roaming = 1;
++	options->use_roaming = 0;
+ 	if (options->visual_host_key == -1)
+ 		options->visual_host_key = 0;
+ 	if (options->ip_qos_interactive == -1)
+--- ssh.c	30 Jul 2015 00:01:34 -0000	1.420
++++ ssh.c	13 Jan 2016 23:17:23 -0000
+@@ -1882,9 +1882,6 @@ ssh_session2(void)
+ 			fork_postauth();
+ 	}
+ 
+-	if (options.use_roaming)
+-		request_roaming();
+-
+ 	return client_loop(tty_flag, tty_flag ?
+ 	    options.escape_char : SSH_ESCAPECHAR_NONE, id);
+ }
