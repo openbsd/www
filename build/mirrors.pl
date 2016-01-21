@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.34 2015/10/16 13:45:39 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.35 2016/01/21 20:07:59 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -57,6 +57,7 @@ my $sources = {
 	'cvsync-end'		=> 'mirrors/cvsync.html.end',
 };
 my $targets = {
+	'pkg_conf'		=> '/usr/src/etc/examples/pkg.conf',
 	'ftplist'		=> '../ftplist',
 	'mirror_list'		=> '../mirror_list',
 	'openbsd-ftp'		=> '../ftp.html',
@@ -167,6 +168,37 @@ sub write_mirror_list($$) {
 			}
 			printf $fh "%s %s\n", $loc, $mirror->{$type};
 		}
+	}
+
+	close($fh) or die "close $filename: $!";
+}
+
+
+# writes out the ftplist in pkg.conf format
+sub write_pkg_conf($$) {
+	my ($filename, $mirrorref) = @_;
+	my $lastloc = '';
+
+	open(my $fh, '>', $filename) or die "open $filename: $!";
+
+	printf $fh "# \$OpenBSD\$\n#\n";
+	printf $fh "# Mirrors update at differing schedules. If using snapshots, sticking\n";
+	printf $fh "# with one host will reduce risk of fetching out-of-sync packages.\n"; 
+	foreach my $mirror (sort _by_country @$mirrorref) {
+		my $loc;
+		next unless ($mirror->{'UH'});
+		if (defined($mirror->{'GS'}) and $mirror->{'GC'} eq 'USA') {
+			$loc = $mirror->{'GS'}.', ';
+		}
+		$loc .= $mirror->{'GC'};
+		if ($lastloc ne $loc) {
+			printf $fh "\n# %s\n", $loc;
+		}
+		my $url = $mirror->{'UH'};
+	       	$url =~ s/http:\/\/([^\/]*)\/pub\/OpenBSD\/$/$1/;
+	       	$url =~ s/(http:\/\/.*)/$1%c\/packages\/%a\//;
+		printf $fh "#installpath = %s\n", $url;
+		$lastloc = $loc;
 	}
 
 	close($fh) or die "close $filename: $!";
@@ -345,6 +377,9 @@ sub _by_country {
 	my ($x, $y) = ($a->{'GC'}, $b->{'GC'});
 	$x =~ s/^the\s+//i;	# ignore leading 'the' as in 'The Netherlands'
 	$y =~ s/^the\s+//i;
+	if (($x eq $y) and defined($a->{'GS'} and defined($b->{'GS'}))) {
+		return lc($a->{'GS'}) cmp lc($b->{'GS'})
+	}
 	return lc($x) cmp lc($y);
 }
 
@@ -392,6 +427,7 @@ if (@ARGV == 2) {
 	if ($cmd eq 'ftplist') {
 		write_ftplist($targets->{'ftplist'}, $ver, \@mirrors);
 		write_mirror_list($targets->{'mirror_list'}, \@mirrors);
+		write_pkg_conf($targets->{'pkg_conf'}, \@mirrors);
 	} elsif ($cmd eq 'openbsd-ftp' || $cmd eq 'openbgpd-ftp' ||
 		 $cmd eq 'openntpd-ftp' || $cmd eq 'openntpd-portable' ||
 		 $cmd eq 'openssh-ftp' || $cmd eq 'openssh-portable') {
