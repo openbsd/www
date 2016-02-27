@@ -53,9 +53,6 @@
                                 and restoring from tape</a>
 <li><a href="#foreignfs"       >14.12 - Can I access data on filesystems other
                                 than FFS?</a>
-<ul>
-  <li><a href="#foreignfsafter">14.12.1 - The partitions are not in my
-                                disklabel! What should I do?</a>
 </ul>
 <hr>
 
@@ -1565,230 +1562,22 @@ restore your data are as follows:
 </ul>
 
 <h2 id="foreignfs">14.12 - Can I access data on filesystems other than FFS?</h2>
-<!-- This article written by Steven Mestdagh,
-steven@openbsd.org, and released under the BSD license -->
 
 Yes.
-Other supported filesystems include: ext2/3/4 (Linux), ISO 9660 and UDF
-(CD-ROM, DVD media), FAT (MS-DOS and Windows), NFS, NTFS (Windows).
-Some of them have limited support; for instance read-only.
-
-<p>
-We will give a general overview on how to use one of these filesystems under
-OpenBSD.
-To be able to use a filesystem, it must be mounted.
-For details and mount options, please consult the
+Start with the
 <a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mount">mount(8)</a>
-manual page, and that of the mount command for the filesystem you will be
-mounting, e.g. mount_msdos, mount_ext2fs, ...
-
-<p>
-First, you must know on which device your filesystem is located.
-This can be simply your first hard disk, <tt>wd0</tt> or <tt>sd0</tt>,
-but it may be less obvious.
-All recognized and configured devices on your system are mentioned in the
-output of the
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=dmesg">dmesg(8)</a>
-command: a device name, followed by a one-line description of the device.
-For example, my first CD-ROM drive is recognized as follows:
+manual which contains examples explaining how to mount some of the
+most commonly used filesystems.
+A partial list of
+<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=mount_&amp;sec=8&amp;apropos=1">
+supported file systems</a>
+and related commands can be obtained with
 
 <blockquote><pre>
-cd0 at scsibus0 targ 0 lun 0: &lt;COMPAQ, DVD-ROM LTD163, GQH3&gt; SCSI0 5/cdrom removable
+# <b> man -k -s 8 mount</b>
 </pre></blockquote>
 
-For a much shorter list of available disks, you can use
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=sysctl">sysctl(8)</a>.
-The command
-
-<blockquote><pre>
-# <b>sysctl hw.disknames</b>
-</pre></blockquote>
-
-will show all disks currently known to your system, for example:
-
-<blockquote><pre>
-hw.disknames=sd0:303c29298c315c77,cd0:,fd0:
-</pre></blockquote>
-
-At this point, it is time to find out which partitions are on the device, and
-in which partition the desired filesystem resides.
-Therefore, we examine the device using
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=disklabel">
-disklabel(8)</a>.
-The disklabel contains a list of partitions, with a maximum number of 16.
-Partition c always indicates the entire device.
-Partitions a-b and d-p are used by OpenBSD.
-Partitions i-p may be automatically allocated to file systems of other
-operating systems.
-In this case, I'll be viewing the disklabel of my hard disk, which contains
-a number of different filesystems.
-
-<p>
-<b>NOTE: OpenBSD was installed after the other operating systems</b>
-on this system, and during the install a disklabel containing partitions for
-the native as well as the foreign filesystems was installed on the disk.
-However, if you install foreign filesystems after the OpenBSD disklabel
-was already installed on the disk, you need to add or modify them manually
-afterwards.
-This will be explained in <a href="#foreignfsafter">this subsection</a>.
-
-<blockquote><pre>
-# <b>disklabel wd0</b>
-
-# using MBR partition 2: type A6 off 20338290 (0x1365672) size 29318625 (0x1bf5de1)
-# /dev/rwd0c:
-type: ESDI
-disk: ESDI/IDE disk
-label: ST340016A
-duid: d920a43a5a56ad5f
-flags:
-bytes/sector: 512
-sectors/track: 63
-tracks/cylinder: 16
-sectors/cylinder: 1008
-cylinders: 16383
-total sectors: 78165360
-boundstart: 20338290
-boundend: 49656915
-drivedata: 0
-
-16 partitions:
-#             size        offset  fstype [fsize bsize  cpg]
-  a:        408366      20338290  4.2BSD   2048 16384   16 # /
-  b:       1638000      20746656    swap
-  c:      78165360             0  unused
-  d:       4194288      22384656  4.2BSD   2048 16384   16 # /usr
-  e:        409248      26578944  4.2BSD   2048 16384   16 # /tmp
-  f:      10486224      26988192  4.2BSD   2048 16384   16 # /var
-  g:      12182499      37474416  4.2BSD   2048 16384   16 # /home
-  i:         64197            63 unknown
-  j:      20274030         64260 unknown
-  k:       1975932      49656978   MSDOS
-  l:       3919797      51632973 unknown
-  m:       2939832      55552833  ext2fs
-  n:       5879727      58492728  ext2fs
-  o:      13783707      64372518  ext2fs
-
-</pre></blockquote>
-
-As can be seen in the above output, the OpenBSD partitions are listed first.
-Next to them are a number of ext2 partitions and one MSDOS partition, as
-well as a few 'unknown' partitions.
-On i386 and amd64 systems, you can usually find out more about those using the
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fdisk">fdisk(8)</a>
-utility.
-For the curious reader: partition i is a maintenance partition created by
-the vendor, partition j is a NTFS partition and partition l is a Linux swap
-partition.
-
-<p>
-Once you have determined which partition it is you want to use, you can
-move to the final step: mounting the filesystem contained in it.
-Most filesystems are supported in the GENERIC kernel: just have a look at
-the kernel configuration file, located in the
-<tt>/usr/src/sys/arch/&lt;<i>arch</i>&gt;/conf</tt> directory.
-If you want to use one of the filesystems not supported in GENERIC, you
-will need to <a href="faq5.html#Options">build a custom kernel</a>.
-
-<p>
-When you have gathered the information needed as mentioned above, it is
-time to mount the filesystem.
-Let's assume a directory <tt>/mnt/otherfs</tt> exists, which we will use as
-a mount point where we will mount the desired filesystem.
-In this example, we will mount the ext2 filesystem in partition m:
-
-<blockquote><pre>
-# <b>mount -t ext2fs /dev/wd0m /mnt/otherfs</b>
-</pre></blockquote>
-
-If you plan to use this filesystem regularly, you may save yourself some
-time by inserting a line for it in <tt>/etc/fstab</tt>, for example something
-like:
-
-<blockquote><pre>
-/dev/wd0m /mnt/otherfs ext2fs rw,noauto,nodev,nosuid 0 0
-</pre></blockquote>
-
-Notice the 0 values in the fifth and sixth field.
-This means we do not require the filesystem to be dumped, and checked using
-fsck.
-Generally, those are things you want to have handled by the native
-operating system associated with the filesystem.
-
-<h3 id="foreignfsafter">14.12.1 - The partitions are not in my disklabel!
-What should I do?</h3>
-
-If you install foreign filesystems on your system (often the result of
-adding a new operating system) after you have already installed OpenBSD,
-a disklabel will already be present, and it will not be updated
-automatically to contain the new foreign filesystem partitions.
-If you wish to use them, you need to add or modify these partitions
-manually using
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=disklabel">
-disklabel(8)</a>.
-
-<p>
-As an example, I have modified one of my existing ext2 partitions: using
-Linux's fdisk program, I've reduced the size of the 'o' partition (see
-disklabel output above) to 1G.
-We will be able to recognize it easily by its starting position
-(offset: 64372518) and size (13783707).
-Note that these values are sector numbers, and that using sector numbers
-(not megabytes or any other measure) is the most exact and safest way of
-reading this information.
-
-<p>
-Before the change, the partition looked like this using OpenBSD's
-<a href="http://www.openbsd.org/cgi-bin/man.cgi?query=fdisk">fdisk(8)</a>
-utility (leaving only relevant output):
-
-<blockquote><pre>
-# <b>fdisk wd0</b>
-. . .
-Offset: 64372455        Signature: 0xAA55
-         Starting       Ending       LBA Info:
- #: id    C   H  S -    C   H  S [       start:      size   ]
-------------------------------------------------------------------------
- 0: 83 4007   1  1 - 4864 254 63 [    64372518:    13783707 ] Linux files*
-. . .
-</pre></blockquote>
-
-As you can see, the starting position and size are exactly those reported
-by disklabel(8) earlier.
-(Dont' be confused by the value indicated by "Offset": it is referring to
-the starting position of the extended partition in which the ext2 partition
-is contained.)
-
-<p>
-After changing the partition's size from Linux, it looks like this:
-
-<blockquote><pre>
-# <b>fdisk wd0</b>
-. . .
-Offset: 64372455        Signature: 0xAA55
-         Starting       Ending       LBA Info:
- #: id    C   H  S -    C   H  S [       start:      size   ]
-------------------------------------------------------------------------
- 0: 83 4007   1  1 - 4137 254 63 [    64372518:     2104452 ] Linux files*
-. . .
-</pre></blockquote>
-
-Now this needs to be changed using disklabel(8).
-For instance, you can issue <tt>disklabel -e wd0</tt>, which will invoke
-an editor specified by the EDITOR environment variable (default is vi).
-Within the editor, change the last line of the disklabel to match the new
-size:
-
-<blockquote><pre>
-  o:       2104452      64372518  ext2fs
-</pre></blockquote>
-
-Save the disklabel to disk when finished.
-Now that the disklabel is up to date again, you should be able to mount
-your partitions as described above.
-
-<p>
-You can follow a very similar procedure to add new partitions.
+Note that support may be limited to read-only operation.
 
 <p>
 <hr>
