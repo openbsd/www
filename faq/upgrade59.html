@@ -1,0 +1,414 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>OpenBSD Upgrade Guide: 5.7 to 5.8</title>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="description"   content="OpenBSD Upgrade Process for 5.7 -> 5.8">
+<meta name="copyright"     content="This document copyright 2015 by OpenBSD">
+
+<style type="text/css">
+  .hidden  { display: none; }
+  .visible { display: block; }
+</style>
+<script type="text/javascript">
+function onload() {
+    var hide = [ 'NoInstKern' ];
+
+    for (id = 0; id < hide.length; id++) {
+        var item = document.getElementById(hide[id]);
+        if (item) {
+            item.className = 'hidden';
+        }
+    }
+}
+function flip_visibility(id) {
+    var item = document.getElementById(id);
+    if (item) {
+        item.className = (item.className === 'hidden') ? 'visible' : 'hidden';
+    }
+}
+</script>
+
+<link rel="canonical" href="http://www.openbsd.org/faq/upgrade58.html">
+</head>
+
+<body bgcolor="#ffffff" text="#000000" onload="javascript:onload();">
+<a href="../index.html">
+<img alt="[OpenBSD]" height=30 width=141 src="../images/smalltitle.gif" border="0">
+</a>
+<p>
+<font color="#0000e0">
+<a href="upgrade58.html">[5.7 -> 5.8]</a> |
+<a href="index.html">[FAQ Index]</a>
+</font>
+
+<h1 style="color:#e00000">Upgrade Guide: 5.8 to 5.9</h1>
+
+<blockquote><i>
+Note: Upgrades are only supported from one release to the release immediately
+following it. </i>
+<p>
+<i>
+It is highly recommended that you read through and fully understand this process
+before attempting it.
+Especially for critical or physically remote machines, it is recommended that
+you test it on an identical, local system first.
+</i></blockquote>
+
+Boot from the install kernel, <a href="faq4.html#bsd.rd">bsd.rd</a>.
+This can be done by booting from an
+<a href="https://openbsdstore.com/">install CD</a>, or other
+<a href="http://www.openbsd.org/faq/faq4.html#MkInsMedia">
+bootable install media</a>.
+Alternatively, you can place the 5.9 version of <tt>bsd.rd</tt> in the root of
+your file system and instruct the boot loader to boot this kernel instead
+of your usual kernel -- on amd64 and i386:
+<tt>boot&gt; <b>boot bsd.rd</b></tt>
+
+<p>
+Once this kernel is booted, choose the <tt>(U)pgrade</tt> option and follow the
+prompts.
+The upgrade process retains all your configuration info.
+If you absolutely have to, you can follow the
+<a href="#NoInstKern" onclick="javascript:flip_visibility('NoInstKern')">
+manual upgrade process</a> instead.
+
+<p>
+Final steps:
+<ol>
+  <li id="sysmerge">
+    Run <a href="http://man.openbsd.org/?query=sysmerge">sysmerge(8)</a>
+    as root: <tt># <b>sysmerge</b></tt>
+    <p>
+    The <a href="http://man.openbsd.org/?query=sysmerge">sysmerge(8)</a>
+    utility will compare the files that are currently on your system with
+    those that would be installed in a fresh install.
+    It will assist you in merging the changes into your system, using
+    <a href="http://man.openbsd.org/?query=sdiff">sdiff(1)</a>.
+    <p>
+    The section on <a href="#ConfigChanges">configuration changes</a> lists
+    some important cases that need extra care.
+  <li>
+    <a href="#RmFiles">Remove some files</a>.
+    <p>
+  <li id="pkg_add-u">
+    Upgrade your packages using
+    <a href="http://man.openbsd.org/?query=pkg_add">pkg_add(1)</a>:
+    <tt># <b>pkg_add -u</b></tt>
+    <p>
+    In many cases, that will be all you need to do.
+    Check the <a href="#SpecPkg">section below</a> to see if any of your
+    installed packages require workarounds to upgrade.
+</ol>
+
+<hr>
+
+<h3 id="ConfigChanges">Configuration changes</h3>
+
+<ul style="list-style-type: none">
+  <li><b><a href="http://man.openbsd.org/?query=ntpd.conf">ntpd.conf(5)</a>:</b>
+    The <tt>rtable</tt> option was removed from <tt>server</tt> and
+    <tt>servers</tt>.
+    Users of <tt>server * rtable X</tt> will need to switch to launching
+    ntpd with
+    <blockquote><pre>
+    # <b>route -T X exec /usr/sbin/ntpd</b>
+    </pre></blockquote>
+
+  <li><b><a href="http://man.openbsd.org/?query=pf.conf">pf.conf(5)</a>:</b>
+    <tt>set debug</tt> no longer accepts the <tt>none</tt>, <tt>urgent</tt>,
+    <tt>misc</tt> and <tt>loud</tt> arguments, which were deprecated several
+    releases ago.
+    Use <tt>emerg</tt>, <tt>alert</tt>, <tt>crit</tt>, <tt>err</tt>,
+    <tt>warning</tt>, <tt>notice</tt>, <tt>info</tt> or <tt>debug</tt> instead.
+    Change this before updating, or your pf.conf will not load.
+
+  <p>
+  <li><b><a href="http://man.openbsd.org/?query=smtpd.conf">
+    smtpd.conf(5)</a>:</b>
+    The <tt>pki</tt> keyword no longer accepts a <tt>ca</tt> parameter.
+    Custom CA certificates must be declared using the new <tt>ca</tt> keyword:
+    <blockquote><pre>
+    ca mail.example.org certificate "/etc/mail/CA.pem"
+    </pre></blockquote>
+
+  <li><b><a href="http://man.openbsd.org/?query=netstart">netstart(8)</a>:</b>
+    Options <tt>multicast_host</tt> and <tt>multicast_router</tt> have been
+    merged into a single <tt>multicast</tt> option.
+    In order to enable multicast the following line should be added in
+    <a href="http://man.openbsd.org/?query=rc.conf.local">rc.conf.local(8)</a>:
+    <blockquote><pre>
+    multicast=YES
+    </pre></blockquote>
+    If you previously set these options to something other than <tt>YES</tt> or
+    the interface carrying the default route, you will also need to add a static
+    route for <tt>224.0.0.0/4</tt>.
+
+  <p>
+  <li><b><a href="http://man.openbsd.org/?query=tun">tun(4)</a>:</b>
+    This was previously a "dual mode" device.
+    By default it would act as a layer-3 "routed" device, but by use
+    of the <tt>link0</tt> flag it would change to a layer-2 "ethernet" mode.
+    This layer-2 mode has now been has been split off to a separate
+    <a href="http://man.openbsd.org/?query=tap">tap(4)</a>
+    device.
+    <p>
+    For some use cases (e.g. ssh tunnel-forwarding run as a non-root user),
+    permissions on the device nodes would have been modified; these should
+    be applied to the new device nodes as necessary.
+    <tt>hostname.tun*</tt> files using the <tt>link0</tt> flag should be moved
+    to <tt>hostname.tap*</tt> instead, and the flag should be removed.
+    Other configuration may need to be adjusted to use the new device
+    name, for example for software like QEMU, OpenVPN or SIMH.
+    Networking configuration (bridges, PF) referring to these devices
+    may also need to change.
+</ul>
+
+<h3 id="RmFiles">Files to delete</h3>
+
+<blockquote><pre>
+rm -f /usr/libexec/smtpd/makemap
+
+# People requiring these backends should install the opensmtpd-extras main package.
+rm -f /usr/libexec/smtpd/table-ldap
+rm -f /usr/libexec/smtpd/table-passwd
+rm -f /usr/libexec/smtpd/table-sqlite
+rm -f /usr/share/man/man5/table_passwd.5
+
+rm -f /usr/share/misc/termcap.db /usr/share/misc/terminfo.db
+
+rm -f /usr/X11R6/include/intel_*.h
+rm -f /usr/X11R6/include/r600_pci_ids.h
+rm -f /usr/X11R6/include/radeon_*.h
+
+cd /usr/X11R6/include/freetype2
+rm -rf config
+rm -f freetype.h ftadvanc.h ftbbox.h ftbdf.h ftbitmap.h ftbzip2.h \
+          ftcache.h ftcffdrv.h ftchapters.h ftcid.h fterrdef.h \
+          fterrors.h ftfntfmt.h ftgasp.h ftglyph.h ftgxval.h ftgzip.h \
+          ftimage.h ftincrem.h ftlcdfil.h ftlist.h ftlzw.h ftmac.h \
+          ftmm.h ftmodapi.h ftmoderr.h ftotval.h ftoutln.h ftpfr.h \
+          ftrender.h ftsizes.h ftsnames.h ftstroke.h ftsynth.h \
+          ftsystem.h fttrigon.h fttypes.h ftwinfnt.h t1tables.h \
+          ttnameid.h tttables.h tttags.h ttunpat.h
+</pre></blockquote>
+
+<h3 id="SpecPkg">Special packages</h3>
+
+<ul style="list-style-type: none">
+  <li><b>php-fpm:</b>
+    To allow installing multiple versions of php-fpm on the same system,
+    the rc script has been renamed to include the version number.
+    If you are using this, modify references to <tt>php_fpm</tt> in
+    <tt>/etc/rc.conf.local</tt> to e.g. <tt>php56_fpm</tt>.
+  <p><li><b>gophernicus:</b>
+    <tt>in.gophernicus</tt> moved from <tt>/usr/local/sbin/</tt> to
+    <tt>/usr/local/libexec</tt>.
+    Please remember to update your <tt>/etc/inetd.conf</tt> accordingly.
+  <p>
+  <li><b>puppetboard:</b>
+    The default configuration file (<tt>default_settings.py</tt>) format has
+    changed and needs to be merged with <tt>default_settings.py.dist</tt>
+    before restarting the <tt>puppetboard</tt> service.
+  <p>
+  <li><b>cfs:</b>
+    The security/cfs port has been removed.
+    Users are encouraged to use another data encryption method.
+    Possible alternatives are:
+    softraid(4) crypto, encrypted vnd(4) devices or the security/encfs port.
+    Delete it with <tt># <b>pkg_delete cfs</b></tt>
+  <p>
+  <li>
+    <b>node modules:</b>
+    All modules for lang/node have been removed in favor of directly using npm.
+    Native modules need to be built with <tt>-std=gnu++0x</tt>, so npm
+    internally sets <tt>CXX=eg++</tt> when building native modules.
+    To remove any installed modules:
+    <blockquote><pre>
+    for i in node-always node-async node-bcrypt node-bindings \
+            node-buffer-writer node-canvas node-cloned node-daemon \
+            node-expresso node-fibers node-generic-pool node-gir \
+            node-java node-mnm node-pg node-rmdir node-sqlite3 \
+            node-syslog node-typescript coffeescript;
+            do
+                    pkg_delete $i
+            done
+    </pre></blockquote>
+</ul>
+
+<a href="#NoInstKern" onclick="javascript:flip_visibility('NoInstKern')">
+Show manual upgrade process</a>
+<div id="NoInstKern" class="visible">
+<hr>
+<h2>Upgrade without the Install Kernel</h2>
+
+<b style="color:e00000">This is NOT the recommended process.
+Use the install kernel method if at all possible!</b>
+
+<p>
+
+Sometimes, one needs to do an upgrade of a machine when one can't easily
+use the normal upgrade process.
+The most common case is when the machine is in a remote location and you
+don't have easy access to the system console.
+One can usually do this by carefully following this process:
+
+<ul style="list-style-type: none">
+  <li><b>Place install files in a "good" location.</b>
+    Make sure you have sufficient space!
+    Running out of space on a remote upgrade could be...unfortunate.
+    Note that using softdeps can exaggerate the situation as deleted and
+    overwritten files do not release their space immediately.
+    Having at least 200MB free on <tt>/usr</tt> would be recommended.
+
+  <p>
+  <li><b>Become root with ksh(1).</b>
+    While using
+    <a href="http://man.openbsd.org/?query=doas">doas(1)</a>
+    before each command is generally a good practice, the command will likely
+    be broken by the last steps, so you should become root before starting
+    this process.
+    It might be good to verify your access to root using a method other than
+    doas at this point (i.e., direct login or using
+    <a href="http://man.openbsd.org/?query=su">su(1)</a>.
+    Also, the use of the OpenBSD
+    <a href="http://man.openbsd.org/?query=ksh">ksh(1)</a>
+    shell is assumed.
+
+  <p>
+  <li><b>Stop and/or disable any appropriate applications.</b>
+    During this process, all the userland applications will be replaced but
+    may not be runnable, and strange things may happen as a result.
+    You may also have issues with DNS resolution during the first reboot, so
+    PF rules and NFS mounts dependent upon DNS may cause boot-up problems.
+    There may be other applications which you wish to keep from running
+    immediately after the upgrade, stop and disable them as well.
+
+  <p>
+  <li><b>Install new boot blocks.</b>
+    This should actually be done at the end of any upgrade, but we will
+    assume this has been neglected.
+    Failure to do this may break serial console or other things, depending
+    on your platform.
+
+    <blockquote><pre>
+    <b>installboot -v sd0</b>
+    </pre></blockquote>
+
+  <li><b>Install new kernel(s).</b>
+    <ul>
+    <li>If you are using the multiprocessor kernel:
+      <blockquote><pre>
+      <b>cd /usr/rel</b>    # where you put the release files
+      <b>ln -f /bsd /obsd && cp bsd.mp /nbsd && mv /nbsd /bsd</b>
+      <b>cp bsd.rd /</b>
+      <b>cp bsd /bsd.sp</b>
+      </pre></blockquote>
+
+    <li>If using a single processor kernel:
+      <blockquote><pre>
+      <b>cd /usr/rel</b>    # where you put the release files
+      <b>ln -f /bsd /obsd && cp bsd /nbsd && mv /nbsd /bsd</b>
+      <b>cp bsd.rd bsd.mp /</b>
+      </pre></blockquote>
+      Note: you will get a harmless error message if your platform doesn't
+      have a <tt>bsd.mp</tt>.
+    </ul>
+
+    <p>
+    The extra steps for copying over the primary kernel are done
+    to ensure that there is always a valid copy of the kernel on the disk.
+    This way the system will be able to boot even after a really badly timed
+    power outage or system crash.
+
+  <p>
+  <li><b>Save a copy of reboot(8), install new userland applications.</b>
+    You are still running the old kernel, it is possible the new reboot
+    command will not run on the old kernel, so we will start by saving a
+    copy of the old reboot command.
+    Note that we are installing <tt>base59.tgz</tt> <b>last</b>, because the
+    new base system, in particular
+    <a href="http://man.openbsd.org/?query=tar">tar(1)</a>,
+    <b>will not work</b> with the old kernel.
+    We reboot immediately, as the system is probably barely runnable after
+    the unpacking of all the new files.
+
+    <blockquote><pre>
+    <b>cp /sbin/reboot /sbin/oreboot</b>
+    <b>tar -C / -xzphf xserv59.tgz</b>
+    <b>tar -C / -xzphf xfont59.tgz</b>
+    <b>tar -C / -xzphf xshare59.tgz</b>
+    <b>tar -C / -xzphf xbase59.tgz</b>
+    <b>tar -C / -xzphf game59.tgz</b>
+    <b>tar -C / -xzphf comp59.tgz</b>
+    <b>tar -C / -xzphf man59.tgz</b>
+    <b>tar -C / -xzphf base59.tgz</b>    # Install last!
+    <b>/sbin/oreboot</b>
+    </pre></blockquote>
+
+    Not all file sets will need to be installed for all applications,
+    however if you installed a file set originally, you should certainly
+    upgrade it with the new file set now.
+
+  <p>
+  <li><b>After reboot completes, upgrade <tt>/dev</tt>.</b>
+    The new
+    <a href="http://man.openbsd.org/?query=MAKEDEV&amp;arch=i386">
+    MAKEDEV</a>
+    script was copied to <tt>/dev</tt> by the installation of
+    <tt>base59.tgz</tt>, so you simply need to do the following:
+    <blockquote><pre>
+    <b>cd /dev</b>
+    <b>./MAKEDEV all</b>
+    </pre></blockquote>
+
+  <li><b>Install the upgraded boot loader.</b>
+    Use <a href="http://man.openbsd.org/?query=installboot&amp;arch=i386">
+    installboot(8)</a>,
+    assuming <tt>sd0</tt> is your boot disk:
+    <blockquote><pre>
+    <b>installboot -v sd0</b>
+    </pre></blockquote>
+
+  <li><b><a href="#sysmerge">Run sysmerge</a>.</b>
+    Now is a good time to do
+    <blockquote><pre>
+    <b>sysmerge</b>
+    </pre></blockquote>
+
+  <li><b>Upgrade firmware.</b>
+    There may be new firmware for your system.
+    Update it with
+    <a href="http://man.openbsd.org/?query=fw_update">fw_update(1)</a>:
+    <blockquote><pre>
+    <b>fw_update -v</b>
+    </pre></blockquote>
+
+  <li><b>Finish up.</b>
+    Satisfy yourself that you have a working system, e.g.
+    by rebooting once more and working through
+    <a href="http://man.openbsd.org/?query=afterboot">afterboot(8)</a>.
+    Proceed by <a href="#RmFiles">removing some files</a> -- don't forget
+    <tt>/sbin/oreboot</tt> -- and <a href="pkg_add-u">upgrading packages</a>.
+</ul>
+
+<a href="#NoInstKern" onclick="javascript:flip_visibility('NoInstKern')">
+Hide manual upgrade process</a>
+
+</div>
+
+<p>
+
+<font color="#0000e0">
+<a href="upgrade58.html">[5.7 -> 5.8]</a> |
+<a href="index.html">[FAQ Index]</a>
+</font>
+
+<p>
+<hr>
+<a href="index.html"><img height="24" width="24" src="../images/back.gif" border="0" alt="[back]"></a>
+<br>
+<small>$OpenBSD: upgrade59.html,v 1.1 2016/03/26 13:27:07 tb Exp $</small>
+
+</body>
+</html>
