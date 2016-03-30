@@ -57,12 +57,8 @@
 <li><a href="#Signify"         >4.12 - Problems with signatures</a>
 <li><a href="#site"            >4.13 - Customizing the install process</a>
 <li><a href="#Multibooting"    >4.14 - Multibooting OpenBSD (amd64, i386)</a>
-<li><a href="#More"            >4.15 - Custom disk layouts</a>
-  <ul>
-  <li><a href="#Morefdisk"     >4.15.1 - A custom fdisk(8) layout (amd64,
-                                i386)</a>
-  <li><a href="#Moredisklabel" >4.15.2 - Custom disklabel layout</a>
-  </ul>
+<li><a href="#CustomFdisk"     >4.15 - A custom fdisk(8) layout for dual booting
+                                (amd64, i386)</a>
 <li><a href="#AddThoughts"     >4.16 - Some additional thoughts on
                                 partitioning</a>
 </ul>
@@ -885,26 +881,24 @@ More info on doing this is in <a href="faq8.html#TimeZone">FAQ 8 - Why
 is my clock off by several hours?</a>
 
 
-<h2 id="More">4.15 - Custom disk layouts</h2>
+<h2 id="CustomFdisk">4.15 - A custom fdisk(8) layout for dual booting
+(amd64, i386)</h2>
 
 Before working with any system that has data you don't wish to lose,
 make sure you have a good backup.
+If you are adding OpenBSD to an existing system, you will probably need to
+create some free space before installing OpenBSD.
+In addition to your existing system's native tools,
+<a href="http://gparted.org/">gparted</a>
+may be useful for deleting or resizing existing partitions.
 
-<h3 id="Morefdisk">4.15.1 - A custom fdisk(8) layout (amd64, i386)</h3>
 
+<p>
 A brief introduction to
 <a href="http://man.openbsd.org/?query=fdisk">fdisk(8)</a>
 is in the section on
 <a href="faq14.html#fdisk">using OpenBSD's fdisk(8)</a>
 of FAQ 14.
-
-<p>
-If you are adding OpenBSD to an existing system, you will probably
-need to create some free space before installing OpenBSD by
-deleting or resizing existing partitions.
-In addition to your system's native tools,
-<a href="http://gparted.org/">gparted</a>
-may be useful.
 
 <p>
 In this example, we will assume we are starting with a blank 40GB disk
@@ -1043,319 +1037,7 @@ fdisk:*1> <b>quit</b>
 Writing MBR at offset 0.
 </pre></blockquote>
 
-<h3 id="Moredisklabel">4.15.2 - Custom disklabel layout</h3>
-
-Inside the OpenBSD fdisk(8) partition, we use
-<a href="http://man.openbsd.org/?query=disklabel">disklabel(8)</a>
-to create OpenBSD file system partitions.
-OpenBSD labels its file system partitions using sixteen letters, "a"
-through "p".
-Partition "a" on the boot disk is defined as the root partition,
-"b" on the boot disk is the default swap partition.
-"c" on all disks is the "whole disk" partition, it is used by programs
-that have to have raw access to the physical disk, such as fdisk(8)
-and disklabel(8).
-The "c" partition is created automatically for you, and should not be
-deleted or changed.
-The remaining letters are available for you to define mount points on.
-You may skip letters, you can define them in any order, and they can be
-in any order on the disk (although some platforms do have a requirement
-for where the "a" partition is).
-You can also leave gaps in the disk that are unallocated, and allocate
-them later, or potentially enlarge existing partitions later into that
-unallocated space using
-<a href="http://man.openbsd.org/?query=growfs">growfs(8)</a>.
-
-<p>
-All partitions which have native FFS partitions on them should be within
-the OpenBSD fdisk(8) partition, however
-<a href="faq14.html#foreignfs">non-OpenBSD</a> partitions can (and
-usually should) be outside the OpenBSD fdisk partition.
-
-<p>
-More information on using disklabel can be found
-<a href="faq14.html#disklabel">here</a>.
-
-<p>
-More information on the benefits of partitioning and strategies for
-creating a good partitioning plan are <a href="#Partitioning">below</a>.
-
-<p>
-The OpenBSD installer will attempt to auto-partition your
-disk in a usable, "general purpose" configuration, based on the size of
-your disk.
-If your disk is big enough, unused space will be allocated to the
-<tt>/home</tt> partition.
-While this is often quite useful, it doesn't satisfy all users' needs.
-
-<p>
-For our example, we'll assume we are building a static web server
-for some of our friends to use.
-We have a machine attached to a modest Internet connection, with a 40GB
-disk, with most of it used for OpenBSD (with the same 5GB Windows
-partition as the example above.
-Why?  Maybe this system has a RAID controller which is supported by
-OpenBSD, but manageable only from within Windows.
-More likely, because the FAQ editor doesn't feel like maintaining lots
-of different example systems).
-
-<p>
-The web pages served by an OpenBSD web server will be in
-<tt>/var/www</tt>, and very little will be stored in <tt>/home</tt>, so
-this indicates a definite change from the default that needs to be made.
-For the sake of discussion, we'll also assume that we won't need to
-rebuild the OS from source on this machine (we'll do that elsewhere).
-The system will not run X, however being that some web applications
-<a href="#FilesNeededX">expect X to be installed</a>, we will have X
-installed.
-The machine is not overly powerful, it can't have more than 1GB RAM in
-it, and it is unlikely our application will ever desire more than that.
-
-<p>
-So, after a bit of thought, our plan is to partition the system like
-this:
-<ul>
-<li><tt>/ - root</tt>: 100MB.  This will be 'a'.
-<li><tt>swap</tt>: 1GB (so we'll always have enough space for a core dump),
- this will be partition 'b'
-<li><tt>/usr</tt>: 2GB, partition d
-<li><tt>/tmp</tt>: 100MB (we don't anticipate much use of this), partition e
-<li><tt>/usr/local</tt>: 2GB, partition f
-<li><tt>/usr/X11R6</tt>: 1GB, partition g
-<li><tt>/home</tt>: 1GB, partition h
-<li><tt>/var</tt>: 1GB (that's a lot of system log files), partition j
-<li><tt>/var/www</tt>: rest of disk, partition k
-</ul>
-
-<blockquote><pre>
-The auto-allocated layout for wd0 is:
-#                size           offset  fstype [fsize bsize  cpg]
-  a:          1024.0M         10490445  4.2BSD   2048 16384    1 # /
-  b:           252.1M         12587597    swap
-  c:         39205.7M                0  unused
-  d:          2319.3M         13103933  4.2BSD   2048 16384    1 # /tmp
-  e:          3653.9M         17853877  4.2BSD   2048 16384    1 # /var
-  f:          1149.8M         25337016  4.2BSD   2048 16384    1 # /usr
-  g:          1024.0M         27691862  4.2BSD   2048 16384    1 # /usr/X11R6
-  h:          3422.6M         29789014  4.2BSD   2048 16384    1 # /usr/local
-  i:          5122.3M               63    NTFS
-  j:          1848.7M         36798433  4.2BSD   2048 16384    1 # /usr/src
-  k:          1848.7M         40584654  4.2BSD   2048 16384    1 # /usr/obj
-  l:         17540.2M         44370875  4.2BSD   2048 16384    1 # /home
-Use (A)uto layout, (E)dit auto layout, or create (C)ustom layout? [a] <b>c</b>
-</pre></blockquote>
-
-If we had only minor revisions, we'd probably opt to "Edit" the custom
-layout rather than starting from a clean slate, but we are going to do
-things the hard way here.
-
-<blockquote><pre>
-You will now create an OpenBSD disklabel inside the OpenBSD MBR
-partition. The disklabel defines how OpenBSD splits up the MBR partition
-into OpenBSD partitions in which filesystems and swap space are created.
-You must provide each filesystem's mountpoint in this program.
-
-The offsets used in the disklabel are ABSOLUTE, i.e. relative to the
-start of the disk, NOT the start of the OpenBSD MBR partition.
-
-Label editor (enter '?' for help at any prompt)
-> <b>p</b>
-OpenBSD area: 10490445-80293248; size: 69802803; free: 69802803
-#                size           offset  fstype [fsize bsize  cpg]
-  c:         80293248                0  unused
-  i:         10490381               64    NTFS
->
-</pre></blockquote>
-
-Note there are already two partitions here -- the "c" partition which is
-always there and created for you, but disklabel(8) has also noticed the
-existing NTFS partition and assigned it a disklabel partition so it
-could potentially be accessed by OpenBSD (note, at this time, NTFS
-support is experimental and requires a custom kernel but FAT/FAT32
-support is quite good).
-
-<p>
-We will now create our partitions.
-We will start with the "a" partition, our root partition:
-
-<blockquote><pre>
-> <b>a a</b>
-offset: [10490445] <b>&lt;Enter&gt;</b>
-size: [69802803] <b>100m</b>
-Rounding to cylinder: 208845
-FS type: [4.2BSD]  <b>&lt;Enter&gt;</b>
-mount point: [none] <b>/</b>
->
-</pre></blockquote>
-
-Note that disklabel defaulted to the first available OpenBSD sector on
-the disk, which is what we want.
-It also defaulted to a size of all available space, which is NOT what we
-want.
-Here we overrode it with our preferred size, which can be specified in
-sectors, "M" or "G" here.
-
-<p>
-You will usually want to use the default FS type of "4.2BSD" for a
-FFS (Fast File System) or FFS2 partition, though other types you may find
-useful include "swap" and "RAID."
-
-<p>
-Finally is the mount point.
-Our "a" partition is the root partition, by definition.
-
-<p>
-Now, we do swap, which is our 'b' partition (again, this is a
-requirement -- 'b' on your boot disk is swap):
-
-<blockquote><pre>
-> <b>a b</b>
-offset: [10699290] <b>&lt;Enter&gt;</b>
-size: [69593958] <b>1g</b>
-Rounding to cylinder: 2104515
-FS type: [swap] <b>&lt;Enter&gt;</b>
->
-</pre></blockquote>
-
-Again, disklabel correctly calculated our starting sector, and presented
-us with a suggested size of "entire remaining space", which we again
-overrode with our desired size.
-Since this is the 'b' partition, disklabel assumed it was to be used
-for swap, and when we confirmed that, it didn't bother to ask us a
-mount point.
-
-<p>
-We are now ready to create the rest of the partitions.
-
-<blockquote><pre>
-> <b>a d</b>
-offset: [12803805] <b>&lt;Enter&gt;</b>
-size: [67489443] <b>2g</b>
-Rounding to cylinder: 4209030
-FS type: [4.2BSD] <b>&lt;Enter&gt;</b>
-mount point: [none] <b>/usr</b>
-> <b>a e</b>
-offset: [17012835] <b>&lt;Enter&gt;</b>
-size: [63280413] <b>100m</b>
-Rounding to cylinder: 208845
-FS type: [4.2BSD] <b>&lt;Enter&gt;</b>
-mount point: [none] <b>/tmp</b>
-> <b>a f</b>
-offset: [17221680] <b>&lt;Enter&gt;</b>
-size: [63071568] <b>2g</b>
-Rounding to cylinder: 4209030
-FS type: [4.2BSD] <b>&lt;Enter&gt;</b>
-mount point: [none] <b>/usr/local</b>
-> <b>a g</b>
-offset: [21430710] <b>&lt;Enter&gt;</b>
-size: [58862538] <b>1g</b>
-Rounding to cylinder: 2104515
-FS type: [4.2BSD] <b>&lt;Enter&gt;</b>
-mount point: [none] <b>/usr/X11R6</b>
-> <b>a h</b>
-offset: [23535225] <b>&lt;Enter&gt;</b>
-size: [56758023] <b>1g</b>
-Rounding to cylinder: 2104515
-FS type: [4.2BSD] <b>&lt;Enter&gt;</b>
-mount point: [none] <b>/home</b>
-> <b>a j</b>
-offset: [25639740] <b>&lt;Enter&gt;</b>
-size: [54653508] <b>1g</b>
-Rounding to cylinder: 2104515
-FS type: [4.2BSD] <b>&lt;Enter&gt;</b>
-mount point: [none] <b>/var</b>
-> <b>a k</b>
-offset: [27744255] <b>&lt;Enter&gt;</b>
-size: [52548993] <b>&lt;Enter&gt;</b>
-FS type: [4.2BSD] <b>&lt;Enter&gt;</b>
-mount point: [none] <b>/var/www</b>
->
-</pre></blockquote>
-
-Note that on the <tt>/var/www</tt> partition ("k"), we just took the
-default to use all remaining available disk space.
-With modern monstrously huge drives, this is usually a bad idea.
-If you know you will never use it, don't allocate it, and save it for
-some future use.
-
-<p>
-Now, let's look at our results, using the "p" and "p m" commands:
-
-<blockquote><pre>
-> <b>p</b>
-OpenBSD area: 10490445-80293248; size: 69802803; free: 0
-#                size           offset  fstype [fsize bsize  cpg]
-  a:           208845         10490445  4.2BSD   2048 16384    1 # /
-  b:          2104515         10699290    swap
-  c:         80293248                0  unused
-  d:          4209030         12803805  4.2BSD   2048 16384    1 # /usr
-  e:           208845         17012835  4.2BSD   2048 16384    1 # /tmp
-  f:          4209030         17221680  4.2BSD   2048 16384    1 # /usr/local
-  g:          2104515         21430710  4.2BSD   2048 16384    1 # /usr/X11R6
-  h:          2104515         23535225  4.2BSD   2048 16384    1 # /home
-  i:         10490381               64    NTFS
-  j:          2104515         25639740  4.2BSD   2048 16384    1 # /var
-  k:         52548993         27744255  4.2BSD   2048 16384    1 # /var/www
-> <b>p m</b>
-OpenBSD area: 10490445-80293248; size: 34083.4M; free: 0.0M
-  #                size           offset  fstype [fsize bsize  cpg]
-  a:           102.0M         10490445  4.2BSD   2048 16384    1 # /
-  b:          1027.6M         10699290    swap
-  c:         39205.7M                0  unused
-  d:          2055.2M         12803805  4.2BSD   2048 16384    1 # /usr
-  e:           102.0M         17012835  4.2BSD   2048 16384    1 # /tmp
-  f:          2055.2M         17221680  4.2BSD   2048 16384    1 # /usr/local
-  g:          1027.6M         21430710  4.2BSD   2048 16384    1 # /usr/X11R6
-  h:          1027.6M         23535225  4.2BSD   2048 16384    1 # /home
-  i:          5122.3M               64    NTFS
-  j:          1027.6M         25639740  4.2BSD   2048 16384    1 # /var
-  k:         25658.7M         27744255  4.2BSD   2048 16384    1 # /var/www
->
-</pre></blockquote>
-
-Like with fdisk, you don't want your OpenBSD disklabel partitions to
-overlap (other than the 'c' partition, which overlaps everything, of
-course).
-
-<p>
-Write your changes and quit disklabel:
-
-<blockquote><pre>
-> <b>w</b>
-> <b>q</b>
-No label changes.
-newfs: reduced number of fragments per cylinder group from 13048 to 12992 to
-enlarge last cylinder group
-/dev/rwd0a: 102.0MB in 208844 sectors of 512 bytes
-5 cylinder groups of 25.38MB, 1624 blocks, 3328 inodes each
-/dev/rwd0h: 1027.6MB in 2104512 sectors of 512 bytes
-6 cylinder groups of 202.47MB, 12958 blocks, 25984 inodes each
-newfs: reduced number of fragments per cylinder group from 13048 to 12992 to
-enlarge last cylinder group
-/dev/rwd0e: 102.0MB in 208844 sectors of 512 bytes
-5 cylinder groups of 25.38MB, 1624 blocks, 3328 inodes each
-/dev/rwd0d: 2055.2MB in 4209028 sectors of 512 bytes
-11 cylinder groups of 202.47MB, 12958 blocks, 25984 inodes each
-/dev/rwd0g: 1027.6MB in 2104512 sectors of 512 bytes
-6 cylinder groups of 202.47MB, 12958 blocks, 25984 inodes each
-/dev/rwd0f: 2055.2MB in 4209028 sectors of 512 bytes
-11 cylinder groups of 202.47MB, 12958 blocks, 25984 inodes each
-/dev/rwd0j: 1027.6MB in 2104512 sectors of 512 bytes
-6 cylinder groups of 202.47MB, 12958 blocks, 25984 inodes each
-/dev/rwd0k: 25658.7MB in 52548992 sectors of 512 bytes
-127 cylinder groups of 202.47MB, 12958 blocks, 25984 inodes each
-/dev/wd0a on /mnt type ffs (rw, asynchronous, local)
-/dev/wd0h on /mnt/home type ffs (rw, asynchronous, local, nodev, nosuid)
-/dev/wd0e on /mnt/tmp type ffs (rw, asynchronous, local, nodev, nosuid)
-/dev/wd0d on /mnt/usr type ffs (rw, asynchronous, local, nodev)
-/dev/wd0g on /mnt/usr/X11R6 type ffs (rw, asynchronous, local, nodev)
-/dev/wd0f on /mnt/usr/local type ffs (rw, asynchronous, local, nodev)
-/dev/wd0j on /mnt/var type ffs (rw, asynchronous, local, nodev, nosuid)
-/dev/wd0k on /mnt/var/www type ffs (rw, asynchronous, local, nodev, nosuid)
-
-Let's install the sets!
-...
-</pre></blockquote>
+To discard all unwritten changes, use <tt><b>exit</b></tt> instead.
 
 <h2 id="AddThoughts">4.16 - Some additional thoughts on partitioning</h2>
 
