@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.35 2016/01/21 20:07:59 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.36 2016/04/20 08:11:29 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -30,25 +30,21 @@ my $sources = {
 
 	'openbgpd-ftp-head'	=> 'mirrors/openbgpd-ftp.html.head',
 	'openbgpd-ftp-mid1'	=> 'mirrors/ftp.html.mid1',
-	'openbgpd-ftp-mid2'	=> 'mirrors/openntpd-ftp.html.mid2',
+	'openbgpd-ftp-mid2'	=> 'mirrors/ftp.html.mid2',
 	'openbgpd-ftp-end'	=> 'mirrors/openbgpd-ftp.html.end',
 
-	'openntpd-ftp-head'	=> 'mirrors/openntpd-ftp.html.head',
-	'openntpd-ftp-mid1'	=> 'mirrors/ftp.html.mid1',
-	'openntpd-ftp-mid2'	=> 'mirrors/openntpd-ftp.html.mid2',
-	'openntpd-ftp-end'	=> 'mirrors/openntpd-ftp.html.end',
 	'openntpd-portable-head'=> 'mirrors/openntpd-portable.html.head',
 	'openntpd-portable-mid1'=> 'mirrors/ftp.html.mid1',
-	'openntpd-portable-mid2'=> 'mirrors/openntpd-ftp.html.mid2',
-	'openntpd-portable-end'	=> 'mirrors/openntpd-ftp.html.end',
+	'openntpd-portable-mid2'=> 'mirrors/ftp.html.mid2',
+	'openntpd-portable-end'	=> 'mirrors/openntpd-portable.html.end',
 
 	'openssh-ftp-head'	=> 'mirrors/openssh-ftp.html.head',
 	'openssh-ftp-mid1'	=> 'mirrors/ftp.html.mid1',
-	'openssh-ftp-mid2'	=> 'mirrors/openntpd-ftp.html.mid2',
+	'openssh-ftp-mid2'	=> 'mirrors/ftp.html.mid2',
 	'openssh-ftp-end'	=> 'mirrors/openssh-ftp.html.end',
 	'openssh-portable-head' => 'mirrors/openssh-portable.html.head',
 	'openssh-portable-mid1' => 'mirrors/openssh-portable.html.mid1',
-	'openssh-portable-mid2' => 'mirrors/openntpd-ftp.html.mid2',
+	'openssh-portable-mid2' => 'mirrors/ftp.html.mid2',
 	'openssh-portable-end'	=> 'mirrors/openssh-ftp.html.end',
 
 	'anoncvs-head'		=> 'mirrors/anoncvs.html.head',
@@ -62,7 +58,6 @@ my $targets = {
 	'mirror_list'		=> '../mirror_list',
 	'openbsd-ftp'		=> '../ftp.html',
 	'openbgpd-ftp'		=> '../openbgpd/ftp.html',
-	'openntpd-ftp'		=> '../openntpd/ftp.html',
 	'openntpd-portable'	=> '../openntpd/portable.html',
 	'openssh-ftp'		=> '../openssh/ftp.html',
 	'openssh-portable'	=> '../openssh/portable.html',
@@ -229,9 +224,6 @@ sub _paste_mirrorlist($$$$$$) {
 			my $url = $mirror->{$type};
 			if ($proj eq 'openbgpd-ftp') {
 				$url .= "OpenBGPD/openbgpd-${version}.tgz";
-			}
-			elsif ($proj eq 'openntpd-ftp') {
-				$url .= "OpenNTPD/openntpd-${version}.tgz";
 			}
 			elsif ($proj eq 'openssh-ftp') {
 				#next if ($type eq 'UR');
@@ -429,7 +421,7 @@ if (@ARGV == 2) {
 		write_mirror_list($targets->{'mirror_list'}, \@mirrors);
 		write_pkg_conf($targets->{'pkg_conf'}, \@mirrors);
 	} elsif ($cmd eq 'openbsd-ftp' || $cmd eq 'openbgpd-ftp' ||
-		 $cmd eq 'openntpd-ftp' || $cmd eq 'openntpd-portable' ||
+		 $cmd eq 'openntpd-portable' ||
 		 $cmd eq 'openssh-ftp' || $cmd eq 'openssh-portable') {
 		write_ftphtml($cmd, $targets->{"$cmd"}, $ver, \@mirrors);
 	} elsif ($cmd eq 'anoncvs' || $cmd eq 'cvsync') {
