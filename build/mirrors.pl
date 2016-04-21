@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.36 2016/04/20 08:11:29 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.37 2016/04/21 23:03:40 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -366,11 +366,11 @@ sub write_cvshtml($$$$) {
 
 # helper function to sort entries by country
 sub _by_country {
-	my ($x, $y) = ($a->{'GC'}, $b->{'GC'});
+	my ($x, $y) = ($a->{GC}, $b->{GC});
 	$x =~ s/^the\s+//i;	# ignore leading 'the' as in 'The Netherlands'
 	$y =~ s/^the\s+//i;
-	if (($x eq $y) and defined($a->{'GS'} and defined($b->{'GS'}))) {
-		return lc($a->{'GS'}) cmp lc($b->{'GS'})
+	if (($x eq $y) and $a->{GS} and $b->{GS}) {
+		return lc($a->{GS}) cmp lc($b->{GS})
 	}
 	return lc($x) cmp lc($y);
 }
