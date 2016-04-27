@@ -36,10 +36,7 @@
 <li><a href="#References" >Further reading on the build process</a>
 <li><a href="#buildprobs" >Common problems when compiling</a>
 <li><a href="#Miscellanea">Miscellaneous questions and tips</a>
-<li><a href="#Options"    >Building a custom kernel</a>
-<li><a href="#BootConfig" >Boot-time configuration</a>
-<li><a href="#config"     >Using config(8) to change your kernel</a>
-<li><a href="#VerboseBoot">Getting more verbose output during boot</a>
+<li><a href="#Custom"     >Custom kernels</a>
 <li><a href="#MoreFlavors">More on OpenBSD's flavors</a>
 <li><a href="#Upgrade"    >What do "upgrading" and "updating" mean?</a>
 <li><a href="#CVSTips"    >CVS tips</a>
@@ -477,239 +474,48 @@ and does a very good job of testing how well the system really works.
 For this reason, OpenBSD does all the build process on the platform the build
 is being used for.
 
-<h2 id="Options">Building a custom kernel</h2>
+<h2 id="Custom">Custom kernels</h2>
 
-It is assumed you really enjoy pain.
-It is also assumed that you have a goal that can not be achieved by
-either a <a href="#BootConfig">boot time configuration</a> (UKC) or
-by <a href="#config">configuring a GENERIC kernel</a>.
-If all of this is not true, you should stick to using GENERIC.
-Really.
+There are three ways to customize a kernel:
 
-<p>
-OpenBSD kernel generation is controlled by configuration files,
-which are located in the <tt>/usr/src/sys/arch/<i>&lt;arch&gt;</i>/conf/</tt>
-directory by default.
-All architectures have a file, <tt>GENERIC</tt>, which is used to generate
-the standard OpenBSD kernel for that platform.
-There may also be other configuration files which are used to create
-kernels with different focuses, for example, for minimal RAM, diskless
-workstations, etc.
+<ul>
+  <li>boot-time configuration using
+    <a href="http://man.openbsd.org/boot_config">boot_config(8)</a>
+  <li>permanent modification of a compiled kernel using
+    <a href="http://man.openbsd.org/config">config(8)</a>
+  <li>compilation of a custom kernel
+</ul>
 
-<p>
-The configuration file is processed by
-<a href="http://man.openbsd.org/config">config(8)</a>,
-which creates and populates a compilation directory in <tt>../compile</tt>,
-on a typical installation, that would be in
-<tt>/usr/src/sys/arch/<i>&lt;arch&gt;</i>/compile/</tt>.
-config(8) also creates a
-<a href="http://man.openbsd.org/make">Makefile</a>,
-and other files required to successfully build the kernel.
+It is recommended that you read
+<a href="http://man.openbsd.org/config">config(8)</a>
+first.
 
-<p>
-Kernel configuration options are options that you add to your kernel
-configuration that place certain features into your kernel.
-This allows you to have exactly the support you want, without having support
-for unneeded devices.
-There are a multitude of options that allow you to customize your kernel.
-Here we will go over only some of them, those that are most commonly used.
-Check the <a href="http://man.openbsd.org/options">options(4)</a>
-man page for a complete list of options.
-As these change from time to time, you should make sure you use a man page
-for the same version of OpenBSD you are building.
-You can also check the example configuration files that are available for
-your architecture.
-
-<p>
-<b>Do not add, remove, or change options in your kernel unless you
-actually have a reason to do so!  Do not edit the <tt>GENERIC</tt>
-configuration file!!</b>
-The only kernel configuration which is supported by the OpenBSD team is
-the GENERIC kernel, the combination of the options in
-<tt>/usr/src/sys/arch/&lt;<i>arch</i>&gt;/conf/GENERIC</tt>
-and <tt>/usr/src/sys/conf/GENERIC</tt> <i>as shipped by the OpenBSD
-team</i> (i.e., NOT edited).
-Reporting a problem on a customized kernel will almost always result in
-you being told to try to reproduce the problem with a GENERIC kernel.
-Not all options are compatible with each other, and many options are
-required for the system to work.
-There is no guarantee that a custom-configured kernel can be built.
-There is also no guarantee that a custom-configured kernel will actually
-run, even if it compiles properly.
-
-<p>
-You can see all the platform-specific configuration files in the
-<a href="http://cvsweb.openbsd.org/cgi-bin/cvsweb/src/sys/arch/">
-src/sys/arch</a> directory.
-As an example, the files for an amd64 kernel would be in
-<a href="http://cvsweb.openbsd.org/cgi-bin/cvsweb/src/sys/arch/amd64/conf">
-src/sys/arch/amd64/conf</a>.
-
-<p>
-Look closely at these files and you will notice a line near the top
-similar to:
-
-<blockquote><pre>
-include "../../../conf/GENERIC"
-</pre></blockquote>
-
-This means that it is referencing another configuration file, one
-that stores platform-independent options.
-When creating your kernel configuration, be sure to look through
-<a href="http://cvsweb.openbsd.org/cgi-bin/cvsweb/src/sys/conf/GENERIC">
-sys/conf/GENERIC</a>.
-
-<p>
-Kernel configuration options should be placed in your kernel configuration
-file in the format of:
-
-<blockquote><pre>
-option      <i>name</i>
-</pre></blockquote>
-
-or
-
-<blockquote><pre>
-option      <i>name=value</i>
-</pre></blockquote>
-
-For example, to place option "DEBUG" in the kernel, add a line like this:
-
-<blockquote><pre>
-option      DEBUG
-</pre></blockquote>
-
-Options in the OpenBSD kernel are translated into compiler preprocessor
-options, therefore an option like DEBUG would have the source compiled
-with option -DDEBUG, which is equivalent to doing a <tt>#define DEBUG</tt>
-throughout the kernel.
-
-<p>
-Sometimes, you may wish to disable an option that is already defined,
-typically in the <tt>src/sys/conf/GENERIC</tt> file.
-While you could modify a copy of that file, a better choice would be to
-use the <i>rmoption</i> statement.
-For example, if you really wanted to disable the in-kernel debugger
-(<i>not recommended!</i>), you would add a line such as:
-
-<blockquote><pre>
-rmoption DDB
-</pre></blockquote>
-
-in your kernel configuration file.  <tt>option DDB</tt> is defined in
-<tt>src/sys/conf/GENERIC</tt>, but the above <tt>rmoption</tt> line
-deactivates it.
-
-<p>
-Once again, please see
-<a href="http://man.openbsd.org/options">options(4)</a>
-for more information about the specifics of these options.
-Also note that many of the options also have their own manual pages --
-always read everything available about an option before adding or removing
-it from your kernel.
-
-<h3>Building a custom kernel</h3>
-
-In this case, we will build a kernel that supports the
-<a href="http://man.openbsd.org/boca">boca(4)</a>
-ISA multi-port serial card.
-This card is not in the GENERIC kernel, due to conflicts with other drivers.
-There are two common ways to make a custom kernel.
-
-<p>
-The first method is to create a "wrapper" file that "includes" the standard
-GENERIC kernel and any options you need that aren't in GENERIC.
-In this case, our wrapper file looks like this:
-
-<blockquote><pre>
-include "arch/i386/conf/GENERIC"
-
-boca0  at       isa? port 0x100 irq 10     # BOCA 8-port serial cards
-com*   at       boca? slave ?
-</pre></blockquote>
-
-The two lines regarding the boca(4) card are copied from the commented
-out lines in <tt>GENERIC</tt>, with the IRQ adjusted as needed.
-The advantage to using this "wrapper" file is any unrelated changes in
-GENERIC are updated automatically with any other source code update.
-The disadvantage is one can not remove devices (though in general, that's
-a bad idea, anyway).
-
-<p>
-The other way to generate a custom kernel is to make a copy of the
-standard <tt>GENERIC</tt> config file, giving it another name, then
-edit as needed.
-The disadvantage to this method is that later updates to the GENERIC
-configuration file have to be merged into your copy, or you have to remake
-your configuration file.
-
-<p>
-In either event, after making your custom kernel configuration file,
-use config(8) and make the kernel as documented <a href="#BldKernel">above</a>.
-
-<p>
-Full instructions for creating your own custom kernel are in the
-<a href= "http://man.openbsd.org/config">config(8)</a>
-man page.
-
-<h2 id="BootConfig">Boot-time configuration</h2>
+<h3 id="BootConfig">Boot-time configuration</h3>
 
 Sometimes when booting your system you might notice that the kernel finds
 your device but maybe at the wrong IRQ.
-And maybe you need to use this device right away.
-Well, without rebuilding the kernel, you can use OpenBSD's boot time kernel
-configuration.
-This will only correct your problem for one time.
-If you reboot, you will have to repeat this procedure.
-So, this is only meant as a temporary fix, and you should correct the problem
-using <a href="#config">config(8)</a>.
-Your kernel does however need <strong>option BOOT_CONFIG</strong> in the
-kernel, which GENERIC does have.
-
-<p>
-Most of this document can be found in the man page
+Without rebuilding the kernel, you can use OpenBSD's boot time kernel
+configuration,
 <a href="http://man.openbsd.org/boot_config">boot_config(8)</a>.
 
 <p>
+However, this will only correct your problem for one time.
+If you reboot, you will have to repeat this procedure.
+So, this is only a temporary fix, and you should correct the problem using
+<a href="http://man.openbsd.org/config">config(8)</a>.
+
+<p>
 To boot into the User Kernel Config, or UKC, use the <tt>-c</tt> option at
-boot time.
+boot-time.
 
 <blockquote><pre>
 boot> <b>boot hd0a:/bsd -c</b>
 </pre></blockquote>
 
-Or whichever kernel it is you want to boot.
 Doing this will bring up a UKC prompt.
-From here you can issue commands directly to the kernel specifying devices
-you want to change or disable or even enable.
+Type <b><tt>help</tt></b> for a list of available commands.
 
-<p>
-Here is a list of common commands in the UKC.
-
-<ul>
-<li><tt>add <strong>device</strong></tt> - Add a device through copying another
-<li><tt>change <strong>devno | device </strong></tt> - Modify one or more
-devices
-<li><tt>disable <strong>devno | device </strong></tt> - Disable one or more
-devices
-<li><tt>enable <strong>devno | device </strong></tt> - Enable one or more
-devices
-<li><tt>find <strong>devno | device </strong></tt> - Find one or more devices
-<li><tt>help</tt> - Short summary of these commands
-<li><tt>list</tt> - List ALL known devices
-<li><tt>exit/quit</tt> - Continue Booting
-<li><tt>show <strong>[attr [val]]</strong></tt> - Show devices with an
-attribute and optional with a specified value
-</ul>
-
-<p>
-Once you have your kernel configured, use <tt>quit</tt> or <tt>exit</tt>
-and continue booting.
-After doing so, you should make the change permanent in your
-kernel image, as described in <a href="#config">Using config(8) to change
-your kernel</a>.
-
-<h2 id="config">Using config(8) to change your kernel</h2>
+<h3 id="config">Using config(8) to change your kernel</h3>
 
 The <tt>-e</tt> and <tt>-u</tt> options of
 <a href="http://man.openbsd.org/config">config(8)</a>
@@ -722,108 +528,41 @@ kernel during boot, meaning you used <tt>boot -c</tt> to enter the UKC
 while booting your system.
 
 <p>
-The following example shows the disabling of the ep* devices in the kernel.
-For safety's sake, you must use the <tt>-o</tt> option which writes the
-changes out to the file specified.
+For safety's sake, use the <tt>-o</tt> option which writes the changes out to
+the file specified.
 For example: <tt>config -e -o bsd.new /bsd</tt> will write the changes to
 <tt>bsd.new</tt>.
-The example doesn't use the <tt>-o</tt> option, therefore changes are just
-ignored and not written back to the kernel binary.
-For more information pertaining to error and warning messages, read the
+
+Kernel modification examples are given in the
 <a href="http://man.openbsd.org/config">config(8)</a>
-man page.
+manpage.
+
+<h3 id="Options">Building a custom kernel</h3>
+
+Only the <tt>GENERIC</tt> and <tt>GENERIC.MP</tt> kernels are supported by the
+OpenBSD team.
+The <tt>GENERIC</tt> kernel configuration is the combination of the options in
+<tt>/usr/src/sys/arch/$(machine)/conf/GENERIC</tt>
+and <tt>/usr/src/sys/conf/GENERIC</tt>.
+Reporting a problem on a customized kernel will almost always result in
+you being told to try to reproduce the problem with a <tt>GENERIC</tt> kernel.
+
+<p>
+Read the
+<a href="http://man.openbsd.org/config">config(8)</a>
+and the
+<a href="http://man.openbsd.org/options">options(4)</a>
+manpages first.
+The following steps are part of compiling a custom kernel:
 
 <blockquote><pre>
-# <b>config -e /bsd</b>
-[...]
-ukc> <b>?</b>
-        help                                Command help list
-        add             dev                 Add a device
-        base            8|10|16             Base on large numbers
-        change          devno|dev           Change device
-        disable         attr val|devno|dev  Disable device
-        enable          attr val|devno|dev  Enable device
-        find            devno|dev           Find device
-        list                                List configuration
-        lines           count               # of lines per page
-        show            [attr [val]]        Show attribute
-        exit                                Exit, without saving changes
-        quit                                Quit, saving current changes
-        timezone        [mins [dst]]        Show/change timezone
-        bufcachepercent [number]            Show/change BUFCACHEPERCENT
-        nkmempg         [number]            Show/change NKMEMPAGES
-ukc> <b>list</b>
-  0 video* at uvideo* flags 0x0
-  1 audio* at uaudio*|sb0|sb*|gus0|pas0|ess*|wss0|wss*|ym*|eap*|envy*|eso*|sv*|n
-eo*|cmpci*|clcs*|clct*|auacer*|auglx*|auich*|auixp*|autri*|auvia*|azalia*|fms*|m
-aestro*|esa*|yds*|emu* flags 0x0
-  2 midi* at umidi*|sb0|sb*|ym*|mpu*|mpu*|autri*|eap*|envy* flags 0x0
-  3 drm* at inteldrm*|radeondrm* flags 0x0
-  4 inteldrm* at vga0|vga* flags 0x0
-  5 radeondrm* at vga0|vga* flags 0x0
-  6 radio* at udsbr*|bktr0|fms* flags 0x0
-  7 vscsi0 at root flags 0x0
-  8 softraid0 at root flags 0x0
-  9 nsphy* at url*|udav*|mos*|axe*|aue*|xe*|ef*|hme*|lii*|bce*|ale*|alc*|age*|jm
-e*|et*|nfe*|stge*|vge*|bnx*|bge*|lge*|nge*|msk*|sk*|ste*|se*|sis*|wb*|tl*|vte*|v
-r*|pcn*|sf*|ti*|gem*|ne0|ne1|ne2|ne*|ne*|ne*|epic*|sm0|sm*|dc*|dc*|re*|re*|rl*|r
-l*|mtd*|fxp*|fxp*|xl*|xl*|ep0|ep*|ep*|ep*|ep*|ep* phy -1 flags 0x0
- 10 nsphyter* at url*|udav*|mos*|axe*|aue*|xe*|ef*|hme*|lii*|bce*|ale*|alc*|age*
-|jme*|et*|nfe*|stge*|vge*|bnx*|bge*|lge*|nge*|msk*|sk*|ste*|se*|sis*|wb*|tl*|vte
-*|vr*|pcn*|sf*|ti*|gem*|ne0|ne1|ne2|ne*|ne*|ne*|epic*|sm0|sm*|dc*|dc*|re*|re*|rl
-*|rl*|mtd*|fxp*|fxp*|xl*|xl*|ep0|ep*|ep*|ep*|ep*|ep* phy -1 flags 0x0
-[...snip...]
-ukc> <b>disable ep</b>
- 98 ep* disabled
- 99 ep* disabled
-301 ep0 disabled
-302 ep* disabled
-303 ep* disabled
-360 ep* disabled
-ukc> <b>quit</b>
-not forced
+$ <b>cd /usr/src/sys/arch/$(machine)/conf</b>
+$ <b>cp GENERIC CUSTOM</b>
+$ <b>vi CUSTOM</b>
+$ <b>config CUSTOM</b>
+$ <b>cd ../compile/CUSTOM</b>
+$ <b>make</b>
 </pre></blockquote>
-
-In the above example, all <tt>ep</tt> devices are disabled in the kernel
-and will not be probed.
-In some situations where you have used the UKC during boot, via
-<tt>boot -c</tt>, you will need these changes to be written out permanently.
-To do this you need to use the <tt>-u</tt> option.
-In the following example, the computer was booted into the UKC and the
-<a href="http://man.openbsd.org/wi">wi(4)</a> device
-was disabled.
-Since changes made with <tt>boot -c</tt> are NOT permanent, these changes
-must be written out.
-This example writes the changes made from <tt>boot -c</tt> into a new kernel
-binary: <tt>bsd.new</tt>.
-
-<blockquote><pre>
-# <b>config -e -u -o bsd.new /bsd</b>
-[...]
-Processing history...
-167 wi* disabled
-168 wi* disabled
-443 wi* disabled
-Enter 'help' for information
-ukc> <b>quit</b>
-</pre></blockquote>
-
-<h2 id="VerboseBoot">Getting more verbose output during boot</h2>
-
-Getting more verbose output can be very helpful when trying to debug
-problems when booting.
-If you have a problem wherein your boot media won't boot and need to get
-more information, simply reboot.
-When you get to the "boot&gt;" prompt, boot with <tt>boot -c</tt>.
-This will bring you into the UKC&gt;, then do:
-
-<blockquote><pre>
-UKC> <b>verbose</b>
-autoconf verbose enabled
-UKC> <b>quit</b>
-</pre></blockquote>
-
-Now you will be given extremely verbose output upon boot.
 
 <h2 id="MoreFlavors">More on OpenBSD's flavors</h2>
 
