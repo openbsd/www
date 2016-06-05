@@ -38,15 +38,13 @@
 <li><a href="#foreignfs"       >Can I access data on filesystems other
                                 than FFS?</a>
 <li><a href="#MountImage"      >Mounting disk images in OpenBSD</a>
-<li><a href="#NegSpace"        >Why does df(1) tell me
-                                I have over 100% of my disk used?</a>
+<li><a href="#NegSpace"        >Why does df(1) tell me I have over 100%
+                                of my disk used?</a>
 <li><a href="#softraid"        >RAID and disk encryption</a>
   <ul>
   <li><a href="#softraidDI"    >Installing to a mirror</a>
   <li><a href="#softraidFDE"   >Full disk encryption</a>
   <li><a href="#softraidCrypto">Encrypting external disks</a>
-  <li><a href="#softraidDR"    >Disaster recovery</a>
-  <li><a href="#softraidNotes" >Softraid notes</a>
   </ul>
 </ul>
 <hr>
@@ -569,13 +567,10 @@ command.
 
 <h2 id="softraid">RAID and disk encryption</h2>
 
-The
-<a href="http://man.openbsd.org/softraid">softraid(4)</a>
-subsystem works by emulating a
-<a href="http://man.openbsd.org/scsibus">scsibus(4)</a>
-with <a href="http://man.openbsd.org/sd">sd(4)</a>
-devices made by combining a number of OpenBSD
-<a href="http://man.openbsd.org/disklabel">disklabel(8)</a>
+The <a href="http://man.openbsd.org/softraid">softraid(4)</a> subsystem works
+by emulating a <a href="http://man.openbsd.org/scsibus">scsibus(4)</a>
+with <a href="http://man.openbsd.org/sd">sd(4)</a> devices made by combining a
+number of OpenBSD <a href="http://man.openbsd.org/disklabel">disklabel(8)</a>
 partitions into a virtual disk with the desired RAID level.
 Note that only RAID0, RAID1, RAID5 and crypto are fully supported at the moment.
 This virtual disk is treated as any other disk, first partitioned with
@@ -776,6 +771,22 @@ To check on the status of your mirror, issue the following command:
 
 A nightly cron job to check the status might also be a good idea.
 
+<h4>Rebuilding a mirror</h4>
+
+When a drive failure happens, you will replace the failed drive, create the
+RAID and other disklabel partitions, then rebuild the mirror.
+Assuming your RAID volume is <tt>sd0</tt> and you are replacing the
+failed device with <tt>wd1m</tt>, the following commands should work:
+
+<blockquote><pre>
+# <b>bioctl -R /dev/wd1m sd0</b>
+# <b>reboot</b>
+</pre></blockquote>
+
+These steps can be performed in either
+<a href="faq8.html#LostPW">single user mode</a>
+or from the <a href="faq4.html#bsd.rd">install kernel</a>.
+
 <h3 id="softraidFDE">Full disk encryption</h3>
 
 Much like RAID, full disk encryption in OpenBSD is handled by the
@@ -926,139 +937,6 @@ The man page for this looks a little scary, as the <tt>-d</tt> command is
 described as "deleting" the volume.
 In the case of crypto, however, it just deactivates encrypted volume so it
 can't be accessed until it is activated again with the passphrase.
-
-<p>
-Many other options are available with softraid, and new features are
-being added and improvements made, so do consult the aforementioned man
-pages for detailed information.
-
-<h4>I forgot my passphrase!</h4>
-
-Sorry.
-This is real encryption, there's not a back door or magic unlocking
-tool.
-If you lose your passphrase, your data on your softraid crypto volume
-will be unusable.
-
-<h3 id="softraidDR">Disaster recovery</h3>
-
-This is the section you want to skip over, but don't.
-This is the reason for RAID -- if disks never failed, you wouldn't add
-the complexity of RAID to your system!
-Unfortunately, as failures are very difficult to list comprehensively,
-there is a strong probability that the event you experience won't be
-described exactly here, but if you take the time to understand the
-strategies here, and the WHY, hopefully you can use them to recover
-from whatever situations come your way.
-
-<p>
-Keep in mind, failures are often not simple.
-The author of this article had a drive in a hardware RAID solution develop
-a short across the power feed, which in addition to the drive itself,
-also required replacing the power supply, the RAID enclosure and a power
-supply on a second computer he used to verify the drive was actually
-dead, and the data from backup as he didn't properly configure the
-replacement enclosure.
-
-<p>
-The steps needed for system recovery can be performed in
-<a href="faq8.html#LostPW">single user mode</a>, or from the
-<a href="faq4.html#bsd.rd">install kernel (bsd.rd)</a>.
-
-<p>
-If you plan on practicing softraid recovery (and we <b>highly</b> suggest you
-do so!), you may find it helpful to zero a drive you remove from the
-array before you attempt to return it to the array.
-Not only does this more accurately simulate replacing the drive with a
-new one, it will avoid the confusion that can result when the system
-detects the remains of a softraid array.
-
-<p>
-Recovery from a failure will often be a two-stage event -- the first
-stage is bringing the system back up to a running state, the second
-stage is to rebuild the failed array.
-The two stages may be separated by some time if you don't have a
-replacement drive handy.
-
-<h4>Recovery from drive failure: secondary</h4>
-
-This is relatively easy.
-You may have to remove the failed disk to get the system back up.
-
-<p>
-When you are ready to repair the system, you will replace the failed
-drive, create the RAID and other disklabel partitions, then rebuild the
-mirror.
-Assuming your RAID volume is <tt>sd0</tt>, and you are replacing the
-failed device with <tt>wd1m</tt>, the following process should work:
-
-<ul>
-  <li>Boot the system back up.
-  <li>Create appropriate partitions on your new drive
-  <li>Rebuild your RAID partition and reboot:
-</ul>
-
-<blockquote><pre>
-# <b>bioctl -R /dev/wd1m sd0</b>
-# <b>reboot</b>
-</pre></blockquote>
-
-<h4>Recovery from drive failure: primary</h4>
-
-Many PC-like computers can not boot from a second drive if the primary
-drive has failed, but still attached unless it is so dead it isn't
-detected.
-Many can not boot from a drive that isn't the "primary", even if there
-is no other drive.
-
-<p>
-In general, if your primary drive fails, you will have to remove it, and
-in many cases "promote" your secondary drive to primary configuration
-before the system will boot.
-This may involve re-jumpering the disk, plugging the disk into another
-port or some other variation.
-Of course, what is on the secondary disk has to not only include your RAID
-partition, but also has to be functionally bootable.
-
-<p>
-Once you have the system back up on the secondary disk and a new
-disk in place, you rebuild as above.
-
-<h4>Recovery from "shuffling" your disks</h4>
-
-What if you have four disks in your system, say, sd0, sd1, sd2, and sd3,
-and for reasons of hardware replacement or upgrade, you end up with the
-drives out of the machine, and lose track of which was which?
-
-<p>
-Fortunately, softraid handles this very well, it considers the disks
-"roaming," but will successfully rebuild your arrays.
-However, the boot disk in the machine has to be bootable, and if you
-just made changes in the root partition before doing this, you probably
-want to be sure you didn't boot from your altroot partition by mistake.
-
-<h3 id="softraidNotes">Softraid notes</h3>
-
-<h4>Complications when other sd(4) disks exist</h4>
-
-Softraid disks are assembled <b>after</b> all other IDE, SATA, SAS and
-SCSI disks are attached.
-As a result, if the number of sd(4) devices changes (either by adding
-or removing devices -- or if a device fails), the identifier of the
-softraid disk will change.
-For this reason, it's important to use <a href="faq14.html#DUID">DUIDs</a>
-(Disklabel Unique Identifiers) rather than drive names in your
-<a href="http://man.openbsd.org/fstab">fstab(5)</a> file.
-
-<h4>Three disk RAID1?</h4>
-
-Softraid supports RAID1 with more than two "chunks," and the man page
-examples show a three-disk RAID1 configuration.
-RAID1 simply duplicates the data across all the chunks of storage.
-Two gives full redundancy, three gives additional fault tolerance.
-The advantage of RAID1 with three (or more) disks/chunks is that, in
-event of one disk failure, you still have complete redundancy.
-Think of it as a hot spare that doesn't need time to rebuild!
 
 <p>
 </body>
