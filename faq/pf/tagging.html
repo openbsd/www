@@ -1,9 +1,13 @@
 <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
 <html>
 <head>
+
+<!-- If you make edits to any FAQ documents, please start each sentence
+     on a new line, and try to keep the general formatting consistent
+     with the rest of the pages -->
+
 <title>OpenBSD PF: Packet Tagging (Policy Filtering)</title>
 <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
-<meta name="description"   content="the OpenBSD FAQ page">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" type="text/css" href="../../openbsd.css">
 <link rel="canonical" href="http://www.openbsd.org/faq/pf/tagging.html">
@@ -39,144 +43,135 @@ PERFORMANCE OF THIS DOCUMENTATION
 <hr>
 
 <ul>
-<li><a href="#intro"   >Introduction</a>
-<li><a href="#assign"  >Assigning Tags to Packets</a>
-<li><a href="#check"   >Checking for Applied Tags</a>
-<li><a href="#policy"  >Policy Filtering</a>
-<li><a href="#ethernet">Tagging Ethernet Frames</a>
+  <li><a href="#intro"    >Introduction</a>
+  <li><a href="#assign"   >Assigning tags to packets</a>
+  <li><a href="#check"    >Checking for applied tags</a>
+  <li><a href="#policy"   >Policy filtering</a>
+  <li><a href="#ethernet" >Tagging ethernet frames</a>
 </ul>
-
 <hr>
 
 <h2 id="intro">Introduction</h2>
+
 Packet tagging is a way of marking packets with an internal identifier
 that can later be used in filter and translation rule criteria.
 With tagging, it's possible to do such things as create "trusts" between
-interfaces and determine if packets have been processed by translation
-rules.
+interfaces and determine if packets have been processed by translation rules.
 It's also possible to move away from rule-based filtering and to start
 doing policy-based filtering.
 
-<h2 id="assign">Assigning Tags to Packets</h2>
-To add a tag to a packet, use the <tt>tag</tt> keyword:
-<blockquote>
-<tt>
-pass in on $int_if all tag INTERNAL_NET keep state
-</tt>
-</blockquote>
+<h2 id="assign">Assigning tags to Packets</h2>
 
-<p>
+To add a tag to a packet, use the <tt>tag</tt> keyword:
+
+<blockquote><pre>
+pass in on $int_if all tag INTERNAL_NET
+</pre></blockquote>
+
 The tag <tt>INTERNAL_NET</tt> will be added to any packet which matches
 the above rule.
 
 <p>
-A tag can also be assigned using a
-<a href="macros.html#macros">macro</a>.
+A tag can also be assigned using a <a href="macros.html#macros">macro</a>.
 For instance:
 
-<blockquote>
-<tt>
-name = "INTERNAL_NET"<br>
+<blockquote><pre>
+name = "INTERNAL_NET"
 pass in on $int_if all tag $name
-</tt>
-</blockquote>
+</pre></blockquote>
 
-<p>
 There are a set of predefined macros which can also be used.
+
 <ul>
-<li><tt>$if</tt> - The interface
-<li><tt>$srcaddr</tt> - Source IP address
-<li><tt>$dstaddr</tt> - Destination IP address
-<li><tt>$srcport</tt> - The source port specification
-<li><tt>$dstport</tt> - The destination port specification
-<li><tt>$proto</tt> - The protocol
-<li><tt>$nr</tt> - The rule number
+  <li><tt>$if</tt>      - The interface
+  <li><tt>$srcaddr</tt> - Source IP address
+  <li><tt>$dstaddr</tt> - Destination IP address
+  <li><tt>$srcport</tt> - The source port specification
+  <li><tt>$dstport</tt> - The destination port specification
+  <li><tt>$proto</tt>   - The protocol
+  <li><tt>$nr</tt>      - The rule number
 </ul>
 
-<p>
 These macros are expanded at ruleset load time and NOT at runtime.
 
 <p>
 Tagging follows these rules:
+
 <ul>
-<li>Tags are "sticky". Once a tag is applied to a packet by a matching
-rule it is never removed. It can, however, be replaced with a different
-tag.
-<li>Because of a tag's "stickiness", a packet can have a tag even if the
-last matching rule doesn't use the <tt>tag</tt> keyword.
-<li>A packet is only ever assigned a maximum of one tag at a time.
-<li>Tags are <i>internal</i> identifiers. Tags are not sent out over the
-wire.
-<li>Tag names can be up to 63 characters long.
-In OpenBSD 4.0 and earlier, tag names are limited to 15 characters.
+  <li>Tags are "sticky."
+      Once a tag is applied to a packet by a matching rule, it is never
+      removed.
+      It can, however, be replaced with a different tag.
+  <li>Because of a tag's "stickiness," a packet can have a tag even if the
+      last matching rule doesn't use the <tt>tag</tt> keyword.
+  <li>A packet is only ever assigned a maximum of one tag at a time.
+  <li>Tags are <i>internal</i> identifiers.
+      Tags are not sent out over the wire.
+  <li>Tag names can be up to 63 characters long.
 </ul>
 
-<p>
 Take the following ruleset as an example.
-<blockquote>
-<tt>
-(1) pass in on $int_if tag INT_NET<br>
-(2) pass in quick on $int_if proto tcp to port 80 tag INT_NET_HTTP<br>
-(3) pass in quick on $int_if from 192.168.1.5
-</tt>
-</blockquote>
 
-<p>
+<blockquote><pre>
+pass in on $int_if tag INT_NET
+pass in quick on $int_if proto tcp to port 80 tag INT_NET_HTTP
+pass in quick on $int_if from 192.168.1.5
+</pre></blockquote>
+
 <ul>
-<li>Packets coming in on <tt>$int_if</tt> will be assigned a tag of
-<tt>INT_NET</tt> by rule #1.
-<li>TCP packets coming in on <tt>$int_if</tt> and destined for port 80
-will first be assigned a tag of <tt>INT_NET</tt> by rule #1. That tag
-will then be replaced with the <tt>INT_NET_HTTP</tt> tag by rule #2.
-<li>Packets coming in on <tt>$int_if</tt> from 192.168.1.5 will be
-tagged one of two ways.
-If the packet is destined for TCP port 80 it will match rule #2 and be
-tagged with <tt>INT_NET_HTTP</tt>.
-Otherwise, the packet will match rule #3 but will be tagged with
-<tt>INT_NET</tt>.
-Because the packet matches rule #1, the <tt>INT_NET</tt> tag is applied
-and is not removed unless a subsequently matching rule specifies a tag
-(this is the "stickiness" of a tag).
+  <li>Packets coming in on <tt>$int_if</tt> will be assigned a tag of
+      <tt>INT_NET</tt> by rule #1.
+  <li>TCP packets coming in on <tt>$int_if</tt> and destined for port 80
+      will first be assigned a tag of <tt>INT_NET</tt> by rule #1.
+      That tag will then be replaced with the <tt>INT_NET_HTTP</tt> tag by
+      rule #2.
+  <li>Packets coming in on <tt>$int_if</tt> from 192.168.1.5 will be tagged
+      one of two ways.
+      If the packet is destined for TCP port 80 it will match rule #2 and be
+      tagged with <tt>INT_NET_HTTP</tt>.
+      Otherwise, the packet will match rule #3 but will be tagged with
+      <tt>INT_NET</tt>.
+      Because the packet matches rule #1, the <tt>INT_NET</tt> tag is applied
+      and is not removed unless a subsequently matching rule specifies a tag
+      (this is the "stickiness" of a tag).
 </ul>
 
-<h2 id="check">Checking for Applied Tags</h2>
+<h2 id="check">Checking for applied tags</h2>
+
 To check for previously applied tags, use the <tt>tagged</tt> keyword:
-<blockquote>
-<tt>
+
+<blockquote><pre>
 pass out on $ext_if tagged INT_NET
-</tt>
-</blockquote>
+</pre></blockquote>
 
-<p>
-Outgoing packets on <tt>$ext_if</tt> must be tagged with the
-<tt>INT_NET</tt> tag in order to match the above rule. Inverse matching
-can also be done by using the <tt>!</tt> operator:
-<blockquote>
-<tt>
+Outgoing packets on <tt>$ext_if</tt> must be tagged with the <tt>INT_NET</tt>
+tag in order to match the above rule.
+Inverse matching can also be done by using the <tt>!</tt> operator:
+
+<blockquote><pre>
 pass out on $ext_if ! tagged WIFI_NET
-</tt>
-</blockquote>
+</pre></blockquote>
 
-<h2 id="policy">Policy Filtering</h2>
+<h2 id="policy">Policy filtering</h2>
+
 Policy filtering takes a different approach to writing a filter ruleset.
 A policy is defined which sets the rules for what types of traffic is
 passed and what types are blocked.
 Packets are then classified into the policy based on the traditional
 criteria of source/destination IP address/port, protocol, etc.
 For example, examine the following firewall policy:
+
 <ul>
-<li>Traffic from the internal LAN to the Internet is permitted
-(LAN_INET) and must be translated (LAN_INET_NAT)
-<li>Traffic from the internal LAN to the DMZ is permitted (LAN_DMZ)
-<li>Traffic from the Internet to servers in the DMZ is permitted
-(INET_DMZ)
-<li>Traffic from the Internet that's being redirected to
-<a href="http://man.openbsd.org/spamd.8"
->spamd(8)</a> is permitted (SPAMD)
-<li>All other traffic is blocked
+  <li>Traffic from the internal LAN to the Internet is permitted
+      (LAN_INET) and must be translated (LAN_INET_NAT).
+  <li>Traffic from the internal LAN to the DMZ is permitted (LAN_DMZ).
+  <li>Traffic from the Internet to servers in the DMZ is permitted
+      (INET_DMZ).
+  <li>Traffic from the Internet that's being redirected to
+      <a href="http://man.openbsd.org/spamd">spamd(8)</a> is permitted (SPAMD).
+  <li>All other traffic is blocked.
 </ul>
 
-<p>
 Note how the policy covers <i>all</i> traffic that will be passing through
 the firewall.
 The item in parenthesis indicates the tag that will be used for that
@@ -184,45 +179,36 @@ policy item.
 
 <p>
 Rules now need to be written to classify packets into the policy.
-<blockquote>
-<tt>
-block all<br>
-pass out on $ext_if inet tag LAN_INET_NAT tagged LAN_INET nat-to ($ext_if)<br>
-pass in on $int_if from $int_net tag LAN_INET<br>
-pass in on $int_if from $int_net to $dmz_net tag LAN_DMZ<br>
-pass in on $ext_if proto tcp to $www_server port 80 tag INET_DMZ<br>
-pass in on $ext_if proto tcp from &lt;spamd&gt; to port smtp \<br>
-&nbsp;&nbsp;&nbsp;tag SPAMD rdr-to 127.0.0.1 port 8025<br>
-</tt>
-</blockquote>
 
-<p>
+<blockquote><pre>
+block all
+pass out on $ext_if inet tag LAN_INET_NAT tagged LAN_INET nat-to ($ext_if)
+pass in  on $int_if from $int_net tag LAN_INET
+pass in  on $int_if from $int_net to $dmz_net tag LAN_DMZ
+pass in  on $ext_if proto tcp to $www_server port 80 tag INET_DMZ
+pass in  on $ext_if proto tcp from &lt;spamd&gt; to port smtp tag SPAMD rdr-to 127.0.0.1 port 8025
+</pre></blockquote>
+
 Now the rules that define the policy are set.
-<blockquote>
-<tt>
-pass in &nbsp;quick on $ext_if tagged SPAMD<br>
-pass out quick on $ext_if tagged LAN_INET_NAT<br>
-pass out quick on $dmz_if tagged LAN_DMZ<br>
-pass out quick on $dmz_if tagged INET_DMZ
-</tt>
-</blockquote>
 
-<p>
+<blockquote><pre>
+pass in  quick on $ext_if tagged SPAMD
+pass out quick on $ext_if tagged LAN_INET_NAT
+pass out quick on $dmz_if tagged LAN_DMZ
+pass out quick on $dmz_if tagged INET_DMZ
+</pre></blockquote>
+
 Now that the whole ruleset is setup, changes are a matter of modifying
 the classification rules.
 For example, if a POP3/SMTP server is added to the DMZ, it will be
-necessary to add classification rules for POP3 and SMTP traffic, like
-so:
-<blockquote>
-<tt>
-mail_server = "192.168.0.10"<br>
-...<br>
-pass in on $ext_if proto tcp to $mail_server port { smtp, pop3 } \<br>
-&nbsp;&nbsp;&nbsp;tag INET_DMZ
-</tt>
-</blockquote>
+necessary to add classification rules for POP3 and SMTP traffic, like so:
 
-<p>
+<blockquote><pre>
+mail_server = "192.168.0.10"
+[...]
+pass in on $ext_if proto tcp to $mail_server port { smtp, pop3 } tag INET_DMZ
+</pre></blockquote>
+
 Email traffic will now be passed as part of the INET_DMZ policy entry.
 
 <p>
@@ -230,25 +216,22 @@ The complete ruleset:
 
 <blockquote><pre>
 # macros
-int_if  = "dc0"
-dmz_if  = "dc1"
-ext_if  = "ep0"
-int_net = "10.0.0.0/24"
-dmz_net = "192.168.0.0/24"
-www_server = "192.168.0.5"
+int_if      = "dc0"
+dmz_if      = "dc1"
+ext_if      = "ep0"
+int_net     = "10.0.0.0/24"
+dmz_net     = "192.168.0.0/24"
+www_server  = "192.168.0.5"
 mail_server = "192.168.0.10"
 
 table &lt;spamd&gt; persist file "/etc/spammers"
-
-# classification -- classify packets based on the defined firewall
-# policy.
+# classification -- classify packets based on the defined firewall policy.
 block all
-pass out on $ext_if inet tag LAN_INET_NAT tagged LAN_INET nat-to ($ext_if)<br>
-pass in on $int_if from $int_net tag LAN_INET<br>
-pass in on $int_if from $int_net to $dmz_net tag LAN_DMZ<br>
+pass out on $ext_if inet tag LAN_INET_NAT tagged LAN_INET nat-to ($ext_if)
+pass in on $int_if from $int_net tag LAN_INET
+pass in on $int_if from $int_net to $dmz_net tag LAN_DMZ
 pass in on $ext_if proto tcp to $www_server port 80 tag INET_DMZ
-pass in on $ext_if proto tcp from &lt;spamd&gt; to port smtp \<br>
-&nbsp;&nbsp;&nbsp;tag SPAMD rdr-to 127.0.0.1 port 8025<br>
+pass in on $ext_if proto tcp from &lt;spamd&gt; to port smtp tag SPAMD rdr-to 127.0.0.1 port 8025
 
 # policy enforcement -- pass/block based on the defined firewall policy.
 pass in  quick on $ext_if tagged SPAMD
@@ -257,30 +240,26 @@ pass out quick on $dmz_if tagged LAN_DMZ
 pass out quick on $dmz_if tagged INET_DMZ
 </pre></blockquote>
 
-<h2 id="ethernet">Tagging Ethernet Frames</h2>
-Tagging can be performed at the Ethernet level if the machine doing the
+<h2 id="ethernet">Tagging ethernet frames</h2>
+
+Tagging can be performed at the ethernet level if the machine doing the
 tagging/filtering is also acting as a
-<a href="http://man.openbsd.org/bridge.4"
->bridge(4)</a>.
+<a href="http://man.openbsd.org/bridge.4">bridge(4)</a>.
 By creating bridge(4) filter rules that use the <tt>tag</tt> keyword, PF
 can be made to filter based on the source or destination MAC address.
 Bridge(4) rules are created using the
-<a href="http://man.openbsd.org/ifconfig.8"
->ifconfig(8)</a> command. Example:
-<blockquote>
-<tt>
-# ifconfig bridge0 rule pass in on fxp0 src 0:de:ad:be:ef:0 \<br>
-&nbsp;&nbsp;&nbsp;tag USER1
-</tt>
-</blockquote>
+<a href="http://man.openbsd.org/ifconfig">ifconfig(8)</a> command.
+Example:
 
-<p>
+<blockquote><pre>
+# <b>ifconfig bridge0 rule pass in on fxp0 src 0:de:ad:be:ef:0 tag USER1</b>
+</pre></blockquote>
+
 And then in <tt>pf.conf</tt>:
-<blockquote>
-<tt>
+
+<blockquote><pre>
 pass in on fxp0 tagged USER1
-</tt>
-</blockquote>
+</pre></blockquote>
 
 <p>
 </body>
