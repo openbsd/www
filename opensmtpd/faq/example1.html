@@ -45,7 +45,6 @@ PERFORMANCE OF THIS DOCUMENTATION
 <ul>
 <li><a href="#intro"   >Introduction</a>
 <li><a href="#smtpd"   >smtpd Setup</a>
-<li><a href="#antispam">Antispam Filter</a>
 <li><a href="#imap"    >IMAP Server</a>
 <li><a href="#stats"   >Log Statistics</a>
 </ul>
@@ -65,7 +64,6 @@ The mail server will be doing the following things:
 <ul>
 <li>Accepting mails for multiple domains and virtual users
 <li>Allowing virtual users to authenticate and send mail
-<li>Applying anti-spam and anti-virus filters on mail
 <li>Providing IMAP access for the virtual users
 <li>Providing log statistics
 </ul>
@@ -74,16 +72,7 @@ The mail server will be doing the following things:
 A standard OpenBSD installation as well as a recent installation of
 OpenSMTPD-extras including:
 
-<tt>table-passwd</tt>, <tt>filter-pause</tt>, <tt>filter-regex</tt>,
-<tt>filter-dnsbl</tt>, <tt>filter-spamassassin</tt>,
-<tt>filter-clamav</tt>, and <tt>tool-stats</tt> is assumed.
-SpamAssassin, ClamAV and Dovecot will be used and should be installed.
-
-<p>
-<center><strong><font color="#e00000">
-Warning: Filters are still considered EXPERIMENTAL and NOT meant to be
-used in production.<br>
-</font></strong></center>
+<tt>table-passwd</tt> and <tt>tool-stats</tt> is assumed.
 
 <p>
 The following is <em>not</em> a copy and paste guide.
@@ -127,17 +116,6 @@ The full content of the <tt>/etc/mail/smtpd.conf</tt> file is shown
 below:
 
 <blockquote><pre>
-# filters and filter chains setup
-filter filter-pause pause
-filter filter-regex regex
-filter filter-dnsbl-sorbs dnsbl
-filter filter-dnsbl-spamcop dnsbl "-h bl.spamcop.net"
-filter filter-dnsbl-spamhaus dnsbl "-h sbl-xbl.spamhaus.org"
-filter filter-spamassassin spamassassin "-s reject"
-filter filter-clamav clamav
-filter all chain filter-pause filter-regex filter-dnsbl-sorbs filter-dnsbl-spamcop filter-dnsbl-spamhaus filter-spamassassin filter-clamav
-filter sub chain filter-pause filter-spamassassin filter-clamav
-
 # pki setup
 pki mail.example.com certificate "/etc/ssl/mail.example.com.crt"
 pki mail.example.com key "/etc/ssl/private/mail.example.com.key"
@@ -149,9 +127,9 @@ table passwd passwd:/etc/mail/passwd
 table virtuals file:/etc/mail/virtuals
 
 # listen ports setup
-listen on lo0 filter sub
-listen on egress port 25 filter all tls pki mail.example.com
-listen on egress port 587 filter sub tls-require pki mail.example.com auth &lt;passwd&gt;
+listen on lo0
+listen on egress port 25 tls pki mail.example.com
+listen on egress port 587 tls-require pki mail.example.com auth &lt;passwd&gt;
 
 # special case for gmail to avoid ipv6 here
 #limit mta for domain gmail.com inet4
@@ -164,35 +142,7 @@ accept from any for domain &lt;domains&gt; virtual &lt;virtuals&gt; deliver to l
 accept from local for any relay
 </pre></blockquote>
 
-The first lines in the configuration above set up several filters in
-filter chains.
-The used filters can be installed using the
-<a href="http://www.openbsd.org/faq/faq15.html">package system</a>:
-
-<blockquote><pre>
-<strong># export PKG_PATH=http://your.local.mirror/pub/OpenBSD/%c/packages/%a</strong>
-<strong># pkg_add opensmtpd-extras opensmtpd-extras-spamassassin opensmtpd-extras-clamav</strong>
-</pre></blockquote>
-
-<tt>filter-spamassassin</tt> and <tt>filter-clamav</tt> are used to detect
-spam and viruses, which are both <em>rejected</em>.
-In addition, <tt>filter-dnsbl</tt>, <tt>filter-regex</tt>, and
-<tt>filter-pause</tt> are used to keep spammers away.
-In particular, <tt>filter-regex</tt> is used to <em>reject</em> invalid
-HELO arguments.
-The associated <tt>/etc/mail/filter-regex.conf</tt> file content is
-shown below:
-
-<blockquote><pre>
-# reject helo with leading or trailing dot, and without dots (non-FQDN)
-# skipping address literals
-helo ! ^\[
-helo ^\.
-helo \.$
-helo ^[^\.]*$
-</pre></blockquote>
-
-Besides the filters, several <a href="http://man.openbsd.org/table">table(5)</a>
+Several <a href="http://man.openbsd.org/table">table(5)</a>
 directives are specified in the configuration shown above.
 The <tt>aliases</tt> table is set up from the <tt>/etc/mail/aliases</tt>
 file and contains aliases for local system users.
@@ -242,54 +192,6 @@ user@example.net          vmail
 
 Note that all virtual users which are supposed to receive mail into a
 maildir folder are mapped to the single system user <tt>vmail</tt>.
-
-<h2 id="antispam">Antispam Filter</h2>
-
-In this example, SpamAssassin and ClamAV are used as spam and virus
-filters and might be installed using the
-<a href="http://www.openbsd.org/faq/faq15.html">package system</a>.
-
-<blockquote><pre>
-<strong># export PKG_PATH=http://your.local.mirror/pub/OpenBSD/%c/packages/%a</strong>
-<strong># pkg_add p5-Mail-SpamAssassin clamav</strong>
-<strong># rcctl enable spamassassin clamd</strong>
-</pre></blockquote>
-
-SpamAssassin and ClamAV are assumed to be running on the same host as
-<a href="http://man.openbsd.org/smtpd">smtpd(8)</a>.
-The ClamAV configuration needs to be adjusted to listen on localhost.
-Change at least the lines shown below in <tt>/etc/clamd.conf</tt>:
-
-<blockquote><pre>
-#Example
-
-LogSyslog yes
-LogFacility LOG_MAIL
-
-TCPSocket 3310
-TCPAddr 127.0.0.1
-
-User _clamav
-</pre></blockquote>
-
-The <tt>/etc/freshclam.conf</tt> file also needs to be adjusted:
-
-<blockquote><pre>
-#Example
-
-LogSyslog yes
-LogFacility LOG_MAIL
-</pre></blockquote>
-
-Manually run <tt>freshclam</tt> once and start ClamAV and SpamAssassin:
-
-<blockquote><pre>
-<strong># rcctl start spamassassin clamd</strong>
-</pre></blockquote>
-
-Finally, test your setup with the GTUBE test spam string.
-You may also want to look into installing and configuring Razor and Pyzor
-to improve the SpamAssassin detection.
 
 <h2 id="imap">IMAP Server</h2>
 
