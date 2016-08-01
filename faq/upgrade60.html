@@ -1,0 +1,322 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>OpenBSD Upgrade Guide: 5.9 to 6.0</title>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<meta name="description"   content="OpenBSD Upgrade Process for 5.9 -> 6.0">
+<meta name="copyright"     content="This document copyright 2016 by OpenBSD">
+<meta name="viewport"      content="width=device-width, initial-scale=1">
+<link rel="stylesheet"     type="text/css" href="../openbsd.css">
+<link rel="canonical"      href="http://www.openbsd.org/faq/upgrade60.html">
+<style type="text/css">
+  .hidden  { display: none; }
+  .visible { display: block; }
+  tt { white-space: pre; }
+  ul { list-style: none; }
+</style>
+</head>
+
+<body bgcolor="#ffffff" text="#000000">
+
+<h2>
+<a href="../index.html">
+<font color="#0000ff"><i>Open</i></font><font color="#000084">BSD</font></a>
+<font color="#e00000">Upgrade Guide: 5.9 to 6.0</font>
+</h2>
+<hr>
+<p>
+<a href="index.html">[FAQ Index]</a> |
+<a href="upgrade59.html">[5.8 -> 5.9]</a>
+<p>
+
+<blockquote><i>
+Note: Upgrades are only supported from one release to the release immediately
+following it. </i>
+<p>
+<i>
+It is highly recommended that you read through and fully understand this process
+before attempting it.
+Especially for critical or physically remote machines, it is recommended that
+you test it on an identical, local system first.
+</i></blockquote>
+
+Boot from the install kernel, <a href="faq4.html#bsd.rd">bsd.rd</a>.
+This can be done by booting from an
+<a href="https://openbsdstore.com/">install CD</a>, or other
+<a href="faq4.html#MkInsMedia">bootable install media</a>.
+Alternatively, you can place the 6.0 version of <tt>bsd.rd</tt> in the root of
+your filesystem and instruct the boot loader to boot this kernel instead
+of your usual kernel -- on amd64 and i386:
+<tt>boot&gt; <b>boot bsd.rd</b></tt>
+
+<p>
+Once this kernel is booted, choose the <tt>(U)pgrade</tt> option and follow the
+prompts.
+The upgrade process retains all your configuration info.
+If you absolutely have to, you can follow the
+<a href="#NoInstKern">manual upgrade process</a> instead.
+
+<p>
+Finish up by upgrading the packages: <tt><b>pkg_add -u</b></tt>.
+
+<hr>
+
+<h3 id="BeforeUpdate">Before rebooting into the install kernel</h3>
+
+<ul>
+  <li><b>clean out <tt>/usr/share/man</tt>.</b>
+  Formerly, hard links were used to provide the same man page under several
+  different names.
+  These hard links are no longer needed and may get in the way.
+  Issue <tt><b>rm -rf /usr/share/man</b></tt>.
+
+  <p>
+  <li><b>softraid metadata version changed.</b>
+  The current softraid metadata version has been incremented as part of
+  implementing support for sector sizes other than 512 bytes. Since on-disk
+  metadata is automatically updated every time a softraid volume is mounted,
+  once you mount a softraid volume on a new kernel (including <tt>bsd.rd</tt>)
+  that volume will no longer be recognized by older kernels.
+  
+  <p>
+  <li><b>iwm(4) needs new firmware.</b>
+  The <a href="http://man.openbsd.org/iwm">iwm(4)</a> wifi driver needs
+  firmware with a newer major version.
+  If you plan to use that device to carry out an upgrade, run
+  <a href="http://man.openbsd.org/fw_update">fw_update(1)</a>.
+</ul>
+
+<h3 id="ConfigChanges">Configuration and syntax changes</h3>
+
+<ul>
+  <li><b>The <tt>wxallowed</tt> mount option.</b>
+  <tt>W^X</tt> is now strictly enforced by default; a program can only violate
+  it if it is located on a filesystem mounted with the <tt>wxallowed</tt>
+  <a href="http://man.openbsd.org/mount.8">mount(8)</a> option.
+  This allows the base system to be more secure as long as <tt>/usr/local</tt>
+  is a separate filesystem.
+
+  <p>
+  The base system has no <tt>W^X</tt>-violating programs, but the ports tree
+  contains quite a few: chromium, mono, node, gnome, libreoffice, jdk, zeal,
+  etc.
+  If you want to run any of these ports on a regular basis, you need to add
+  <tt>wxallowed</tt> to the mount options for <tt>/usr/local</tt> in
+  <a href="http://man.openbsd.org/fstab">fstab(5)</a>, e.g.:
+
+  <blockquote><pre>
+  01020304050607.h /usr/local ffs rw,nodev,<b>wxallowed</b> 1 2
+  </pre></blockquote>
+
+  Small disks may not have a separate partition for <tt>/usr/local</tt>.
+  In that case, add <tt>wxallowed</tt> to the smallest partition containing it:
+  <tt>/usr</tt> or <tt>/</tt>.
+
+  <p>
+  Starting a <tt>W^X</tt>-violating program from a partition without the
+  <tt>wxallowed</tt> mount option will produce a core dump and the
+  <a href="http://man.openbsd.org/dmesg">dmesg(8)</a> will contain an
+  entry such as <tt>soffice.bin(15529): mprotect W^X violation</tt>.
+  You can temporarily allow <tt>W^X</tt>-violating ports by issuing
+  <tt><b>mount -uo wxallowed /usr/local</b></tt>.
+
+  <p>
+  <li><b><a href="http://man.openbsd.org/doas.conf">doas.conf(5)</a>.</b>
+  The <tt>keepenv { [variable ...] }</tt> syntax will be deprecated in 6.1.
+  Replace <tt>keepenv</tt> with <tt>setenv</tt> if doas prints the warning
+  "keepenv with list is obsolete".
+
+  <p>
+  <li><b>rcctl(8) syntax change.</b>
+  The keyword for listing enabled but stopped daemons with
+  <a href="http://man.openbsd.org/rcctl">rcctl(8)</a>
+  has changed from <tt>faulty</tt> to <tt>failed</tt>.
+
+  <p>
+  <li><b>lpd(8) default spool directory change.</b>
+  The
+  <a href="http://man.openbsd.org/lpd">lpd(8)</a>
+  top spool directory <tt>/var/spool/output</tt> is now only writable by root.
+  <br>
+  Point the <tt>sd</tt> path in
+  <a href="http://man.openbsd.org/printcap">printcap(5)</a>
+  to a subdirectory where the <tt>daemon</tt> group has write access.
+  It defaults to <tt>/var/spool/output/lpd</tt>.
+</ul>
+
+<h3 id="SpecPkg">Special packages</h3>
+
+<ul>
+  <li><b>PostgreSQL</b>
+  PostgreSQL had a major version update.
+  Follow instructions in the pkg-readme to dump your database <b>before</b>
+  upgrading to a newer OS version and restore it after the update.
+
+  <p>
+  <li><b>OpenSMTPD-extras</b>
+  Most filters were removed from the OpenSMTPD-extras distribution, as they are
+  not considered ready.
+  People who started using filters like <tt>filter-dkim-signer</tt> already
+  need to look for other alternatives in ports, e.g.  <tt>mail/dkimproxy</tt>.
+
+  <p>
+  <li><b>runit</b>
+  Upstream moved the default service directory to <tt>/service</tt>; to
+  keep on using <tt>/var/service</tt>, make a symlink: 
+  <tt><b>ln -s /var/service /</b></tt>
+</ul>
+
+<hr>
+<h2 id="NoInstKern">Upgrade without the install kernel</h2>
+
+<b style="color:e00000">This is NOT the recommended process.
+Use the install kernel method if at all possible!</b>
+
+<p>
+Sometimes, you need to do an upgrade of a machine for which the normal upgrade
+process is not possible.
+The most common case is a machine in a remote location and there is no easy
+access to the system console.
+
+<h3>Preparation</h3>
+
+<ul>
+  <li><b>Place install files in a good location.</b>
+    Make sure you have sufficient space!
+    Running out of space on a remote upgrade could be...unfortunate.
+    Note that using softdeps can exaggerate the situation as deleted and
+    overwritten files do not release their space immediately.
+    Consider disabling the <tt>softdep</tt> mount option in <tt>/etc/fstab</tt>
+    and rebooting before undertaking a manual upgrade.
+    Having at least 200MB free on <tt>/usr</tt> would be recommended.
+
+  <p>
+  <li><b>Becoming root.</b>
+    While using
+    <a href="http://man.openbsd.org/doas">doas(1)</a>
+    before each command is generally a good practice, the command will likely
+    be broken by the last steps, so you should become root before starting
+    this process.
+    It might be good to verify your access to root using a method other than
+    doas at this point, i.e., direct login or using
+    <a href="http://man.openbsd.org/su">su(1)</a>.
+
+  <p>
+  <li><b>Stop and/or disable any appropriate applications.</b>
+    During this process, all the userland applications will be replaced but
+    may not be runnable, and strange things may happen as a result.
+    You may also have issues with DNS resolution during the first reboot, so
+    PF rules and NFS mounts dependent upon DNS may cause boot-up problems.
+    There may be other applications which you wish to keep from running
+    immediately after the upgrade, stop and disable them as well.
+
+  <p>
+  <li><b>Install new boot blocks.</b>
+    This should actually be done at the end of any upgrade.
+    If this has been neglected, then failure to do this now may break serial
+    console or other things, depending on your platform.
+    Use <a href="http://man.openbsd.org/OpenBSD-6.0/i386/installboot">
+    installboot(8)</a>,
+    assuming <tt>sd0</tt> is your boot disk:
+
+    <blockquote><pre>
+    <b>installboot -v sd0</b>
+    </pre></blockquote>
+</ul>
+
+<h3>Upgrading manually</h3>
+
+<ul>
+  <li><b>Install new kernels.</b>
+    The extra steps for copying over the primary kernel are done
+    to ensure that there is always a valid kernel on the disk.
+    <p>
+    If using the multiprocessor kernel:
+    <blockquote><pre>
+    <b>cd /usr/rel</b>    # where you put the release files
+    <b>ln -f /bsd /obsd && cp bsd.mp /nbsd && mv /nbsd /bsd</b>
+    <b>cp bsd.rd /</b>
+    <b>cp bsd /bsd.sp</b>
+    </pre></blockquote>
+    If using the single processor kernel:
+    <blockquote><pre>
+    <b>cd /usr/rel</b>    # where you put the release files
+    <b>ln -f /bsd /obsd && cp bsd /nbsd && mv /nbsd /bsd</b>
+    <b>cp bsd.rd bsd.mp /</b>    # may give a harmless warning
+    </pre></blockquote>
+
+  <li><b>Clean out /usr/share/man</b>
+    Formerly, hard links were used to provide the same man page under several
+    different names.
+    These hard links are no longer needed and may get in the way.
+    Issue
+    
+    <blockquote><pre>
+    <b>rm -rf /usr/share/man</b>
+    </pre></blockquote>
+    
+  <li><b>Install new userland.</b>
+    Save a copy of reboot(8), extract and install the release tarballs, reboot.
+    Install <tt>base60.tgz</tt> last, because the new base system, in particular
+    <a href="http://man.openbsd.org/tar">tar(1)</a> and
+    <a href="http://man.openbsd.org/reboot">reboot(8)</a>,
+    will not work with the old kernel.
+
+    <blockquote><pre>
+    <b>cp /sbin/reboot /sbin/oreboot</b>
+    <b>tar -C / -xzphf xserv60.tgz</b>
+    <b>tar -C / -xzphf xfont60.tgz</b>
+    <b>tar -C / -xzphf xshare60.tgz</b>
+    <b>tar -C / -xzphf xbase60.tgz</b>
+    <b>tar -C / -xzphf game60.tgz</b>
+    <b>tar -C / -xzphf comp60.tgz</b>
+    <b>tar -C / -xzphf man60.tgz</b>
+    <b>tar -C / -xzphf base60.tgz</b>    # Install last!
+    <b>/sbin/oreboot</b>
+    </pre></blockquote>
+
+  <li><b>After reboot, upgrade <tt>/dev</tt>.</b>
+    Run
+    <a href="http://man.openbsd.org/OpenBSD-6.0/i386/MAKEDEV">MAKEDEV(8)</a>:
+    <blockquote><pre>
+    <b>cd /dev</b>
+    <b>./MAKEDEV all</b>
+    </pre></blockquote>
+
+  <li><b>Upgrade boot loader.</b>
+    Still assuming <tt>sd0</tt> is your boot disk:
+    <blockquote><pre>
+    <b>installboot -v sd0</b>
+    </pre></blockquote>
+
+  <li><b><a href="#sysmerge">Run sysmerge</a>.</b>
+    Now is a good time to do
+    <blockquote><pre>
+    <b>sysmerge</b>
+    </pre></blockquote>
+
+  <li><b>Upgrade firmware.</b>
+    There may be new firmware for your system.
+    Update it with
+    <a href="http://man.openbsd.org/fw_update">fw_update(1)</a>:
+    <blockquote><pre>
+    <b>fw_update -v</b>
+    </pre></blockquote>
+
+  <li><b>Finish up.</b>
+    Review the console output from boot (using <tt><b>dmesg -s</b></tt>)
+    and correct any failures as necessary.
+    Remove <tt><b>/sbin/oreboot</b></tt> and upgrade packages:
+    <tt><b>pkg_add -u</b></tt>.
+</ul>
+
+<p>
+<a href="index.html">[FAQ Index]</a> |
+<a href="upgrade59.html">[5.8 -> 5.9]</a>
+
+<p>
+<hr>
+<small>$OpenBSD: upgrade60.html,v 1.1 2016/08/01 22:17:36 tb Exp $</small>
+
+</body>
+</html>
