@@ -29,7 +29,7 @@ arise when building the latest code from a previous point in time.
 Some of the shortcuts for getting over these hurdles are explained on this page.
 In general, it's far better to use the
 <!-- XXXrelease -->
-<a href="upgrade59.html">OpenBSD upgrade procedure</a>
+<a href="upgrade60.html">OpenBSD upgrade procedure</a>
 with a newer snapshot, as developers will have gone through the trouble for
 you already.
 
@@ -46,208 +46,6 @@ Upgrading by compiling your own source code is not supported.
 <p>
 Most of these changes will have to be performed as root.
 
-<h3 id="r20160307">2016/03/07 - lpd(8) default spool directory change</h3>
-The
-<a href="http://man.openbsd.org/lpd">lpd(8)</a>
-top spool directory <tt>/var/spool/output</tt> is now only writable by root.
-<br>
-Point the <tt>sd</tt> path in
-<a href="http://man.openbsd.org/printcap">printcap(5)</a>
-to a subdirectory where the <tt>daemon</tt> group has write access.
-It defaults to <tt>/var/spool/output/lpd</tt>.
-
-<h3 id="r20160319">2016/03/19 - csu and ld.so update</h3>
-The definitions of <tt>environ</tt> and <tt>__progname</tt> for dynamically
-linked programs have been moved from the C startup code to
-<a href="http://man.openbsd.org/ld.so">ld.so(1)</a>.
-An updated <tt>ld.so</tt> must be built and installed before running
-<tt>make build</tt>.
-
-<blockquote><pre>
-cd /usr/src/libexec/ld.so
-make SUBDIR= obj
-make SUBDIR= depend
-make SUBDIR=
-make SUBDIR= install
-</pre></blockquote>
-
-<h3 id="r20160331">2016/03/31 - changes in wscons and synaptics</h3>
-The previous version of the synaptics driver won't work with a new
-version of the kernel. Touchpad users must rebuild that driver.
-
-<h3 id="r20160401">2016/04/01 - rcctl(8) syntax change</h3>
-The keyword for listing enabled but stopped daemons with
-<a href="http://man.openbsd.org/rcctl">rcctl(8)</a>
-has changed from <tt>faulty</tt> to <tt>failed</tt>.
-
-<blockquote><pre>
-rcctl ls failed
-</pre></blockquote>
-
-<h3 id="r20160424">2016/04/24 - option WSDISPLAY_COMPAT_PCVT removed</h3>
-The kernel option WSDISPLAY_COMPAT_PCVT and associated code have been removed.
-You need an X server built after April 3 before booting a new kernel.
-
-<h3 id="r20160426">2016/04/26 - softraid metadata version changed</h3>
-The current softraid metadata version has been incremented as part of
-implementing support for sector sizes other than 512 bytes. Since on-disk
-metadata is automatically updated every time a softraid volume is mounted,
-once you mount a softraid volume on a current kernel that volume will no
-longer be recognized by older kernels.
-
-<h3 id="r20160428">2016/04/28 - <tt>/dev/bpf[0-9]</tt> to be replaced with
-<tt>/dev/bpf</tt></h3>
-Device cloning was enabled for <a href="http://man.openbsd.org/bpf">bpf(4)</a>.
-If you upgrade to -current from source or by untarring sets on a running
-system, you need to finish up with
-
-<blockquote><pre>
-cd /dev &amp;&amp; ./MAKEDEV bpf
-</pre></blockquote>
-
-to generate the new <tt>/dev/bpf</tt> device node.
-
-<h3 id="r20160502">2016/05/02 - clean out <tt>/usr/share/man</tt></h3>
-Formerly, hard links were used to provide the same man page under several
-different names.
-These hard links are no longer needed and may get in the way.
-Issue
-
-<blockquote><pre>
-rm -rf /usr/share/man
-</pre></blockquote>
-
-before upgrading to a new snapshot or building the system from source.
-If you upgrade from source, don't forget the
-
-<blockquote><pre>
-cd /usr/src/etc &amp;&amp; doas env DESTDIR=/ make distrib-dirs
-</pre></blockquote>
-
-step before running <tt>make build</tt>.
-
-<h3 id="r20160507">2016/05/07 - MAJOR ABI BREAK: csu, ld.so, libc, libpthread update</h3>
-Handling of single-threaded programs is now closer to multi-threaded,
-with ld.so and libc.a doing thread information base (TIB) allocation.
-Threaded programs from before the
-<a href="#r20160319">2016/03/19 csu and ld.so update</a>
-will no longer run.
-An updated <tt>ld.so</tt> must be built and installed before running
-<tt>make build</tt>.
-
-<blockquote><pre>
-cd /usr/src
-make obj
-make cleandir		# REQUIRED
-make includes
-cd /usr/src/libexec/ld.so
-make SUBDIR= obj
-make SUBDIR= depend
-make SUBDIR=
-make SUBDIR= install
-</pre></blockquote>
-
-PowerPC has been updated to offset the TIB from the hardware register.
-As a result, <b>all</b> threaded programs are broken until they have been
-rebuilt with the new libc and libpthread.
-perl must be built after building the libraries and before
-building the rest of base.
-These more convoluted steps are also needed when building with a base
-that predates the <a href="#r20160319">2016/03/19 csu and ld.so update</a>.
-
-<blockquote><pre>
-cd /usr/src
-make obj
-make cleandir		# REQUIRED
-make includes
-cd /usr/src/libexec/ld.so
-make SUBDIR= obj
-make SUBDIR= depend
-make SUBDIR=
-make SUBDIR= install
-cd /usr/src/lib/libc
-make depend
-make
-make install NOMAN=1
-cd /usr/src/lib/librthread
-make depend
-make
-make install NOMAN=1
-cd /usr/src/gnu/usr.bin/perl
-make -f Makefile.bsd-wrapper depend
-make -f Makefile.bsd-wrapper
-make -f Makefile.bsd-wrapper NOMAN=1 install
-</pre></blockquote>
-
-<h3 id="r20160508">2016/05/08 - [packages] sysutils/runit default service
-  directory change</h3>
-Upstream moved back the default service directory to <tt>/service</tt>; to keep
-on using <tt>/var/service</tt>, make a symlink:
-
-<blockquote><pre>
-ln -s /var/service /
-</pre></blockquote>
-
-<h3 id="r20160520">2016/05/20 - [packages] PostgreSQL major version update</h3>
-PostgreSQL had a major version update.
-Follow instructions in the pkg-readme to dump your database before
-upgrading to a newer OS version and restore it after the update.
-
-<h3 id="r20160523">2016/05/23 - ld.so update on sparc64</h3>
-On sparc64, ld(1) will now create binaries with a read-only PLT.
-Changes have been made to <a href="http://man.openbsd.org/ld.so">ld.so(1)</a>
-to handle such binaries.
-An updated <tt>ld.so</tt> must be built and installed before running
-<tt>make build</tt>.
-
-<h3 id="r20160527">2016/05/27 - fstab needs wxallowed flag on /usr/local</h3>
-W^X violating programs are no longer allowed by default, but will have
-to opt-in via some mechanisms which allow the violation.
-These mechanisms are being introduced into the system one by one, in
-cooperation with the ports development team.
-The first mechanism is that filesystems containing violating programs must be
-mounted using the <b>wxallowed</b> option, for instance:
-
-<blockquote><pre>
-01020304050607.h /usr/local ffs rw,nodev,nosuid,wxallowed 1 2
-</pre></blockquote>
-
-The base system has no W^X violating programs, but the ports tree
-contains quite a few: chromium, mono, node, gnome, libreoffice, jdk, zeal, etc.
-Progress in this area will be defined by repairing libraries and programs
-so that they don't request <tt>PROT_WRITE | PROT_EXEC</tt> memory.
-The library libffi (Used by python for instance) was the first to be fixed.
-It is expected that most users will use the <b>wxallowed</b> option on
-<tt>/usr/local</tt>, but developers who wish to assist in the effort of
-repairing upstream software can keep it disabled and also use the
-<b>kern.wxabort</b> option
-(see <a href="http://man.openbsd.org/sysctl">sysctl(8)</a>) which helps
-with debugging.
-
-The upgrade process cannot automatically modify fstab to add this flag to
-<tt>/usr/local</tt>; therefore it must be added by hand.
-Some ports also perform W^X violations during build-time, so the same option
-may be desireable on /usr/pobj or other directories.
-
-<h3 id="r20160528">2016/05/28 - iwm(4) needs new firmware</h3>
-The <a href="http://man.openbsd.org/iwm">iwm(4)</a> wifi driver needs
-firmware with a newer major version.
-If you plan to use that device to carry out an upgrade, run
-<a href="http://man.openbsd.org/fw_update">fw_update(8)</a> <em>before</em>
-rebooting onto the install kernel.
-
-<h3 id="r20160630">2016/06/30 - doas.conf adjustment</h3>
-Some uses of the keepenv keyword should be replaced with setenv.
-A warning will be printed when necessary.
-
-<h3 id="r20160713">2016/07/13 - [packages] OpenSMTPD-extras filters removal</h3>
-Most filters were removed from the OpenSMTPD-extras distribution, as
-they are not considered ready.
-People who started using filters like <tt>filter-dkim-signer</tt>
-already need to look for other alternatives in ports, e.g.
-<tt>mail/dkimproxy</tt>.
-
-<!-- 6.0 -->
 <h3 id="r20160801">2016/08/01 - new mandoc.db(5) format</h3>
 To update all <a href="http://man.openbsd.org/mandoc.db.5">mandoc.db(5)</a>
 files to the new format, run:
@@ -258,7 +56,7 @@ makewhatis
 
 <p>
 <hr>
-<small>$OpenBSD: current.html,v 1.697 2016/08/01 20:10:23 tb Exp $</small>
+<small>$OpenBSD: current.html,v 1.698 2016/08/04 00:59:29 tb Exp $</small>
 
 </body>
 </html>
