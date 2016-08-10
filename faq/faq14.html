@@ -656,17 +656,19 @@ if your desired softraid setup requires them.
 This process is normally done automatically by the installer, but you
 haven't yet run the installer, and you will be adding a disk that didn't
 exist at boot.
-For example, if we needed to support a second wd(4) device for a mirrored
-setup, you could do the following from the shell prompt:
+For example, if we needed to support a second and third sd(4) device
+for a mirrored setup, you could do the following from the shell
+prompt:
 
 <blockquote><pre>
 Welcome to the OpenBSD/amd64 X.X installation program.
 (I)nstall, (U)pgrade, (A)utoinstall or (S)hell? <b>s</b>
 # <b>cd /dev</b>
-# <b>sh MAKEDEV wd1</b>
+# <b>sh MAKEDEV sd1 sd2</b>
 </pre></blockquote>
 
-You now have full support for the <tt>wd0</tt> and <tt>wd1</tt> devices.
+You now have full support for the <tt>sd0</tt>, the <tt>sd1</tt> and
+<tt>sd2</tt> devices.
 
 <p>
 Next, we'll initialize the disks with
@@ -676,11 +678,11 @@ and create the softraid partition with
 An "a" partition will be made on both of the drives for the new RAID device.
 
 <blockquote><pre>
-# <b>fdisk -iy wd0</b>
+# <b>fdisk -iy sd0</b>
 Writing MBR at offset 0.
-# <b>fdisk -iy wd1</b>
+# <b>fdisk -iy sd1</b>
 Writing MBR at offset 0.
-# <b>disklabel -E wd0</b>
+# <b>disklabel -E sd0</b>
 Label editor (enter '?' for help at any prompt)
 > <b>a a</b>
 offset: [2104515]
@@ -697,8 +699,8 @@ That's because you can easily import the drive's configuration directly with the
 <a href="http://man.openbsd.org/disklabel">disklabel(8)</a> command.
 
 <blockquote><pre>
-# <b>disklabel wd0 > layout</b>
-# <b>disklabel -R wd1 layout</b>
+# <b>disklabel sd0 > layout</b>
+# <b>disklabel -R sd1 layout</b>
 # <b>rm layout</b>
 </pre></blockquote>
 
@@ -710,7 +712,7 @@ Next, create the mirror with the
 command.
 
 <blockquote><pre>
-# <b>bioctl -c 1 -l wd0a,wd1a softraid0</b>
+# <b>bioctl -c 1 -l sd0a,sd1a softraid0</b>
 </pre></blockquote>
 
 Note that if you are creating multiple RAID devices, either on one disk
@@ -721,18 +723,18 @@ The "softraid0" there is a virtual RAID controller, and you can hang many
 virtual disks off this controller.
 
 <p>
-The new pseudo-disk device will show up as <tt>sd0</tt> here, assuming there
+The new pseudo-disk device will show up as <tt>sd2</tt> here, assuming there
 are no other sd(4) devices on your system.
 This device will now show on the system console and dmesg as a newly
 installed device:
 
 <blockquote><pre>
 scsibus1 at softraid0: 1 targets
-sd0 at scsibus2 targ 0 lun 0: &lt;OPENBSD, SR RAID 1, 005&gt; SCSI2 0/direct fixed
-sd0: 10244MB, 512 bytes/sec, 20980362 sec total
+sd2 at scsibus2 targ 0 lun 0: &lt;OPENBSD, SR RAID 1, 005&gt; SCSI2 0/direct fixed
+sd2: 10244MB, 512 bytes/sec, 20980362 sec total
 </pre></blockquote>
 
-This shows that we now have a new SCSI bus and a new disk, <tt>sd0</tt>.
+This shows that we now have a new SCSI bus and a new disk, <tt>sd2</tt>.
 This volume will be automatically detected and assembled from this point
 onward when the system boots.
 
@@ -745,14 +747,14 @@ could lead to a very bad day.
 This assumes that the new softraid device was created as <tt>sd0</tt>.
 
 <blockquote><pre>
-# <b>dd if=/dev/zero of=/dev/rsd0c bs=1m count=1</b>
+# <b>dd if=/dev/zero of=/dev/rsd2c bs=1m count=1</b>
 </pre></blockquote>
 
 You are now ready to install OpenBSD on your system.
 Perform the install as normal by invoking "install" or "exit" at the boot
 media console.
-Create all the partitions on your new softraid disk (<tt>sd0</tt> in our
-example here) that should be there, rather than on <tt>wd0</tt> or <tt>wd1</tt>
+Create all the partitions on your new softraid disk (<tt>sd2</tt> in our
+example here) that should be there, rather than on <tt>sd0</tt> or <tt>sd1</tt>
 (the non-RAID disks).
 
 <p>
@@ -764,7 +766,7 @@ partitions.
 To check on the status of your mirror, issue the following command:
 
 <blockquote><pre>
-# <b>bioctl sd0</b>
+# <b>bioctl sd2</b>
 </pre></blockquote>
 
 A nightly cron job to check the status might also be a good idea.
@@ -773,11 +775,11 @@ A nightly cron job to check the status might also be a good idea.
 
 When a drive failure happens, you will replace the failed drive, create the
 RAID and other disklabel partitions, then rebuild the mirror.
-Assuming your RAID volume is <tt>sd0</tt> and you are replacing the
-failed device with <tt>wd1m</tt>, the following commands should work:
+Assuming your RAID volume is <tt>sd2</tt> and you are replacing the
+failed device with <tt>sd1m</tt>, the following commands should work:
 
 <blockquote><pre>
-# <b>bioctl -R /dev/wd1m sd0</b>
+# <b>bioctl -R /dev/sd1m sd2</b>
 # <b>reboot</b>
 </pre></blockquote>
 
@@ -805,13 +807,13 @@ Welcome to the OpenBSD/amd64 X.X installation program.
 
 From here, you'll be given a shell within the live environment to manipulate
 the disks.
-For this example, we will install to the <tt>wd0</tt> SATA drive, erasing all
+For this example, we will install to the <tt>sd0</tt> SATA drive, erasing all
 of its previous contents.
 You may want to write random data to the drive first with something like the
 following:
 
 <blockquote><pre>
-# <b>dd if=/dev/random of=/dev/rwd0c bs=1m</b>
+# <b>dd if=/dev/random of=/dev/rsd0c bs=1m</b>
 </pre></blockquote>
 
 This can be a very time-consuming process, depending on the speed of your
@@ -826,12 +828,12 @@ and create the softraid partition with
 <a href="http://man.openbsd.org/disklabel">disklabel(8)</a>.
 
 <blockquote><pre>
-# <b>fdisk -iy wd0</b>
+# <b>fdisk -iy sd0</b>
 Writing MBR at offset 0.
-# <b>disklabel -E wd0</b>
+# <b>disklabel -E sd0</b>
 Label editor (enter '?' for help at any prompt)
 > <b>a a</b>
-offset: [2104515]
+offset: [64]
 size: [39825135] <b>*</b>
 FS type: [4.2BSD] <b>RAID</b>
 > <b>w</b>
@@ -844,29 +846,29 @@ split up into multiple mount points as if it were a regular hard drive.
 Now it's time to build the encrypted device on our "a" partition.
 
 <blockquote><pre>
-# <b>bioctl -c C -l wd0a softraid0</b>
+# <b>bioctl -c C -l sd0a softraid0</b>
 New passphrase:
 Re-type passphrase:
-sd0 at scsibus2 targ 1 lun 0: &lt;OPENBSD, SR CRYPTO, 005&gt; SCSI2 0/direct fixed
-sd0: 19445MB, 512 bytes/sector, 39824607 sectors
-softraid0: CRYPTO volume attached as sd0
+sd1 at scsibus2 targ 1 lun 0: &lt;OPENBSD, SR CRYPTO, 005&gt; SCSI2 0/direct fixed
+sd1: 19445MB, 512 bytes/sector, 39824607 sectors
+softraid0: CRYPTO volume attached as sd1
 </pre></blockquote>
 
 Since the installer does not have many device nodes by default, we'll make
-sure the <tt>/dev/sd0</tt> device is accounted for.
+sure the <tt>/dev/sd1</tt> device is accounted for.
 
 <blockquote><pre>
-# <b>cd /dev && sh MAKEDEV sd0</b>
+# <b>cd /dev && sh MAKEDEV sd1</b>
 </pre></blockquote>
 
-All data written to <tt>sd0</tt> will now be encrypted with AES in XTS mode.
+All data written to <tt>sd1</tt> will now be encrypted with AES in XTS mode.
 
 <p>
 As in the previous example, we'll overwrite the first megabyte of our new
 pseudo-device.
 
 <blockquote><pre>
-# <b>dd if=/dev/zero of=/dev/rsd0c bs=1m count=1</b>
+# <b>dd if=/dev/zero of=/dev/rsd1c bs=1m count=1</b>
 </pre></blockquote>
 
 Type <tt>exit</tt> to return to the main installer, then choose this new
@@ -874,8 +876,8 @@ device as the one for your installation.
 
 <blockquote><pre>
 [...]
-Available disks are: wd0 sd0.
-Which disk is the root disk? ('?' for details) [wd0] <b>sd0</b>
+Available disks are: sd0 sd1.
+Which disk is the root disk? ('?' for details) [sd0] <b>sd1</b>
 </pre></blockquote>
 
 You will be prompted for the passphrase on startup, but all other operations
@@ -906,26 +908,26 @@ An outline of the steps is as follows:
   <li>Unmount the drive and detach the encrypted container
 </ul>
 
-A quick example runthrough of the steps follows, with <tt>sd0</tt> being
+A quick example runthrough of the steps follows, with <tt>sd3</tt> being
 the USB drive.
 
 <blockquote><pre>
-# <b>dd if=/dev/random of=/dev/rsd0c bs=1m</b>
-# <b>fdisk -iy sd0</b>
-# <b>disklabel -E sd0</b> (create an "a" partition, see above for more info)
-# <b>bioctl -c C -l sd0a softraid0</b>
+# <b>dd if=/dev/random of=/dev/rsd3c bs=1m</b>
+# <b>fdisk -iy sd3</b>
+# <b>disklabel -E sd3</b> (create an "a" partition, see above for more info)
+# <b>bioctl -c C -l sd3a softraid0</b>
 New passphrase:
 Re-type passphrase:
-softraid0: CRYPTO volume attached as sd1
-# <b>dd if=/dev/zero of=/dev/rsd1c bs=1m count=1</b>
-# <b>fdisk -iy sd1</b>
-# <b>disklabel -E sd1</b> (create an "i" partition, see above for more info)
-# <b>newfs sd1i</b>
+softraid0: CRYPTO volume attached as sd4
+# <b>dd if=/dev/zero of=/dev/rsd4c bs=1m count=1</b>
+# <b>fdisk -iy sd4</b>
+# <b>disklabel -E sd4</b> (create an "i" partition, see above for more info)
+# <b>newfs sd4i</b>
 # <b>mkdir -p /mnt/secretstuff</b>
-# <b>mount /dev/sd1i /mnt/secretstuff</b>
+# <b>mount /dev/sd4i /mnt/secretstuff</b>
 # <b>mv planstotakeovertheworld.txt /mnt/secretstuff/</b>
 # <b>umount /mnt/secretstuff</b>
-# <b>bioctl -d sd1</b>
+# <b>bioctl -d sd4</b>
 </pre></blockquote>
 
 Next time you need to access the drive, simply use bioctl(8) to attach it
