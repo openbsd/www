@@ -56,7 +56,6 @@ PERFORMANCE OF THIS DOCUMENTATION
   <li><a href="#antispoof" >Blocking spoofed packets</a>
   <li><a href="#urpf"      >Unicast Reverse Path Forwarding</a>
   <li><a href="#osfp"      >Passive operating system fingerprinting</a>
-                       <!-- XXX i think the ospf section should be removed -->
   <li><a href="#ipopts"    >IP options</a>
   <li><a href="#example"   >Filtering ruleset example</a>
 </ul>
@@ -311,10 +310,8 @@ Some examples:
 pass in  on dc0 from 192.168.0.0/24 to 192.168.0.1
 pass out on dc0 from 192.168.0.1    to 192.168.0.0/24
 
-# Pass TCP traffic in on fxp0 to the web server running on the OpenBSD machine.
-# The interface name, fxp0, is used as the destination address so that packets
-# will only match this rule if they're destined for the OpenBSD machine.
-pass in on fxp0 proto tcp from any to fxp0 port www
+# Pass TCP traffic in to the web server running on the OpenBSD machine.
+pass in on egress proto tcp from any to egress port www
 </pre></blockquote>
 
 <h2 id="quick">The <tt>quick</tt> keyword</h2>
@@ -324,7 +321,7 @@ from top to bottom.
 By default, the packet is marked for passage, which can be changed by any
 rule, and could be changed back and forth several times before the end of
 the filter rules.
-<b>The last matching rule "wins".</b>
+<b>The last matching rule wins.</b>
 There is an exception to this: The <tt>quick</tt> option on a filtering rule
 has the effect of canceling any further rule processing and causes the
 specified action to be taken.
@@ -334,7 +331,7 @@ Let's look at a couple examples:
 Wrong:
 
 <blockquote><pre>
-block in on fxp0 proto tcp to port ssh
+block in on egress proto tcp to port ssh
 pass  in all
 </pre></blockquote>
 
@@ -345,7 +342,7 @@ any effect, as it is then followed by a line which will pass everything.
 Better:
 
 <blockquote><pre>
-block in quick on fxp0 proto tcp to port ssh
+block in quick on egress proto tcp to port ssh
 pass  in all
 </pre></blockquote>
 
@@ -386,10 +383,10 @@ the rule.
 This can be explicitly disabled by using the <tt>no state</tt> option.
 
 <blockquote><pre>
-pass out on fxp0 proto tcp from any to any
+pass out on egress proto tcp from any to any
 </pre></blockquote>
 
-This rule allows any outbound TCP traffic on the <tt>fxp0</tt> interface
+This rule allows any outbound TCP traffic on the egress interface
 and also permits the reply traffic to pass back through the firewall.
 Keeping state significantly improves the performance of your firewall
 as state lookups are dramatically faster than running a packet through
@@ -410,7 +407,7 @@ In those cases, it is treated as <tt>keep state</tt>.
 Keep state on outgoing TCP, UDP and ICMP packets and modulate TCP ISNs:
 
 <blockquote><pre>
-pass out on fxp0 proto { tcp, udp, icmp } from any to any modulate state
+pass out on egress proto { tcp, udp, icmp } from any to any modulate state
 </pre></blockquote>
 
 Another advantage of keeping state is that corresponding ICMP traffic
@@ -430,11 +427,11 @@ These per-rule keywords have the same meaning as when used with the
 For example:
 
 <blockquote><pre>
-pass out on fxp0 proto { tcp, udp, icmp } from any to any modulate state (if-bound)
+pass out on egress proto { tcp, udp, icmp } from any to any modulate state (if-bound)
 </pre></blockquote>
 
 This rule would dictate that in order for packets to match the state
-entry, they must be transiting the <tt>fxp0</tt> interface.
+entry, they must be transiting the egress interface.
 
 <h2 id="udpstate">Keeping state for UDP</h2>
 
@@ -514,7 +511,7 @@ must still be used in front of the options.
 An example rule:
 
 <blockquote><pre>
-pass in on $ext_if proto tcp to $web_server port www keep state   \
+pass in on egress proto tcp to $web_server port www keep state   \
                   (max 200, source-track rule, max-src-nodes 100, \
                    max-src-states 3)
 </pre></blockquote>
@@ -569,7 +566,7 @@ An example:
 table &lt;abusive_hosts&gt; persist
 block in quick from &lt;abusive_hosts&gt;
 
-pass in on $ext_if proto tcp to $web_server port www flags S/SA keep state \
+pass in on egress proto tcp to $web_server port www flags S/SA keep state \
                                 (max-src-conn 100, max-src-conn-rate 15/5, \
                                  overload &lt;abusive_hosts&gt; flush)
 </pre></blockquote>
@@ -616,8 +613,8 @@ Using the <tt>any</tt> keyword allows any combination of flags to be set
 in the header.
 
 <blockquote><pre>
-pass in on fxp0 proto tcp from any to any port ssh flags S/SA
-pass in on fxp0 proto tcp from any to any port ssh
+pass in on egress proto tcp from any to any port ssh flags S/SA
+pass in on egress proto tcp from any to any port ssh
 </pre></blockquote>
 
 As <tt>flags S/SA</tt> is set by default, the above rules are equivalent,
@@ -688,7 +685,7 @@ in filter rules.
 For example:
 
 <blockquote><pre>
-pass in on $ext_if proto tcp to $web_server port www synproxy state
+pass in on egress proto tcp to $web_server port www synproxy state
 </pre></blockquote>
 
 Here, connections to the web server will be TCP proxied by PF.
@@ -745,7 +742,7 @@ antispoof for fxp0 inet
 
 When a ruleset is loaded, any occurrences of the <tt>antispoof</tt> keyword
 are expanded into two filter rules.
-Assuming that interface <tt>fxp0</tt> has IP address 10.0.0.1 and a subnet
+Assuming that the egress interface has IP address 10.0.0.1 and a subnet
 mask of 255.255.255.0 (i.e., a /24), the above <tt>antispoof</tt> rule would
 expand to:
 
@@ -758,7 +755,7 @@ These rules accomplish two things:
 
 <ul>
   <li>Blocks all traffic coming from the 10.0.0.0/24 network that does
-      <i>not</i> pass in through <tt>fxp0</tt>.
+      <i>not</i> pass in through the <tt>fxp0</tt> interface.
       Since the 10.0.0.0/24 network is on the <tt>fxp0</tt> interface, packets
       with a source address in that network block should never be seen coming
       in on any other interface.
@@ -818,7 +815,6 @@ uRPF provides the same functionality as <a href="#antispoof">antispoof</a>
 rules.
 
 <h2 id="osfp">Passive operating system fingerprinting</h2>
-<!-- XXX this is mostly old and unmaintained, we can remove it -->
 
 Passive OS fingerprinting (OSFP) is a method for passively detecting the
 operating system of a remote host based on certain characteristics
@@ -844,10 +840,10 @@ shown above.
 To specify a fingerprint in a filter rule, the <tt>os</tt> keyword is used:
 
 <blockquote><pre>
-pass  in on $ext_if proto tcp from any os OpenBSD keep state
-block in on $ext_if proto tcp from any os "Windows 2000"
-block in on $ext_if proto tcp from any os "Linux 2.4 ts"
-block in on $ext_if proto tcp from any os unknown
+pass  in on egress proto tcp from any os OpenBSD keep state
+block in on egress proto tcp from any os "Windows 2000"
+block in on egress proto tcp from any os "Linux 2.4 ts"
+block in on egress proto tcp from any os unknown
 </pre></blockquote>
 
 The special operating system class <tt>unknown</tt> allows for matching
@@ -888,7 +884,6 @@ Only the filter rules are shown; <tt>queueing</tt>,
 etc, have been left out of this example.
 
 <blockquote><pre>
-ext_if  = "fxp0"
 int_if  = "dc0"
 lan_net = "192.168.0.0/24"
 
@@ -921,14 +916,14 @@ pass out on $int_if to   $lan_net
 
 # pass tcp, udp, and icmp out on the external (Internet) interface.
 # tcp connections will be modulated, udp/icmp will be tracked statefully.
-pass out on $ext_if proto { tcp udp icmp } all modulate state
+pass out on egress proto { tcp udp icmp } all modulate state
 
 # allow ssh connections in on the external interface as long as they're
 # NOT destined for the firewall (i.e., they're destined for a machine on
 # the local network). log the initial packet so that we can later tell
 # who is trying to connect.
 # Uncomment last part to use the tcp syn proxy to proxy the connection.
-pass in log on $ext_if proto tcp to ! &lt;firewall&gt; port ssh # synproxy state
+pass in log on egress proto tcp to ! &lt;firewall&gt; port ssh # synproxy state
 </pre></blockquote>
 
 <p>
