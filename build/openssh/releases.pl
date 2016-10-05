@@ -9,6 +9,7 @@ use strict;
 use warnings 'all';
 
 my $txtdir = "../../openssh/txt/";
+my $bzurl = "https://bugzilla.mindrot.org/show_bug.cgi?id=";
 
 # These days we commit the release notes on the day of release.  For those,
 # we use the date the release notes were first committed.
@@ -85,6 +86,10 @@ my %date_override = (
 
 my %releases;
 
+# Uncomment to cache release dates rather than looking up in CVS
+# every time.  Handy to speed things up while making changes.
+#dbmopen(%releases, "/tmp/openssh-releases", 0644) || die;
+
 # For each release-* file in the txtdir directory, extract the release
 # number and figure out the release date, either by looking in the map above
 # or by extracting the date of rev 1.1 from cvs.
@@ -96,14 +101,31 @@ while (readdir $dh) {
 	my $date = "";
 	if (defined($date_override{$rel})) {
 		$date = $date_override{$rel};
+		warn "overridden $rel $date\n";
+	} elsif (defined($releases{$rel})) {
+		$date = $releases{$rel};
+		warn "cached $rel $date\n";
 	} else {
 		$_ = `cd $txtdir && cvs log -r1.1 $file | grep date:`;
 		/date: (\S+)/;
 		$date = $1;
 		$date =~ s|/|-|g;
+		warn "looked up $rel $date\n";
 	}
-	warn "processing $rel $date\n";
 	$releases{$rel} = $date;
+}
+
+sub output_release
+{
+	my ($rel) = @_;
+
+	open(my $fh, '<', "$txtdir/release-$rel") || die;
+	while (<$fh>) {
+		# expand bugzilla references into URLs.
+		s|bz#(\d+)|<a href='$bzurl$1'>bz#$1</a>|;
+
+		print $_;
+	}
 }
 
 # Output the release notes in reverse revision order.
@@ -121,6 +143,6 @@ foreach my $rel (reverse sort keys(%releases)) {
 	print " ($date)" if ($date ne ''); # suppress if unknown
 	print "</h3>\n";
 	print "<pre>\n";
-	system("cat $txtdir/release-$rel");
+	output_release($rel);
 	print "</pre><hr>\n";
 }
