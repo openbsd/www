@@ -123,6 +123,7 @@ sub output_release
 	while (<$fh>) {
 		# expand bugzilla references into URLs.
 		s|bz#(\d+)|<a href='$bzurl$1'>bz#$1</a>|;
+		s|bz #(\d+)|<a href='$bzurl$1'>bz #$1</a>|;
 
 		print $_;
 	}
