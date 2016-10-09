@@ -122,8 +122,8 @@ sub output_release
 	open(my $fh, '<', "$txtdir/release-$rel") || die;
 	while (<$fh>) {
 		# expand bugzilla references into URLs.
-		s|bz#(\d+)|<a href='$bzurl$1'>bz#$1</a>|;
-		s|bz #(\d+)|<a href='$bzurl$1'>bz #$1</a>|;
+		s|bz#(\d+)|<a href='$bzurl$1'>bz#$1</a>|g;
+		s|bz #(\d+)|<a href='$bzurl$1'>bz #$1</a>|g;
 
 		print $_;
 	}
