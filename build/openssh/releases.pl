@@ -140,7 +140,7 @@ foreach my $rel (reverse sort keys(%releases)) {
 		# Joint release
 		$desc = "OpenSSH $rel/$rel" . "p1";
 	}
-	print "<h3><a href='txt/release-$rel name='$rel'>$desc</a>";
+	print "<h3><a href='txt/release-$rel' name='$rel'>$desc</a>";
 	print " ($date)" if ($date ne ''); # suppress if unknown
 	print "</h3>\n";
 	print "<pre>\n";
