@@ -133,14 +133,16 @@ sub output_release
 foreach my $rel (reverse sort keys(%releases)) {
 	my $date = $releases{$rel};
 	my $desc;
+	my $extra = "";
 	if ($rel =~ /p/) {
 		# Portable only release
-		$desc = "OpenSSH $rel";
 	} else {
 		# Joint release
-		$desc = "OpenSSH $rel/$rel" . "p1";
+		my $port = $rel . "p1";
+		$extra = "/<a href='txt/release-$rel' name='$port'>$port</a>";
 	}
-	print "<h3><a href='txt/release-$rel' name='$rel'>$desc</a>";
+	print "<h3><a href='txt/release-$rel' name='$rel'>OpenSSH $rel</a>";
+	print $extra;
 	print " ($date)" if ($date ne ''); # suppress if unknown
 	print "</h3>\n";
 	print "<pre>\n";
