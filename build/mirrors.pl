@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.37 2016/04/21 23:03:40 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.38 2016/12/21 21:13:42 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -55,6 +55,7 @@ my $sources = {
 my $targets = {
 	'pkg_conf'		=> '/usr/src/etc/examples/pkg.conf',
 	'ftplist'		=> '../ftplist',
+	'httpslist'		=> '../httpslist',
 	'mirror_list'		=> '../mirror_list',
 	'openbsd-ftp'		=> '../ftp.html',
 	'openbgpd-ftp'		=> '../openbgpd/ftp.html',
@@ -107,8 +108,8 @@ sub read_mirrors ($) {
 
 # writes out the ftplist file to a given filename using the mirrors
 # array referenced by the second argument
-sub write_ftplist($$$) {
-	my ($filename, $ver, $mirrorref) = @_;
+sub write_ftplist($$$$) {
+	my ($filename, $ver, $mirrorref, $type) = @_;
 
 	# ftplist is displayed in the installer (with the protocol stripped
 	# off) with cat -n, so 71 char max after removing the protocol.
@@ -117,7 +118,7 @@ sub write_ftplist($$$) {
 	open(my $fh, '>', $filename) or die "open $filename: $!";
 
 	foreach my $mirror (sort _by_country @$mirrorref) {
-		next unless ($mirror->{'UH'});
+		next unless ($mirror->{$type});
 		my $loc = '';
 		$loc .= "$mirror->{'GT'}, " if $mirror->{'GT'};
 		$loc .= "$mirror->{'GS'}, " if $mirror->{'GS'};
@@ -127,7 +128,7 @@ sub write_ftplist($$$) {
 		$loc =~ s/&uuml;/u/g ;
 		$loc =~ s/&eacute;/e/g ;
 		$loc =~ s/&ntilde;/n/g ;
-		(my $url = $mirror->{'UH'}) =~ s,/$,,;
+		(my $url = $mirror->{$type}) =~ s,/$,,;
 		my $pad = $MAXWIDTH - length($url) - 1;
 		# + 4 for aesthetics; force some whitespace
 		if (length($url) + length($loc) + 4 > $MAXWIDTH) {
@@ -146,7 +147,7 @@ sub write_mirror_list($$) {
 
 	open(my $fh, '>', $filename) or die "open $filename: $!";
 
-	for my $type ('UH', 'UF', 'UR') {
+	for my $type ('UH', 'UHS', 'UF', 'UR') {
 		foreach my $mirror (sort _by_country @$mirrorref) {
 			next unless ($mirror->{$type});
 			(my $url = $mirror->{$type}) =~ s,/$,,;
@@ -417,7 +418,8 @@ if (@ARGV == 2) {
 	my $ver = $ARGV[1];
 
 	if ($cmd eq 'ftplist') {
-		write_ftplist($targets->{'ftplist'}, $ver, \@mirrors);
+		write_ftplist($targets->{'ftplist'}, $ver, \@mirrors, 'UH');
+		write_ftplist($targets->{'httpslist'}, $ver, \@mirrors, 'UHS');
 		write_mirror_list($targets->{'mirror_list'}, \@mirrors);
 		write_pkg_conf($targets->{'pkg_conf'}, \@mirrors);
 	} elsif ($cmd eq 'openbsd-ftp' || $cmd eq 'openbgpd-ftp' ||
