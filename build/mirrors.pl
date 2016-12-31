@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.38 2016/12/21 21:13:42 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.39 2016/12/31 20:35:13 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -52,8 +52,10 @@ my $sources = {
 	'cvsync-head'		=> 'mirrors/cvsync.html.head',
 	'cvsync-end'		=> 'mirrors/cvsync.html.end',
 };
+my $srcdir = $ENV{BSDSRCDIR};
+$srcdir //= '/usr/src';
 my $targets = {
-	'pkg_conf'		=> '/usr/src/etc/examples/pkg.conf',
+	'pkg_conf'		=> $srcdir.'/etc/examples/pkg.conf',
 	'ftplist'		=> '../ftplist',
 	'httpslist'		=> '../httpslist',
 	'mirror_list'		=> '../mirror_list',
