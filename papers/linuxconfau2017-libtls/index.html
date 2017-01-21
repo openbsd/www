@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+  <meta name="viewport" content="width=1024, user-scalable=no">
+
+  <title>libtls: Rethinking the TLS/SSL API</title>
+
+  <!-- Required stylesheet -->
+  <link rel="stylesheet" media="screen" href="deck.js/core/deck.core.css">
+
+  <!-- Extension CSS files go here. Remove or add as needed. -->
+  <link rel="stylesheet" media="screen" href="deck.js/extensions/goto/deck.goto.css">
+  <link rel="stylesheet" media="screen" href="deck.js/extensions/menu/deck.menu.css">
+  <link rel="stylesheet" media="screen" href="deck.js/extensions/navigation/deck.navigation.css">
+  <link rel="stylesheet" media="screen" href="deck.js/extensions/status/deck.status.css">
+  <link rel="stylesheet" media="screen" href="deck.js/extensions/scale/deck.scale.css">
+
+  <!-- Style theme. More available in /themes/style/ or create your own. -->
+  <link rel="stylesheet" media="screen" href="deck.js/themes/style/swiss.css">
+
+  <!-- Transition theme. More available in /themes/transition/ or create your own. -->
+  <link rel="stylesheet" media="screen" href="deck.js/themes/transition/horizontal-slide.css">
+
+  <!-- Basic black and white print styles -->
+  <link rel="stylesheet" media="print" href="deck.js/core/print.css">
+
+  <!-- Required Modernizr file -->
+  <script src="deck.js/modernizr.custom.js"></script>
+</head>
+<body>
+  <div class="deck-container">
+    <section class="slide">
+	<h2>libtls: rethinking the TLS/SSL API</h2>
+	<h3>Making it easier and safer to write applications that use TLS</h3>
+        <br/>
+	<h4>Joel Sing &lt;jsing@openbsd.org&gt;</h4>
+	<h4>linux.conf.au 2017, Hobart, Australia</h4>
+    </section>
+
+    <section class="slide">
+      <h2>What is libtls?</h2>
+      <ul>
+        <li>A new TLS library with a clean, obvious and simple API.
+        <li>Designed to make it easier to write foolproof applications.</li>
+        <li>The fourth component of <a href="https://www.libressl.org/">LibreSSL</a>.</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>A bit of history...</h2>
+      <img src="heartbleed.svg" style="float:right"/>
+      <h3>April 2014 - LibreSSL</h3>
+      <ul>
+        <li><a href="http://www.heartbleed.com/">Heartbleed</a>...</li>
+        <li><a href="http://www.tedunangst.com/">Ted Unangst</a> (tedu@) started looking at exploit countermeasures and
+          <a href="http://www.tedunangst.com/flak/post/origins-of-libressl">fell down a rabbit hole</a>:
+          <ul>
+            <li>OpenSSL LIFO freelists (on by default, compile time option hence recompile to disable).</li>
+            <li>
+              SSL_MODE_RELEASE_BUFFERS <a href="https://rt.openssl.org/Ticket/Display.html?id=2167&user=guest&pass=guest">bug</a>,
+              hidden by LIFO freelists.
+            </li>
+          </ul>
+        </li>
+        <li>OpenSSL was forked and <a href="https://www.openbsd.org/papers/bsdcan14-libressl">LibreSSL began</a>.</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>A bit of history...</h2>
+      <h3>July 2014 - libtls</h3>
+      <blockquote>&quot;Hey, we should really create a better API.&quot;</blockquote>
+      <ul>
+        <li>libtls (formerly ressl) was created, following a conversation with Ted.</li>
+        <li>Currently uses libssl &quot;under the hood&quot;.</li>
+        <li>
+          While the general goals for LibreSSL are to modernise the codebase, improve security,
+          and apply best practice development processes, libtls aims to completely rethink the TLS API.
+        </li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>TLS is complex and messy!</h2>
+      <ul>
+        <li>Handshake, record layer</li>
+        <li>SSLv2, SSLv3, TLSv1.0, TLSv1.1, TLSv1.2... TLSv1.3</li>
+        <li>SSLv2 records with SSLv3/TLS client hellos!</li>
+        <li>TLS extensions - SNI, ALPN, etc</li>
+        <li>Crypto - public key, symmetric, key exchange and loads of gotchas.</li>
+        <li>PKI and X.509</li>
+        <li>And mix in a good dose of ASN.1</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>It should be easy to use...</h2>
+      <blockquote>But I just want to write an application that has TLS support!</blockquote>
+    </section>
+
+    <section class="slide">
+      <h2>Why not just use existing APIs?</h2>
+      <h3>Let's write some code...</h3>
+      <p>Presuming that we've already done the work to resolve DNS and establish a connected socket:</p>
+      <code>
+      <pre>
+if ((ssl_ctx = SSL_CTX_new(SSLv23_method())) == NULL)
+        errx(1, "failed to create ssl context");
+if ((ssl = SSL_new(ssl_ctx)) == NULL)
+        errx(1, "failed to create ssl");
+
+if (SSL_set_fd(ssl, s) != 1)
+        errx(1, "failed to set fd");
+
+if (SSL_connect(ssl) != 1)
+        errx(1, "failed to connect");
+
+if (SSL_write(ssl, buf, len) != len)
+        errx(1, "SSL_write failed");
+if ((ret = SSL_read(ssl, buf, sizeof(buf))) &lt;= 0)
+        errx(1, "SSL_read failed");
+
+if (SSL_shutdown(ssl) != 1)
+        errx(1, "SSL_shutdown failed");
+      </pre>
+      </code>
+    </section>
+
+    <section class="slide">
+      <h2>What just happened?</h2>
+      <ul>
+        <li>What TLS version did I use?</li>
+        <li>What ciphersuite was just negotiated?</li>
+        <li>You may or may not have Perfect Forward Secrecy (PFS), depends on the ciphersuite.</li>
+        <li>The certificate chain was verified (good)</li>
+        <li class="slide">But if it failed, it just continued anyway (not so good)</li>
+        <li class="slide">Oh, oops... I also forgot to verify the server name! (bad, MITM)</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>We should really fix that...</h2>
+      <h3>Certificate Verification</h3>
+      <ul>
+        <li>
+          Need to call <code>SSL_set_verify(ssl, SSL_VERIFY_PEER, NULL)</code>
+          <ul>
+            <li>The default is <code>SSL_VERIFY_NONE</code> (insecure by default)</li>
+          </ul>
+        </li>
+        <li>Also need to specify a file (or path) containing CA certificates.</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>We should really fix that...</h2>
+      <h3>Server Name Verification</h3>
+      <ul>
+        <li>Now I need to know about X.509, Common Names (CNs) and Subject Alternative Names (SANs)<br/>
+          (go <a href="https://tools.ietf.org/html/rfc5280">read</a>
+          <a href="https://tools.ietf.org/html/rfc6818">the</a>
+          <a href="https://tools.ietf.org/html/rfc6125">RFCs</a>... only around 220 pages)
+        </li>
+        <li>Handle nastiness such as NUL bytes in names.</li>
+        <li>Figure out how to do wildcard matching.</li>
+        <li>Correctly match IP addresses (and not match on the wrong things).</li>
+        <li>About 200 lines of code to implement.</li>
+      </ul>
+      <ul class="slide">
+        <li>At least there is now a <code>X509_check_host()</code> function (since January 2015).</li>
+        <li class="slide">But... you still have to get the certificate and call it yourself.</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>libtls design philosophy</h2>
+      <ul>
+        <li>As easy to use as possible.</li>
+        <li>Safe and secure <strong>by default</strong>.</li>
+        <li>Consistent, obvious and well documented.</li>
+        <li>Support the use of
+          <a href="http://man.openbsd.org/cgi-bin/man.cgi/OpenBSD-current/man2/pledge.2">pledge(2)</a>,
+          <a href="http://man.openbsd.org/OpenBSD-current/man2/chroot.2">chroot(2)</a> and
+          other sandbox environments:
+          <ul class="slide">
+            <li>Ensure access to files is deterministic (either at a certain point, or not at all).</li>
+            <li>Accept configuration via memory instead of files.</li>
+          </ul>
+        </li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>The libtls API</h2>
+      <p>
+        For full details read the
+        <a href="http://man.openbsd.org/cgi-bin/man.cgi/OpenBSD-current/man3/tls_init.3">man page</a>,
+        but in summary:
+      </p>
+      <code>
+      <pre>
+tls_init()
+
+tls_config_new()
+tls_config_set*()
+
+tls_client() or tls_server()
+tls_configure()
+tls_connect*() or tls_accept*()
+tls_handshake() ]
+tls_read()/tls_write()
+tls_close()
+      </pre>
+      </code>
+    </section>
+
+    <section class="slide">
+      <h2>Let's rewrite that earlier code...</h2>
+      <code>
+      <pre>
+if ((ctx = tls_client()) == NULL)
+        err(1, "failed to create client");
+if (tls_configure(ctx, NULL) == -1)
+        err(1, "failed to configure: %s", tls_error(ctx));
+
+if (tls_connect(ctx, "www.linux.conf.au", "https") == -1)
+        err(1, "failed to connect: %s", tls_error(ctx));
+
+if (tls_write(ctx, buf, len) != len)
+        errx(1, "failed to write: %s", tls_error(ctx));
+if ((ret = tls_read(ctx, buf, sizeof(buf))) <= 0)
+        errx(1, "failed to read: %s", tls_error(ctx));
+
+if (tls_close(ctx) == -1)
+        errx(1, "failed to close: %s", tls_error(ctx));
+      </pre>
+      </code>
+    </section>
+
+    <section class="slide">
+      <h2>What just happened?</h2>
+      <ul>
+        <li>You used TLSv1.2.</li>
+        <li>You used an Authenticated Encryption with Authenticated Data (AEAD) ciphersuite.</li>
+        <li>You have PFS.</li>
+        <li>The certificate chain was verified successfully.</li>
+        <li>The server name matched the certificate.</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>The libtls API design</h2>
+      <ul>
+        <li>Consistent and deterministic return values (<code>-1</code> or <code>NULL</code> indicates failure).</li>
+        <li>POSIX-like behaviour where possible.</li>
+        <li><code>tls_read(3)</code>/<code>tls_write(3)</code> almost have <code>read(2)</code>/<code>write(2)</code> semantics.</li>
+        <li>Opaque data structures.</li>
+        <li>Take copies of strings and memory, instead of storing pointers.</li>
+        <li>No X.509 or ASN.1 exposed (no sharp edges!).</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>General API design rules</h2>
+      <ul>
+        <li>Keep it as simple as possible.</li>
+        <li>Do not be afraid to iterate.</li>
+        <li>Only add features when there is code that actually uses them:
+          <ul>
+            <li>Ensures that the API is appropriate.</li>
+            <li>Helps to manage feature bloat.</li>
+          </ul>
+        </li>
+        <li>Have symmetrical functions (for client/server) where possible.</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>Some more API examples</h2>
+      <ul>
+        <li>Application-Layer Protocol Negotiation (ALPN)</li>
+        <li>Server Name Indication (SNI)</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>Application-Layer Protocol Negotiation (ALPN)</h2>
+      <h3>libssl</h3>
+      <p>After you've converted and packed your ALPN protocols into wire format (length prefixed strings)...</p>
+      <code>
+      <pre>
+static int
+tls_server_alpn_cb(SSL *ssl, const unsigned char **out, unsigned char *outlen,
+    const unsigned char *in, unsigned int inlen, void *arg)
+{
+        struct tls *ctx = arg;
+
+        if (SSL_select_next_proto((unsigned char**)out, outlen,
+            ctx->config->alpn, ctx->config->alpn_len, in, inlen) ==
+            OPENSSL_NPN_NEGOTIATED)
+                return (SSL_TLSEXT_ERR_OK);
+
+        return (SSL_TLSEXT_ERR_NOACK);
+}
+...
+SSL_CTX_set_alpn_select_cb(*ssl_ctx, tls_server_alpn_cb, ctx);
+      </pre>
+      </code>
+    </section>
+
+    <section class="slide">
+      <h2>Application-Layer Protocol Negotiation (ALPN)</h2>
+      <h3>libtls</h3>
+      <code>
+      <pre class="slide">
+if (tls_config_set_alpn(server_cfg, "h2,http/1.1") == -1)
+        err(...);
+      </pre>
+      </code>
+    </section>
+
+    <section class="slide">
+      <h2>Server Name Indication (SNI) - Server Side</h2>
+      <h3>libssl</h3>
+      <p>For each additional certificate:</p>
+      <ul>
+        <li>Create an additional <code>SSL_CTX</code> and configure it.</li>
+        <li>Load the certificate and private key on the new context.</li>
+      </ul>
+      <p>Register a callback that:</p>
+      <ul>
+        <li>Receives the SNI that the client passed.</li>
+        <li>Manually determines which of the certificates (and hence <code>SSL_CTX</code>) to use.</li>
+        <li>Switches the <code>SSL_CTX</code> for the connection.</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>Server Name Indication (SNI) - Server Side</h2>
+      <h3>libtls</h3>
+      <p>For each additional certificate:</p>
+      <code>
+      <pre class="slide">
+if (tls_config_add_keypair_file(server_cfg, cert_path, key_path) == -1)
+        err(...);
+      </pre>
+      </code>
+    </section>
+
+    <section class="slide">
+      <h2>A quick look at return codes and error handling</h2>
+      <h3>libssl</h3>
+      <p>
+        If one of the following functions returns <= 0, call <code>SSL_get_error()</code>.
+      </p>
+      <ul>
+        <li><code>SSL_connect()</code></li>
+        <li><code>SSL_accept()</code></li>
+        <li><code>SSL_read()</code></li>
+        <li><code>SSL_write()</code></li>
+        <li><code>SSL_shutdown()</code></li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <code>
+      <pre>
+ret = SSL_connect(ssl);
+if (ret <= 0) {
+       ssl_err = SSL_get_error(ssl, ret);
+       switch (ssl_err) {
+       case SSL_ERROR_NONE:
+       case SSL_ERROR_ZERO_RETURN:
+               break;
+
+       case SSL_ERROR_WANT_READ:  
+       case SSL_ERROR_WANT_WRITE:
+       case SSL_ERROR_WANT_CONNECT:
+       case SSL_ERROR_WANT_ACCEPT:
+               continue;
+
+       case SSL_ERROR_WANT_X509_LOOKUP:
+               errx(1, "want x509 lookup");
+
+       case SSL_ERROR_SSL:
+               errstr = "unknown";
+               if ((ssl_err_code = ERR_peek_error()) != 0)
+                       errstr = ERR_error_string(ssl_err_code, NULL);
+               errx(1, "SSL error: %s", errstr);
+
+       case SSL_ERROR_SYSCALL:
+               errstr = "unknown";
+               if ((ssl_err_code = ERR_peek_error()) != 0)
+                       errstr = ERR_error_string(ssl_err_code, NULL);
+               else if (ret == -1)
+                       errstr = strerror(errno);
+               errx(1, "SSL error: %s", errstr);
+       }
+}
+      </pre>
+      </code>
+    </section>
+
+    <section class="slide">
+      <h2>A quick look at return codes and error handling</h2>
+      <h3>libtls</h3>
+      <p>
+        If a function returns <code>-1</code>, call <code>tls_config_error()</code> or
+        <code>tls_error()</code> to find out what went wrong.
+      </p>
+      <p>
+        The following functions, also have two special return values
+        <code>TLS_WANT_POLLIN</code> and <code>TLS_WANT_POLLOUT</code>.
+      </p>
+      <ul>
+        <li><code>tls_handshake()</code></li>
+        <li><code>tls_read()</code></li>
+        <li><code>tls_write()</code></li>
+        <li><code>tls_close()</code></li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>So what is wrong with a bad API?</h2>
+      <h3>But it was this way when I found it!</h3>
+      <p>Bad APIs lead to:</p>
+      <ul>
+        <li>Security vulnerabilities</li>
+        <li>Memory leaks</li>
+        <li>Other bugs</li>
+        <li>Wasted time</li>
+        <li>Developer frustation</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>So what is wrong with a bad API?</h2>
+      <blockquote>
+        &quot;A principled solution to the problem must involve a complete redesign of the SSL libraries' API&quot;
+      </blockquote>
+      <p>
+        <em>The most dangerous code in the world: validating SSL certificates in non-browser software</em>
+        <a href="https://crypto.stanford.edu/~dabo/pubs/abstracts/ssl-client-bugs.html">(2012 paper)</a>
+      </p>
+    </section>
+
+    <section class="slide">
+      <h2>So what is wrong with a bad API?</h2>
+      <blockquote>
+        &quot;The failure of various applications to note Python's negligence
+        in this matter is a source of regular CVE assignment&quot;
+      </blockquote>
+      <p>
+        <strong><a href="https://www.python.org/dev/peps/pep-0476">PEP 476</a> - Enabling
+        certificate verification by default for stdlib http clients</strong> (2014)
+      </p>
+      <p>
+        Cites 11 CVEs in various applications, all due to bad default behaviour.
+      </p>
+    </section>
+
+    <section class="slide">
+      <h2>Some examples of how not to do things</h2>
+      <h3>SSL_CIPHER_description</h3>
+      <code>
+      <pre>
+desc = SSL_CIPHER_description(cipher, NULL, 0);
+      </pre>
+      </code>
+      <ul>
+        <li>Can return a pointer to dynamically allocated character array (caller is required to free).</li>
+        <li>Or... can return a pointer to a static string!</li>
+        <li>Effectively impossible to tell the difference based on the pointer.</li>
+        <li>No other indicator.</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>Some examples of how not to do things</h2>
+      <h3>SSL_CIPHER_description</h3>
+      <p>Must strcmp to determine what to do!</p>
+      <code>
+      <pre class="slide">
+desc = SSL_CIPHER_description(cipher, NULL, 0);
+if (strcmp(desc, "OPENSSL_malloc Error") == 0) {
+        fprintf(stderr, "out of memory\n");
+        goto err;
+}
+fprintf(stdout, "%s", desc);
+free(desc);
+      </pre>
+      </code>
+    </section>
+
+    <section class="slide">
+      <h2>Some examples of how not to do things</h2>
+      <h3>SSL_CIPHER_description</h3>
+      <p>Some lessons to learn from this:</p>
+      <ul>
+        <li>Only return dynamic memory <strong>or</strong> static memory (never mix the two).</li>
+        <li>Better: return a signal of success or failure, pass the data by reference.</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>Some examples of how not to do things</h2>
+      <h3>X509_verify_cert()</h3>
+      <ul>
+        <li>Returns 1 if the chain built and successfully validated.</li>
+        <li>Returns <= 0 if <strong>something</strong> failed.</li>
+      </ul>
+      <div class="slide">
+      <p>
+      But wait, there's more!
+      </p>
+      <p>
+      Call <code>X509_STORE_CTX_get_error()</code> to get the internal error code, which might:
+      </p>
+      <ul class="slide">
+        <li>Be <code>X509_V_OK</code></li>
+        <li>Indicate an internal error (e.g. out of memory)</li>
+        <li>Indicate a verification failure (e.g. unknown issuer)</li>
+      </ul>
+      </div>
+    </section>
+
+    <section class="slide">
+      <h2>Some examples of how not to do things</h2>
+      <h3>X509_verify_cert()</h3>
+      <ul>
+        <li>Can return 1 (success) and have internal error code != <code>X509_V_OK</code>.</li>
+        <li>Could previously return 0 (failure) and have internal error code == <code>X509_V_OK</code>.</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>Some examples of how not to do things</h2>
+      <h3>X509_verify_cert()</h3>
+      <p>Some lessons to learn from this:</p>
+      <ul>
+        <li>If you're going to indicate success/failure in multiple places, ensure they're kept in sync.</li>
+        <li>Better: return a signal of success or internal failure, make the detailed error authoritative.</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>OpenBSD: our development playground</h2>
+      <ul>
+        <li>Proving ground - real world testing, bugs usually found very quickly.</li>
+        <li>New API iteration/proof of concept.</li>
+        <li>
+          Initially
+          <a href="http://man.openbsd.org/cgi-bin/man.cgi/OpenBSD-current/man1/ftp.1">ftp</a> and
+          <a href="http://man.openbsd.org/cgi-bin/man.cgi/OpenBSD-current/man8/httpd.8">httpd</a>
+          were using libtls (one client, one server).
+        </li>
+        <li>
+          Now also
+          <a href="http://man.openbsd.org/cgi-bin/man.cgi/OpenBSD-current/man1/acme-client.1">acme-client</a>,
+          <a href="http://man.openbsd.org/cgi-bin/man.cgi/OpenBSD-current/man1/nc.1">nc</a>,
+          <a href="http://man.openbsd.org/cgi-bin/man.cgi/OpenBSD-current/man8/ntpd.8">ntpd</a>,
+          <a href="http://man.openbsd.org/cgi-bin/man.cgi/OpenBSD-current/man8/spamd.8">spamd</a>,
+          <a href="http://man.openbsd.org/cgi-bin/man.cgi/OpenBSD-current/man8/syslogd.8">syslogd</a>...
+        </li>
+        <li>Ports tree is incredibly beneficial (more so with libssl, but also libtls)</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>In summary</h2>
+      <ul>
+        <li>Create APIs that are intuitive, easy to use and safe by default.</li>
+        <li>Develop code that uses the API before (or during) the API development.</li>
+        <li>Think about the corner cases and consider what users might overlook.</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>Thank you!</h2>
+      <h3><a href="https://www.libressl.org/">www.libressl.org</a></h3>
+    </section>
+
+    <!-- End slides. -->
+
+    <!-- Begin extension snippets. Add or remove as needed. -->
+
+    <!-- deck.navigation snippet -->
+    <div aria-role="navigation">
+      <a href="#" class="deck-prev-link" title="Previous">&#8592;</a>
+      <a href="#" class="deck-next-link" title="Next">&#8594;</a>
+    </div>
+
+    <!-- deck.status snippet -->
+    <p class="deck-status" aria-role="status">
+      <span class="deck-status-current"></span>
+      /
+      <span class="deck-status-total"></span>
+    </p>
+
+    <!-- deck.goto snippet -->
+    <form action="." method="get" class="goto-form">
+      <label for="goto-slide">Go to slide:</label>
+      <input type="text" name="slidenum" id="goto-slide" list="goto-datalist">
+      <datalist id="goto-datalist"></datalist>
+      <input type="submit" value="Go">
+    </form>
+
+    <!-- End extension snippets. -->
+  </div>
+
+<!-- Required JS files. -->
+<script src="deck.js/jquery.min.js"></script>
+<script src="deck.js/core/deck.core.js"></script>
+
+<!-- Extension JS files. Add or remove as needed. -->
+<script src="deck.js/extensions/menu/deck.menu.js"></script>
+<script src="deck.js/extensions/goto/deck.goto.js"></script>
+<script src="deck.js/extensions/status/deck.status.js"></script>
+<script src="deck.js/extensions/navigation/deck.navigation.js"></script>
+<script src="deck.js/extensions/scale/deck.scale.js"></script>
+
+<!-- Initialize the deck. You can put this in an external file if desired. -->
+<script>
+  $(function() {
+    $.deck('.slide');
+  });
+</script>
+</body>
+</html>
