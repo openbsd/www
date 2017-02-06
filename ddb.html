@@ -123,7 +123,6 @@ processor in your machine.
 <h3>How do I gather further information from a kernel crash?</h3><p>
 
 A typical kernel crash on OpenBSD might look like this:
-(things to watch for are marked with bold font)
 
 <blockquote><pre>
 kernel: page fault trap, code=0
@@ -131,8 +130,11 @@ Stopped at    <b>_pf_route+0x263</b>:        mov     0x40(%edi),%edx
 ddb>
 </pre></blockquote>
 
-The first command to run from the <tt>ddb></tt> prompt is <tt>trace</tt>
-(see <a href="http://man.openbsd.org/ddb">ddb(4)</a> for details):
+This crash happened at offset <tt>0x263</tt> in the function <tt>_pf_route</tt>.
+
+<p>
+The first command to run from the
+<a href="http://man.openbsd.org/ddb">ddb(4)</a> prompt is <tt>trace</tt>:
 
 <blockquote><pre>
 ddb> <b>trace</b>
@@ -157,40 +159,37 @@ To find out the particular line of C code that caused the crash, you can
 do the following:
 
 <p>
-Find the source file where the crashing function is defined in.
-In this example, that would be <tt>pf_route()</tt> in <tt>sys/net/pf.c</tt>.
-Recompile that source file with debug information:
-
-<blockquote><pre>
-# <b>cd /usr/src/sys/arch/$(uname -m)/compile/GENERIC</b>
-# <b>rm obj/pf.o</b>
-# <b>DEBUG=-g make pf.o</b>
-</pre></blockquote>
-
-Then use <a href="http://man.openbsd.org/objdump">objdump(1)</a> to get the
+Find the source file where the crashing function is defined.
+In this example, that would be <tt>pf_route()</tt> in <tt>/sys/net/pf.c</tt>.
+Use <a href="http://man.openbsd.org/objdump">objdump(1)</a> to get the
 disassembly:
 
 <blockquote><pre>
-# <b>objdump --line --disassemble --reloc obj/pf.o &gt;pf.dis</b>
+$ <b>cd /sys/arch/$(uname -m)/compile/GENERIC</b>
+$ <b>objdump -dlr obj/pf.o &gt;/tmp/pf.dis</b>
 </pre></blockquote>
 
 In the output, grep for the function name:
 
 <blockquote><pre>
-# <b>grep "&lt;_pf_route&gt;:" pf.dis</b>
+$ <b>grep "&lt;_pf_route&gt;:" /tmp/pf.dis</b>
 0000<b>7d88</b> &lt;_pf_route&gt;:
 </pre></blockquote>
 
-Take this first hex number and add the offset from the <tt>Stopped at</tt> line:
-<tt>0x7d88 + 0x263 == 0x7feb</tt>.
+Take this first hex number <tt>7d88</tt> and add the offset <tt>0x263</tt> from
+the <tt>Stopped at</tt> line:
 
-<p>
+<blockquote><pre>
+$ <b>printf '%x\n' $((0x7d88 + 0x263))</b>
+7feb
+</pre></blockquote>
+
 Scroll down to that line (the assembler instruction should match the one
 quoted in the <tt>Stopped at</tt> line), then up to the nearest C line number:
 
 <blockquote><pre>
-# <b>more pf.dis</b>
-/usr/src/sys/arch/i386/compile/GENERIC/../../../../net/pf.c:<b>3872</b>
+$ <b>more /tmp/pf.dis</b>
+/sys/net/pf.c:<b>3872</b>
     7fe7:       0f b7 43 02             movzwl 0x2(%ebx),%eax
     <b>7feb</b>:       8b 57 40                mov    0x40(%edi),%edx
     7fee:       39 d0                   cmp    %edx,%eax
@@ -200,13 +199,12 @@ quoted in the <tt>Stopped at</tt> line), then up to the nearest C line number:
 So, it's precisely line <tt>3872</tt> of <tt>pf.c</tt> that crashes:
 
 <blockquote><pre>
-# <b>cat -n pf.c | head -n 3872 | tail -n 1</b>
-3872          if ((u_int16_t)ip-&gt;ip_len &lt;= ifp-&gt;if_mtu) {
+$ <b>nl -ba /sys/net/pf.c | sed -n 3872p</b>
+  3872		if ((u_int16_t)ip-&gt;ip_len &lt;= ifp-&gt;if_mtu) {
 </pre></blockquote>
 
-Note that the kernel that produced the crash output and the object file
-for objdump must be compiled from the exact same source file, otherwise
-the offsets won't match.
+The kernel that produced the crash output and the object file for objdump must
+be compiled from the exact same source file, otherwise the offsets won't match.
 
 <p>
 If you provide both the ddb trace output and the relevant objdump section,
