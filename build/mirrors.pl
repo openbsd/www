@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.39 2016/12/31 20:35:13 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.40 2017/02/23 12:47:13 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -163,6 +163,12 @@ sub write_mirror_list($$) {
 				}
 			} else {
 				warn('no GZ for '.$mirror->{$type});
+			}
+			if (($type eq 'UH'  && not $url =~ m,^http://,) ||
+			    ($type eq 'UHS' && not $url =~ m,^https://,) ||
+			    ($type eq 'UF'  && not $url =~ m,^ftp://,) ||
+			    ($type eq 'UR'  && not $url =~ m,^rsync://,)) {
+				warn('bad URL format for '.$type.': '.$url);
 			}
 			printf $fh "%s %s\n", $loc, $mirror->{$type};
 		}
