@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.40 2017/02/23 12:47:13 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.41 2017/02/24 00:34:22 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -24,25 +24,30 @@ my $sources = {
 	'mirrors.dat'	=> 'mirrors.dat',
 
 	'openbsd-ftp-head'	=> 'mirrors/ftp.html.head',
+	'openbsd-ftp-mid0'	=> 'mirrors/ftp.html.mid0',
 	'openbsd-ftp-mid1'	=> 'mirrors/ftp.html.mid1',
 	'openbsd-ftp-mid2'	=> 'mirrors/ftp.html.mid2',
 	'openbsd-ftp-end'	=> 'mirrors/ftp.html.end',
 
 	'openbgpd-ftp-head'	=> 'mirrors/openbgpd-ftp.html.head',
+	'openbgpd-ftp-mid0'	=> 'mirrors/ftp.html.mid0',
 	'openbgpd-ftp-mid1'	=> 'mirrors/ftp.html.mid1',
 	'openbgpd-ftp-mid2'	=> 'mirrors/ftp.html.mid2',
 	'openbgpd-ftp-end'	=> 'mirrors/openbgpd-ftp.html.end',
 
 	'openntpd-portable-head'=> 'mirrors/openntpd-portable.html.head',
+	'openntpd-portable-mid0'=> 'mirrors/ftp.html.mid0',
 	'openntpd-portable-mid1'=> 'mirrors/ftp.html.mid1',
 	'openntpd-portable-mid2'=> 'mirrors/ftp.html.mid2',
 	'openntpd-portable-end'	=> 'mirrors/openntpd-portable.html.end',
 
 	'openssh-ftp-head'	=> 'mirrors/openssh-ftp.html.head',
+	'openssh-ftp-mid0'	=> 'mirrors/ftp.html.mid0',
 	'openssh-ftp-mid1'	=> 'mirrors/ftp.html.mid1',
 	'openssh-ftp-mid2'	=> 'mirrors/ftp.html.mid2',
 	'openssh-ftp-end'	=> 'mirrors/openssh-ftp.html.end',
 	'openssh-portable-head' => 'mirrors/openssh-portable.html.head',
+	'openssh-portable-mid0' => 'mirrors/ftp.html.mid0',
 	'openssh-portable-mid1' => 'mirrors/openssh-portable.html.mid1',
 	'openssh-portable-mid2' => 'mirrors/ftp.html.mid2',
 	'openssh-portable-end'	=> 'mirrors/openssh-ftp.html.end',
@@ -228,8 +233,12 @@ sub _paste_mirrorlist($$$$$$) {
 	print $fh ' ' x 4 if ($type eq 'UH' || $type eq 'UF' || $type eq 'UR');
 	foreach my $mirror (sort _by_country @$mirrorref) {
 		next unless ($mirror->{$type});
+
+		# if this mirror already has https, don't bother listing http
+		next if ($type eq 'UH' && defined $mirror->{'UHS'});
+
 		my $loc = _get_location ($type, $mirror);
-		if ($type eq 'UH' || $type eq 'UF' || $type eq 'UR') {
+		if ($type =~ m/^(UH|UHS|UF|UR)$/) {
 			my $url = $mirror->{$type};
 			if ($proj eq 'openbgpd-ftp') {
 				$url .= "OpenBGPD/openbgpd-${version}.tgz";
@@ -343,6 +352,8 @@ sub write_ftphtml($$$$) {
 
 	open(my $fh, '>', $filename) or die "open $filename: $!";
 	_paste_in($fh, $sources->{"${what}-head"});
+	_paste_mirrorlist($fh, $mirrorref, 'UHS', $what, $ver, 1);
+	_paste_in($fh, $sources->{"${what}-mid0"});
 	_paste_mirrorlist($fh, $mirrorref, 'UH', $what, $ver, 1);
 	_paste_in($fh, $sources->{"${what}-mid1"});
 	_paste_mirrorlist($fh, $mirrorref, 'UF', $what, $ver, 1);
@@ -390,7 +401,7 @@ sub _get_location($$) {
 	my $m = shift;
 
 	my $location = "";
-	if ($type eq 'UH' || $type eq 'UF' || $type eq 'UR') {
+	if ($type =~ m/^(UH|UHS|UF|UR)$/) {
 		$location = "$m->{'GC'}";
 		$location .= " ($m->{'GT'}" if ($m->{'GT'});
 		$location .= ", $m->{'GS'}" if ($m->{'GS'});
