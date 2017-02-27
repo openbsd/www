@@ -47,7 +47,6 @@
 <li><a href="#NFS"             >Using NFS</a>
 <li><a href="#Bridge"          >Setting up a network bridge</a>
 <li><a href="#Multipath"       >Equal-cost multipath routing</a>
-<li><a href="#Replace"         >Adding and replacing NICs</a>
 </ul>
 
 <hr>
@@ -458,36 +457,16 @@ inet 192.168.1.1 255.255.255.0
 
 <h3>Trunking your wireless adapter</h3>
 
-Many laptops have both wireless and wired adapters.
-Sometimes, you may be directly connected to your high speed network and want
-the full performance of the wire.
-Other times, you will be using wireless.
-You probably don't want to reconfigure your machine each time you switch
-locations.
-
-<p>
-You could set up both interfaces with DHCP, but then you would have to wait for
-the unused interface to time out while booting (see the <tt>link-timeout</tt>
-option of <a href="http://man.openbsd.org/dhclient.conf">dhclient.conf(5)</a>).
-Things would be a little confusing if you had both resources available, and
-switching between the two resources would be a bit annoying.
-
-<p>
-Using a <a href="http://man.openbsd.org/trunk">trunk(4)</a> device may simplify
-your life.
 Trunks are virtual interfaces consisting of one or more network interfaces.
-
-<p>
-In the rest of this section, we will use a laptop with a wired
-<a href="http://man.openbsd.org/bge">bge0</a> and a wireless
+In this section, our example will be a laptop with a wired
+<a href="http://man.openbsd.org/bge">bge0</a> interface and a wireless
 <a href="http://man.openbsd.org/iwn">iwn0</a> interface.
-Using these two interfaces, we will build a <tt>trunk0</tt> interface, then use
-DHCP to get an IP address for this virtual interface.
+We will build a <a href="http://man.openbsd.org/trunk">trunk(4)</a> interface
+using both of them.
 
 <p>
-To do this, we first configure the two physical ports.
-As we are just assigning them to a combined <tt>trunk0</tt> interface, we won't
-do much of anything with the wired interface other than activate it:
+To do this, we first activate the two physical ports, then assign them to
+<tt>trunk0</tt>.
 
 <blockquote><pre>
 # <b>echo up > /etc/hostname.bge0</b>
@@ -512,8 +491,7 @@ trunkport iwn0
 dhcp
 </pre></blockquote>
 
-The trunk is set up to be in <tt>failover</tt> mode, so either interface can be
-used.
+The trunk is set up in <tt>failover</tt> mode, so either interface can be used.
 If both are available, it will prefer the <tt>bge0</tt> port, since that is the
 first one added to the trunk device.
 
@@ -522,18 +500,11 @@ first one added to the trunk device.
 The Network File System, NFS, is used to share a filesystem over the network.
 
 <p>
-This section will go through the steps for a simple setup of NFS.
-This example details a server on a LAN, with clients accessing NFS on the LAN.
+This section will go through the steps for a simple NFS setup.
+The example details a server on a LAN, with clients accessing NFS on the LAN.
 It does not cover securing NFS.
 We presume you have already set up packet filtering or other firewalling
 protection to prevent outside access.
-If you are allowing outside access to your NFS server, and you have any kind of
-sensitive data stored on it, we strongly recommend that you employ IPsec.
-Otherwise, people can potentially see your NFS traffic.
-Someone could also pretend to be the IP address which you are allowing into your
-NFS server.
-There are several attacks that can result.
-When properly configured, IPsec protects against these types of attacks.
 
 <h3>Setting up an NFS server</h3>
 
@@ -561,19 +532,11 @@ $ <b>cat /etc/exports</b>
 The local filesystem <tt>/work</tt> will be made available via NFS.
 The <tt>-alldirs</tt> option specifies that clients will be able to mount at any
 point under <tt>/work</tt> as well as <tt>/work</tt> itself.
-For example, if there was a directory called <tt>/work/monday</tt>, clients
-could mount <tt>/work</tt> or they could mount <tt>/work/monday</tt>.
 The <tt>-ro</tt> option specifies that clients will only be granted read-only
 access.
 The last two arguments specify that only clients within the <tt>10.0.0.0</tt>
 network using a netmask of <tt>255.255.255.0</tt> will be authorized to mount
 this filesystem.
-This is important for some servers that are accessible by different networks.
-
-<p>
-Don't just add a filesystem to <tt>/etc/exports</tt> without some kind of list
-of allowed hosts, otherwise anyone who can reach your server will be able to
-mount your NFS exported directories.
 
 <p>
 Now you can start the server services.
@@ -582,12 +545,8 @@ Now you can start the server services.
 # <b>rcctl start portmap mountd nfsd</b>
 </pre></blockquote>
 
-You're now ready to mount the exported filesystems from the clients.
-
-<p>
 If you make changes to <tt>/etc/exports</tt> while NFS is already running, you
-need to make mountd aware of this.
-Just HUP mountd and the changes will take effect.
+need to make mountd aware of this:
 
 <blockquote><pre>
 # <b>rcctl reload mountd</b>
@@ -601,15 +560,12 @@ NFS filesystems should be mounted via
 
 <p>
 To mount the <tt>/work</tt> filesystem on host <tt>10.0.0.1</tt> to local
-filesystem <tt>/mnt</tt>, do:
+filesystem <tt>/mnt</tt>, run:
 
 <blockquote><pre>
 # <b>mount -t nfs 10.0.0.1:/work /mnt</b>
 </pre></blockquote>
 
-Note that you don't need to use an IP address; mount(8) will resolve host names.
-
-<p>
 To have that filesystem mounted at boot, append a line to your
 <a href="http://man.openbsd.org/fstab">fstab(5)</a>:
 
@@ -633,10 +589,6 @@ For example, take a file with these permissions:
 
 If this file was on an NFS share and the root user tried to access this file
 from the NFS client, access would be denied.
-This is because the server uses the credentials of the user <tt>nobody</tt> when
-root tries to access the file.
-Since the user <tt>nobody</tt> doesn't have permissions to access the file,
-access is denied.
 
 <p>
 The user and group that root are mapped to are configurable via the
@@ -673,101 +625,26 @@ shows much more verbose statistics.
 
 A <a href="http://man.openbsd.org/bridge">bridge(4)</a> is a link between two or
 more separate networks.
-Unlike a router, packets transfer through the bridge "invisibly" -- logically,
-the two network segments appear to be one segment to nodes on either side of the
-bridge.
+Unlike a router, packets go through the bridge transparently -- the two network
+segments appear as one to nodes on either side.
 Bridges will only forward packets that have to pass from one segment to the
-other.
-They provide, among other things, an easy way to reduce traffic in a complex
-network and yet allow any node to access any other node when needed.
-
-<p>
-Note that because of this "invisible" nature, an interface in a bridge may or
-may not have an IP address of its own.
-If it does, the interface has effectively two modes of operation, one as part
-of a bridge, the other as a normal, stand-alone NIC.
+other and, as a result, an interface in a bridge may or may not have an IP
+address of its own.
+If it does, the interface has effectively two modes of operation: one as part
+of a bridge, the other as a stand-alone NIC.
 If neither interface has an IP address, the bridge will pass network data,
 but will not be externally maintainable (which can be a feature).
 
-<h3>A simple example of a bridge application</h3>
-
-One of my computer racks has a number of older systems, none of which have a
-built-in 10BASE-TX NIC.
-While they all have an AUI or AAUI connector, my supply of transceivers is
-limited to coax.
-One of the machines on this rack is an OpenBSD-based terminal server which is
-always on and connected to the high-speed network.
-Adding a second NIC with a coax port will allow me to use this machine as a
-bridge to the coax network.
-
-<p>
-This system has two NICs in it now, an Intel EtherExpress/100 <tt>fxp0</tt> and
-a 3c590-Combo card <tt>ep0</tt> for the coax port.
-<tt>fxp0</tt> is the link to the rest of my network and will thus have an IP
-address, while <tt>ep0</tt> is going to be for bridging only, and will have no
-IP address.
-Machines attached to the coax segment will communicate as if they were on the
-rest of my network.
-So, how do we make this happen?
-
-<p>
-The file <tt>hostname.fxp0</tt> contains the configuration info for the
-<tt>fxp0</tt> card.
-This machine is set up using DHCP, so its file looks like this:
-
-<blockquote><pre>
-$ <b>cat /etc/hostname.fxp0</b>
-dhcp
-</pre></blockquote>
-
-The <tt>ep0</tt> card is a bit different, as you might guess:
-
-<blockquote><pre>
-$ <b>cat /etc/hostname.ep0</b>
-up media 10base2
-</pre></blockquote>
-
-Here, we are instructing the system to activate this interface using
-<a href="http://man.openbsd.org/ifconfig">ifconfig(8)</a> and setting it to
-10BASE-2 (coax).
-No IP address or similar information needs to be specified for this interface.
-The options the <tt>ep</tt> card accepts are detailed in its
-<a href="http://man.openbsd.org/ep">man page</a>.
-
-<p>
-Now, we need to set up the bridge.
-Bridges are initialized by the existence of a file named something like
-<a href="http://man.openbsd.org/hostname.if"><tt>hostname.bridge0</tt></a>.
-Here is an example for my situation here:
-
-<blockquote><pre>
-$ <b>cat /etc/hostname.bridge0</b>
-add fxp0
-add ep0
-up
-</pre></blockquote>
-
-This is saying "set up a bridge consisting of the two NICs, <tt>fxp0</tt> and
-<tt>ep0</tt>, and activate it."
-Does the order in which the cards are listed matter?
-No; remember, a bridge is symmetrical -- packets flow in and out in both
-directions.
-
-<p>
-That's it!
-Reboot and you now have a functioning bridge.
-
 <h3>A bridge acting as a DHCP server</h3>
 
-Let's say we have a small system which has four
+Let's say we have a system which has four
 <a href="http://man.openbsd.org/vr">vr(4)</a> interfaces, <tt>vr0</tt> through
 <tt>vr3</tt>.
 We want to bridge <tt>vr1</tt>, <tt>vr2</tt> and <tt>vr3</tt> together, leaving
-out <tt>vr0</tt> for an uplink (a cable modem for instance).
+out <tt>vr0</tt> for the uplink.
 We also want to serve IP addresses through DHCP over the bridged interfaces.
 Being a DHCP server and an uplink router, the box needs to have an IP address
-on the bridged network (contrary to the previous example in which the bridging
-box was not visible on the network).
+on the bridged network.
 
 <p>
 It is not possible to assign an IP address directly to a bridge interface.
@@ -775,18 +652,15 @@ The IP address should be added to one of the member interfaces, but we cannot
 use a physical interface as the link might be down, in which case the address
 would not be reachable.
 Fortunately, there is the <a href="http://man.openbsd.org/vether">vether(4)</a>
-virtual Ethernet interface driver that can be used for this purpose.
+(virtual Ethernet) driver that can be used for this purpose.
 We will add it to the bridge, assign the IP address to it and make
 <a href="http://man.openbsd.org/dhcpd">dhcpd(8)</a> listen there.
 
-<p>
-Notes:
-
 <ul>
   <li>The <a href="#DHCPserver">DHCP server configuration</a> is not described
-    yet again in this section, but the addressing scheme used here is the same.
+      yet again in this section, but the addressing scheme used here is the same.
   <li>This will also be the uplink router for your bridged network, so we will
-    use IP address 192.168.1.1 to match the DHCP server configuration.
+      use IP address 192.168.1.1 to match the DHCP server configuration.
   <li>We will not cover the uplink, routing or firewalling configuration here.
 </ul>
 
@@ -804,7 +678,7 @@ Then create the <tt>vether0</tt> configuration:
 # <b>echo 'inet 192.168.1.1 255.255.255.0 192.168.1.255' > /etc/hostname.vether0</b>
 </pre></blockquote>
 
-We configure the bridge interface to contain all the above interfaces:
+Configure the bridge interface to contain all the above interfaces:
 
 <blockquote><pre>
 $ <b>cat /etc/hostname.bridge0</b>
@@ -815,7 +689,7 @@ add vr3
 up
 </pre></blockquote>
 
-And finally we make dhcpd(8) listen on the vether0 interface:
+And finally we make the DHCP daemon listen on the <tt>vether0</tt> interface:
 
 <blockquote><pre>
 # <b>rcctl set dhcpd flags vether0</b>
@@ -829,65 +703,22 @@ While there are certainly uses for a simple bridge like this, it is likely you
 might want to DO something with the packets as they go through your bridge.
 As you might expect, <a href="pf/index.html">Packet Filter</a> can be used to
 restrict what traffic goes through your bridge.
-
-<p>
 Keep in mind, by the nature of a bridge, the same data flows through both
 interfaces, so you only need to filter on one interface.
-Your default "pass all" statements would look something like this:
-
-<blockquote><pre>
-pass in  on ep0  all
-pass out on ep0  all
-pass in  on fxp0 all
-pass out on fxp0 all
-</pre></blockquote>
-
-Now, let's say I wish to filter traffic hitting these old machines.
-I want only web and SSH traffic to reach them.
-In this case, we are going to let all traffic in and out of the <tt>ep0</tt>
-interface, but filter on the <tt>fxp0</tt> interface.
-
-<blockquote><pre>
-# Pass all traffic through ep0
-pass in  quick on ep0 all
-pass out quick on ep0 all
-
-# Block fxp0 traffic
-block in  on fxp0 all
-block out on fxp0 all
-
-pass in quick on fxp0 proto tcp from any to any port { 22 80 }
-</pre></blockquote>
-
-Note that this rule set will prevent anything but incoming HTTP and SSH traffic
-from reaching either the bridge machine or any of the other nodes "behind" it.
-Other results could be had by filtering the other interface.
-
-<p>
-To monitor and control the bridge you have created, use the
-<a href="http://man.openbsd.org/ifconfig">ifconfig(8)</a> command, which can
-also be used to create a bridge after boot.
 
 <h3>Tips on bridging</h3>
 
 <ul>
-  <li>It is <b>highly</b> recommended that you filter on only one interface.
-    While it is possible to filter on both, you really need to understand this
-    very well to do it right.
-
   <li>By using the <tt>blocknonip</tt> option of
-    <a href="http://man.openbsd.org/ifconfig">ifconfig(8)</a> or in
-    <a href="http://man.openbsd.org/hostname.if">hostname.bridge0</a>, you can
-    prevent non-IP traffic (such as IPX or NETBEUI) from slipping around your
-    filters.
-    This may be important in some situations, but you should be aware that
-    bridges work for all kinds of traffic, not just IP.
-
-  <li>Bridging requires that the NICs be in a "promiscuous mode" -- they listen
-    to ALL network traffic, not just that directed at the interface.
-    This will put a higher load on the processor and bus than one might expect.
-    Some NICs don't work properly in this mode -- the TI ThunderLAN chip is an
-    example of a chip that won't work as part of a bridge.
+      <a href="http://man.openbsd.org/ifconfig">ifconfig(8)</a> or in
+      <a href="http://man.openbsd.org/hostname.if">hostname.bridge0</a>, you can
+      prevent non-IP traffic (such as IPX or NETBEUI) from slipping around your
+      filters.
+      This may be important in some situations, but you should be aware that
+      bridges work for all kinds of traffic, not just IP.
+  <li>Bridging requires that the NICs be in a promiscuous mode -- they listen
+      to <b>all</b> network traffic, not just that directed at the interface.
+      This will put a higher load on the processor and bus than one might expect.
 </ul>
 
 <h2 id="Multipath">Equal-cost multipath routing</h2>
@@ -978,125 +809,6 @@ This traffic will of course be blackholed and end up going nowhere.
 It's highly recommended to use
 <a href="http://man.openbsd.org/ifstated">ifstated(8)</a> to check for
 unavailable interfaces and adjust the routing table accordingly.
-
-<h2 id="Replace">Adding and replacing NICs</h2>
-
-You may have to replace or add a network adapter on an OpenBSD system,
-maybe upgrading the capabilities of the system or repairing failed
-hardware.
-This will require some reconfiguration.
-The good news is that it's relatively easy, though there are some things
-to be aware of.
-
-<p>
-The key is understanding how OpenBSD names NICs.
-Unlike some OSs that try to remember any network adapter the installed
-OS has ever seen, OpenBSD does not remember a NIC's identification
-between boots -- it names them in the order that they are found.
-In most cases, this is far simpler for you, as the system will always
-identify a NIC the same way in the same hardware configuration, and
-when configurations change, the results are easily understood.
-
-<p>
-Here are some cases:
-
-<ul>
-  <li><b>Replace a NIC with an identical device:</b>
-    This would be the case when you move the disk system from a failed machine
-    to another identical machine, or install an image or full backup to
-    identical hardware.
-    In this case, things are easy -- no change in configuration will be needed,
-    other than perhaps changing the IP address in the <tt>hostname.if</tt> file
-    if needed.
-
-  <li><b>Replace a NIC with a different device:</b>
-    This would also be the case when one moves a disk system to a non-identical
-    machine.
-    In this case, simply rename the old <tt>hostname.if</tt> file to match the
-    new device.
-    For example, if you replace an
-    <a href="http://man.openbsd.org/fxp">fxp(4)</a> device which was
-    <tt>fxp0</tt> with a <a href="http://man.openbsd.org/re">re(4)</a> device,
-    which would end up as <tt>re0</tt>, you could rename
-    <tt>/etc/hostname.fxp0</tt> to <tt>/etc/hostname.re0</tt> and your new
-    device would take over the configuration of the old device.
-    If you might someday restore the original configuration, you may prefer to
-    make the new file a hard link to the original, rather than renaming it.
-
-  <li><b>Replacing one of several similar cards with a different type:</b>
-    Let's assume you have a machine with <tt>fxp0</tt>, <tt>fxp1</tt> and
-    <tt>fxp2</tt>, and <tt>fxp0</tt> fails.
-    Unfortunately, you don't have a spare similar fxp card, so you need to
-    replace it with an <a href="http://man.openbsd.org/em">em(4)</a> card.
-    This gets a little ugly, as <tt>fxp1</tt> and <tt>fxp2</tt> will rename
-    themselves:
-
-    <blockquote><pre>
-    <b>old  -> new</b>
-    fxp0 -> em0
-    fxp1 -> fxp0
-    fxp2 -> fxp1<!--
-    --></pre></blockquote>
-
-    Again, rename your <tt>/etc/hostname.if</tt> files accordingly:
-
-    <blockquote><pre>
-    # <b>cd /etc</b>
-    # <b>mv hostname.fxp0 hostname.em0</b>
-    # <b>mv hostname.fxp1 hostname.fxp0</b>
-    # <b>mv hostname.fxp2 hostname.fxp1</b><!--
-    --></pre></blockquote>
-
-  <li><b>Adding a new NIC to an existing system:</b>
-    If your added NIC is of a different type, it will be the "0" device of
-    whatever driver it is.
-    For example, if you are adding a
-    <a href="http://man.openbsd.org/bge">bge(4)</a> device to a machine with
-    only an <a href="http://man.openbsd.org/rl">rl(4)</a> device, life is easy
-    -- the new device will be <tt>bge0</tt>, so create an appropriate
-    <tt>/etc/hostname.bge0</tt>.
-
-    <p>
-    The more difficult variation is when you are adding a new card of the same
-    type as another in the machine.
-    Most add-on NICs will have their MAC address written somewhere on the card.
-    Make note of this, insert the card, and look at the dmesg.
-    Note the identifier of the new NIC and its relationship to the earlier NICs.
-    You may find that ALL the existing NICs have changed number.
-    You may be able to put the new NIC in a different slot to change the
-    identifier as desired, but if the earlier devices were onboard, you may have
-    no option but to adjust the <tt>hostname.if</tt> files.
-
-  <li><b>Total Confusion:</b>
-    Sometimes, things get totally confused.
-    Maybe your new machine has lots of multi-port NICs, or several onboard NICs
-    and you aren't quite sure how they are identified.
-    Or perhaps changes were made with less care than might be hoped for, and now
-    you aren't sure what is what.
-
-    <p>
-    The first thing to note is that
-    <a href="http://man.openbsd.org/ifconfig">ifconfig(8)</a> will tell you both
-    the MAC address and the link status of each port.
-    So the first trick might be to mark add-in cards with their MAC addresses.
-    Another trick in a confused situation can be to simply attach ONE unknown
-    NIC to a switch port at a time, and look for which NIC in
-    <a href="http://man.openbsd.org/ifconfig">ifconfig(8)</a> is now showing a
-    link.
-    Once you have a few ports identified, you will often figure out the rest
-    quickly.
-</ul>
-
-In addition to the <tt>hostname.if</tt> files, any other file that deals with
-hardware interfaces will have to be adjusted.
-Some likely candidates might include:
-
-<ul>
-  <li>PF configuration (<tt>/etc/pf.conf</tt>)
-  <li>CARP configuration (<tt>/etc/hostname.carp*</tt>)
-  <li>Bridge configuration (<tt>/etc/hostname.bridge*</tt>)
-  <li>Trunk configuration (<tt>/etc/hostname.trunk*</tt>)
-</ul>
 
 <p>
 </body>
