@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.41 2017/02/24 00:34:22 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.42 2017/03/05 13:12:44 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -60,7 +60,6 @@ my $sources = {
 my $srcdir = $ENV{BSDSRCDIR};
 $srcdir //= '/usr/src';
 my $targets = {
-	'pkg_conf'		=> $srcdir.'/etc/examples/pkg.conf',
 	'ftplist'		=> '../ftplist',
 	'httpslist'		=> '../httpslist',
 	'mirror_list'		=> '../mirror_list',
@@ -177,37 +176,6 @@ sub write_mirror_list($$) {
 			}
 			printf $fh "%s %s\n", $loc, $mirror->{$type};
 		}
-	}
-
-	close($fh) or die "close $filename: $!";
-}
-
-
-# writes out the ftplist in pkg.conf format
-sub write_pkg_conf($$) {
-	my ($filename, $mirrorref) = @_;
-	my $lastloc = '';
-
-	open(my $fh, '>', $filename) or die "open $filename: $!";
-
-	printf $fh "# \$OpenBSD\$\n#\n";
-	printf $fh "# Mirrors update at differing schedules. If using snapshots, sticking\n";
-	printf $fh "# with one host will reduce risk of fetching out-of-sync packages.\n"; 
-	foreach my $mirror (sort _by_country @$mirrorref) {
-		my $loc;
-		next unless ($mirror->{'UH'});
-		if (defined($mirror->{'GS'}) and $mirror->{'GC'} eq 'USA') {
-			$loc = $mirror->{'GS'}.', ';
-		}
-		$loc .= $mirror->{'GC'};
-		if ($lastloc ne $loc) {
-			printf $fh "\n# %s\n", $loc;
-		}
-		my $url = $mirror->{'UH'};
-	       	$url =~ s/http:\/\/([^\/]*)\/pub\/OpenBSD\/$/$1/;
-	       	$url =~ s/(http:\/\/.*)/$1%c\/packages\/%a\//;
-		printf $fh "#installpath = %s\n", $url;
-		$lastloc = $loc;
 	}
 
 	close($fh) or die "close $filename: $!";
@@ -440,7 +408,6 @@ if (@ARGV == 2) {
 		write_ftplist($targets->{'ftplist'}, $ver, \@mirrors, 'UH');
 		write_ftplist($targets->{'httpslist'}, $ver, \@mirrors, 'UHS');
 		write_mirror_list($targets->{'mirror_list'}, \@mirrors);
-		write_pkg_conf($targets->{'pkg_conf'}, \@mirrors);
 	} elsif ($cmd eq 'openbsd-ftp' || $cmd eq 'openbgpd-ftp' ||
 		 $cmd eq 'openntpd-portable' ||
 		 $cmd eq 'openssh-ftp' || $cmd eq 'openssh-portable') {
