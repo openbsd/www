@@ -497,7 +497,224 @@ to 6.1.
 
 <li>OpenSSH 7.4
     <ul>
-    <li>...
+    <li>Security:
+      <ul>
+      <li>ssh-agent(1): Will now refuse to load PKCS#11 modules from paths
+          outside a trusted whitelist (run-time configurable). Requests to
+          load modules could be passed via agent forwarding and an attacker
+          could attempt to load a hostile PKCS#11 module across the forwarded
+          agent channel: PKCS#11 modules are shared libraries, so this would
+          result in code execution on the system running the ssh-agent if the
+          attacker has control of the forwarded agent-socket (on the host
+          running the sshd server) and the ability to write to the filesystem
+          of the host running ssh-agent (usually the host running the ssh
+          client).
+      <li>sshd(8): When privilege separation is disabled, forwarded Unix-
+          domain sockets would be created by sshd(8) with the privileges of
+          'root' instead of the authenticated user. This release refuses
+          Unix-domain socket forwarding when privilege separation is disabled
+          (Privilege separation has been enabled by default for 14 years).
+      <li>sshd(8): Avoid theoretical leak of host private key material to
+          privilege-separated child processes via realloc() when reading
+          keys. No such leak was observed in practice for normal-sized keys,
+          nor does a leak to the child processes directly expose key material
+          to unprivileged users.
+      <li>sshd(8): The shared memory manager used by pre-authentication
+          compression support had a bounds checks that could be elided by
+          some optimising compilers. Additionally, this memory manager was
+          incorrectly accessible when pre-authentication compression was
+          disabled. This could potentially allow attacks against the
+          privileged monitor process from the sandboxed privilege-separation
+          process (a compromise of the latter would be required first).
+          This release removes support for pre-authentication compression
+          from sshd(8).
+      <li>sshd(8): Fix denial-of-service condition where an attacker who
+          sends multiple KEXINIT messages may consume up to 128MB per
+          connection.
+      <li>sshd(8): Validate address ranges for AllowUser and DenyUsers
+          directives at configuration load time and refuse to accept invalid
+          ones. It was previously possible to specify invalid CIDR address
+          ranges (e.g. user@127.1.2.3/55) and these would always match,
+          possibly resulting in granting access where it was not intended.
+      <li>ssh(1), sshd(8): Fix weakness in CBC padding oracle countermeasures
+          that allowed a variant of the attack fixed in OpenSSH 7.3 to proceed.
+      <li>sftp-client(1): [portable OpenSSH only] On Cygwin, a client making
+          a recursive file transfer could be maniuplated by a hostile server to
+          perform a path-traversal attack. creating or modifying files outside
+          of the intended target directory.
+      </ul>
+    <li>New/changed features:
+      <ul>
+      <li>Server support for the SSH v.1 protocol has been removed.
+      <li>ssh(1): Remove 3des-cbc from the client's default proposal. 64-bit
+          block ciphers are not safe in 2016 and we don't want to wait until
+          attacks like SWEET32 are extended to SSH. As 3des-cbc was the
+          only mandatory cipher in the SSH RFCs, this may cause problems
+          connecting to older devices using the default configuration,
+          but it's highly likely that such devices already need explicit
+          configuration for key exchange and hostkey algorithms already
+          anyway.
+      <li>sshd(8): Remove support for pre-authentication compression.
+          Doing compression early in the protocol probably seemed reasonable
+          in the 1990s, but today it's clearly a bad idea in terms of both
+          cryptography (cf. multiple compression oracle attacks in TLS) and
+          attack surface. Pre-auth compression support has been disabled by
+          default for >10 years. Support remains in the client.
+      <li>ssh-agent will refuse to load PKCS#11 modules outside a whitelist
+          of trusted paths by default. The path whitelist may be specified
+          at run-time.
+      <li>sshd(8): When a forced-command appears in both a certificate and
+          an authorized keys/principals command= restriction, sshd will now
+          refuse to accept the certificate unless they are identical.
+          The previous (documented) behaviour of having the certificate
+          forced-command override the other could be a bit confusing and
+          error-prone.
+      <li>sshd(8): Remove the UseLogin configuration directive and support
+          for having /bin/login manage login sessions.
+      <li>ssh(1): Add a proxy multiplexing mode to ssh(1) inspired by the
+          version in PuTTY by Simon Tatham. This allows a multiplexing
+          client to communicate with the master process using a subset of
+          the SSH packet and channels protocol over a Unix-domain socket,
+          with the main process acting as a proxy that translates channel
+          IDs, etc.  This allows multiplexing mode to run on systems that
+          lack file- descriptor passing (used by current multiplexing
+          code) and potentially, in conjunction with Unix-domain socket
+          forwarding, with the client and multiplexing master process on
+          different machines. Multiplexing proxy mode may be invoked using
+          "ssh -O proxy ..."
+      <li>sshd(8): Add a sshd_config DisableForwarding option that disables
+          X11, agent, TCP, tunnel and Unix domain socket forwarding, as well
+          as anything else we might implement in the future. Like the
+          'restrict' authorized_keys flag, this is intended to be a simple
+          and future-proof way of restricting an account.
+      <li>sshd(8), ssh(1): Support the "curve25519-sha256" key exchange
+          method. This is identical to the currently-supported method named
+          "curve25519-sha256@libssh.org".
+      <li>sshd(8): Improve handling of SIGHUP by checking to see if sshd is
+          already daemonised at startup and skipping the call to daemon(3)
+          if it is. This ensures that a SIGHUP restart of sshd(8) will
+          retain the same process-ID as the initial execution. sshd(8) will
+          also now unlink the PidFile prior to SIGHUP restart and re-create
+          it after a successful restart, rather than leaving a stale file in
+          the case of a configuration error.
+      <li>sshd(8): Allow ClientAliveInterval and ClientAliveCountMax
+          directives to appear in sshd_config Match blocks.
+      <li>sshd(8): Add %-escapes to AuthorizedPrincipalsCommand to match
+          those supported by AuthorizedKeysCommand (key, key type,
+          fingerprint, etc.) and a few more to provide access to the
+          contents of the certificate being offered.
+      <li>Added regression tests for string matching, address matching and
+          string sanitisation functions.
+      <li>Improved the key exchange fuzzer harness.
+      <li>Deprecate the sshd_config UsePrivilegeSeparation
+          option, thereby making privilege separation mandatory. Privilege
+          separation has been on by default for almost 15 years and
+          sandboxing has been on by default for almost the last five.
+      <li>ssh(1), sshd(8): Support "=-" syntax to easily remove methods from
+          algorithm lists, e.g. Ciphers=-*cbc.
+      </ul>
+    <li>The following significant bugs have been fixed in this release:
+      <ul>
+      <li>ssh(1): Allow IdentityFile to successfully load and use
+          certificates that have no corresponding bare public key.
+          certificate id_rsa-cert.pub (and no id_rsa.pub).
+      <li>ssh(1): Fix public key authentication when multiple
+          authentication is in use and publickey is not just the first
+          method attempted.
+      <li>ssh-agent(1), ssh(1): improve reporting when attempting to load
+          keys from PKCS#11 tokens with fewer useless log messages and more
+          detail in debug messages.
+      <li>ssh(1): When tearing down ControlMaster connections, don't
+          pollute stderr when LogLevel=quiet.
+      <li>sftp(1): On ^Z wait for underlying ssh(1) to suspend before
+          suspending sftp(1) to ensure that ssh(1) restores the terminal mode
+          correctly if suspended during a password prompt.
+      <li>ssh(1): Avoid busy-wait when ssh(1) is suspended during a password
+          prompt.
+      <li>ssh(1), sshd(8): Correctly report errors during sending of ext-
+          info messages.
+      <li>sshd(8): fix NULL-deref crash if sshd(8) received an out-of-
+          sequence NEWKEYS message.
+      <li>sshd(8): Correct list of supported signature algorithms sent in
+          the server-sig-algs extension.
+      <li>sshd(8): Fix sending ext_info message if privsep is disabled.
+      <li>sshd(8): more strictly enforce the expected ordering of privilege
+          separation monitor calls used for authentication and allow them
+          only when their respective authentication methods are enabled
+          in the configuration
+      <li>sshd(8): Fix uninitialised optlen in getsockopt() call; harmless
+          on Unix/BSD but potentially crashy on Cygwin.
+      <li>Fix false positive reports caused by explicit_bzero(3) not being
+          recognised as a memory initialiser when compiled with
+          -fsanitize-memory.
+      <li>sshd_config(5): Use 2001:db8::/32, the official IPv6 subnet for
+          configuration examples.
+      <li>sshd(1): Fix NULL dereference crash when key exchange start
+          messages are sent out of sequence.
+      <li>ssh(1), sshd(8): Allow form-feed characters to appear in
+          configuration files.
+      <li>sshd(8): Fix regression in OpenSSH 7.4 support for the
+          server-sig-algs extension, where SHA2 RSA signature methods were
+          not being correctly advertised.
+      <li>ssh(1), ssh-keygen(1): Fix a number of case-sensitivity bugs in
+          known_hosts processing.
+      <li>ssh(1): Allow ssh to use certificates accompanied by a private key
+          file but no corresponding plain *.pub public key.
+      <li>ssh(1): When updating hostkeys using the UpdateHostKeys option,
+          accept RSA keys if HostkeyAlgorithms contains any RSA keytype.
+          Previously, ssh could ignore RSA keys when only the ssh-rsa-sha2-*
+          methods were enabled in HostkeyAlgorithms and not the old ssh-rsa
+          method.
+      <li>ssh(1): Detect and report excessively long configuration file
+          lines.
+      <li>Merge a number of fixes found by Coverity and reported via Redhat
+          and FreeBSD. Includes fixes for some memory and file descriptor
+          leaks in error paths.
+      <li>ssh-keyscan(1): Correctly hash hosts with a port number.
+      <li>ssh(1), sshd(8): When logging long messages to stderr, don't truncate
+          "\r\n" if the length of the message exceeds the buffer.
+      <li>ssh(1): Fully quote [host]:port in generated ProxyJump/-J command-
+          line; avoid confusion over IPv6 addresses and shells that treat
+          square bracket characters specially.
+      <li>ssh-keygen(1): Fix corruption of known_hosts when running
+          "ssh-keygen -H" on a known_hosts containing already-hashed entries.
+      <li>Fix various fallout and sharp edges caused by removing SSH protocol
+          1 support from the server, including the server banner string being
+          incorrectly terminated with only \n (instead of \r\n), confusing
+          error messages from ssh-keyscan a segfault in sshd
+          if protocol v.1 was enabled for the client and sshd_config
+          contained references to legacy keys.
+      <li>ssh(1), sshd(8): Free fd_set on connection timeout.
+      <li>sshd(8): Fix Unix domain socket forwarding for root (regression in
+          OpenSSH 7.4).
+      <li>sftp(1): Fix division by zero crash in "df" output when server
+          returns zero total filesystem blocks/inodes.
+      <li>ssh(1), ssh-add(1), ssh-keygen(1), sshd(8): Translate OpenSSL errors
+          encountered during key loading to more meaningful error codes.
+      <li>ssh-keygen(1): Sanitise escape sequences in key comments sent to
+          printf but preserve valid UTF-8 when the locale supports it.
+      <li>ssh(1), sshd(8): Return reason for port forwarding failures where
+          feasible rather than always "administratively prohibited".
+      <li>sshd(8): Fix deadlock when AuthorizedKeysCommand or
+          AuthorizedPrincipalsCommand produces a lot of output and a key is
+          matched early.
+      <li>ssh(1): Fix typo in ~C error message for bad port forward
+          cancellation.
+      <li>ssh(1): Show a useful error message when included config files
+          can't be opened.
+      <li>sshd(8): Make sshd set GSSAPIStrictAcceptorCheck=yes as the manual page
+          (previously incorrectly) advertised.
+      <li>sshd_config(5): Repair accidentally-deleted mention of %k token
+          in AuthorizedKeysCommand.
+      <li>sshd(8): Remove vestiges of previously removed LOGIN_PROGRAM;
+      <li>ssh-agent(1): Relax PKCS#11 whitelist to include libexec and
+          common 32-bit compatibility library directories.
+      <li>sftp-client(1): Fix non-exploitable integer overflow in SSH2_FXP_NAME
+          response handling.
+      <li>ssh-agent(1): Fix regression in 7.4 of deleting PKCS#11-hosted
+          keys. It was not possible to delete them except by specifying
+          their full physical path.
+      </ul>
     </ul>
 <p>
 
