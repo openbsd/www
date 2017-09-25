@@ -15,7 +15,7 @@
 </head>
 
 <!--
-Copyright (c) 2016 T.J. Townsend <tj@openbsd.org>
+Copyright (c) 2016-2017 T.J. Townsend <tj@openbsd.org>
 
 Permission to use, copy, modify, and distribute this documentation for
 any purpose with or without fee is hereby granted, provided that the
@@ -48,7 +48,7 @@ PERFORMANCE OF THIS DOCUMENTATION
   <li><a href="#net"       >Networking</a>
   <li><a href="#dhcp"      >DHCP</a>
   <li><a href="#pf"        >Firewall</a>
-  <li><a href="#dns"       >DNS</a> (optional)
+  <li><a href="#dns"       >DNS</a>
 </ul>
 <hr>
 
@@ -57,96 +57,50 @@ PERFORMANCE OF THIS DOCUMENTATION
 This guide will show you how to turn an OpenBSD system into a router.
 First, we'll define what this router (also called a "gateway") will actually
 do, since your requirements may vary.
-In this example, three computers need to share an internet connection.
-One of them is a web server that should be remotely accessible, but otherwise
-we don't want any of the local systems open to the internet.
-The router will be doing the following things:
 
 <ul>
   <li>Performing network address translation (NAT)
   <li>Giving a laptop and server static IPs based on their MAC address
-  <li>Handing out IP addresses via DHCP to other clients
-  <li>Allowing incoming connections to the web server and the router's
-      <a href="https://man.openbsd.org/sshd">sshd(8)</a>
-  <li>Doing local DNS caching for the LAN, optionally
+  <li>Handing out IP addresses to other clients via DHCP
+  <li>Allowing incoming connections to a local web server
+  <li>Doing DNS caching for the LAN
+  <li>Providing wireless connectivity
 </ul>
 
-This guide will be using hardware with four NICs that use the
-<a href="https://man.openbsd.org/em">em(4)</a> driver, so replace <tt>em0</tt>,
-<tt>em1</tt>, <tt>em2</tt> and <tt>em3</tt> with the names of the interfaces
-in your system.
-Using this example, <tt>em0</tt> will be for the
-<a href="https://en.wikipedia.org/wiki/Wide_area_network">WAN</a>
-and the others will be for the
-<a href="https://en.wikipedia.org/wiki/Local_area_network">LAN</a>.
-Some sample configuration files are provided, but you're encouraged to read
+This example will use two <a href="https://man.openbsd.org/em">em(4)</a>
+NICs and an <a href="https://man.openbsd.org/athn">athn(4)</a> wireless card.
+Replace the <tt>em0</tt>, <tt>em1</tt> and <tt>athn0</tt> interface names
+as appropriate.
+Sample configuration files are provided, but you're encouraged to read
 the man pages to understand their full capability.
 
 <h2 id="net">Networking</h2>
 
-Two possible hardware setups are described on this page:
-
-<ul>
-  <li>An "all-in-one" solution in which clients will be directly connected
-      to the gateway, without the need for a switch.
-      Software-based switching is done by
-      <a href="../faq6.html#Bridge">bridging</a> NICs with the
-      <a href="https://man.openbsd.org/vether">vether(4)</a> virtual interface.
-      You'll need an available ethernet port for each client machine with
-      this type of setup.
-  <li>A more traditional approach that uses an external (hardware) switch
-      rather than bridging.
-      Only two interfaces will be needed in that case.
-</ul>
-
 We'll begin with some initial
 <a href="https://man.openbsd.org/hostname.if">network configuration</a>,
-using a <b>192.168.1.0/24</b> subnet.
-
-<blockquote><pre>
-# <b>echo dhcp > /etc/hostname.em0</b> # if you have a static IP, use that instead
-# <b>echo up   > /etc/hostname.em1</b>
-# <b>echo up   > /etc/hostname.em2</b>
-# <b>echo up   > /etc/hostname.em3</b>
-</pre></blockquote>
-
-If you plan on using <a href="https://man.openbsd.org/bridge">bridge(4)</a>
-for software-based switching, create the interfaces.
-
-<blockquote><pre>
-# <b>echo 'inet 192.168.1.1 255.255.255.0 192.168.1.255' > /etc/hostname.vether0</b>
-# <b>vi /etc/hostname.bridge0</b>
-</pre></blockquote>
-
-And add the following lines:
-
-<blockquote><pre>
-add vether0
-add em1
-add em2
-add em3
-blocknonip vether0
-blocknonip em1
-blocknonip em2
-blocknonip em3
-up
-</pre></blockquote>
-
-If you plan on using a physical switch, give your secondary interface the
-network information instead.
-
-<blockquote><pre>
-# <b>echo 'inet 192.168.1.1 255.255.255.0 192.168.1.255' > /etc/hostname.em1</b>
-</pre></blockquote>
-
-In either case, IP forwarding must be enabled to allow passing packets
-between interfaces.
+using a <b>192.168.1.0/24</b> subnet for the wired clients and
+<b>192.168.2.0/24</b> for the wireless.
 
 <blockquote><pre>
 # <b>echo 'net.inet.ip.forwarding=1' >> /etc/sysctl.conf</b>
+# <b>echo 'dhcp' > /etc/hostname.em0</b> # if you have a static IP, use that instead
+# <b>echo 'inet 192.168.1.1 255.255.255.0 192.168.1.255' > /etc/hostname.em1</b>
+# <b>vi /etc/hostname.athn0</b>
 </pre></blockquote>
 
-This change will take effect upon the next reboot.
+Add the following, changing the mode/channel if needed:
+
+<blockquote><pre>
+media autoselect mode 11n mediaopt hostap chan 1
+nwid AccessPointName
+wpakey VeryLongPassword
+inet 192.168.2.1 255.255.255.0
+</pre></blockquote>
+
+OpenBSD defaults to allowing only WPA2-CCMP connections in HostAP mode.
+If you need support for older (insecure) protocols, they must be
+<a href="https://man.openbsd.org/ifconfig#IEEE_802.11_(WIRELESS_DEVICES)">
+explicitly enabled</a>.
 
 <h2 id="dhcp">DHCP</h2>
 
@@ -157,7 +111,7 @@ Configuration is done via the
 
 <blockquote><pre>
 # <b>rcctl enable dhcpd</b>
-# <b>rcctl set dhcpd flags vether0</b> # replace vether0 with your secondary interface if not bridging
+# <b>rcctl set dhcpd flags em1 athn0</b>
 # <b>vi /etc/dhcpd.conf</b>
 </pre></blockquote>
 
@@ -177,19 +131,21 @@ subnet 192.168.1.0 netmask 255.255.255.0 {
 		hardware ethernet 11:11:11:11:11:11;
 		}
 }
+subnet 192.168.2.0 netmask 255.255.255.0 {
+	option routers 192.168.2.1;
+	option domain-name-servers 192.168.2.1;
+	range 192.168.2.2 192.168.2.254;
+}
 </pre></blockquote>
 
-Use the MAC addresses of certain clients if they require static IPs.
 You can specify another
 <a href="https://tools.ietf.org/html/rfc1918">RFC 1918</a> address space here
 if you prefer, or even a public IP block if you have one.
 Using this example, clients will query a local DNS server, detailed in a later
 section.
-If you don't plan on using a local DNS server, replace <tt>192.168.1.1</tt>
-in the <tt>domain-name-servers</tt> line with the address of your preferred
-upstream DNS server (<tt>8.8.8.8</tt>, for example).
-If you want to use multiple subnets, the
-<a href="../faq6.html#DHCPserver">networking FAQ</a> has an example of that.
+If you don't plan on using a local DNS server, replace the IPs in the
+<tt>domain-name-servers</tt> lines with the address of your preferred
+upstream resolver.
 
 <h2 id="pf">Firewall</h2>
 
@@ -206,7 +162,8 @@ Each section will be explained in more detail.
 A configuration for a gateway system might look like this:
 
 <blockquote><pre>
-int_if="{ vether0 em1 em2 em3 }"
+wired = "em1"
+wifi  = "athn0"
 table &lt;martians&gt; { 0.0.0.0/8 10.0.0.0/8 127.0.0.0/8 169.254.0.0/16     \
 	 	   172.16.0.0/12 192.0.0.0/24 192.0.2.0/24 224.0.0.0/3 \
 	 	   192.168.0.0/16 198.18.0.0/15 198.51.100.0/24        \
@@ -216,29 +173,25 @@ set loginterface egress
 set skip on lo0
 match in all scrub (no-df random-id max-mss 1440)
 match out on egress inet from !(egress:network) to any nat-to (egress:0)
+antispoof quick for { egress $wired $wifi }
 block in quick on egress from &lt;martians&gt; to any
 block return out quick on egress from any to &lt;martians&gt;
 block all
 pass out quick inet
-pass in on $int_if inet
-pass in on egress inet proto tcp from any to (egress) port 22
+pass in on { $wired $wifi } inet
 pass in on egress inet proto tcp from any to (egress) port { 80 443 } rdr-to 192.168.1.2
 </pre></blockquote>
 
 Now we'll break this ruleset down and explain what each line does.
 
 <blockquote><pre>
-int_if="{ vether0 em1 em2 em3 }"
+wired = "em1"
+wifi  = "athn0"
 </pre></blockquote>
 
-This is a <a href="macros.html">macro</a>, used to make overall maintenance
+These are <a href="macros.html">macros</a>, used to make overall maintenance
 easier.
 Macros can be referenced throughout the ruleset after being defined.
-The <tt>int_if</tt> macro is a list of internal interfaces, including the
-virtual ethernet interface.
-If you're using an external switch instead of
-<a href="https://man.openbsd.org/bridge">bridge(4)</a>, replace <tt>{ vether0
-em1 em2 em3 }</tt> with your secondary interface name.
 
 <blockquote><pre>
 table &lt;martians&gt; { 0.0.0.0/8 10.0.0.0/8 127.0.0.0/8 169.254.0.0/16     \
@@ -268,7 +221,7 @@ The <tt>egress</tt> keyword automatically chooses the interface that holds
 the default route, or the <tt>em0</tt> WAN interface in our example.
 Finally, <tt>skip</tt> allows you to completely omit a given interface from
 packet processing.
-Here, the firewall will ignore loopback traffic on the
+The firewall will ignore loopback traffic on the
 <a href="https://man.openbsd.org/lo">lo(4)</a> interface.
 
 <blockquote><pre>
@@ -284,10 +237,13 @@ options, refer to the <a href="https://man.openbsd.org/pf.conf">pf.conf(5)</a>
 manual.
 
 <blockquote><pre>
+antispoof quick for { egress $wired $wifi }
 block in quick on egress from &lt;martians&gt; to any
 block return out quick on egress from any to &lt;martians&gt;
 </pre></blockquote>
 
+The <a href="filter.html#antispoof">antispoof</a> keyword provides some
+protection from packets with spoofed source addresses.
 Packets coming in on the <tt>egress</tt> interface should be dropped if they
 appear to be from the list of unroutable addresses we defined.
 Such packets were likely sent due to misconfiguration, or possibly as part of
@@ -308,24 +264,19 @@ explicitly put in our ruleset.
 pass out quick inet
 </pre></blockquote>
 
-With the previous rule in mind, there are obviously some types of traffic we
-want to <tt>pass</tt> in our setup.
-This line allows outgoing IPv4 traffic from both the gateway itself and the
-LAN clients.
+Allow outgoing IPv4 traffic from both the gateway itself and the LAN clients.
 
 <blockquote><pre>
-pass in on $int_if inet
+pass in on { $wired $wifi } inet
 </pre></blockquote>
 
-Allow all internal LAN traffic to pass.
+Allow internal LAN traffic.
 
 <blockquote><pre>
-pass in on egress inet proto tcp from any to (egress) port 22
 pass in on egress inet proto tcp from any to (egress) port { 80 443 } rdr-to 192.168.1.2
 </pre></blockquote>
 
-Allow incoming connections to the router itself (on TCP port 22, for SSH)
-and forward incoming connections (on TCP ports 80 and 443, for a web server)
+Forward incoming connections (on TCP ports 80 and 443, for a web server)
 to our machine at 192.168.1.2.
 This is merely an example of port forwarding.
 
@@ -334,16 +285,15 @@ This is merely an example of port forwarding.
 At this point, clients should be assigned IP addresses and granted access to
 the internet, while being protected by the firewall.
 If that's all you need, you're done and can reboot now.
-With that said, a common addition to a gateway system is a DNS cache.
+That being said, a DNS cache is common addition to a gateway system.
 
 <p>
-Setting up local DNS caching is very simple with
-<a href="https://man.openbsd.org/unbound">unbound(8)</a>.
-When clients issue a DNS query, they'll first hit the cache.
-If unbound doesn't have the answer, it goes out to the upstream resolver
-that you've configured.
+When clients issue a DNS query, they'll first hit the
+<a href="https://man.openbsd.org/unbound">unbound(8)</a> cache.
+If it doesn't have the answer, it goes out to the upstream resolver that
+you've configured.
 Results are then fed to the client and cached for a period of time, making
-future lookups of the same address much quicker.
+future lookups of the same address quicker.
 
 <blockquote><pre>
 # <b>rcctl enable unbound</b>
@@ -355,15 +305,17 @@ Something like this should work for most setups:
 <blockquote><pre>
 server:
 	interface: 192.168.1.1
+	interface: 192.168.2.1
 	interface: 127.0.0.1
 	access-control: 192.168.1.0/24 allow
+	access-control: 192.168.2.0/24 allow
 	do-not-query-localhost: no
 	hide-identity: yes
 	hide-version: yes
 
 forward-zone:
         name: "."
-        forward-addr: 1.2.3.4  # replace with upstream resolver's IP
+        forward-addr: 1.2.3.4  # IP of the upstream resolver
 </pre></blockquote>
 
 Further configuration options can be found in
