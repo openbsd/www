@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.42 2017/03/05 13:12:44 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.43 2017/09/27 09:18:00 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -126,9 +126,13 @@ sub write_ftplist($$$$) {
 	foreach my $mirror (sort _by_country @$mirrorref) {
 		next unless ($mirror->{$type});
 		my $loc = '';
-		$loc .= "$mirror->{'GT'}, " if $mirror->{'GT'};
-		$loc .= "$mirror->{'GS'}, " if $mirror->{'GS'};
-		$loc .= "$mirror->{'GC'}" if $mirror->{'GC'};
+		if ($mirror->{'GC'} eq 'Anycast') {
+			$loc .= "$mirror->{'GI'} (CDN)";
+		} else {
+			$loc .= "$mirror->{'GT'}, " if $mirror->{'GT'};
+			$loc .= "$mirror->{'GS'}, " if $mirror->{'GS'};
+			$loc .= "$mirror->{'GC'}";
+		}
 		$loc =~ s/&auml;/a/g ;
 		$loc =~ s/&ouml;/o/g ;
 		$loc =~ s/&uuml;/u/g ;
@@ -370,10 +374,14 @@ sub _get_location($$) {
 
 	my $location = "";
 	if ($type =~ m/^(UH|UHS|UF|UR)$/) {
-		$location = "$m->{'GC'}";
-		$location .= " ($m->{'GT'}" if ($m->{'GT'});
-		$location .= ", $m->{'GS'}" if ($m->{'GS'});
-		$location .= ')' if ($m->{'GT'});
+		if ($m->{'GC'} eq 'Anycast') {
+			$location = "$m->{'GI'} (CDN)";
+		} else {
+			$location = "$m->{'GC'}";
+			$location .= " ($m->{'GT'}" if ($m->{'GT'});
+			$location .= ", $m->{'GS'}" if ($m->{'GS'});
+			$location .= ')' if ($m->{'GT'});
+		}
 	}
 	else {
 		if ($type eq 'AH' || $type eq 'VH') {
