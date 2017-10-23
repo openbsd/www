@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.43 2017/09/27 09:18:00 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.44 2017/10/23 10:13:48 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -242,8 +242,12 @@ sub _paste_mirrorlist($$$$$$) {
 				die "Unable to determine CVSROOT for $mirror->{AH}.\nCheck for missing fields.\n";
 			}
 			if ($mirror->{'HA'}) {
-				printf $fh $format{'alias'}."<br>\n",
-				join(", ", split(/\s+/, $mirror->{'HA'}));
+				my $alias = $mirror->{'HA'};
+				$alias =~ s/$mirror->{'AH'}\s*//;
+				if ($alias ne '') {
+					printf $fh $format{'alias'}."<br>\n",
+					    join(", ", split(/\s+/, $alias));
+				}
 			}
 			printf $fh $format{'location'}."<br>\n", $loc;
 			printf $fh $format{'maintainer'}."<br>\n",
@@ -287,12 +291,17 @@ sub _paste_mirrorlist($$$$$$) {
 						$mirror->{'VH'};
 				}
 				print $fh "<br>\n";
+				printf $fh "<strong>%s</strong><br>\n", $mirror->{'CR'} if ($mirror->{'CR'});
 			} else {
 				die "Unable to determine CVSync hostname.\nCheck for missing fields.\n";
 			}
 			if ($mirror->{'HA'}) {
-				printf $fh $format{'alias'}."<br>\n",
-				join(", ", split(/\s+/, $mirror->{'HA'}));
+				my $alias = $mirror->{'HA'};
+				$alias =~ s/$mirror->{'VH'}\s*//;
+				if ($alias ne '') {
+					printf $fh $format{'alias'}."<br>\n",
+					    join(", ", split(/\s+/, $alias));
+				}
 			}
 			printf $fh $format{'location'}."<br>\n", $loc;
 			printf $fh $format{'maintainer'}."<br>\n",
