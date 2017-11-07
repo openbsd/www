@@ -649,7 +649,161 @@ It's highly recommended to use
 unavailable interfaces and adjust the routing table accordingly.
 
 <h2 id="VMMnet">Networking vmm guests</h2>
-<!-- XXXrelease: bridge needs to be created manually -->
+<!-- XXXrelease: replace this section with the commented-out version.
+
+Network access to <a href="https://man.openbsd.org/vmm">vmm(4)</a> guests
+can be configured a number of different ways, four of which are detailed
+in this section.
+
+<p>
+In the examples below, various IPv4 address ranges will be mentioned for
+different use cases:
+
+<ul>
+  <li><b>Private Addresses</b>
+      (<a href="https://tools.ietf.org/html/rfc1918">RFC1918</a>) are those
+      reserved for private networks such as <tt>10.0.0.0/8</tt>,
+      <tt>172.16.0.0/12</tt>, and <tt>192.168.0.0/24</tt> are not globally
+      routable.
+  <li><b>Shared Addresses</b>
+      (<a href="https://tools.ietf.org/html/rfc6598">RFC6598</a>) are similar
+      to private addresses in that they are not globally routable, but are
+      intended to be used on equipment that can perform address translation.
+      The address space is <tt>10.64.0.0/10</tt>.
+</ul>
+
+<h3>Option 1 - VMs only need to talk to the host and each other</h3>
+
+For this setup, vmm uses <i>local interfaces</i>: interfaces that use
+the shared address space defined above.
+
+<p>
+Using <a href="https://man.openbsd.org/vmctl">vmctl(8)</a>'s <tt>-L</tt>
+flag creates a local interface in the guest which will receive an address
+from vmm via DHCP.
+This essentially creates two interfaces: one for the host and the other
+for the VM.
+
+<h3>Option 2 - NAT for the VMs</h3>
+
+This setup builds upon the previous and allows VMs to connect outside
+the host.
+<a href="https://man.openbsd.org/sysctl.3#ip.forwarding">IP forwarding</a>
+is required for it to work.
+
+<p>
+The following line in <tt>/etc/pf.conf</tt> will enable
+<a href="pf/nat.html">Network Address Translation</a>:
+
+<blockquote><pre>
+match out on egress from 10.64.0.0/10 to any nat-to (egress)
+</pre></blockquote>
+
+Reload the pf ruleset and the VM(s) can now connect to the internet.
+
+<h3>Option 3 - Additional control over the VM network configuration</h3>
+
+Sometimes you may want additional control over the virtual network for your
+VMs, such as being able to put certain ones on their own virtual switch.
+This can be done using a <a href="https://man.openbsd.org/bridge">bridge(4)</a>
+and a <a href="https://man.openbsd.org/vether">vether(4)</a> interface.
+
+<p>
+Create a <tt>vether0</tt> interface that will have a private IPv4 address
+as defined above.
+In this example, we'll use the <tt>10.0.0.0/8</tt> subnet.
+
+<blockquote><pre>
+# <b>echo 'inet 10.0.0.1 255.255.255.0' > /etc/hostname.vether0</b>
+# <b>sh /etc/netstart vether0</b>
+</pre></blockquote>
+
+Create the <tt>bridge0</tt> interface with the <tt>vether0</tt> interface
+as a bridge port:
+
+<blockquote><pre>
+# <b>echo 'add vether0' > /etc/hostname.bridge0</b>
+# <b>sh /etc/netstart bridge0</b>
+</pre></blockquote>
+
+Ensure that NAT is set up properly if the guests on the virtual network
+need access beyond the physical machine.
+An adjusted NAT line in <tt>/etc/pf.conf</tt> might look like this:
+
+<blockquote><pre>
+match out on egress from vether0:network to any nat-to (egress)
+</pre></blockquote>
+
+The following lines in <a href="https://man.openbsd.org/vm.conf">vm.conf(5)</a>
+can be used to ensure that a virtual switch is defined:
+
+<blockquote><pre>
+switch "my_switch" {
+    interface bridge0
+}
+
+vm "my_vm" {
+    ...
+    interface { switch "my_switch" }
+}
+</pre></blockquote>
+
+Inside the <tt>my_vm</tt> guest, it's now possible to assign <tt>vio0</tt>
+an address on the <tt>10.0.0.0/24</tt> network and set the default route to
+<tt>10.0.0.1</tt>.
+
+<p>
+For convenience, you may wish to set up a <a href="#DHCP">DHCP server</a>
+on <tt>vether0</tt>.
+
+<h3>Option 4 - VMs as real hosts on the same network</h3>
+
+In this scenario, the VM interface will be attached to the same network as
+the host so can it be configured as if it were physically connected to the
+host network.
+This option only works for Ethernet-based devices, as the IEEE 802.11 standard
+prevents wireless interfaces from participating in network bridges.
+
+<p>
+Create the <tt>vether0</tt> interface:
+
+<blockquote><pre>
+# <b>echo 'dhcp' > /etc/hostname.vether0</b>
+# <b>sh /etc/netstart vether0</b>
+</pre></blockquote>
+
+The <tt>vether0</tt> interface will be used as the local interface for the
+host that is managed via DHCP on the host network.
+
+<p>
+Create the <tt>bridge0</tt> interface with the host network interface as a
+bridge port, along with the newly created <tt>vether0</tt> interface:
+
+<blockquote><pre>
+# <b>echo 'add em0' > /etc/hostname.bridge0</b>
+# <b>echo 'add vether0' >> /etc/hostname.bridge0</b>
+# <b>sh /etc/netstart bridge0</b>
+</pre></blockquote>
+
+As done in the previous example, create or modify the
+<a href="https://man.openbsd.org/vm.conf">vm.conf(5)</a> file to ensure
+that a virtual switch is defined:
+
+<blockquote><pre>
+switch "my_switch" {
+    interface bridge0
+}
+
+vm "my_vm" {
+    ...
+    interface { switch "my_switch" }
+}
+</pre></blockquote>
+
+The <tt>my_vm</tt> guest can now participate in the host network as if it
+were physically connected.
+
+XXXrelease -->
 
 Giving network access to a <a href="https://man.openbsd.org/vmm">vmm(4)</a>
 guest is easy if the host machine uses a wired connection.
