@@ -88,7 +88,7 @@ my %releases;
 
 # Uncomment to cache release dates rather than looking up in CVS
 # every time.  Handy to speed things up while making changes.
-#dbmopen(%releases, "/tmp/openssh-releases", 0644) || die;
+dbmopen(%releases, "/tmp/openssh-releases", 0644) || die;
 
 # For each release-* file in the txtdir directory, extract the release
 # number and figure out the release date, either by looking in the map above
@@ -117,15 +117,30 @@ while (readdir $dh) {
 
 sub output_release
 {
-	my ($rel) = @_;
+	my ($rel, $date) = @_;
+	my $fixdate = 0;
+	my @notes;
 
 	open(my $fh, '<', "$txtdir/release-$rel") || die;
 	while (<$fh>) {
+		if (/has just been released/) {
+			$fixdate = 1;
+			s|has just been released|was released on $date|;
+			s|It will be available from|It is available from|;
+		}
+		push(@notes, $_);
+
 		# expand bugzilla references into URLs.
 		s|bz#(\d+)|<a href='$bzurl$1'>bz#$1</a>|g;
 		s|bz #(\d+)|<a href='$bzurl$1'>bz #$1</a>|g;
-
 		print $_;
+	}
+	close($fh);
+	if ($fixdate) {
+		warn "Fixing dates in release notes for $rel $date\n";
+		open($fh, '>', "$txtdir/release-$rel") || die;
+		print $fh join('', @notes) || die;
+		close($fh);
 	}
 }
 
@@ -146,6 +161,6 @@ foreach my $rel (reverse sort keys(%releases)) {
 	print " ($date)" if ($date ne ''); # suppress if unknown
 	print "</h3>\n";
 	print "<pre>\n";
-	output_release($rel);
+	output_release($rel, $date);
 	print "</pre><hr>\n";
 }
