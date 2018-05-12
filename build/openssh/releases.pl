@@ -11,6 +11,7 @@ use warnings 'all';
 my $txtdir = "../../openssh/txt/";
 my $bzurl = "https://bugzilla.mindrot.org/show_bug.cgi?id=";
 my $manurl = "https://man.openbsd.org/";
+my $dlurl = "https://cdn.openbsd.org/pub/OpenBSD/OpenSSH";
 
 # These days we commit the release notes on the day of release.  For those,
 # we use the date the release notes were first committed.
@@ -141,6 +142,10 @@ sub output_release
 		my $manpages ="ssh|sshd|scp|sftp|sftp-server|ssh-keygen|" .
 		    "ssh-agent|ssh_config|sshd_config|moduli";
 		s@($manpages)\((\d)\)@<a href='$manurl$1.$2'>$1($2)</a>@g;
+
+		# download links
+		s|(openssh-[\d\.]+.tar.gz)|<a href='$dlurl/$1'>$1</a>|g;
+		s|(openssh-[\d\.]+p\d.tar.gz)|<a href='$dlurl/portable/$1'>$1</a>|g;
 
 		print $_;
 	}
