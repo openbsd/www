@@ -123,10 +123,11 @@ sub output_release
 
 	open(my $fh, '<', "$txtdir/release-$rel") || die;
 	while (<$fh>) {
-		if (/has just been released/) {
-			$fixdate = 1;
+		$fixdate = 1 if (/has just been released/);
+		if ($fixdate = 1) {
 			s|has just been released|was released on $date|;
 			s|It will be available from|It is available from|;
+			s|http://www.openssh.com/ shortly.|https://www.openssh.com/.|;
 		}
 		push(@notes, $_);
 
