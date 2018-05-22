@@ -140,7 +140,7 @@ sub output_release
 
 		# expand man page references into URLs.
 		my $manpages ="ssh|sshd|scp|sftp|sftp-server|ssh-keygen|" .
-		    "ssh-agent|ssh_config|sshd_config|moduli";
+		    "ssh-add|ssh-agent|ssh_config|sshd_config|moduli";
 		s@($manpages)\((\d)\)@<a href='$manurl$1.$2'>$1($2)</a>@g;
 
 		# download links
