@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang=en>
+
+<!-- If you make edits to any FAQ documents, please start each sentence
+     on a new line, and try to keep the general formatting consistent
+     with the rest of the pages -->
+
+<title>OpenBSD FAQ: Virtualization</title>
+<meta charset=utf-8>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" type="text/css" href="../openbsd.css">
+<link rel="canonical" href="https://www.openbsd.org/faq/faq16.html">
+
+<!--
+Copyright (c) 2018 Solene Rapenne <solene@openbsd.org>
+
+Permission to use, copy, modify, and distribute this documentation for
+any purpose with or without fee is hereby granted, provided that the
+above copyright notice and this permission notice appear in all copies.
+
+THE DOCUMENTATION IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS DOCUMENTATION INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL
+DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS DOCUMENTATION
+-->
+
+<h2 id=OpenBSD>
+<a href="../index.html">
+<i>Open</i><b>BSD</b></a>
+FAQ - Virtualization
+<small>
+<a href="index.html">[FAQ Index]</a>
+</small>
+</h2>
+<hr>
+
+<ul>
+  <li><a href="#Introduction" >Introduction</a>
+  <li><a href="#Prerequisites">Prerequisites</a>
+  <li><a href="#StartVm"      >Starting a VM</a>
+  <li><a href="#Network"      >Networking</a>
+</ul>
+
+<hr>
+
+<h2 id="Introduction">Introduction</h2>
+
+OpenBSD comes with the <a href="https://man.openbsd.org/vmm">vmm(4)</a>
+hypervisor and <a href="https://man.openbsd.org/vmd">vmd(8)</a> daemon.
+Virtual machines can be orchestrated with the
+<a href="https://man.openbsd.org/vmctl">vmctl(8)</a> control utility,
+using configuration settings stored in the
+<a href="https://man.openbsd.org/vm.conf">vm.conf(5)</a> file.
+
+
+<p>
+The following features are available:
+
+<ul>
+  <li>serial console access to the virtual machines
+  <li><a href="https://man.openbsd.org/tap">tap(4)</a> interfaces
+  <li>per-system user/group ownership
+  <li>privilege separation
+  <li>raw, qcow2 and qcow2-derived images
+  <li>dumping and restoring of guest system memory
+  <li>virtual switch management
+  <li>pausing and unpausing VMs
+</ul>
+
+The following features are not available at this time:
+
+<ul>
+  <li>graphics
+  <li>snapshots
+  <li>guest SMP support
+  <li>hardware passthrough
+  <li>live migration across hosts
+  <li>live hardware change
+</ul>
+
+<p>
+<!-- XXXrelease -->
+Supported guest operating systems are currently limited to OpenBSD and Linux.
+As there is no VGA support yet, the guest OS must support serial console.
+
+<h2 id="Prerequisites">Prerequisites</h2>
+
+A CPU with nested paging support is required to use
+<a href="https://man.openbsd.org/vmm">vmm(4)</a>.
+Support can be checked by looking at the processor features flags: SLAT (AMD)
+or EPT (Intel).
+Processor compatibility can be checked with the following command:
+
+<pre class="cmdbox">
+$ <b>dmesg | egrep '(VMX/EPT|SVM/RVI)'</b>
+</pre>
+
+<p>
+Virtual machines can be started with or without a
+<a href="https://man.openbsd.org/vm.conf">vm.conf(5)</a> file in place.
+
+<h2 id="StartVm">Starting a VM</h2>
+
+In the following example, a VM will be created with 50GB of disk space and 1GB
+of RAM.
+It will boot from the <code>installXX.iso</code> image file.
+
+<pre class="cmdbox">
+# <b>vmctl create disk.qcow2 -s 50G</b>
+# <b>vmctl start "example" -m 1G -L -i 1 -cdrom installXX.iso -d disk.qcow2</b>
+# <b>vmctl show</b>
+   ID   PID VCPUS  MAXMEM  CURMEM     TTY        OWNER NAME
+    1 72118     1    1.0G   88.1M   ttyp8         root example
+</pre>
+
+To view the console of the newly created VM,
+attach to its serial console:
+
+<pre class="cmdbox">
+# <b>vmctl console 1</b>
+Connected to /dev/ttyp8 (speed 115200)
+</pre>
+
+The escape sequence <code>~.</code> is needed to leave the serial
+console.
+When using a <code>vmctl</code> serial console over SSH, the ~ (tilde)
+character must be escaped to prevent
+<a href="https://man.openbsd.org/ssh">ssh(1)</a> from dropping the connection.
+To exit a serial console over SSH, use <code>~~.</code> instead.
+
+
+<p>
+The VM can be stopped using <a href="https://man.openbsd.org/vmctl">vmctl(8)</a>.
+
+<pre class="cmdbox">
+# <b>vmctl stop 1</b>
+</pre>
+
+The previous example can be replicated using <code>/etc/vm.conf</code>:
+
+<pre class="cmdbox">
+vm "example" {
+    memory 1G
+    enable
+    disk /home/user/disk.qcow2
+    local interface
+}
+</pre>
+
+When <a href="https://man.openbsd.org/vmd">vmd(8)</a> starts, virtual machines
+with the keyword <code>enable</code> are started.
+
+<pre class="cmdbox">
+# <b>rcctl enable vmd</b>
+# <b>rcctl start vmd</b>
+vmd(ok)
+# <b>vmctl show</b>
+   ID   PID VCPUS  MAXMEM  CURMEM     TTY        OWNER NAME
+    1 72118     1    1.0G   88.1M   ttyp8         root example
+</pre>  
+
+Some configuration properties in
+<a href="https://man.openbsd.org/vm.conf">vm.conf(5)</a>
+can be reloaded by <a href="https://man.openbsd.org/vmd">vmd(8)</a> on the fly.
+<!-- XXX specify which ones -->
+Other changes, like adjusting the amount RAM or disk space, require the VM
+to be restarted.
