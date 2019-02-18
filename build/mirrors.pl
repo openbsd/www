@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.44 2017/10/23 10:13:48 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.45 2019/02/18 11:33:31 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -157,29 +157,31 @@ sub write_mirror_list($$) {
 
 	open(my $fh, '>', $filename) or die "open $filename: $!";
 
-	for my $type ('UH', 'UHS', 'UF', 'UR') {
-		foreach my $mirror (sort _by_country @$mirrorref) {
+	foreach my $mirror (sort _by_country @$mirrorref) {
+		my ($url, $loc, $chosen);
+		for my $type ('UF', 'UR', 'UH', 'UHS') {
 			next unless ($mirror->{$type});
-			(my $url = $mirror->{$type}) =~ s,/$,,;
-			my $loc = '';
-			if (defined $mirror->{'GZ'}) {
-				if ((defined $mirror->{'LF'})
-				    && ($mirror->{'LF'} == 2)) {
-					$loc .= 'L2';
-				} else {
-					$loc .= "$mirror->{'GZ'}";
-				}
-			} else {
-				warn('no GZ for '.$mirror->{$type});
-			}
+			$chosen = $type;
+			($url = $mirror->{$type}) =~ s,/$,,;
 			if (($type eq 'UH'  && not $url =~ m,^http://,) ||
 			    ($type eq 'UHS' && not $url =~ m,^https://,) ||
 			    ($type eq 'UF'  && not $url =~ m,^ftp://,) ||
 			    ($type eq 'UR'  && not $url =~ m,^rsync://,)) {
 				warn('bad URL format for '.$type.': '.$url);
 			}
-			printf $fh "%s %s\n", $loc, $mirror->{$type};
 		}
+		next unless defined $chosen;
+		if (defined $mirror->{'GZ'}) {
+			if ((defined $mirror->{'LF'})
+			    && ($mirror->{'LF'} == 2)) {
+				$loc = 'L2';
+			} else {
+				$loc = "$mirror->{'GZ'}";
+			}
+		} else {
+			warn('no GZ for '.$mirror->{$chosen});
+		}
+		printf $fh "%s %s\n", $loc, $mirror->{$chosen};
 	}
 
 	close($fh) or die "close $filename: $!";
