@@ -47,3 +47,7 @@ cvsync: mirrors.pl mirrors.dat mirrors/cvsync.html.{end,head}
 
 clean:
 	rm -f *.countries
+
+version:
+	sh versionup ${STABLE_VERSION} ${PREV_VERSION}
+	make anoncvs ftp
