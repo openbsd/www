@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang=en>
+
+<title>OpenBSD Upgrade Guide: 6.4 to 6.5</title>
+<meta charset=utf-8>
+<meta name="description"   content="OpenBSD Upgrade Process for 6.4 -> 6.5">
+<meta name="viewport"      content="width=device-width, initial-scale=1">
+<link rel="stylesheet"     type="text/css" href="../openbsd.css">
+<link rel="canonical"      href="https://www.openbsd.org/faq/upgrade65.html">
+<style>
+  dt { margin-left: 40px; float: left; }
+  dd { margin: 0 0 0 8em; }
+</style>
+
+<h2 id=OpenBSD>
+<a href="../index.html">
+<i>Open</i><b>BSD</b></a>
+Upgrade Guide: 6.4 to 6.5
+</h2>
+<hr>
+<p>
+<a href="index.html">[FAQ Index]</a> |
+<a href="upgrade64.html">[6.3 -> 6.4]</a>
+<!-- XXXrelease uncomment link to upgrade66.html
+<a href="upgrade66.html">[6.5 -> 6.6]</a>
+-->
+<p>
+
+<blockquote><i>
+Upgrades are only supported from one release to the release immediately
+following it.
+Read through and understand this process before attempting it.
+For critical or physically remote machines, test it on an identical,
+local system first.
+</i></blockquote>
+
+Start by performing the <a href="#BeforeUpdate">pre-upgrade steps</a>.
+Next, boot from the install kernel, <a href="faq4.html#bsd.rd">bsd.rd</a>:
+use <a href="faq4.html#MkInsMedia">bootable install media</a>, or place the 6.5
+version of <code>bsd.rd</code> in the root of your filesystem and instruct the boot
+loader to boot this kernel.
+Once this kernel is booted, choose the <code>(U)pgrade</code> option and follow the
+prompts.
+Apply the <a href="#ConfigChanges">configuration changes</a> and
+<a href="#RmFiles">remove the old files</a>.
+Finish up by upgrading the packages: <code><b>pkg_add -u</b></code>.
+
+<p>
+Alternatively, you can use the <a href="#NoInstKern">manual upgrade process</a>.
+
+<p>
+You may wish to check the <a href="../errata65.html">errata page</a> or upgrade
+to the <a href="../stable.html">stable branch</a> to get any post-release fixes.
+
+<hr>
+
+
+<h3 id="BeforeUpdate">Before rebooting into the install kernel</h3>
+
+<ul>
+  <li><b>Get and verify <code>bsd.rd</code>.</b>
+  Download the ramdisk kernel and the cryptographically signed checksum file
+  for your architecture.
+
+  <p>
+  <dl>
+    <dt><code>bsd.rd</code></dt>
+    <dd>
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.5/alpha/bsd.rd">alpha</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.5/amd64/bsd.rd">amd64</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.5/arm64/bsd.rd">arm64</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.5/armv7/bsd.rd">armv7</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.5/i386/bsd.rd">i386</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.5/hppa/bsd.rd">hppa</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.5/landisk/bsd.rd">landisk</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.5/loongson/bsd.rd">loongson</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.5/luna88k/bsd.rd">luna88k</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.5/macppc/bsd.rd">macppc</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.5/octeon/bsd.rd">octeon</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.5/sparc64/bsd.rd">sparc64</a>]
+    </dd>
+    <dt><code>SHA256.sig</code></dt>
+    <dd>
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.5/alpha/SHA256.sig">alpha</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.5/amd64/SHA256.sig">amd64</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.5/arm64/SHA256.sig">arm64</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.5/armv7/SHA256.sig">armv7</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.5/i386/SHA256.sig">i386</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.5/hppa/SHA256.sig">hppa</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.5/landisk/SHA256.sig">landisk</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.5/loongson/SHA256.sig">loongson</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.5/luna88k/SHA256.sig">luna88k</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.5/macppc/SHA256.sig">macppc</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.5/octeon/SHA256.sig">octeon</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.5/sparc64/SHA256.sig">sparc64</a>]
+    </dd>
+  </dl>
+
+  <p>
+  Verify them using
+  <a href="https://man.openbsd.org/OpenBSD-6.5/signify">signify(1)</a>:
+
+  <pre class="cmdbox">
+  $ <b>signify -C -p /etc/signify/openbsd-65-base.pub -x SHA256.sig bsd.rd</b>
+  Signature Verified
+  bsd.rd: OK<!--
+  --></pre>
+
+  <p>
+  <li><b>Read configuration and syntax changes and the
+         package upgrade instructions.</b>
+  There were several configuration changes and changes in packages that may
+  require planning before starting the upgrade.
+</ul>
+
+
+<h3 id="ConfigChanges">Configuration and syntax changes</h3>
+
+<ul>
+  <p>
+  <li><b>bgpd.conf(5).</b>
+
+  In OpenBSD 6.4, the <tt>announce</tt> keyword was deprecated in
+  <a href="https://man.openbsd.org/OpenBSD-6.5/bgpd.conf.5">bgpd.conf(5)</a>.
+  It has now been removed and must be replaced with <tt>export</tt>.
+
+  <p>
+  <li><b>bgpd.conf(5).</b>
+
+  The MPLS VPN (L3VPN) configuration syntax in
+  <a href="https://man.openbsd.org/OpenBSD-6.5/bgpd.conf.5">bgpd.conf(5)</a>
+  has changed.
+  The <code>rdomain</code> sections in bgpd.conf need to be replaced with
+  <code>vpn "description" on mpeX</code> sections.
+  Both <code>descr</code> and <code>depend on mpeX</code> need to be removed
+  from the VPN configuration.
+  A possible configuration is now:
+
+  <pre class="cmdbox">
+  vpn "description" on mpe1 {
+	rd 65002:1
+	import-target rt 65002:42
+	export-target rt 65002:42
+	network 192.168.1/24
+  }<!--
+  --></pre>
+
+  <p>
+  <li><b>iked.conf(5).</b>
+
+  When curve25519 was added to iked, it was based on the internet-draft
+  with a private-use group number.
+  This has now changed to the group number assigned in RFC8031 as used
+  in other implementations.
+  If you have configured <tt>curve25519</tt> in
+  <a href="https://man.openbsd.org/OpenBSD-6.5/iked.conf.5">iked.conf(5)</a>
+  (it is not the default), switch to another group before updating.
+  Configure the responder to allow both curve25519 and another PFS group, e.g.
+  
+  <pre class="cmdbox">
+  ...
+    ikesa enc aes-256 prf hmac-sha2-256 auth hmac-sha2-256 group curve25519 \
+    ikesa enc aes-256 prf hmac-sha2-256 auth hmac-sha2-256 group brainpool512 \
+  ...<!--
+  --></pre>
+
+  Then switch the initiators to the other group, then upgrade and switch
+  back as wanted.
+
+  <p>
+  <li><b>malloc.conf(5).</b>
+
+  The <a href="https://man.openbsd.org/OpenBSD-6.5/malloc">malloc(3)</a> family
+  of functions no longer read options from the <code>/etc/malloc.conf</code>
+  symbolic link.
+  Instead, the new
+  <a href="https://man.openbsd.org/OpenBSD-6.5/sysctl>sysctl(8)</a>
+  variable <code>vm.malloc_conf</code> is used.
+  This makes processes no longer dependent on the file system for their malloc
+  options.
+
+  Set it at boot time by adding a line such as:
+
+  <pre class="cmdbox">
+  vm.malloc_conf=CF<!--
+  --></pre>
+
+  to your <code>/etc/sysctl.conf</code>, or at runtime with
+  <a href="https://man.openbsd.org/OpenBSD-6.5/sysctl">sysctl(8)</a>.
+
+  <p>
+  <li><b>sysctl(8).</b>
+
+  The <code>kern.witnesswatch</code> sysctl variable has been renamed
+  to <code>kern.witness.watch</code>.
+
+  <p>
+  <li><b>tmux(1).</b>
+
+  A syntax change was introduced in the
+  <a href="https://man.openbsd.org/OpenBSD-6.5/tmux.1">tmux(1)</a>
+  configuration file.
+  In case a tmux.conf file contains style lines, it should be updated.
+
+  <p>
+  An old configuration might look like this:
+
+  <pre class="cmdbox">
+  set-window-option -g window-status-fg color244
+  set-window-option -g window-status-bg color222
+  set-window-option -g window-status-attr bold<!--
+  --></pre>
+  
+  The new format uses a standard variable name ending with -style and takes a
+  list of attributes and values.
+  The updated version of the previous example would look like this:
+
+  <pre class="cmdbox">
+  set-window-option -g window-status-style "fg=color244 bg=color222 bold"
+  </pre>
+
+  <p>
+  <li><b>vlan(4).</b>
+
+  Replace use of the <code>link0</code> flag with <code>txprio</code>.</b>
+  Forcing the priority field in the
+  <a href="https://man.openbsd.org/OpenBSD-6.5/vlan.4">vlan(4)</a> and svlan(4)
+  protocol headers is now configured with the
+  <a href="https://man.openbsd.org/OpenBSD-6.5/ifconfig.8">ifconfig(8)</a>
+  <code>txprio</code> configuration option.
+  This replaces the use of the <code>link0</code> flag which used the
+  <code>llprio</code> in the packet priority field instead.
+
+  <p>
+  <li><b>Xorg(1).</b>
+
+  The <code>Xorg</code> binary is no longer installed setuid,
+  so <a href="https://man.openbsd.org/OpenBSD-6.5/startx">startx(1)</a>
+  can no longer be used by non-root users.
+  The <a href="https://man.openbsd.org/OpenBSD-6.5/xenodm">xenodm(1)</a>
+  display manager has to be used instead.
+
+  <p>
+  To set it up:
+  <pre class="cmdbox">
+  # <b>rcctl enable xenodm</b>
+  # <b>rcctl start xenodm</b><!--
+  --></pre>
+</ul>
+
+
+<h3 id="RmFiles">Files to remove</h3>
+
+Remove <code>/usr/include/openssl/asn1_mac.h</code>.
+
+<h3 id="SpecPkg">Special packages</h3>
+
+<ul>
+  <p>
+  <li><b>databases/postgresql.</b>
+
+  There was a major update to PostgreSQL 11.2.
+  Use <tt>pg_upgrade</tt> as described in the
+  <a href="https://cvsweb.openbsd.org/cgi-bin/cvsweb/~checkout~/ports/databases/postgresql/pkg/README-server?rev=1.27&content-type=text/plain">postgresql-server pkg-readme</a>
+  or do a dump/restore.
+
+  <p>
+  <li><b>editors/libreoffice.</b>
+
+  A bug was fixed that affects LibreOffice password-protected .od* files.
+  If you use this feature, before updating, open all such files and save a
+  copy with the password removed.
+  After updating to the new package, you can open them and save again with the
+  password re-enabled.
+
+  <p>
+  <li><b>lang/chicken.</b>
+
+  The chicken binaries <code>csi</code> and <code>csc</code> have been renamed
+  to <code>chicken-csi</code> and <code>chicken-csc</code> to avoid conflicts
+  with <code>lang/mono</code>.
+
+  <p>
+  <li><b>net/dnscrypt-proxy.</b>
+
+  dnscrypt-proxy received a major update.
+  One of the changes is the configuration.
+  Users are advised to check that <code>/etc/dnscrypt-proxy.toml</code>
+  fits their needs.
+
+  <p>
+  <li><b>security/opendnssec.</b>
+
+  OpenDNSSEC received a major update.
+  Users are advised to read the
+  <a href="https://github.com/opendnssec/opendnssec/blob/2.1/master/MIGRATION">MIGRATION</a>
+  instructions, also available under
+  <code>/usr/local/share/doc/opendnssec/MIGRATION</code> after the update.
+
+  <p>
+  <li><b>www/gitea.</b>
+
+  The gitea configuration file location changed from
+  <code>/etc/gitea/conf/app.ini</code> to <code>/etc/gitea/app.ini</code>
+  and the <code>GITEA_CUSTOM</code> directory location has changed from
+  <code>/etc/gitea</code> to <code>/var/gitea/custom</code>.
+
+  Gitea's <code>ROOT_PATH</code> for logs has changed from
+  <code>/var/gitea/log</code> to <code>/var/log/gitea</code>.
+
+  When upgrading, move <code>/etc/gitea</code> to the new location:
+
+  <pre class="cmdbox">
+  # <b>mv /etc/gitea/conf/app.ini /etc/gitea/app.ini</b><!--
+  --></pre>
+
+  change the <code>ROOT_PATH</code> location in <code>[log]</code> section of
+  <code>/etc/gitea/conf/app.ini</code>:
+
+  <pre class="cmdbox">
+  [log]
+  ROOT_PATH  = /var/log/gitea<!--
+  --></pre>
+
+  and move custom files from <code>/etc/gitea</code> to
+  <code>/var/gitea/custom</code>, if any.
+
+  <p>
+  <li><b>www/goaccess.</b>
+
+  Since the previous GeoIP library is end-of-life and databases are no longer
+  updated, goaccess now uses libmaxminddb for geographical lookups of IP
+  addresses.
+  If you are currently using this feature, update your configuration files
+  (<code>~/.goaccessrc</code> or <code>/etc/goaccess.conf</code>) to include
+  one or the other of the following two lines:
+
+  <pre class="cmdbox">
+  geoip-database /var/db/GeoIP/GeoLite2-Country.mmdb # installed by default
+  geoip-database /var/db/GeoIP/GeoLite2-City.mmdb    # requires "geolite2-city"<!--
+  --></pre>
+</ul>
+
+
+<hr>
+<h2 id="NoInstKern">Upgrade without the install kernel</h2>
+
+<b style="color:#e00000">This is NOT the recommended process.
+Use the install kernel method if at all possible!</b>
+
+<p>
+Sometimes, you need to do an upgrade of a machine for which the normal upgrade
+process is not possible.
+The most common case is a machine in a remote location and there is no easy
+access to the system console.
+
+<h3>Preparation</h3>
+
+<ul>
+  <li><b>Place install files in a good location.</b>
+    Make sure you have sufficient space!
+    Running out of space on a remote upgrade could be...unfortunate.
+    Note that using softdeps can exaggerate the situation as deleted and
+    overwritten files do not release their space immediately.
+    Consider disabling the <code>softdep</code> mount option in
+    <code>/etc/fstab</code> and rebooting before undertaking a manual upgrade.
+    Having at least 500MB free on <code>/usr</code> would be recommended.
+
+  <p>
+  <li><b>Become root.</b>
+    While using
+    <a href="https://man.openbsd.org/OpenBSD-6.5/doas">doas(1)</a>
+    before each command is generally a good practice, the command will likely
+    be broken by the last steps, so you should become root before starting
+    this process.
+    It might be good to verify your access to root using a method other than
+    doas at this point, i.e., direct login or using
+    <a href="https://man.openbsd.org/OpenBSD-6.5/su">su(1)</a>.
+
+  <p>
+  <li><b>Stop and/or disable any appropriate applications.</b>
+    During this process, all the userland applications will be replaced but
+    may not be runnable, and strange things may happen as a result.
+    You may also have issues with DNS resolution during the first reboot, so
+    PF rules and NFS mounts dependent upon DNS may cause boot-up problems.
+    There may be other applications which you wish to keep from running
+    immediately after the upgrade, stop and disable them as well.
+
+  <p>
+  <li><b>Install new boot blocks.</b>
+    This should actually be done at the end of any upgrade.
+    If this has been neglected, then failure to do this now may break serial
+    console or other things, depending on your platform.
+    Use <a href="https://man.openbsd.org/OpenBSD-6.5/amd64/installboot">
+    installboot(8)</a>, assuming <code>sd0</code> is your boot disk:
+    <pre class="cmdbox">
+    <b>installboot sd0</b><!--
+    --></pre>
+</ul>
+
+<h3>Upgrading manually</h3>
+
+<ul>
+  <li><b>Install new kernels.</b>
+    The extra steps for copying over the primary kernel are done
+    to ensure that there is always a valid kernel on the disk.
+    <p>
+    If using the multiprocessor kernel:
+    <pre class="cmdbox">
+    <b>cd /usr/rel</b>    # where you put the release files
+    <b>ln -f /bsd /obsd && cp bsd.mp /nbsd && mv /nbsd /bsd</b>
+    <b>cp bsd.rd /</b>
+    <b>cp bsd /bsd.sp</b><!--
+    --></pre>
+    If using the single processor kernel:
+    <pre class="cmdbox">
+    <b>cd /usr/rel</b>    # where you put the release files
+    <b>ln -f /bsd /obsd && cp bsd /nbsd && mv /nbsd /bsd</b>
+    <b>cp bsd.rd bsd.mp /</b>    # may give a harmless warning<!--
+    --></pre>
+
+  <li><b>Enable KARL.</b>
+    Store the kernel's checksum:
+    <pre class="cmdbox">
+    <b>sha256 -h /var/db/kernel.SHA256 /bsd</b> <!--
+    --></pre>
+
+  <li><b>Install new userland.</b>
+    Save a copy of reboot(8), extract and install the release tarballs, reboot.
+    Install <code>base65.tgz</code> last, because the new base system,
+    in particular <a href="https://man.openbsd.org/OpenBSD-6.5/tar">tar(1)</a>,
+    <a href="https://man.openbsd.org/OpenBSD-6.5/gzip">gzip(1)</a> and
+    <a href="https://man.openbsd.org/OpenBSD-6.5/reboot">reboot(8)</a>,
+    will not work with the old kernel.
+    Either untar the needed filesets manually
+    <pre class="cmdbox">
+    <b>cp /sbin/reboot /sbin/oreboot</b>
+    <b>tar -C / -xzphf xshare65.tgz</b>
+    <b>tar -C / -xzphf xserv65.tgz</b>
+    <b>tar -C / -xzphf xfont65.tgz</b>
+    <b>tar -C / -xzphf xbase65.tgz</b>
+    <b>tar -C / -xzphf man65.tgz</b>
+    <b>tar -C / -xzphf game65.tgz</b>
+    <b>tar -C / -xzphf comp65.tgz</b>
+    <b>tar -C / -xzphf base65.tgz</b>    # Install last!
+    <b>/sbin/oreboot</b><!--
+    --></pre>
+    or, if you use
+    <a href="https://man.openbsd.org/OpenBSD-6.5/ksh">ksh(1)</a>, you can do
+    <pre class="cmdbox">
+    <b>cp /sbin/reboot /sbin/oreboot</b>
+    <b>for _f in [!b]*65.tgz base65.tgz; do tar -C / -xzphf "$_f" || break; done</b>
+    <b>/sbin/oreboot</b><!--
+    --></pre>
+    Note that <a href="https://man.openbsd.org/OpenBSD-6.5/tar">tar(1)</a>
+    can expand only one archive per invocation, so a simple glob won't work.
+
+  <p>
+  <li><b>After reboot, update <code>/dev</code>.</b>
+    Run
+    <a href="https://man.openbsd.org/OpenBSD-6.5/amd64/MAKEDEV">MAKEDEV(8)</a>:
+    <pre class="cmdbox">
+    <b>cd /dev</b>
+    <b>./MAKEDEV all</b><!--
+    --></pre>
+
+  <li><b>Update boot loader.</b>
+    Still assuming <code>sd0</code> is your boot disk:
+    <pre class="cmdbox">
+    <b>installboot sd0</b><!--
+    --></pre>
+
+  <li><b>Update system configuration files.</b>
+    Run <a href="https://man.openbsd.org/OpenBSD-6.5/sysmerge">sysmerge(8)</a>:
+    <pre class="cmdbox">
+    <b>sysmerge</b><!--
+    --></pre>
+
+  <li><b>Update firmware.</b>
+    There may be new firmware for your system.
+    Update it with
+    <a href="https://man.openbsd.org/OpenBSD-6.5/fw_update">fw_update(1)</a>:
+    <pre class="cmdbox">
+    <b>fw_update</b><!--
+    --></pre>
+
+  <li><b>Finish up.</b>
+    Review the console output from boot (using <code><b>dmesg -s</b></code>)
+    and correct any failures as necessary.
+    All the steps following <a href="#ConfigChanges">configuration changes</a>
+    above also apply to manual upgrades.
+    Finally, remove <code><b>/sbin/oreboot</b></code> and update packages:
+    <code><b>pkg_add -u</b></code>.
+    Reboot once more to make sure you run on your own kernel generated by KARL.
+</ul>
+
+<p>
+<a href="index.html">[FAQ Index]</a> |
+<a href="upgrade64.html">[6.3 -> 6.4]</a>
+<!-- XXXrelease uncomment link to upgrade66.html
+<a href="upgrade66.html">[6.5 -> 6.6]</a>
+-->
+
+<hr>
+<small>$OpenBSD: upgrade65.html,v 1.1 2019/04/16 20:02:26 tb Exp $</small>
