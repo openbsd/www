@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.45 2019/02/18 11:33:31 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.46 2019/05/07 21:08:14 benno Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -215,7 +215,7 @@ sub _paste_mirrorlist($$$$$$) {
 		if ($type =~ m/^(UH|UHS|UF|UR)$/) {
 			my $url = $mirror->{$type};
 			if ($proj eq 'openbgpd-ftp') {
-				$url .= "OpenBGPD/openbgpd-${version}.tgz";
+				$url .= "OpenBGPD/openbgpd-${version}.tar.gz";
 			}
 			elsif ($proj eq 'openssh-ftp') {
 				#next if ($type eq 'UR');
