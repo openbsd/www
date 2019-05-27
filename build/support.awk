@@ -33,7 +33,7 @@ $1 == "C" { country = substr($0, 3);
 	else if (country == "UAE")
 		country = "United Arab Emirates"
 	if (country != oldCountry) {
-		print "<tr><td bgcolor=\"#E0E0E0\" colspan=\"2\" align=\"center\">"
+		print "<tbody><tr><th colspan=\"2\""
 		if (country == "United States") {
 			n = split("USA", labels, " ")
 		} else if (country == "United Arab Emirates") {
@@ -41,9 +41,8 @@ $1 == "C" { country = substr($0, 3);
 		} else {
 			n = split(country, labels, " ")
 		}
-		print "<a name='" labels[1] "'></a>"
-		print "<b>" country "</b>"
-		print "</td></tr>"
+		print "id='" labels[1] "'>"
+		print country
 	 }
 	oldCountry = country
 	next
@@ -69,13 +68,13 @@ $1 == "F" { follow = substr($0, 3); next }
 
 function dump() {
 	print "<tr>"
-	print "<td bgcolor=\"White\">" 
+	print "<td>" 
 		if (indv != "")
-			print "<i>" indv "</i><br />" 
+			print "<i>" indv "</i><br>" 
 		if (org != "")
-			print "<b>" org "</b><br />" 
+			print "<b>" org "</b><br>" 
 		if (addr != "")
-			print addr "<br />"
+			print addr "<br>"
 		line = ""
 		if (city != "")
 			line = city
@@ -87,22 +86,20 @@ function dump() {
 		}
 		if (zip != "")
 			line = line " " zip
-		print line "<br />"
+		print line "<br>"
 		if (phone != "")
-			print "Phone: " phone "<br />" 
+			print "Phone: " phone "<br>" 
 		if (fax != "")
-			print "FAX: " fax "<br />"
+			print "FAX: " fax "<br>"
 		if (email != "")
-			print "Email: <a href=\"mailto:" email "\">" email "</a>" "<br />"
+			print "Email: <a href=\"mailto:" email "\">" email "</a>" "<br>"
 		if (follow != "true")
 			nofollow = " rel=\"nofollow\"";
 		else
 			nofollow = "";
 		if (url != "")
 			print "URL: <a href=\"" url "\"" nofollow ">" url "</a>"
-		print "</td>"
 	print "	<td>" note
-	print "</td></tr>"
 }
 
 function reset() {

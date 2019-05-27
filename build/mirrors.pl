@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.46 2019/05/07 21:08:14 benno Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.47 2019/05/27 22:55:27 bentley Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -92,9 +92,9 @@ sub read_mirrors ($) {
 			$record = {};		# new empty one
 		} elsif ($line =~ /^(S[DER2])\s+(.*)/) {
 			if ($record->{$1}) {
-				$record->{$1} .= ", <tt>".$2."</tt>";	# append key/value pair
+				$record->{$1} .= ", <code>".$2."</code>";	# append key/value pair
 			} else {
-				$record->{$1} = "<tt>".$2."</tt>";	# add key/value pair
+				$record->{$1} = "<code>".$2."</code>";	# add key/value pair
 			}
 		} elsif ($line =~ /^([A-Z0-9]{2,3})\s+(.*)/) {
 			($record->{$1})

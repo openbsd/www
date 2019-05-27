@@ -31,14 +31,14 @@ $1 == "C" { country = substr($0, 3);
 	if (country == "USA")
 		country = "United States"
 	if (country != oldCountry) {
-		print "<tr><td bgcolor=\"#E0E0E0\" colspan=\"6\" align=\"center\">"
+		print "<tbody><tr><th colspan=\"5\""
 		if (country == "United States") {
 			n = split("USA", labels, " ")
 		} else {
 			n = split(country, labels, " ")
 		}
-		print "<a name='" labels[1] "'></a>"
-		print "<b>" country "</b></td></tr>"
+		print "id='" labels[1] "'>"
+		print country
 	 }
 	oldCountry = country
 	next
@@ -62,21 +62,20 @@ $1 == "N" { note = substr($0, 3); next }
 
 function dump() {
 	print "<tr>"
-	print "<td bgcolor=\"White\">" 
+	print "<td>" 
 		if (indv != "")
-			print indv "<br />" 
-		print "<b>" org "</b><br />" addr "</td>"
-	print "	<td>" city "<br />" prov "</td>"
+			print indv "<br>" 
+		print "<b>" org "</b><br>" addr
+	print "	<td>" city "<br>" prov
 	print "	<td>" 
 		if (phone != "")
-			print phone "<br />" 
-		print freq "</td>"
+			print phone "<br>" 
+		print freq
 	print "	<td>"
 		if (email != "")
-			print "<a href=\"mailto:" email "\">" email "</a>" "<br />"
-		print "<a href=\"" url "\">" url "</a>" "</td>"
-	print "	<td>" note "</td>"
-	print "</tr>"
+			print "<a href=\"mailto:" email "\">" email "</a>" "<br>"
+		print "<a href=\"" url "\">" url "</a>"
+	print "	<td>" note
 }
 
 function reset() {
