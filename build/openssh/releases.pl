@@ -134,6 +134,9 @@ sub output_release
 		}
 		push(@notes, $_);
 
+		# escape < before any URLs are inserted
+		s|<|&lt;|g;
+
 		# expand bugzilla references into URLs.
 		s|bz#(\d+)|<a href='$bzurl$1'>bz#$1</a>|g;
 		s|bz #(\d+)|<a href='$bzurl$1'>bz #$1</a>|g;
@@ -168,9 +171,9 @@ foreach my $rel (reverse sort keys(%releases)) {
 	} else {
 		# Joint release
 		my $port = $rel . "p1";
-		$extra = "/<a href='txt/release-$rel' name='$port'>$port</a>";
+		$extra = "/<a href='txt/release-$rel' id='$port'>$port</a>";
 	}
-	print "<h3><a href='txt/release-$rel' name='$rel'>OpenSSH $rel</a>";
+	print "<h3><a href='txt/release-$rel' id='$rel'>OpenSSH $rel</a>";
 	print $extra;
 	print " ($date)" if ($date ne ''); # suppress if unknown
 	print "</h3>\n";
