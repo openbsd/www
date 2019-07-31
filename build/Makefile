@@ -4,7 +4,7 @@ STABLE_VERSION=	6.5
 PREV_VERSION=	6.4
 
 # also update mirrors/openbgpd-ftp.html.head
-OPENBGPD_VERSION=		6.5p0
+OPENBGPD_VERSION=		6.5p1
 
 # also update mirrors/openntpd-ftp.html.head
 OPENNTPD_PORTABLE_VERSION=	6.2p3
