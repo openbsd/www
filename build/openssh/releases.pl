@@ -13,6 +13,10 @@ my $bzurl = "https://bugzilla.mindrot.org/show_bug.cgi?id=";
 my $manurl = "https://man.openbsd.org/";
 my $dlurl = "https://cdn.openbsd.org/pub/OpenBSD/OpenSSH";
 
+# All datestamps are relative to UTC for consistency regardless of whose
+# timezone the script gets run in.
+$ENV{'TZ'} = 'UTC';
+
 # These days we commit the release notes on the day of release.  For those,
 # we use the date the release notes were first committed.
 # Releases before that are listed in this hash which is checked before we
