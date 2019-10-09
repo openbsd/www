@@ -109,10 +109,13 @@ while (readdir $dh) {
 		warn "cached $rel $date\n";
 	} else {
 		$_ = `cd $txtdir && cvs log -r1.1 $file | grep date:`;
-		/date: (\S+)/;
-		$date = $1;
-		$date =~ s|/|-|g;
-		warn "looked up $rel $date\n";
+		if (/date: (\S+)/) {
+			$date = $1;
+			$date =~ s|/|-|g;
+			warn "looked up $rel $date\n";
+		} else {
+			die "failed to look up date for $file";
+		}
 	}
 	$releases{$rel} = $date;
 }
