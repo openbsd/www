@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.47 2019/05/27 22:55:27 bentley Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.48 2019/11/08 14:51:07 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -54,8 +54,6 @@ my $sources = {
 
 	'anoncvs-head'		=> 'mirrors/anoncvs.html.head',
 	'anoncvs-end'		=> 'mirrors/anoncvs.html.end',
-	'cvsync-head'		=> 'mirrors/cvsync.html.head',
-	'cvsync-end'		=> 'mirrors/cvsync.html.end',
 };
 my $srcdir = $ENV{BSDSRCDIR};
 $srcdir //= '/usr/src';
@@ -69,7 +67,6 @@ my $targets = {
 	'openssh-ftp'		=> '../openssh/ftp.html',
 	'openssh-portable'	=> '../openssh/portable.html',
 	'anoncvs'		=> '../anoncvs.html',
-	'cvsync'		=> '../cvsync.html'
 };
 
 # read in mirror list from given file into an array of hash references.
@@ -243,6 +240,7 @@ sub _paste_mirrorlist($$$$$$) {
 			} else {
 				die "Unable to determine CVSROOT for $mirror->{AH}.\nCheck for missing fields.\n";
 			}
+			printf $fh "<strong>reposync %s</strong><br>\n", $mirror->{'CR'} if ($mirror->{'CR'});
 			if ($mirror->{'HA'}) {
 				my $alias = $mirror->{'HA'};
 				$alias =~ s/$mirror->{'AH'}\s*//;
@@ -282,47 +280,6 @@ sub _paste_mirrorlist($$$$$$) {
 				if ($mirror->{'S2'});
 			print $fh "<p>\n";
 		}
-		elsif ($type eq 'VH') {
-			if ($mirror->{'VH'}) {
-				print $fh "<li>";
-				if ($mirror->{'VU'}) {
-					printf $fh '<a href="%s"><strong>%s</strong></a>',
-						$mirror->{'VU'}, $mirror->{'VH'};
-				} else {
-					printf $fh '<strong>%s</strong>',
-						$mirror->{'VH'};
-				}
-				print $fh "<br>\n";
-				printf $fh "<strong>%s</strong><br>\n", $mirror->{'CR'} if ($mirror->{'CR'});
-			} else {
-				die "Unable to determine CVSync hostname.\nCheck for missing fields.\n";
-			}
-			if ($mirror->{'HA'}) {
-				my $alias = $mirror->{'HA'};
-				$alias =~ s/$mirror->{'VH'}\s*//;
-				if ($alias ne '') {
-					printf $fh $format{'alias'}."<br>\n",
-					    join(", ", split(/\s+/, $alias));
-				}
-			}
-			printf $fh $format{'location'}."<br>\n", $loc;
-			printf $fh $format{'maintainer'}."<br>\n",
-					$mirror->{'ME'}, $mirror->{'MN'}
-				if ($mirror->{'ME'} && $mirror->{'MN'});
-			if ($mirror->{'CE'}) {
-				my $f;
-				if ($mirror->{'CF'}) {
-					$f = sprintf $format{'updated_from'},
-					$mirror->{'CE'}, $mirror->{'CF'};
-				} else {
-					$f = sprintf $format{'updated'},
-					$mirror->{'CE'};
-				}
-				$f =~ s/every 1 hours/hourly/;
-				print $fh $f."<br>\n";
-			}
-			print $fh "<p>\n";
-		}
 	}
 	print $fh "\n";
 }
@@ -352,15 +309,13 @@ sub write_cvshtml($$$$) {
 
 	if ($what eq 'anoncvs') {
 		$code = 'AH';
-	} elsif ($what eq 'cvsync') {
-		$code = 'VH';
 	} else {
 		die "illegal command: $what\n";
 	}
 
 	open(my $fh, '>', $filename) or die "open $filename: $!";
 	_paste_in($fh, $sources->{"${what}-head"});
-	# produce anoncvs/cvsync mirror list
+	# produce anoncvs mirror list
 	_paste_mirrorlist($fh, $mirrorref, $code, 'openbsd', $ver, 1);
 	_paste_in($fh, $sources->{"${what}-end"});
 	close($fh) or die "close $filename: $!";
@@ -395,14 +350,14 @@ sub _get_location($$) {
 		}
 	}
 	else {
-		if ($type eq 'AH' || $type eq 'VH') {
+		if ($type eq 'AH') {
 			$location .= "$m->{'GI'}, " if ($m->{'GI'});
 		}
-		if ($type eq 'AH' || $type eq 'VH' || $type =~ /^mirlist/) {
+		if ($type eq 'AH' || $type =~ /^mirlist/) {
 			$location .= "$m->{'GT'}, " if ($m->{'GT'});
 			$location .= "$m->{'GS'}, " if ($m->{'GS'});
 		}
-		if ($type eq 'AH' || $type eq 'VH' || $type eq 'mirlist1') {
+		if ($type eq 'AH' || $type eq 'mirlist1') {
 			$location .= "$m->{'GC'}" if ($m->{'GC'});
 		}
 		$location =~ s/, , /, /g;
@@ -431,7 +386,7 @@ if (@ARGV == 2) {
 		 $cmd eq 'openntpd-portable' ||
 		 $cmd eq 'openssh-ftp' || $cmd eq 'openssh-portable') {
 		write_ftphtml($cmd, $targets->{"$cmd"}, $ver, \@mirrors);
-	} elsif ($cmd eq 'anoncvs' || $cmd eq 'cvsync') {
+	} elsif ($cmd eq 'anoncvs') {
 		write_cvshtml($cmd, $targets->{"$cmd"}, $ver, \@mirrors);
 	} else {
 		die "Unknown mirror target.\n"
