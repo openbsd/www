@@ -9,8 +9,8 @@ OPENBGPD_VERSION=		6.6p0
 # also update mirrors/openntpd-ftp.html.head
 OPENNTPD_PORTABLE_VERSION=	6.2p3
 
-OPENSSH_VERSION=		8.1
-OPENSSH_PORTABLE_VERSION=	8.1p1
+OPENSSH_VERSION=		8.2
+OPENSSH_PORTABLE_VERSION=	8.2p1
 
 all: ../groups.html ../support.html ../ftp.html
 
