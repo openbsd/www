@@ -10,8 +10,10 @@ use warnings 'all';
 
 my $txtdir = "../../openssh/txt/";
 my $bzurl = "https://bugzilla.mindrot.org/show_bug.cgi?id=";
+my $prurl = "https://github.com/openssh/openssh-portable/pull/";
 my $manurl = "https://man.openbsd.org/";
 my $dlurl = "https://cdn.openbsd.org/pub/OpenBSD/OpenSSH";
+my $rfcurl = "https://tools.ietf.org/html/rfc";
 
 # All datestamps are relative to UTC for consistency regardless of whose
 # timezone the script gets run in.
@@ -141,19 +143,35 @@ sub output_release
 		}
 		push(@notes, $_);
 
-		# escape < before any URLs are inserted
+		# escape <> before any URLs are inserted
 		s|<|&lt;|g;
+		s|>|&gt;|g;
 
-		# expand bugzilla references into URLs.
+		# expand any URLs into actual links
+		if (m|https?://\S+[\.\(\)]+\s|) {  # trailing non-link tokens
+			s|(https?://\S+)([\.\(\)]+)\s|<a href='$1'>$1</a>$2|g;
+		} elsif (m|https?://\S+|) { # all other URLs
+			s|(https?://\S+)|<a href='$1'>$1</a>|g;
+		}
+
+		# expand bugzilla references into links.
+		s|bz(\d+)|<a href='$bzurl$1'>bz$1</a>|g;
 		s|bz#(\d+)|<a href='$bzurl$1'>bz#$1</a>|g;
 		s|bz #(\d+)|<a href='$bzurl$1'>bz #$1</a>|g;
 
-		# expand man page references into URLs.
+		# expand github pull requests into links.
+		s|PR(\d+)|<a href='$prurl$1'>PR$1</a>|g;
+
+		# expand RFC references into links.
+		s|RFC(\d{4})|<a href='$rfcurl$1'>RFC$1</a>|g;
+		s|RFC (\d{4})|<a href='$rfcurl$1'>RFC $1</a>|g;
+
+		# expand man page references into links
 		my $manpages ="ssh|sshd|scp|sftp|sftp-server|ssh-keygen|" .
 		    "ssh-add|ssh-agent|ssh_config|sshd_config|moduli";
 		s@($manpages)\((\d)\)@<a href='$manurl$1.$2'>$1($2)</a>@g;
 
-		# download links
+		# download links.
 		s|(openssh-[\d\.]+.tar.gz)|<a href='$dlurl/$1'>$1</a>|g;
 		s|(openssh-[\d\.]+p\d.tar.gz)|<a href='$dlurl/portable/$1'>$1</a>|g;
 
