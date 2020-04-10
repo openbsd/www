@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.50 2019/11/15 14:31:30 naddy Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.51 2020/04/10 21:45:17 deraadt Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -41,6 +41,12 @@ my $sources = {
 	'openntpd-portable-mid2'=> 'mirrors/ftp.html.mid2',
 	'openntpd-portable-end'	=> 'mirrors/openntpd-portable.html.end',
 
+	'rpki-client-portable-head'=> 'mirrors/rpki-client-portable.html.head',
+	'rpki-client-portable-mid0'=> 'mirrors/ftp.html.mid0',
+	'rpki-client-portable-mid1'=> 'mirrors/ftp.html.mid1',
+	'rpki-client-portable-mid2'=> 'mirrors/ftp.html.mid2',
+	'rpki-client-portable-end'	=> 'mirrors/rpki-client-portable.html.end',
+
 	'openssh-ftp-head'	=> 'mirrors/openssh-ftp.html.head',
 	'openssh-ftp-mid0'	=> 'mirrors/ftp.html.mid0',
 	'openssh-ftp-mid1'	=> 'mirrors/ftp.html.mid1',
@@ -64,6 +70,7 @@ my $targets = {
 	'openbsd-ftp'		=> '../ftp.html',
 	'openbgpd-ftp'		=> '../openbgpd/ftp.html',
 	'openntpd-portable'	=> '../openntpd/portable.html',
+	'rpki-client-portable'	=> '../rpki-client/portable.html',
 	'openssh-ftp'		=> '../openssh/ftp.html',
 	'openssh-portable'	=> '../openssh/portable.html',
 	'anoncvs'		=> '../anoncvs.html',
@@ -224,6 +231,9 @@ sub _paste_mirrorlist($$$$$$) {
 			}
 			elsif ($proj eq 'openntpd-portable') {
 				$url .= "OpenNTPD/openntpd-${version}.tar.gz";
+			}
+			elsif ($proj eq 'rpki-client-portable') {
+				$url .= "rpki-client/rpki-client-${version}.tar.gz";
 			}
 			print $fh "<tr>\n\t<td>\n\t<strong>$loc</strong>\n";
 			print $fh "\t</td><td>\n";
@@ -386,6 +396,7 @@ if (@ARGV == 2) {
 		write_mirror_list($targets->{'mirror_list'}, \@mirrors);
 	} elsif ($cmd eq 'openbsd-ftp' || $cmd eq 'openbgpd-ftp' ||
 		 $cmd eq 'openntpd-portable' ||
+		 $cmd eq 'rpki-client-portable' ||
 		 $cmd eq 'openssh-ftp' || $cmd eq 'openssh-portable') {
 		write_ftphtml($cmd, $targets->{"$cmd"}, $ver, \@mirrors);
 	} elsif ($cmd eq 'anoncvs') {

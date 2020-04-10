@@ -9,6 +9,9 @@ OPENBGPD_VERSION=		6.6p0
 # also update mirrors/openntpd-ftp.html.head
 OPENNTPD_PORTABLE_VERSION=	6.2p3
 
+# also update mirrors/openntpd-ftp.html.head
+RPKI_CLIENT_PORTABLE_VERSION=	1.0p1
+
 OPENSSH_VERSION=		8.2
 OPENSSH_PORTABLE_VERSION=	8.2p1
 
@@ -31,10 +34,12 @@ all: ../groups.html ../support.html ../ftp.html
 # Build the FTP/HTTP/RSYNC mirrors page.
 ../ftp.html ftp: mirrors.pl mirrors.dat mirrors/ftp.html.{end,head,mid1,mid2} \
      mirrors/openntpd-portable.html.{head,end} \
+     mirrors/rpki-client-portable.html.{head,end} \
      mirrors/openbgpd-ftp.html.{end,head}
 	perl mirrors.pl openbsd-ftp ${STABLE_VERSION}
 	perl mirrors.pl openbgpd-ftp ${OPENBGPD_VERSION}
 	perl mirrors.pl openntpd-portable ${OPENNTPD_PORTABLE_VERSION}
+	perl mirrors.pl rpki-client-portable ${RPKI_CLIENT_PORTABLE_VERSION}
 	perl mirrors.pl openssh-ftp ${OPENSSH_VERSION}
 	perl mirrors.pl openssh-portable ${OPENSSH_PORTABLE_VERSION}
 	perl mirrors.pl ftplist ${STABLE_VERSION}
