@@ -9,7 +9,7 @@ OPENBGPD_VERSION=		6.6p0
 # also update mirrors/openntpd-ftp.html.head
 OPENNTPD_PORTABLE_VERSION=	6.2p3
 
-# also update mirrors/openntpd-ftp.html.head
+# also update mirrors/rpki-client-portable.html.head
 RPKI_CLIENT_PORTABLE_VERSION=	6.6p1
 
 OPENSSH_VERSION=		8.2
