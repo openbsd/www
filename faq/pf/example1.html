@@ -13,7 +13,7 @@
 <link rel="canonical" href="https://www.openbsd.org/faq/pf/example1.html">
 
 <!--
-Copyright (c) 2016-2019 T.J. Townsend <tj@openbsd.org>
+Copyright (c) 2016-2020 T.J. Townsend <tj@openbsd.org>
 
 Permission to use, copy, modify, and distribute this documentation for
 any purpose with or without fee is hereby granted, provided that the
@@ -50,32 +50,28 @@ PF - Building a Router
 
 <h2 id="background">Background</h2>
 
-This guide will show you how to turn an OpenBSD system into a router.
-First, we'll define what this router (also called a "gateway") will actually
-do, since your requirements may vary.
+This example will demonstrate how to turn an OpenBSD system into a router.
+In this case, a router is defined as a system that performs the following
+duties:
 
 <ul>
-  <li>Performing network address translation (NAT)
-  <li>Giving a laptop and server static IPs based on their MAC address
-  <li>Handing out IP addresses to other clients via DHCP
+  <li>Network Address Translation (NAT)
+  <li>Handing out IP addresses to clients via DHCP
   <li>Allowing incoming connections to a local web server
   <li>Doing DNS caching for the LAN
   <li>Providing wireless connectivity
       (requires a <a href="../faq6.html#Wireless">supported card</a>)
 </ul>
 
-This example will use two <a href="https://man.openbsd.org/em">em(4)</a>
+This example will use two wired <a href="https://man.openbsd.org/em">em(4)</a>
 NICs and an <a href="https://man.openbsd.org/athn">athn(4)</a> wireless card.
-Replace the <code>em0</code>, <code>em1</code> and <code>athn0</code>
-interface names as appropriate.
-Sample configuration files are provided, but you're encouraged to read
-the man pages to understand their full capability.
+The <code>em0</code>, <code>em1</code> and <code>athn0</code> interface names
+should be replaced as appropriate.
 
 <h2 id="net">Networking</h2>
 
-We'll begin with some initial
-<a href="https://man.openbsd.org/hostname.if">network configuration</a>,
-using a <b>192.168.1.0/24</b> subnet for the wired clients and
+The <a href="https://man.openbsd.org/hostname.if">network configuration</a>
+will use a <b>192.168.1.0/24</b> subnet for the wired clients and
 <b>192.168.2.0/24</b> for the wireless.
 
 <pre class="cmdbox">
@@ -94,14 +90,14 @@ inet 192.168.2.1 255.255.255.0
 </pre>
 
 OpenBSD defaults to allowing only WPA2-CCMP connections in HostAP mode.
-If you need support for older (insecure) protocols, they must be
+If support for older (insecure) protocols is needed, they must be
 <a href="https://man.openbsd.org/ifconfig#IEEE_802.11_(WIRELESS_DEVICES)">
 explicitly enabled</a>.
 
 <h2 id="dhcp">DHCP</h2>
 
-Clients need IP addresses, so we'll set
-<a href="https://man.openbsd.org/dhcpd">dhcpd(8)</a> to start on boot.
+The <a href="https://man.openbsd.org/dhcpd">dhcpd(8)</a> daemon should be
+started at boot time to provide client machines with local IP addresses.
 Configuration is done via the
 <a href="https://man.openbsd.org/dhcpd.conf">dhcpd.conf(5)</a> file.
 
@@ -111,7 +107,8 @@ Configuration is done via the
 # <b>vi /etc/dhcpd.conf</b>
 </pre>
 
-Take this example and adjust to fit your needs:
+The following example also provides static IP reservations for a laptop and
+server based on their MAC addresses.
 
 <pre class="cmdbox">
 subnet 192.168.1.0 netmask 255.255.255.0 {
@@ -134,28 +131,24 @@ subnet 192.168.2.0 netmask 255.255.255.0 {
 }
 </pre>
 
-You can specify another
-<a href="https://tools.ietf.org/html/rfc1918">RFC 1918</a> address space here
-if you prefer, or even a public IP block if you have one.
-Using this example, clients will query a local DNS server, detailed in a later
-section.
-If you don't plan on using a local DNS server, replace the IPs in the
-<code>domain-name-servers</code> lines with the address of your preferred
-upstream resolver.
+Any <a href="https://tools.ietf.org/html/rfc1918">RFC 1918</a> address space
+may be specified here.
+The <code>domain-name-servers</code> line in this example specifies a local
+DNS server that will be configured in a later section.
 
 <h2 id="pf">Firewall</h2>
 
-The centerpiece of this guide is the
+OpenBSD's PF firewall is configured via the
 <a href="https://man.openbsd.org/pf.conf">pf.conf(5)</a> file.
-It's highly recommended to familiarize yourself with it, and PF in general,
-before copying this example.
+It's highly recommended to become familiar with it, and PF in general, before
+copying this example.
 Each section will be explained in more detail.
 
 <pre class="cmdbox">
 # <b>vi /etc/pf.conf</b>
 </pre>
 
-A configuration for a gateway system might look like this:
+A gateway configuration might look like this:
 
 <pre class="cmdbox">
 wired = "em1"
@@ -178,15 +171,15 @@ pass in on { $wired $wifi } inet
 pass in on egress inet proto tcp from any to (egress) port { 80 443 } rdr-to 192.168.1.2
 </pre>
 
-Now we'll break this ruleset down and explain what each line does.
+The ruleset's various sections will now be explained:
 
 <pre class="cmdbox">
 wired = "em1"
 wifi  = "athn0"
 </pre>
 
-These are <a href="macros.html">macros</a>, used to make overall maintenance
-easier.
+The wired and wireless interface names for the LAN are defined with
+<a href="macros.html">macros</a>, used to make overall maintenance easier.
 Macros can be referenced throughout the ruleset after being defined.
 
 <pre class="cmdbox">
@@ -208,18 +201,19 @@ set skip on lo0
 PF allows certain <a href="options.html">options</a> to be set at runtime.
 The <code>block-policy</code> decides whether rejected packets should return
 a TCP RST or be silently dropped.
-The <code>loginterface</code> is exactly what it sounds like: which interface
-should have packet and byte statistics collection enabled.
+The <code>loginterface</code> specifies which interface should have packet
+and byte statistics collection enabled.
 These statistics can be viewed with the <code>pfctl -si</code> command.
-In this case, we're using the <code>egress</code>
-<a href="https://man.openbsd.org/ifconfig#group">group</a> rather than a
-specific interface.
-The <code>egress</code> keyword automatically chooses the interface that holds
-the default route, or the <code>em0</code> WAN interface in our example.
-Finally, <code>skip</code> allows you to completely omit a given interface from
-packet processing.
-The firewall will ignore loopback traffic on the
-<a href="https://man.openbsd.org/lo">lo(4)</a> interface.
+
+In this case, the <code>egress</code>
+<a href="https://man.openbsd.org/ifconfig#group">group</a> is being used
+rather than a specific interface name.
+By doing so, the interface holding the default route (<code>em0</code) will
+be chosen automatically.
+Finally, <code>skip</code> allows a given interface to be omitted from packet
+processing.
+The firewall will ignore traffic on the
+<a href="https://man.openbsd.org/lo">lo(4)</a> loopback interface.
 
 <pre class="cmdbox">
 match in all scrub (no-df random-id max-mss 1440)
@@ -241,21 +235,21 @@ block return out quick on egress from any to &lt;martians&gt;
 
 The <a href="filter.html#antispoof">antispoof</a> keyword provides some
 protection from packets with spoofed source addresses.
-Packets coming in on the <code>egress</code> interface should be dropped if they
-appear to be from the list of unroutable addresses we defined.
+Incoming packets should be dropped if they appear to be from the list of
+unroutable addresses defined earlier.
 Such packets were likely sent due to misconfiguration, or possibly as part of
 a spoofing attack.
-Similarly, our clients should not attempt to connect to such addresses.
-We'll specify the "return" action to prevent annoying timeouts for users.
-Note that this can cause problems if you're doing double NAT.
+Similarly, clients should not attempt to connect to such addresses.
+The "return" action is specified to prevent annoying timeouts for users.
+Note that this can cause problems if the router itself is also behind NAT.
 
 <pre class="cmdbox">
 block all
 </pre>
 
-The firewall will set a "default deny" policy for all traffic.
-This means we will only allow incoming and outgoing connections that we
-explicitly put in our ruleset.
+The firewall will set a "default deny" policy for all traffic, meaning that
+only incoming and outgoing connections which have been explicitly put in the
+ruleset will be allowed.
 
 <pre class="cmdbox">
 pass out quick inet
@@ -274,21 +268,16 @@ pass in on egress inet proto tcp from any to (egress) port { 80 443 } rdr-to 192
 </pre>
 
 Forward incoming connections (on TCP ports 80 and 443, for a web server)
-to our machine at 192.168.1.2.
+to the machine at 192.168.1.2.
 This is merely an example of port forwarding.
 
 <h2 id="dns">DNS</h2>
 
-At this point, clients should be assigned IP addresses and granted access to
-the internet, while being protected by the firewall.
-If that's all you need, you're done and can reboot now.
-That being said, a DNS cache is common addition to a gateway system.
-
-<p>
+While a DNS cache is not required for a gateway system, it is a common
+addition to one.
 When clients issue a DNS query, they'll first hit the
 <a href="https://man.openbsd.org/unbound">unbound(8)</a> cache.
-If it doesn't have the answer, it goes out to the upstream resolver that
-you've configured.
+If it doesn't have the answer, it goes out to the upstream resolver.
 Results are then fed to the client and cached for a period of time, making
 future lookups of the same address quicker.
 
@@ -321,10 +310,11 @@ Outgoing DNS lookups may also be encrypted with the <code>dnscrypt-proxy</code>
 package -- see its included README file for details.
 
 <p>
-If you want the gateway to use the caching resolver for lookups too, don't
-forget to change its <code>/etc/resolv.conf</code> file to point to 127.0.0.1.
-Since the majority of routers won't be doing many DNS queries, this is likely
-not needed.
-Also note that it will need to be changed <i>back</i> to an actual resolver
-when using <a href="../faq4.html#bsd.rd">bsd.rd</a> for network-based upgrades
-if you do so.
+If the router should also use the caching resolver, its
+<code>/etc/resolv.conf</code> file should contain
+<code>nameserver 127.0.0.1</code>.
+
+<p>
+Once the changes are in place, reboot the system.
+
+<p>
