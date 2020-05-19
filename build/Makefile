@@ -1,7 +1,8 @@
 # Makefile for WWW subdirectory.
 
-STABLE_VERSION=	6.6
-PREV_VERSION=	6.5
+# XXXrelease: 6.8 .fs files renamed to .img
+STABLE_VERSION=	6.7
+PREV_VERSION=	6.6
 
 # also update mirrors/openbgpd-ftp.html.head
 OPENBGPD_VERSION=		6.6p0
