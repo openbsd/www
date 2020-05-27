@@ -139,7 +139,7 @@ sub output_release
 		if ($fixdate) {
 			s|has just been released|was released on $date|;
 			s|It will be available from|It is available from|;
-			s|http://www.openssh.com/ shortly.|https://www.openssh.com/.|;
+			s|https?://www.openssh.com/ shortly\.|https://www.openssh.com/.|;
 		}
 		push(@notes, $_);
 
