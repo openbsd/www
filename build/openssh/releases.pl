@@ -161,6 +161,7 @@ sub output_release
 
 		# expand github pull requests into links.
 		s|PR(\d+)|<a href='$prurl$1'>PR$1</a>|g;
+		s|PR#(\d+)|<a href='$prurl$1'>PR$1</a>|g;
 
 		# expand RFC references into links.
 		s|RFC(\d{4})|<a href='$rfcurl$1'>RFC$1</a>|g;
