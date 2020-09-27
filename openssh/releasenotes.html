@@ -22,6 +22,314 @@
 Release Notes
 </h2>
 <hr>
+<h3><a href='txt/release-8.4' id='8.4'>OpenSSH 8.4</a>/<a href='txt/release-8.4' id='8.4p1'>8.4p1</a> (2020-09-27)</h3>
+<pre>
+OpenSSH 8.4 was released on 2020-09-27. It is available from the
+mirrors listed at <a href='https://www.openssh.com/'>https://www.openssh.com/</a>.
+OpenSSH is a 100% complete SSH protocol 2.0 implementation and
+includes sftp client and server support.
+
+Once again, we would like to thank the OpenSSH community for their
+continued support of the project, especially those who contributed
+code or patches, reported bugs, tested snapshots or donated to the
+project. More information on donations may be found at:
+<a href='https://www.openssh.com/donations.html'>https://www.openssh.com/donations.html</a>
+
+Future deprecation notice
+=========================
+
+It is now possible[1] to perform chosen-prefix attacks against the
+SHA-1 algorithm for less than USD$50K. For this reason, we will be
+disabling the "ssh-rsa" public key signature algorithm by default in a
+near-future release.
+
+This algorithm is unfortunately still used widely despite the
+existence of better alternatives, being the only remaining public key
+signature algorithm specified by the original SSH RFCs.
+
+The better alternatives include:
+
+ * The <a href='https://tools.ietf.org/html/rfc8332'>RFC8332</a> RSA SHA-2 signature algorithms rsa-sha2-256/512. These
+   algorithms have the advantage of using the same key type as
+   "ssh-rsa" but use the safe SHA-2 hash algorithms. These have been
+   supported since OpenSSH 7.2 and are already used by default if the
+   client and server support them.
+
+ * The ssh-ed25519 signature algorithm. It has been supported in
+   OpenSSH since release 6.5.
+
+ * The <a href='https://tools.ietf.org/html/rfc5656'>RFC5656</a> ECDSA algorithms: ecdsa-sha2-nistp256/384/521. These
+   have been supported by OpenSSH since release 5.7.
+
+To check whether a server is using the weak ssh-rsa public key
+algorithm, for host authentication, try to connect to it after
+removing the ssh-rsa algorithm from <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>'s allowed list:
+
+    ssh -oHostKeyAlgorithms=-ssh-rsa user@host
+
+If the host key verification fails and no other supported host key
+types are available, the server software on that host should be
+upgraded.
+
+We intend to enable UpdateHostKeys by default in the next OpenSSH
+release. This will assist the client by automatically migrating to
+better algorithms. Users may consider enabling this option manually.
+
+[1] "SHA-1 is a Shambles: First Chosen-Prefix Collision on SHA-1 and
+    Application to the PGP Web of Trust" Leurent, G and Peyrin, T
+    (2020) <a href='https://eprint.iacr.org/2020/014.pdf'>https://eprint.iacr.org/2020/014.pdf</a>
+
+Security
+========
+
+ * <a href='https://man.openbsd.org/ssh-agent.1'>ssh-agent(1)</a>: restrict ssh-agent from signing web challenges for
+   FIDO/U2F keys.
+
+   When signing messages in ssh-agent using a FIDO key that has an
+   application string that does not start with "ssh:", ensure that the
+   message being signed is one of the forms expected for the SSH protocol
+   (currently public key authentication and sshsig signatures).
+
+   This prevents ssh-agent forwarding on a host that has FIDO keys
+   attached granting the ability for the remote side to sign challenges
+   for web authentication using those keys too.
+
+   Note that the converse case of web browsers signing SSH challenges is
+   already precluded because no web RP can have the "ssh:" prefix in the
+   application string that we require.
+
+ * <a href='https://man.openbsd.org/ssh-keygen.1'>ssh-keygen(1)</a>: Enable FIDO 2.1 credProtect extension when generating
+   a FIDO resident key.
+
+   The recent FIDO 2.1 Client to Authenticator Protocol introduced a
+   "credProtect" feature to better protect resident keys. We use this
+   option to require a PIN prior to all operations that may retrieve
+   a resident key from a FIDO token.
+
+Potentially-incompatible changes
+================================
+
+This release includes a number of changes that may affect existing
+configurations:
+
+ * For FIDO/U2F support, OpenSSH recommends the use of libfido2 1.5.0
+   or greater. Older libraries have limited support at the expense of
+   disabling particular features. These include resident keys, PIN-
+   required keys and multiple attached tokens.
+
+ * <a href='https://man.openbsd.org/ssh-keygen.1'>ssh-keygen(1)</a>: the format of the attestation information optionally
+   recorded when a FIDO key is generated has changed. It now includes
+   the authenticator data needed to validate attestation signatures. 
+
+ * The API between OpenSSH and the FIDO token middleware has changed
+   and the SSH_SK_VERSION_MAJOR version has been incremented as a
+   result. Third-party middleware libraries must support the current
+   API version (7) to work with OpenSSH 8.4.
+
+ * The portable OpenSSH distribution now requires automake to rebuild
+   the configure script and supporting files. This is not required when
+   simply building portable OpenSSH from a release tar file.
+
+Changes since OpenSSH 8.3
+=========================
+
+New features
+------------
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>, <a href='https://man.openbsd.org/ssh-keygen.1'>ssh-keygen(1)</a>: support for FIDO keys that require a PIN for
+   each use. These keys may be generated using ssh-keygen using a new
+   "verify-required" option. When a PIN-required key is used, the user
+   will be prompted for a PIN to complete the signature operation.
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: authorized_keys now supports a new "verify-required"
+   option to require FIDO signatures assert that the token verified
+   that the user was present before making the signature. The FIDO
+   protocol supports multiple methods for user-verification, but
+   currently OpenSSH only supports PIN verification.
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>, <a href='https://man.openbsd.org/ssh-keygen.1'>ssh-keygen(1)</a>: add support for verifying FIDO webauthn
+   signatures. Webauthn is a standard for using FIDO keys in web
+   browsers. These signatures are a slightly different format to plain
+   FIDO signatures and thus require explicit support.
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: allow some keywords to expand shell-style ${ENV}
+   environment variables. The supported keywords are CertificateFile,
+   ControlPath, IdentityAgent and IdentityFile, plus LocalForward and
+   RemoteForward when used for Unix domain socket paths. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3140'>bz#3140</a>
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>, <a href='https://man.openbsd.org/ssh-agent.1'>ssh-agent(1)</a>: allow some additional control over the use of
+   ssh-askpass via a new $SSH_ASKPASS_REQUIRE environment variable,
+   including forcibly enabling and disabling its use. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=69'>bz#69</a>
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: allow <a href='https://man.openbsd.org/ssh_config.5'>ssh_config(5)</a>'s AddKeysToAgent keyword accept a time
+   limit for keys in addition to its current flag options. Time-
+   limited keys will automatically be removed from ssh-agent after
+   their expiry time has passed.
+
+ * <a href='https://man.openbsd.org/scp.1'>scp(1)</a>, <a href='https://man.openbsd.org/sftp.1'>sftp(1)</a>: allow the -A flag to explicitly enable agent
+   forwarding in scp and sftp. The default remains to not forward an
+   agent, even when ssh_config enables it.
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: add a '%k' TOKEN that expands to the effective HostKey of
+   the destination. This allows, e.g., keeping host keys in individual
+   files using "UserKnownHostsFile ~/.ssh/known_hosts.d/%k". <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=1654'>bz#1654</a>
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: add %-TOKEN, environment variable and tilde expansion to
+   the UserKnownHostsFile directive, allowing the path to be
+   completed by the configuration (e.g. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=1654'>bz#1654</a>)
+
+ * <a href='https://man.openbsd.org/ssh-keygen.1'>ssh-keygen(1)</a>: allow "ssh-add -d -" to read keys to be deleted
+   from stdin. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3180'>bz#3180</a>
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: improve logging for MaxStartups connection throttling.
+   sshd will now log when it starts and stops throttling and periodically
+   while in this state. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3055'>bz#3055</a>
+
+Bugfixes
+--------
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>, <a href='https://man.openbsd.org/ssh-keygen.1'>ssh-keygen(1)</a>: better support for multiple attached FIDO
+   tokens. In cases where OpenSSH cannot unambiguously determine which
+   token to direct a request to, the user is now required to select a
+   token by touching it. In cases of operations that require a PIN to
+   be verified, this avoids sending the wrong PIN to the wrong token
+   and incrementing the token's PIN failure counter (tokens
+   effectively erase their keys after too many PIN failures).
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: fix Include before Match in sshd_config; <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3122'>bz#3122</a>
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: close stdin/out/error when forking after authentication
+   completes ("ssh -f ...") <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3137'>bz#3137</a>
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>, <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: limit the amount of channel input data buffered,
+   avoiding peers that advertise large windows but are slow to read
+   from causing high memory consumption.
+
+ * <a href='https://man.openbsd.org/ssh-agent.1'>ssh-agent(1)</a>: handle multiple requests sent in a single write() to
+   the agent.
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: allow sshd_config longer than 256k
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: avoid spurious "Unable to load host key" message when sshd
+   load a private key but no public counterpart
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: prefer the default hostkey algorithm list whenever we have
+   a hostkey that matches its best-preference algorithm.
+
+ * <a href='https://man.openbsd.org/sshd.1'>sshd(1)</a>: when ordering the hostkey algorithms to request from a
+   server, prefer certificate types if the known_hosts files contain a key
+   marked as a @cert-authority; <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3157'>bz#3157</a>
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: perform host key fingerprint comparisons for the "Are you
+   sure you want to continue connecting (yes/no/[fingerprint])?"
+   prompt with case sensitivity.
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: ensure that address/masklen mismatches in sshd_config
+   yield fatal errors at daemon start time rather than later when
+   they are evaluated.
+
+ * <a href='https://man.openbsd.org/ssh-keygen.1'>ssh-keygen(1)</a>: ensure that certificate extensions are lexically
+   sorted. Previously if the user specified a custom extension then
+   the everything would be in order except the custom ones. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3198'>bz#3198</a>
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: also compare username when checking for JumpHost loops.
+   <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3057'>bz#3057</a>
+
+ * <a href='https://man.openbsd.org/ssh-keygen.1'>ssh-keygen(1)</a>: preserve group/world read permission on known_hosts
+   files across runs of "ssh-keygen -Rf /path". The old behaviour was
+   to remove all rights for group/other. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3146'>bz#3146</a>
+
+ * <a href='https://man.openbsd.org/ssh-keygen.1'>ssh-keygen(1)</a>: Mention the [-a rounds] flag in the ssh-keygen
+   manual page and usage().
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: explicitly construct path to ~/.ssh/rc rather than
+   relying on it being relative to the current directory, so that it
+   can still be found if the shell startup changes its directory.
+   <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3185'>bz#3185</a>
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: when redirecting sshd's log output to a file, undo this
+   redirection after the session child process is forked(). Fixes
+   missing log messages when using this feature under some
+   circumstances.
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: start ClientAliveInterval bookkeeping before first pass
+   through select() loop; fixed theoretical case where busy sshd may
+   ignore timeouts from client.
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: only reset the ServerAliveInterval check when we receive
+   traffic from the server and ignore traffic from a port forwarding
+   client, preventing a client from keeping a connection alive when
+   it should be terminated. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=2265'>bz#2265</a>
+
+ * <a href='https://man.openbsd.org/ssh-keygen.1'>ssh-keygen(1)</a>: avoid spurious error message when ssh-keygen
+   creates files outside ~/.ssh
+
+ * sftp-client(1): fix off-by-one error that caused sftp downloads to
+   make one more concurrent request that desired. This prevented using
+   <a href='https://man.openbsd.org/sftp.1'>sftp(1)</a> in unpipelined request/response mode, which is useful when
+   debugging. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3054'>bz#3054</a>
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>, <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: handle EINTR in waitfd() and timeout_connect()
+   helpers. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3071'>bz#3071</a>
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>, <a href='https://man.openbsd.org/ssh-keygen.1'>ssh-keygen(1)</a>: defer creation of ~/.ssh until we attempt to
+   write to it so we don't leave an empty .ssh directory when it's not
+   needed. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3156'>bz#3156</a>
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>, <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: fix multiplier when parsing time specifications
+   when handling seconds after other units. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3171'>bz#3171</a>
+
+Portability
+-----------
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: always send any PAM account messages. If the PAM account
+   stack returns any messages, always send them to the user and not
+   just if the check succeeds. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=2049'>bz#2049</a>
+
+ * Implement some backwards compatibility for libfido2 libraries
+   older than 1.5.0. Note that use of an older library will result
+   in the loss of certain features including resident key support,
+   PIN support and support for multiple attached tokens.
+
+ * configure fixes for XCode 12
+
+ * gnome-ssh-askpass3: ensure the "close" button is not focused by
+   default for SSH_ASKPASS_PROMPT=none prompts. Avoids space/enter
+   accidentally dismissing FIDO touch notifications.
+
+ * gnome-ssh-askpass3: allow some control over textarea colour via
+   $GNOME_SSH_ASKPASS_FG_COLOR and $GNOME_SSH_ASKPASS_BG_COLOR
+   environment variables.
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: document another PAM spec problem in a frustrated comment
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: support NetBSD's utmpx.ut_ss address field. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=960'>bz#960</a>
+
+ * Add the ssh-sk-helper binary and its manpage to the RPM spec file
+
+ * Detect the Frankenstein monster of Linux/X32 and allow the sandbox
+   to function there. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3085'>bz#3085</a>
+
+Checksums:
+==========
+
+- SHA1 (<a href='https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/openssh-8.4.tar.gz'>openssh-8.4.tar.gz</a>) = 71675139df6807f396e6bd92ff8cb9b0356385d8
+- SHA256 (<a href='https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/openssh-8.4.tar.gz'>openssh-8.4.tar.gz</a>) = JhBgLYkyRge/zQK8ylBSRcOYvrV/tHwQcvVXfExGB70=
+
+- SHA1 (<a href='https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-8.4p1.tar.gz'>openssh-8.4p1.tar.gz</a>) = 69305059e10a60693ebe6f17731f962c9577535c
+- SHA256 (<a href='https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-8.4p1.tar.gz'>openssh-8.4p1.tar.gz</a>) = WgHSLkB+scBbqKj3xlTTiKE+nyJuTtM704dI2vodKyQ=
+
+Please note that the SHA256 signatures are base64 encoded and not
+hexadecimal (which is the default for most checksum tools). The PGP
+key used to sign the releases is available as RELEASE_KEY.asc from
+the mirror sites.
+
+Reporting Bugs:
+===============
+
+- Please read <a href='https://www.openssh.com/report.html'>https://www.openssh.com/report.html</a>
+  Security bugs should be reported directly to openssh@openssh.com
+</pre><hr>
 <h3><a href='txt/release-8.3' id='8.3'>OpenSSH 8.3</a>/<a href='txt/release-8.3' id='8.3p1'>8.3p1</a> (2020-05-27)</h3>
 <pre>
 OpenSSH 8.3 was released on 2020-05-27. It is available from the
@@ -9427,4 +9735,4 @@ Damien Miller
 
 [1] <a href='http://violet.ibs.com.au/openssh/files/ChangeLog'>http://violet.ibs.com.au/openssh/files/ChangeLog</a>
 </pre><hr>
-<p>$OpenBSD: releasenotes.html,v 1.47 2020/05/27 12:22:22 dtucker Exp $
+<p>$OpenBSD: releasenotes.html,v 1.48 2020/09/27 09:35:50 djm Exp $

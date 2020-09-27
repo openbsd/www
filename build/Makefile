@@ -13,8 +13,8 @@ OPENNTPD_PORTABLE_VERSION=	6.2p3
 # also update mirrors/rpki-client-portable.html.head
 RPKI_CLIENT_PORTABLE_VERSION=	6.7p1
 
-OPENSSH_VERSION=		8.3
-OPENSSH_PORTABLE_VERSION=	8.3p1
+OPENSSH_VERSION=		8.4
+OPENSSH_PORTABLE_VERSION=	8.4p1
 
 all: ../groups.html ../support.html ../ftp.html
 
