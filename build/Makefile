@@ -32,10 +32,13 @@ all: ../groups.html ../support.html ../ftp.html
 		@rm -f support-tbl.html support.countries
 
 # Build the FTP/HTTP/RSYNC mirrors page.
-../ftp.html ftp: mirrors.pl mirrors.dat mirrors/ftp.html.{end,head,mid1,mid2} \
+../ftp.html ftp: mirrors.pl mirrors.dat \
+     mirrors/ftp.html.{head,end,mid0,mid1,mid2} \
+     mirrors/openbgpd-ftp.html.{head,end} \
      mirrors/openntpd-portable.html.{head,end} \
-     mirrors/rpki-client-portable.html.{head,end} \
-     mirrors/openbgpd-ftp.html.{end,head}
+     mirrors/openssh-ftp.html.{head,end} \
+     mirrors/openssh-portable.html.{head,end,mid1} \
+     mirrors/rpki-client-portable.html.{head,end}
 	perl mirrors.pl openbsd-ftp ${STABLE_VERSION}
 	perl mirrors.pl openbgpd-ftp ${OPENBGPD_VERSION}
 	perl mirrors.pl openntpd-portable ${OPENNTPD_PORTABLE_VERSION}
