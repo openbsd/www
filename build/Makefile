@@ -7,7 +7,7 @@ PREV_VERSION=	6.7
 OPENBGPD_VERSION=		6.8p1
 
 # also update mirrors/openntpd-ftp.html.head
-OPENNTPD_PORTABLE_VERSION=	6.2p3
+OPENNTPD_PORTABLE_VERSION=	6.8p1
 
 # also update mirrors/rpki-client-portable.html.head
 RPKI_CLIENT_PORTABLE_VERSION=	6.8p1
