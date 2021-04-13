@@ -1171,65 +1171,198 @@ to 6.9.
   </ul>
 
 <li>OpenSSH 8.5
-
   <ul>
+    <li>Security fixes
+    <ul>
+	<li><a href="https://man.openbsd.org/ssh-agent.1">ssh-agent(1)</a>:
+	fixed a double-free memory corruption that was introduced in OpenSSH
+	8.2 . We treat all such memory faults as potentially exploitable. This
+	bug could be reached by an attacker with access to the agent socket.<br>
 
-<!-- XXX taken from plus.html, not sorted into categories yet
-	<li>Preferred ed25519 signature algorithm variants over ECDSA in <a
-		href="https://man.openbsd.org/ssh_config.5">ssh_config(5)</a> and <a
-		href="https://man.openbsd.org/sshd_config.5">sshd_config(5)</a>.
-	<li>Enabled <a
-		href="https://man.openbsd.org/ssh_config.5">ssh_config(5)</a>
-		UpdateHostkeys by default when the configuration has not overridden
-		UserKnownHostFile.
-	<li>Prefixed <a href="https://man.openbsd.org/ssh.1">ssh(1)</a>
-		keyboard interactive prompts with "user@host" for easier
-		identification of connections.
-	<li>Displayed any other hostnames/addresses associated with a new
-		hostkey when <a href="https://man.openbsd.org/ssh.1">ssh(1)</a>
-		prompts the user to accept it.
-	<li>When doing an <a href="https://man.openbsd.org/sftp.1">sftp(1)</a>
-		recursive upload or download of a read-only directory, ensured that
-		the directory was created with write and execute permissions in the
-		interim to allow the transfer.
-	<li>Set the specified TOS/DSCP for interactive use prior to TCP
-		connect in <a href="https://man.openbsd.org/ssh.1">ssh(1)</a>.
-	<li>CLeaned up passing of struct passwd from monitor to preauth
-		privsep process in <a href="https://man.openbsd.org/ssh.1">ssh(1)</a>.
-	<li>Added an <a
-		href="https://man.openbsd.org/ssh_config.5">ssh_config(5)</a>
-		KnownHostsCommand that allows the client to obtain known_hosts data
-		from a command in addition to the usual files.
-	<li>Made CheckHostIP default to "no" in <a
-		href="https://man.openbsd.org/ssh_config.5">ssh_config(5)</a>.
-	<li>Added PerSourceMaxStartups and PerSourceNetBlockSize options to
-		<a href="https://man.openbsd.org/sshd.8">sshd(8)</a>.
-	<li>Renamed the PubkeyAcceptedKeyTypes keyword to
-		PubkeyAcceptedAlgorithms in <a
-		href="https://man.openbsd.org/ssh_config.5">ssh_config(5)</a> and <a
-		href="https://man.openbsd.org/sshd_config.5">sshd_config(5)</a>.
-	<li>Renamed the HostbasedKeyTypes keyword in <a
-		href="https://man.openbsd.org/ssh_config.5">ssh_config(5)</a> and the
-		HostbasedAcceptedKeyTypes keyword in <a
-		href="https://man.openbsd.org/sshd_config.5">sshd_config(5)</a> to
-		HostbasedAcceptedAlgorithms.
-	<li>Added PermitRemoteOpen to <a
-		href="https://man.openbsd.org/ssh.1">ssh(1)</a> for remote dynamic
-		forwarding with SOCKS.
-	<li>Released <a href="https://www.openssh.com/txt/release-8.5">OpenSSH 8.5</a>.
--->
+	On modern operating systems where the OS can provide information
+	about the user identity connected to a socket, OpenSSH ssh-agent and
+	sshd limit agent socket access only to the originating user and root.
+	Additional mitigation may be afforded by the system's
+	malloc(3)/free(3) implementation, if it detects double-free
+	conditions.<br>
 
+	The most likely scenario for exploitation is a user forwarding an
+	agent either to an account shared with a malicious user or to a host
+	with an attacker holding root access.
+    </ul>
     <li>Potentially incompatible changes.
     <ul>
-	<li>...
+	<li><a href="https://man.openbsd.org/ssh.1">ssh(1)</a>, <a
+	href="https://man.openbsd.org/sshd.8">sshd(8)</a>: this release
+	changes the first-preference signature algorithm from ECDSA to
+	ED25519.
+
+	<li><a href="https://man.openbsd.org/ssh.1">ssh(1)</a>, <a
+	href="https://man.openbsd.org/sshd.8">sshd(8)</a>: set the TOS/DSCP
+	specified in the configuration for interactive use prior to TCP
+	connect. The connection phase of the SSH session is time-sensitive and
+	often explicitly interactive.  The ultimate interactive/bulk TOS/DSCP
+	will be set after authentication completes.
+
+	<li><a href="https://man.openbsd.org/ssh.1">ssh(1)</a>, <a
+	href="https://man.openbsd.org/sshd.8">sshd(8)</a>: remove the
+	pre-standardization cipher rijndael-cbc@lysator.liu.se. It is an alias
+	for aes256-cbc before it was standardized in RFC4253 (2006), has been
+	deprecated and disabled by default since OpenSSH 7.2 (2016) and was
+	only briefly documented in ssh.1 in 2001.
+
+	<li><a href="https://man.openbsd.org/ssh.1">ssh(1)</a>, <a
+	href="https://man.openbsd.org/sshd.8">sshd(8)</a>: update/replace the
+	experimental post-quantum hybrid key exchange method based on
+	Streamlined NTRU Prime coupled with X25519.<br>
+
+	The previous sntrup4591761x25519-sha512@tinyssh.org method is
+	replaced with sntrup761x25519-sha512@openssh.com. Per its designers,
+	the sntrup4591761 algorithm was superseded almost two years ago by
+	sntrup761.
+	(note this both the updated method and the one that it replaced are
+	disabled by default)
+
+	<li><a href="https://man.openbsd.org/ssh.1">ssh(1)</a>: disable
+	CheckHostIP by default. It provides insignificant benefits while
+	making key rotation significantly more difficult, especially for hosts
+	behind IP-based load-balancers.
     </ul>
     <li>New Features
     <ul>
-	<li>...
+	<li><a href="https://man.openbsd.org/ssh.1">ssh(1)</a>: this release
+	enables UpdateHostkeys by default subject to some conservative
+	preconditions:
+	<ul>
+	    <li>The key was matched in the UserKnownHostsFile (and not in the
+	      GlobalKnownHostsFile).
+	    <li>The same key does not exist under another name.
+	    <li>A certificate host key is not in use.
+	    <li>known_hosts contains no matching wildcard hostname pattern.
+	    <li>VerifyHostKeyDNS is not enabled.
+	    <li>The default UserKnownHostsFile is in use.
+	</ul>
+	We expect some of these conditions will be modified or relaxed in
+	future.
+
+	<li><a href="https://man.openbsd.org/ssh.1">ssh(1)</a>, <a
+	href="https://man.openbsd.org/sshd.8">sshd(8)</a>: add a new
+	LogVerbose configuration directive for that allows forcing maximum
+	debug logging by file/function/line pattern-lists.
+
+	<li><a href="https://man.openbsd.org/ssh.1">ssh(1)</a>: when
+	prompting the user to accept a new hostkey, display any other host
+	names/addresses already associated with the key.
+
+	<li><a href="https://man.openbsd.org/ssh.1">ssh(1)</a>: allow
+	UserKnownHostsFile=none to indicate that no known_hosts file should be
+	used to identify host keys.
+
+	<li><a href="https://man.openbsd.org/ssh.1">ssh(1)</a>: add a
+	ssh_config KnownHostsCommand option that allows the client to obtain
+	known_hosts data from a command in addition to the usual files.
+
+	<li><a href="https://man.openbsd.org/ssh.1">ssh(1)</a>: add a
+	ssh_config PermitRemoteOpen option that allows the client to restrict
+	the destination when RemoteForward is used with SOCKS.
+
+	<li><a href="https://man.openbsd.org/ssh.1">ssh(1)</a>: for FIDO
+	keys, if a signature operation fails with a "incorrect PIN" reason and
+	no PIN was initially requested from the user, then request a PIN and
+	retry the operation. This supports some biometric devices that fall
+	back to requiring PIN when reading of the biometric failed, and
+	devices that require PINs for all hosted credentials.
+
+	<li><a href="https://man.openbsd.org/sshd.8">sshd(8)</a>: implement
+	client address-based rate-limiting via new <a
+	href="https://man.openbsd.org/sshd_config.5">sshd_config(5)</a>
+	PerSourceMaxStartups and PerSourceNetBlockSize directives that provide
+	more fine-grained control on a per-origin address basis than the
+	global MaxStartups limit.
     </ul>
     <li>Bugfixes
     <ul>
-	<li>...
+	<li><a href="https://man.openbsd.org/ssh.1">ssh(1)</a>: Prefix
+	keyboard interactive prompts with "(user@host)" to make it easier to
+	determine which connection they are associated with in cases like scp
+	-3, ProxyJump, etc. bz#3224
+
+	<li><a href="https://man.openbsd.org/sshd.8">sshd(8)</a>: fix
+	sshd_config SetEnv directives located inside Match blocks. GHPR#201
+
+	<li><a href="https://man.openbsd.org/ssh.1">ssh(1)</a>: when
+	requesting a FIDO token touch on stderr, inform the user once the
+	touch has been recorded.
+
+	<li><a href="https://man.openbsd.org/ssh.1">ssh(1)</a>: prevent
+	integer overflow when ridiculously large ConnectTimeout values are
+	specified, capping the effective value (for most platforms) at 24
+	days. bz#3229
+
+	<li><a href="https://man.openbsd.org/ssh.1">ssh(1)</a>: consider the
+	ECDSA key subtype when ordering host key algorithms in the client.
+
+	<li><a href="https://man.openbsd.org/ssh.1">ssh(1)</a>, <a
+	href="https://man.openbsd.org/sshd.8">sshd(8)</a>: rename the
+	PubkeyAcceptedKeyTypes keyword to PubkeyAcceptedAlgorithms. The
+	previous name incorrectly suggested that it control allowed key
+	algorithms, when this option actually specifies the signature
+	algorithms that are accepted. The previous name remains available as
+	an alias. bz#3253
+
+	<li><a href="https://man.openbsd.org/ssh.1">ssh(1)</a>, <a
+	href="https://man.openbsd.org/sshd.8">sshd(8)</a>: similarly, rename
+	HostbasedKeyTypes (ssh) and HostbasedAcceptedKeyTypes (sshd) to
+	HostbasedAcceptedAlgorithms.
+
+	<li><a
+	href="https://man.openbsd.org/sftp-server.8">sftp-server(8)</a>: add
+	missing lsetstat@openssh.com documentation and advertisement in the
+	server's SSH2_FXP_VERSION hello packet.
+
+	<li><a href="https://man.openbsd.org/ssh.1">ssh(1)</a>, <a
+	href="https://man.openbsd.org/sshd.8">sshd(8)</a>: more strictly
+	enforce KEX state-machine by banning packet types once they are
+	received. Fixes memleak caused by duplicate
+	SSH2_MSG_KEX_DH_GEX_REQUEST (oss-fuzz #30078).
+
+	<li><a href="https://man.openbsd.org/sftp.1">sftp(1)</a>: allow the
+	full range of UIDs/GIDs for chown/chgrp on 32bit platforms instead of
+	being limited by LONG_MAX. bz#3206
+
+	<li>Minor man page fixes (capitalization, commas, etc.) bz#3223
+
+	<li><a href="https://man.openbsd.org/sftp.1">sftp(1)</a>: when doing
+	an sftp recursive upload or download of a read-only directory, ensure
+	that the directory is created with write and execute permissions in
+	the interim so that the transfer can actually complete, then set the
+	directory permission as the final step. bz#3222
+
+	<li><a href="https://man.openbsd.org/ssh-keygen.1">ssh-keygen(1)</a>:
+	document the -Z, check the validity of its argument earlier and
+	provide a better error message if it's not correct.  bz#2879
+
+	<li><a href="https://man.openbsd.org/ssh.1">ssh(1)</a>: ignore
+	comments at the end of config lines in ssh_config, similar to what we
+	already do for sshd_config. bz#2320
+
+	<li><a
+	href="https://man.openbsd.org/sshd_config.5">sshd_config(5)</a>:
+	mention that DisableForwarding is valid in a sshd_config Match block.
+	bz3239
+
+	<li><a href="https://man.openbsd.org/sftp.1">sftp(1)</a>: fix
+	incorrect sorting of "ls -ltr" under some circumstances. bz3248.
+
+	<li><a href="https://man.openbsd.org/ssh.1">ssh(1)</a>, <a
+	href="https://man.openbsd.org/sshd.8">sshd(8)</a>: fix potential
+	integer truncation of (unlikely) timeout values. bz#3250
+
+	<li><a href="https://man.openbsd.org/ssh.1">ssh(1)</a>: make
+	hostbased authentication send the signature algorithm in its
+	SSH2_MSG_USERAUTH_REQUEST packets instead of the key type.  This make
+	HostbasedAcceptedAlgorithms do what it is supposed to - filter on
+	signature algorithm and not key type.
     </ul>
   </ul>
 
