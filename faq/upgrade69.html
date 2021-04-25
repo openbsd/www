@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang=en id=faq>
+
+<title>OpenBSD Upgrade Guide: 6.8 to 6.9</title>
+<meta charset=utf-8>
+<meta name="description"   content="OpenBSD Upgrade Process for 6.8 -> 6.9">
+<meta name="viewport"      content="width=device-width, initial-scale=1">
+<link rel="stylesheet"     type="text/css" href="../openbsd.css">
+<link rel="canonical"      href="https://www.openbsd.org/faq/upgrade69.html">
+<style>
+  dt { margin-left: 20px; float: left; }
+  dd { margin: 0 0 0 8em; }
+</style>
+
+<h2 id=OpenBSD>
+<a href="../index.html">
+<i>Open</i><b>BSD</b></a>
+Upgrade Guide: 6.8 to 6.9
+</h2>
+<hr>
+<p>
+<a href="index.html">[FAQ Index]</a> |
+<a href="upgrade68.html">[6.7 -> 6.8]</a>
+<!-- XXXrelease uncomment link to upgrade70.html
+<a href="upgrade70.html">[6.9 -> 7.0]</a>
+-->
+<p>
+
+<blockquote>
+<p><i>
+Upgrades are only supported from one release to the release immediately
+following.</i>
+<p>
+<strong><i>Read through and understand this process before attempting it.
+For critical or physically remote machines, test it on an identical,
+local system first.
+</i></strong></blockquote>
+
+<h3 id="BeforeUpdate">Before using any upgrade method</h3>
+
+<ul>
+  <li><b>Check available disk space in /usr.</b>
+  Verify that the <code>/usr</code> partition has a size of at least 1.1G.
+  With less space the upgrade may fail and you should consider reinstalling
+  the system instead.
+
+  <p>
+  <li><b>Check pf.conf(5).</b>
+  <a href="https://man.openbsd.org/pf">pf(4)</a> and
+  <a href="https://man.openbsd.org/pfctl">pfctl(8)</a> are now stricter
+  about validating rules which use port ranges.
+
+  <p>
+  The following show <b>incorrect</b> port ranges that were previously 
+  accepted:
+  <pre class="cmdbox">
+  port 2004:2000
+  port 2004 &gt;&lt; 2000
+  port 2004 &lt;&gt; 2000 # range should be low-high
+  port 2000 &gt;&lt; 2000 # range should not be a single port<!--
+  --></pre>
+
+  <p>
+  If upgrading without console access, check and correct ranges
+  <b>before</b> upgrading.
+
+
+  <p>
+  <li><b>Read configuration and syntax changes and the
+         package upgrade instructions.</b>
+  There were several <a href="#ConfigChanges">configuration changes</a>
+  and <a href="#SpecialPackages">changes in packages</a> that may
+  require planning before starting the upgrade.
+
+</ul>
+
+<h3 id="UpgradeMethods">Upgrade Methods</h3>
+
+<ul>
+
+<li><b>Unattended Upgrade:</b>
+The easiest method is an unattended upgrade using 
+<a href="https://man.openbsd.org/OpenBSD-6.9/sysupgrade.8">sysupgrade(8)</a>.
+The program will download all install the sets, verify their signatures, and 
+reboot to perform the upgrade automatically. Once the unattended upgrade has 
+completed, continue <a href="upgrade69.html#AfterSets">below</a>.
+
+<p>
+<li><b>Interactive Upgrade:</b>
+If you insist on leaving out some of the install sets, you will want to 
+perform an <a href="#InteractiveUpgrade">interactive upgrade</a>. (sysupgrade 
+upgrades with all install sets.)
+
+<p>
+<li><b>Manual Upgrade:</b>
+The final option is using the <a href="#NoInstKern">manual upgrade process</a>.
+(This is not recommended as it is the most error-prone method.)
+
+</ul>
+
+<hr> 
+
+<h3 id="InteractiveUpgrade">Interactive Upgrade</h3>
+
+<ul>
+  <li><b>Get and verify <code>bsd.rd</code>.</b>
+  Download the ramdisk kernel and the cryptographically-signed checksum file
+  for your architecture.
+
+  <p>
+  <dl>
+    <dt><code>bsd.rd</code></dt>
+    <dd>
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.9/alpha/bsd.rd">alpha</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.9/amd64/bsd.rd">amd64</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.9/arm64/bsd.rd">arm64</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.9/armv7/bsd.rd">armv7</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.9/hppa/bsd.rd">hppa</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.9/i386/bsd.rd">i386</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.9/landisk/bsd.rd">landisk</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.9/loongson/bsd.rd">loongson</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.9/luna88k/bsd.rd">luna88k</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.9/macppc/bsd.rd">macppc</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.9/octeon/bsd.rd">octeon</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.9/sparc64/bsd.rd">sparc64</a>]
+    </dd>
+    <dt><code>SHA256.sig</code></dt>
+    <dd>
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.9/alpha/SHA256.sig">alpha</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.9/amd64/SHA256.sig">amd64</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.9/arm64/SHA256.sig">arm64</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.9/armv7/SHA256.sig">armv7</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.9/hppa/SHA256.sig">hppa</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.9/i386/SHA256.sig">i386</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.9/landisk/SHA256.sig">landisk</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.9/loongson/SHA256.sig">loongson</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.9/luna88k/SHA256.sig">luna88k</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.9/macppc/SHA256.sig">macppc</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.9/octeon/SHA256.sig">octeon</a>]
+    [<a href="https://cdn.openbsd.org/pub/OpenBSD/6.9/sparc64/SHA256.sig">sparc64</a>]
+    </dd>
+  </dl>
+
+  <p>
+  Verify <code>bsd.rd</code> and <code>SHA256.sig</code> using
+  <a href="https://man.openbsd.org/OpenBSD-6.9/signify">signify(1)</a>:
+
+  <pre class="cmdbox">
+$ <b>signify -C -p /etc/signify/openbsd-69-base.pub -x SHA256.sig bsd.rd</b>
+Signature Verified
+bsd.rd: OK<!--
+  --></pre>
+
+<p>
+<li> Next, boot from the install kernel, <code>bsd.rd</code>, retrieved 
+in the previous step. Place it in the root of your filesystem and 
+instruct the boot loader to boot this kernel. Once this kernel is 
+booted, choose the <code>(U)pgrade</code> option and follow the prompts.
+
+<p>
+<li>After the filesets have been installed, the system will reboot with
+the upgraded kernel. Now continue <a
+href="upgrade69.html#AfterSets">with the next step</a>:
+
+</ul>
+
+<hr> 
+
+<h3 id="AfterSets">After the Upgrade</h3>
+
+<p>
+After upgrading the sets, the system will reboot with the upgraded
+kernel and run <a
+href="https://man.openbsd.org/OpenBSD-6.9/sysmerge">sysmerge(8)</a>
+during boot. In some cases, configuration files cannot be modified
+automatically. Run
+<pre class="cmdbox"> # <b>sysmerge</b><!-- --></pre>
+to check and perform these <a href="#ConfigChanges">configuration
+changes</a>.
+
+<p>Next <a href="#RmFiles">remove the old files</a>.
+Finish up by upgrading the packages using <code><b>pkg_add -u</b></code>.
+
+<p>
+You may wish to check the <a href="../errata69.html">errata page</a> for
+any post-release fixes.
+
+<p>
+<hr>
+<h2 id="NoInstKern">Manual Upgrade (without the install kernel)</h2>
+
+<b style="color:#e00000">This is NOT the recommended process.
+Use the unattended or interactive upgrade methods if at all possible!</b>
+
+<p>
+Sometimes, you need to perform an upgrade of a machine for which the normal 
+upgrade process is not possible. The most common case is a machine in a 
+remote location where there is no easy access to the system console.
+
+<h3>Preparation</h3>
+
+<ul>
+  <li><b>Place install files in a good location.</b>
+    Make sure you have sufficient space!
+    Running out of space on a remote upgrade could be...unfortunate.
+    Note that using softdeps can exacerbate the situation as deleted and
+    overwritten files do not release their space immediately.
+    Consider disabling the <code>softdep</code> mount option in
+    <code>/etc/fstab</code> and rebooting before undertaking a manual upgrade.
+    Having at least 500MB free on <code>/usr</code> would be recommended.
+
+  <p>
+  <li><b>Become root.</b>
+    While using
+    <a href="https://man.openbsd.org/OpenBSD-6.9/doas">doas(1)</a>
+    before each command is generally a good practice, the command will likely
+    be broken by the last steps, so you should become root before starting
+    this process.
+    It might be good to verify your access to root using a method other than
+    doas at this point, i.e., direct login or using
+    <a href="https://man.openbsd.org/OpenBSD-6.9/su">su(1)</a>.
+
+  <p>
+  <li><b>Stop and/or disable any appropriate applications.</b>
+    During this process, all the userland applications will be replaced but
+    may not be runnable, and strange things may happen as a result.
+    You may also have issues with DNS resolution during the first reboot, so
+    PF rules and NFS mounts dependent upon DNS may cause boot-up problems.
+    There may be other applications which you wish to keep from running
+    immediately after the upgrade; stop and disable them as well.
+
+  <p>
+  <li><b>Install new boot blocks.</b>
+    This should actually be done at the end of any upgrade.
+    If this has been neglected, then failure to do this now may break serial
+    console or other things, depending on your platform.
+    Use <a href="https://man.openbsd.org/OpenBSD-6.9/amd64/installboot">
+    installboot(8)</a>, assuming <code>sd0</code> is your boot disk:
+    <pre class="cmdbox">
+# <b>installboot sd0</b><!--
+    --></pre>
+</ul>
+
+<h3>Upgrading manually</h3>
+
+<ul>
+  <li><b>Install new kernels.</b>
+    The extra steps for copying over the primary kernel are done
+    to ensure that there is always a valid kernel on the disk.
+    <p>
+    If using the multiprocessor kernel:
+    <pre class="cmdbox">
+# <b>cd /usr/rel</b>    # where you put the release files
+# <b>ln -f /bsd /obsd && cp bsd.mp /nbsd && mv /nbsd /bsd</b>
+# <b>cp bsd.rd /</b>
+# <b>cp bsd /bsd.sp</b><!--
+    --></pre>
+    If using the single processor kernel:
+    <pre class="cmdbox">
+# <b>cd /usr/rel</b>    # where you put the release files
+# <b>ln -f /bsd /obsd && cp bsd /nbsd && mv /nbsd /bsd</b>
+# <b>cp bsd.rd bsd.mp /</b>    # may give a harmless warning<!--
+    --></pre>
+
+  <p>
+  <li><b>Enable KARL.</b>
+    Store the kernel's checksum:
+    <pre class="cmdbox">
+# <b>sha256 -h /var/db/kernel.SHA256 /bsd</b> <!--
+    --></pre>
+
+  <p>
+  <li><b>Install new userland.</b>
+    Save a copy of reboot(8), extract and install the release tarballs, reboot.
+    Install <code>base69.tgz</code> last, because the new base system,
+    in particular <a href="https://man.openbsd.org/OpenBSD-6.9/tar">tar(1)</a>,
+    <a href="https://man.openbsd.org/OpenBSD-6.9/gzip">gzip(1)</a> and
+    <a href="https://man.openbsd.org/OpenBSD-6.9/reboot">reboot(8)</a>,
+    will not work with the old kernel.
+    Either untar the needed filesets manually:
+    <pre class="cmdbox">
+# <b>cp /sbin/reboot /sbin/oreboot</b>
+# <b>tar -C / -xzphf xshare69.tgz</b>
+# <b>tar -C / -xzphf xserv69.tgz</b>
+# <b>tar -C / -xzphf xfont69.tgz</b>
+# <b>tar -C / -xzphf xbase69.tgz</b>
+# <b>tar -C / -xzphf man69.tgz</b>
+# <b>tar -C / -xzphf game69.tgz</b>
+# <b>tar -C / -xzphf comp69.tgz</b>
+# <b>tar -C / -xzphf base69.tgz</b>    # Install last!
+# <b>/sbin/oreboot</b><!--
+    --></pre>
+    or, if you use
+    <a href="https://man.openbsd.org/OpenBSD-6.9/ksh">ksh(1)</a>, you can do:
+    <pre class="cmdbox">
+# <b>cp /sbin/reboot /sbin/oreboot</b>
+# <b>for _f in [!b]*69.tgz base69.tgz; do tar -C / -xzphf "$_f" || break; done</b>
+# <b>/sbin/oreboot</b><!--
+    --></pre>
+    Note that <a href="https://man.openbsd.org/OpenBSD-6.9/tar">tar(1)</a>
+    can expand only one archive per invocation, so a simple glob won't work.
+
+  <p>
+  <li><b>After reboot, update <code>/dev</code>.</b>
+    Run
+    <a href="https://man.openbsd.org/OpenBSD-6.9/amd64/MAKEDEV">MAKEDEV(8)</a>:
+    <pre class="cmdbox">
+# <b>cd /dev</b>
+# <b>./MAKEDEV all</b><!--
+    --></pre>
+
+  <p>
+  <li><b>Update the boot loader.</b>
+    Still assuming <code>sd0</code> is your boot disk:
+    <pre class="cmdbox">
+# <b>installboot sd0</b><!--
+    --></pre>
+
+  <p>
+  <li><b>Update system configuration files.</b>
+    Run <a href="https://man.openbsd.org/OpenBSD-6.9/sysmerge">sysmerge(8)</a>:
+    <pre class="cmdbox">
+# <b>sysmerge</b><!--
+    --></pre>
+
+  <p>
+  <li><b>Update firmware.</b>
+    There may be new firmware for your system.
+    Update it with
+    <a href="https://man.openbsd.org/OpenBSD-6.9/fw_update">fw_update(1)</a>:
+    <pre class="cmdbox">
+# <b>fw_update</b><!--
+    --></pre>
+
+  <p>
+  <li><b>Finish up.</b>
+    Review the console output from boot (using <code><b>dmesg -s</b></code>)
+    and correct any failures as necessary.
+    All the steps following <a href="#ConfigChanges">configuration changes</a>
+    below also apply to manual upgrades.
+    Finally, remove <code><b>/sbin/oreboot</b></code> and update packages:
+    <code><b>pkg_add -u</b></code>.
+    Reboot once more to make sure you use the newest firmware files
+    and run on your own kernel generated by KARL.
+</ul>
+<p>
+<hr>
+
+<h3 id="ConfigChanges">Configuration and syntax changes</h3>
+
+<ul>
+  <li><b>hostname.if(5).</b>
+
+  RFC 8981 changed the IPv6 terminology from privacy to temporary addresses.
+
+  <code>autoconfprivacy</code> in hostname.if(5) files should be changed to
+  <code>temporary</code>.
+
+
+  <p>
+  <li><b>iked.conf(5).</b>
+
+  New keywords have been introduced to iked.conf
+  to simplify configuration when using "config address".
+
+  <p>
+  Previously, when either "<code>to 0.0.0.0</code>" or 
+  "<code>to 0.0.0.0/0</code>" were used, they would be replaced with the 
+  peer's assigned address when creating flows.
+
+  "<code>to dynamic</code>" has been introduced to make the configuration
+  syntax clearer.
+
+  <p>
+  "<code>to 0.0.0.0</code>" works as before but can be updated to the new
+  syntax if wanted.
+
+  <p>
+  "<code>to 0.0.0.0/0</code>" will now be treated literally;
+  if the old behaviour is desired one must change to "<code>to dynamic</code>".
+
+
+  <p>
+  <li><b>pf(4)</b>
+
+  In previous releases, even if forwarding was not configured, pf(4) allowed 
+  forwarding of packets with af-to.
+  To continue using NAT64 one has to set these sysctl:
+
+  <pre class="cmdbox">
+    # <b>sysctl net.inet.ip.forwarding=1</b>
+    # <b>sysctl net.inet6.ip6.forwarding=1</b><!--
+  --></pre>
+
+
+  <p>
+  <li><b>pf.conf(5).</b>
+
+  Syntax for PF's routing options (route-to, reply-to, dup-to) has changed.
+
+  If using these features without console access, review
+  <a href="//man.openbsd.org/pf.conf">/etc/pf.conf</a> before updating;
+  the previous syntax will be rejected by
+  <a href="//man.openbsd.org/pfctl">pfctl(8)</a>.<p>
+
+  These options previously accepted an IP address and network interface,
+  for example:
+
+  <pre class="cmdbox">
+      # address is directly reachable via the interfaces (showing both accepted formats)
+      pass out proto tcp to port {80 443} route-to 192.0.2.1@ix0
+      pass out proto udp to port 53 dup-to (em2 192.168.2.99)
+
+      # using placeholder address to signify remote address on a point-to-point link
+      pass in on pppoe1 reply-to 0.0.0.1@pppoe1
+  </pre>
+
+  They now take only an IP address, and perform a route lookup to determine
+  the interface.
+
+  The above examples can now be written like so:
+
+  <pre class="cmdbox">
+    # address is directly reachable via the interfaces
+    pass out proto tcp to port {80 443} route-to 192.0.2.1
+    pass out proto udp to port 53 dup-to 192.168.2.99
+
+    # using :peer to use the remote address on a point-to-point link
+    # using (...) to track changes dynamically
+    pass in on pppoe1 reply-to (pppoe1:peer)<!--
+  --></pre>
+
+  <p>
+  Alternatively, for some configurations using these features, it may be
+  simpler to use multiple route tables instead (using ifconfig's 
+  <a href="//man.openbsd.org/ifconfig.8#rdomain">rdomain</a> and pf.conf's
+  <a href="//man.openbsd.org/pf.conf.5#rtable">rtable</a> features).
+
+
+  <p>
+  <li><b>snmpd.conf(5)</b>
+
+  Cleanup in <a href="https://man.openbsd.org/snmpd">snmpd(8)</a>'s 
+  traphandler code led to the following changes:
+
+  <ul>
+
+    <li>To define a trap handle, explicitly enable notify functionality on 
+    the listen socket.
+
+    <pre class="cmdbox">
+    listen on 127.0.0.1<!--
+    --></pre>
+    must become
+    <pre class="cmdbox">
+    listen on 127.0.0.1
+    listen on 127.0.0.1 notify<!--
+    --></pre>
+
+    <p>
+    <li>Incoming trap packets are now checked against trap community.
+
+    <p>
+    <li>traphandler_v1translate now fully complies with RFC3584 section 3.1. 
+
+    Handlers for generic-trap &lt; 6 need to modify their trap handle scripts
+    and potentially add trap handle statements in accordance with RFC3584 
+    section 3.1 bullet (3).
+
+    <p>
+    <li>Running <a href="https://man.openbsd.org/snmpd">snmpd(8)</a> without
+    <code>-N</code> now prints 
+    <code>iso.org.dod.internet.mgmt.mib-2.system.sysUpTime.0</code> 
+    (first varbind) in accordance with its internal MIB definitions
+    (<code>iso.org.dod.internet.mgmt.mib_2.system.sysUpTime.0</code>).
+
+    <p>
+    <li>Running <a href="https://man.openbsd.org/snmpd">snmpd(8)</a> with 
+    <code>-N</code> now prints 
+    <code>iso.org.dod.internet.mgmt.mib-2.system.sysUpTime.0</code>
+    (first varbind) numerically (<code>.1.3.6.1.2.1.1.3.0</code>).
+
+    <p>
+    <li>Running <a href="https://man.openbsd.org/snmpd">snmpd(8)</a> with 
+    <code>-N</code> now prints
+    <code>iso.org.dod.internet.snmpV2.snmpModules.snmpMIB.snmpMIBObjects.snmpTrap.snmpTrapOID.0</code>
+    (second varbind) numerically (<code>1.3.6.1.6.3.1.1.4.1.0</code>).
+  </ul>
+
+
+  <p>
+  <li><b>video(4).</b>
+  Similar to how audio recording is handled, recording has been disabled
+  by default in <a href="https://man.openbsd.org/video">video(4)</a>.
+  It may be reenabled like this:
+
+  <pre class="cmdbox">
+    # <b>sysctl kern.video.record=1</b> # enable at runtime
+    # <b>echo kern.video.record=1 >> /etc/sysctl.conf</b> # set at boot<!--
+  --></pre>
+
+
+</ul>
+
+<h3 id="RmFiles">Files to remove</h3>
+
+<ul>
+  <li>
+  Perl has been updated to 5.32.1 and some files are no longer included
+  and can be removed.
+
+  <pre class="cmdbox">
+  # rm -f /usr/bin/podselect \
+          /usr/lib/libperl.so.20.0 \
+          /usr/libdata/perl5/*/CORE/dquote_inline.h \
+          /usr/libdata/perl5/*/Tie \
+          /usr/libdata/perl5/*/auto/Tie \
+          /usr/libdata/perl5/Pod/Find.pm \
+          /usr/libdata/perl5/Pod/InputObjects.pm \
+          /usr/libdata/perl5/Pod/ParseUtils.pm \
+          /usr/libdata/perl5/Pod/Parser.pm \
+          /usr/libdata/perl5/Pod/PlainText.pm \
+          /usr/libdata/perl5/Pod/Select.pm \
+          /usr/libdata/perl5/pod/perlce.pod \
+          /usr/libdata/perl5/unicore/Heavy.pl \
+          /usr/libdata/perl5/unicore/lib/Lb/EB.pl \
+          /usr/libdata/perl5/unicore/lib/Perl/_PerlNon.pl \
+          /usr/libdata/perl5/unicore/lib/Sc/Armn.pl \
+          /usr/libdata/perl5/utf8_heavy.pl \
+          /usr/share/man/man1/podselect.1 \
+          /usr/share/man/man3p/Pod::Find.3p \
+          /usr/share/man/man3p/Pod::InputObjects.3p \
+          /usr/share/man/man3p/Pod::ParseUtils.3p \
+          /usr/share/man/man3p/Pod::Parser.3p \
+          /usr/share/man/man3p/Pod::PlainText.3p \
+          /usr/share/man/man3p/Pod::Select.3p<!--
+  --></pre>
+
+  <p>
+  <li>A more detailed cleanup can be done with the aid of the sysclean package.
+
+
+</ul>
+
+
+<h3 id="SpecialPackages">Special packages</h3>
+
+<ul>
+  <li><b>databases/postgresql.</b>
+
+  There was a major update to PostgreSQL 13.1.
+  Use <code>pg_upgrade</code> as described in the
+  postgresql-server pkg-readme or do a dump/restore.
+
+
+  <p>
+  <li><b>games/multimc.</b>
+
+  With the import of games/lwjgl3 multimc has been updated to be able to 
+  play the latest versions of Minecraft.  To play legacy versions of
+  Minecraft 1.12.2 and before, see the pkg-readme or use the minecraft package.
+
+  <p>
+  <li><b>security/yubiserve.</b>
+
+  The "yubiserve" package is unmaintained upstream and requires
+  an end-of-life version of Python.
+
+  This has been replaced with "yubikeyedup". 
+
+  While it is broadly compatible with the most common use
+  of yubiserve it has its limits: it supports only sqlite3 (using the
+  same schema as before) not other databases, and it only supports HTTP
+  internally, if you require HTTPS then you will need to use a proxy (e.g.
+  relayd or nginx). 
+
+  It no longer uses a configuration file, only command line arguments.
+
+
+  <p>
+  <li><b>www/rt.</b>
+
+  The update to 5.0.0 moves the default config directory from 
+  <code>/etc/rt3</code> to <code>/etc/rt</code>.
+
+  Make sure to move all the modified configuration files to the new path.
+
+
+</ul>
+
+
+<p>
+<a href="index.html">[FAQ Index]</a> |
+<a href="upgrade68.html">[6.7 -> 6.8]</a>
+<!-- XXXrelease uncomment link to upgrade70.html
+<a href="upgrade70.html">[6.9 -> 7.0]</a>
+-->
+
+<hr>
+<small>$OpenBSD: upgrade69.html,v 1.1 2021/04/25 22:07:45 kmos Exp $</small>
