@@ -45,7 +45,7 @@ done
 
 printf 'Checking timestamps...\n'
 for mirror in "${mirrors[@]}"; do
-	path="${mirror}snapshots/sgi/timestamp"
+	path="${mirror}snapshots/sparc64/timestamp"
 	domain="${mirror#http*://}"
 	domain="${domain%%/*}"
 	printf 'Trying %s\n' "$path"
