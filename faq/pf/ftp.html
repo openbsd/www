@@ -60,10 +60,9 @@ FTP wasn't designed for filtering, for passing through firewalls, or for
 working with NAT.
 
 <p>
-You can use FTP in one of two ways: passive or active.
+FTP can be used in one of two ways: passive or active.
 Generally, the choice of active or passive is made to determine who has the
 problem with firewalling.
-Realistically, you will have to support both to have happy users.
 
 <p>
 With active FTP, when a user connects to a remote FTP server and requests
@@ -79,7 +78,7 @@ This is a problem for users attempting to gain access to FTP servers from
 behind a NAT gateway.
 Because of how NAT works, the FTP server initiates the data connection by
 connecting to the external address of the NAT gateway on the chosen port.
-The NAT machine will receive this, but because it has no mapping for the
+The NAT machine will receive this, but, because it has no mapping for the
 packet in its state table, it will drop the packet and won't deliver it to
 the client.
 
@@ -92,7 +91,6 @@ connects to this port to transfer the data.
 Unfortunately, this is not always possible or desirable because of the
 possibility of a firewall in front of the FTP server blocking the incoming
 data connection.
-OpenBSD's ftp(1) uses passive mode by default.
 To force active mode FTP, use the <code>-A</code> flag to <code>ftp</code>,
 or set passive mode to "off" by issuing the command "<code>passive off</code>"
 at the "<code>ftp&gt;</code>" prompt.
@@ -102,11 +100,11 @@ at the "<code>ftp&gt;</code>" prompt.
 As indicated earlier, FTP does not go through NAT and firewalls very well.
 
 <p>
-Packet Filter provides a solution for this situation by diverting FTP traffic
+PF provides a solution for this situation by diverting FTP traffic
 through an FTP proxy server.
-This process acts to "guide" your FTP traffic through the NAT gateway/firewall,
-by actively adding needed rules to PF system and removing them when done, by
-means of the PF <a href="anchors.html">anchors</a> system.
+This process acts to "guide" the FTP traffic through the NAT gateway/firewall
+by actively adding needed rules to PF and removing them when done via the
+<a href="anchors.html">anchor</a> system.
 The FTP proxy used by PF is
 <a href="https://man.openbsd.org/ftp-proxy">ftp-proxy(8)</a>.
 
@@ -118,11 +116,11 @@ of <code>pf.conf</code>:
 pass in quick on $int_if inet proto tcp to port 21 divert-to 127.0.0.1 port 8021
 </pre>
 
-This diverts FTP from your clients to the ftp-proxy(8) program, which is
-listening on your machine to port 8021.
+This diverts FTP from the clients to the ftp-proxy program, which is
+listening on port 8021 of the server.
 
 <p>
-You also need an anchor in the rules section:
+An anchor in the rules section is also needed:
 
 <pre class="cmdbox">
 anchor "ftp-proxy/*"
@@ -135,18 +133,14 @@ The proxy server has to be started and running on the OpenBSD box.
 # <b>rcctl start  ftpproxy</b>
 </pre>
 
-The ftp-proxy utility listens on port 8021, the same port the above
-<code>divert-to</code> statement is sending FTP traffic to.
-
-<p>
 To support active mode connections from certain (fussy) clients,
-you may need the <code>-r</code> switch on ftp-proxy(8).
+the <code>-r</code> flag may be needed.
 
 <h2 id="server">PF "Self-protecting" an FTP Server</h2>
 
 In this case, PF is running on the FTP server itself rather than a dedicated
 firewall computer.
-When servicing a passive FTP connection, FTP will use a randomly chosen, high
+When servicing a passive connection, FTP will use a randomly chosen, high
 TCP port for incoming data.
 By default, OpenBSD's native <a href="https://man.openbsd.org/ftpd">ftpd(8)</a>
 uses the range 49152 to 65535.
@@ -158,7 +152,7 @@ pass in on egress proto tcp to port 21
 pass in on egress proto tcp to port &gt; 49151
 </pre>
 
-You can tighten up that range of ports considerably if you want to.
+That range of ports can be tightened up if desired.
 In the case of <a href="https://man.openbsd.org/ftpd">ftpd(8)</a>, that is
 done using the <a href="https://man.openbsd.org/sysctl">sysctl(8)</a> variables
 <code>net.inet.ip.porthifirst</code> and <code>net.inet.ip.porthilast</code>.
@@ -168,12 +162,11 @@ NAT</h2>
 
 In this case, the firewall must redirect traffic to the FTP server in addition
 to not blocking the required ports.
-In order to accomplish this, we turn again to ftp-proxy(8).
 
 <p>
-ftp-proxy(8) can be run in a mode that causes it to forward all FTP connections
+ftp-proxy can be run in a mode that causes it to forward all FTP connections
 to a specific FTP server.
-Basically, we'll set up the proxy to listen on port 21 of the firewall and
+The proxy will be set up to listen on port 21 of the firewall and
 forward all connections to the backend server.
 
 <pre class="cmdbox">
@@ -181,11 +174,11 @@ forward all connections to the backend server.
 </pre>
 
 Here 10.10.10.1 is the IP address of the actual FTP server, 21 is the
-port we want ftp-proxy(8) to listen on, and 192.168.0.1 is the address
-on the firewall that we want the proxy to bind to.
+port ftp-proxy will listen on, and 192.168.0.1 is the address on the
+firewall that the proxy will bind to.
 
 <p>
-Now for the pf.conf rules:
+Now for the <code>pf.conf</code> rules:
 
 <pre class="cmdbox">
 ext_ip = "192.168.0.1"
@@ -196,24 +189,16 @@ pass in  on  egress inet proto tcp to $ext_ip port 21
 pass out on $int_if inet proto tcp to $ftp_ip port 21 user _ftp_proxy
 </pre>
 
-Here we allow the connection inbound to port 21 on the external interface,
+Here the connection inbound to port 21 is allowed on the external interface,
 as well as the corresponding outbound connection to the FTP server.
-The "user _ftp_proxy" addition to the outbound rule ensures that only
-connections initiated by ftp-proxy(8) are permitted.
-
-<p>
-Note that if you want to run ftp-proxy(8) to protect an FTP server as well
-as allow clients to FTP out from behind the firewall, two instances of
-ftp-proxy will be required.
+The <code>user _ftp_proxy</code> addition to the outbound rule ensures
+that only connections initiated by ftp-proxy are permitted.
 
 <h2 id="info">More Information on FTP</h2>
 
 More information on filtering FTP and how FTP works in general can be
-found in this whitepaper:
-
-<ul>
-  <li><a href="https://web.archive.org/web/20170812032619/http://www.pintday.org/whitepapers/ftp-review.shtml">FTP Reviewed</a>
-</ul>
+found in
+<a href="https://web.archive.org/web/20170812032619/http://www.pintday.org/whitepapers/ftp-review.shtml">this whitepaper</a>.
 
 <h2 id="tftp-proxy">Proxying TFTP</h2>
 
@@ -223,13 +208,13 @@ Luckily, PF has a helper proxy for TFTP called
 <a href="https://man.openbsd.org/tftp-proxy">tftp-proxy(8)</a>.
 
 <p>
-tftp-proxy(8) is set up in much the same way as ftp-proxy(8) was in
+tftp-proxy is set up in much the same way as ftp-proxy was in
 the <a href="#client">FTP client behind the firewall</a> section above.
 
 <pre class="cmdbox">
 match out on egress inet from $int_if nat-to (egress)
 anchor "tftp-proxy/*"
-pass in quick on $int_if inet proto udp from $lan to port tftp \
+pass in  quick on $int_if inet proto udp from $lan to port tftp \
     divert-to 127.0.0.1 port 6969
 pass out quick on $ext_if inet proto udp from $lan to port tftp \
     group _tftp_proxy divert-reply
@@ -239,7 +224,7 @@ The rules above allow TFTP outbound from the internal network to TFTP
 servers on the external network.
 
 <p>
-The last step is to enable and start tftp-proxy(8).
+The last step is to enable and start tftp-proxy.
 
 <pre class="cmdbox">
 # <b>rcctl enable tftpproxy</b>
