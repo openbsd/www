@@ -271,8 +271,8 @@ must ensure the initiator is configured to use a DNS server it can reach
 <h3 id="clientopenbsd">With an OpenBSD Client</h3>
 
 In our examples, the <code>10.0.5.0/24</code> network is used to support the
-VPN, even if no actual network interface is configured to use an IP in this
-netblock.
+VPN. The actual internal IP address will automatically be installed by iked
+on the vether0 interface.
 We'll assume the public IP for the client is <code>203.0.113.2</code>.
 
 <p>
@@ -287,17 +287,24 @@ Replace "serverX.domain" with your own FQDN.
 
 <p>
 The responder <a href="https://man.openbsd.org/iked.conf">iked.conf(5)</a>
-creates flows from any destination to the VPN subnet and tags the packets
-with ROADW:
+creates flows from any destination to the dynamic IP leases from the
+address pool, which will be decided at runtime, and tags the packets with ROADW:
 
 <pre class="cmdbox">
 ikev2 'responder_rsa' passive esp \
-        from 0.0.0.0/0 to 10.0.5.0/24 \
+        from any to dynamic \
         local 192.0.2.1 peer any \
         srcid server1.domain \
+        config address 10.0.5.0/24 \
         tag "ROADW"
 </pre>
 
+The responder needs to provide an IP address to the initiator.
+This is achieved with the <code>config</code> directives.
+When using the <code>config address</code> option, <code>to dynamic</code>
+will be replaced with the assigned dynamic IP address.
+
+<p>
 It also needs to allow IPsec from any host (since clients might connect from
 anywhere), allow traffic tagged ROADW on <code>enc0</code> and apply NAT to it:
 
@@ -308,75 +315,28 @@ pass log on enc0 tagged ROADW
 match out log on $ext_if inet tagged ROADW nat-to $ext_if
 </pre>
 
-The initiator configures a global flow to send all its traffic to the
-responder, telling it to identify itself with the key named "roadwarrior":
+The initiator configures a global flow to send all its traffic to the responder,
+telling it to identify itself with the key named "roadwarrior":
 
 <pre class="cmdbox">
 ikev2 'roadwarrior' active esp \
-        from 0.0.0.0/0 to 0.0.0.0/0 \
+        from dynamic to any \
         peer 192.0.2.1 \
         srcid roadwarrior \
         dstid server1.domain
+        request address any \
+        iface vether0
 </pre>
 
-One caveat with using an OpenBSD client is that it doesn't send configuration
-requests to the responder to configure its IP, so the initiator needs to
-manually NAT its outgoing packets on the <code>enc0</code> interface so that
-packets appear on the responder with an IP on the VPN subnet.
-This can be achieved with the following rule:
-
-<pre class="cmdbox">
-match out log on enc0 inet all nat-to 10.0.5.2
-</pre>
-
-With that configuration, the flows look like this:
-
-<!-- XXX this is only going to work if there's a single client -->
-<pre class="cmdbox">
-server1$ <b>ipsecctl -sf</b>
-flow esp in from 10.0.5.0/24 to 0.0.0.0/0 peer 203.0.113.2 type use
-flow esp out from 0.0.0.0/0 to 10.0.5.0/24 peer 203.0.113.2 type require
-
-roadwarrior$ <b>ipsecctl -sf</b>
-flow esp in from 0.0.0.0/0 to 0.0.0.0/0 peer 192.0.2.1 type use
-flow esp out from 0.0.0.0/0 to 0.0.0.0/0 peer 192.0.2.1 type require
-</pre>
+The initiator uses the <code>request address any</code> option to request a
+dynamic IP address from the responder.  The <code>iface vether0</code> option
+specifies the interface on which the received address and corresponding routes
+will be installed.
 
 The responder should have a proper NAT configuration for the road warrior
 client.
 
 <p>
-Since all traffic goes through the VPN, including traffic targeted at
-localhost, it might be necessary to exclude this traffic from the flows to
-ensure connections to services running locally (such as a local resolver) reach
-the right target.
-This can be achieved by adding a single line to <code>/etc/ipsec.conf</code> on
-the initiator:
-
-<pre class="cmdbox">
-flow from 127.0.0.1/32 to 127.0.0.1/32 type bypass
-</pre>
-
-After starting the initiator, this additional rule must be loaded using
-<code>ipsecctl</code>:
-
-<pre class="cmdbox">
-roadwarrior# <b>ipsecctl -f /etc/ipsec.conf</b>
-</pre>
-
-This will happen at boot if IPsec has been enabled with
-<code>rcctl enable ipsec</code>.
-
-<p>
-The flows on the initiator should now look like this:
-
-<pre class="cmdbox">
-flow esp in from 0.0.0.0/0 to 0.0.0.0/0 peer 192.0.2.1 type use
-flow esp in from 127.0.0.1 to 127.0.0.1 type bypass
-flow esp out from 0.0.0.0/0 to 0.0.0.0/0 peer 192.0.2.1 type require
-flow esp out from 127.0.0.1 to 127.0.0.1 type bypass
-</pre>
-
 Gracefully stopping the VPN on the initiator can be achieved using
 <code>ikectl decouple</code> (<code>iked</code> is still running, pending
 <code>ikectl couple</code> so that it reconnects to the responder) or with
@@ -415,13 +375,6 @@ responder:
   <li>X.509 certificate
 </ul>
 
-The responder needs to provide an IP address to the initiator, and eventually
-also a nameserver.
-This is achieved with the <code>config</code> directives.
-When using the <code>config address</code> option, <code>to 0.0.0.0</code>
-(or <code>0.0.0.0/32</code>) will be replaced with the assigned dynamic IP
-address.
-
 <h4 id="autheap">Using MSCHAP-V2 for EAP Authentication</h4>
 
 A responder config needs to specify a list of username/password, and that it
@@ -431,7 +384,7 @@ for now) as such:
 <pre class="cmdbox">
 user 'android' 'password'
 ikev2 'responder_eap' passive esp \
-        from 0.0.0.0/0 to 0.0.0.0 \
+        from any to dynamic \
         local 192.0.2.1 peer any \
         srcid server1.domain \
         eap "mschap-v2" \
@@ -490,7 +443,7 @@ The responder config is slightly simpler since there's no need to specify
 
 <pre class="cmdbox">
 ikev2 'responder_x509' passive esp \
-        from 0.0.0.0/0 to 0.0.0.0 \
+        from any to dynamic \
         local 192.0.2.1 peer any \
         srcid server1.domain \
         config address 10.0.5.0/24 \
@@ -554,7 +507,7 @@ The responder configuration file will be similar to the Android case.
 <pre class='cmdbox'>
 user 'windows' 'password'
 ikev2 'responder_eap' passive esp \
-        from 0.0.0.0/0 to 0.0.0.0 \
+        from any to dynamic \
         local 192.0.2.1 peer any \
         srcid server1.domain.fqdn \
         eap "mschap-v2" \
