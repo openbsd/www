@@ -22,6 +22,284 @@
 Release Notes
 </h2>
 <hr>
+<h3><a href='txt/release-8.7' id='8.7'>OpenSSH 8.7</a>/<a href='txt/release-8.7' id='8.7p1'>8.7p1</a> (2021-08-20)</h3>
+<pre>
+OpenSSH 8.7 was released on 2021-08-20. It is available from the
+mirrors listed at <a href='https://www.openssh.com/'>https://www.openssh.com/</a>.
+OpenSSH is a 100% complete SSH protocol 2.0 implementation and
+includes sftp client and server support.
+
+Once again, we would like to thank the OpenSSH community for their
+continued support of the project, especially those who contributed
+code or patches, reported bugs, tested snapshots or donated to the
+project. More information on donations may be found at:
+<a href='https://www.openssh.com/donations.html'>https://www.openssh.com/donations.html</a>
+
+Imminent deprecation notice
+===========================
+
+OpenSSH will disable the ssh-rsa signature scheme by default in the
+next release.
+
+In the SSH protocol, the "ssh-rsa" signature scheme uses the SHA-1
+hash algorithm in conjunction with the RSA public key algorithm.
+It is now possible[1] to perform chosen-prefix attacks against the
+SHA-1 algorithm for less than USD$50K.
+
+Note that the deactivation of "ssh-rsa" signatures does not necessarily
+require cessation of use for RSA keys. In the SSH protocol, keys may be
+capable of signing using multiple algorithms. In particular, "ssh-rsa"
+keys are capable of signing using "rsa-sha2-256" (RSA/SHA256),
+"rsa-sha2-512" (RSA/SHA512) and "ssh-rsa" (RSA/SHA1). Only the last of
+these is being turned off by default.
+
+This algorithm is unfortunately still used widely despite the
+existence of better alternatives, being the only remaining public key
+signature algorithm specified by the original SSH RFCs that is still
+enabled by default.
+
+The better alternatives include:
+
+ * The <a href='https://tools.ietf.org/html/rfc8332'>RFC8332</a> RSA SHA-2 signature algorithms rsa-sha2-256/512. These
+   algorithms have the advantage of using the same key type as
+   "ssh-rsa" but use the safe SHA-2 hash algorithms. These have been
+   supported since OpenSSH 7.2 and are already used by default if the
+   client and server support them.
+
+ * The <a href='https://tools.ietf.org/html/rfc8709'>RFC8709</a> ssh-ed25519 signature algorithm. It has been supported
+   in OpenSSH since release 6.5.
+
+ * The <a href='https://tools.ietf.org/html/rfc5656'>RFC5656</a> ECDSA algorithms: ecdsa-sha2-nistp256/384/521. These
+   have been supported by OpenSSH since release 5.7.
+
+To check whether a server is using the weak ssh-rsa public key
+algorithm, for host authentication, try to connect to it after
+removing the ssh-rsa algorithm from <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>'s allowed list:
+
+    ssh -oHostKeyAlgorithms=-ssh-rsa user@host
+
+If the host key verification fails and no other supported host key
+types are available, the server software on that host should be
+upgraded.
+
+OpenSSH recently enabled the UpdateHostKeys option by default to
+assist the client by automatically migrating to better algorithms.
+
+[1] "SHA-1 is a Shambles: First Chosen-Prefix Collision on SHA-1 and
+    Application to the PGP Web of Trust" Leurent, G and Peyrin, T
+    (2020) <a href='https://eprint.iacr.org/2020/014.pdf'>https://eprint.iacr.org/2020/014.pdf</a>
+
+Potentially-incompatible changes
+================================
+
+This release includes a number of changes that may affect existing
+configurations:
+
+ * <a href='https://man.openbsd.org/scp.1'>scp(1)</a>: this release changes the behaviour of remote to remote
+   copies (e.g. "scp host-a:/path host-b:") to transfer through the
+   local host by default. This was previously available via the -3
+   flag. This mode avoids the need to expose credentials on the
+   origin hop, avoids triplicate interpretation of filenames by the
+   shell (by the local system, the copy origin and the destination)
+   and, in conjunction with the SFTP support for <a href='https://man.openbsd.org/scp.1'>scp(1)</a> mentioned
+   below, allows use of all authentication methods to the remote
+   hosts (previously, only non-interactive methods could be used).
+   A -R flag has been added to select the old behaviour.
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>/<a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: both the client and server are now using a
+   stricter configuration file parser. The new parser uses more
+   shell-like rules for quotes, space and escape characters. It is
+   also more strict in rejecting configurations that include options
+   lacking arguments. Previously some options (e.g. DenyUsers) could
+   appear on a line with no subsequent arguments. This release will
+   reject such configurations. The new parser will also reject
+   configurations with unterminated quotes and multiple '='
+   characters after the option name.
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: when using SSHFP DNS records for host key verification,
+   <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a> will verify all matching records instead of just those
+   with the specific signature type requested. This may cause host
+   key verification problems if stale SSHFP records of a different
+   or legacy signature type exist alongside other records for a
+   particular host. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3322'>bz#3322</a>
+
+ * <a href='https://man.openbsd.org/ssh-keygen.1'>ssh-keygen(1)</a>: when generating a FIDO key and specifying an
+   explicit attestation challenge (using -Ochallenge), the challenge
+   will now be hashed by the builtin security key middleware. This
+   removes the (undocumented) requirement that challenges be exactly
+   32 bytes in length and matches the expectations of libfido2.
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: environment="..." directives in authorized_keys files are
+   now first-match-wins and limited to 1024 discrete environment
+   variable names.
+
+Changes since OpenSSH 8.6
+=========================
+
+This release contains a mix of new features and bug-fixes.
+
+New features
+------------
+
+ - <a href='https://man.openbsd.org/scp.1'>scp(1)</a>: experimental support for transfers using the SFTP protocol
+   as a replacement for the venerable SCP/RCP protocol that it has
+   traditionally used. SFTP offers more predictable filename handling
+   and does not require expansion of glob(3) patterns via the shell
+   on the remote side.
+
+   SFTP support may be enabled via a temporary scp -s flag. It is
+   intended for SFTP to become the default transfer mode in the
+   near future, at which time the -s flag will be removed. The -O
+   flag exists to force use of the original SCP/RCP protocol for
+   cases where SFTP may be unavailable or incompatible.
+
+ - <a href='https://man.openbsd.org/sftp-server.8'>sftp-server(8)</a>: add a protocol extension to support expansion of
+   ~/ and ~user/ prefixed paths. This was added to support these
+   paths when used by <a href='https://man.openbsd.org/scp.1'>scp(1)</a> while in SFTP mode.
+
+ - <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: add a ForkAfterAuthentication <a href='https://man.openbsd.org/ssh_config.5'>ssh_config(5)</a> counterpart to
+   the <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a> -f flag. GH<a href='https://github.com/openssh/openssh-portable/pull/231'>PR231</a>
+
+ - <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: add a StdinNull directive to <a href='https://man.openbsd.org/ssh_config.5'>ssh_config(5)</a> that allows the
+   config file to do the same thing as -n does on the <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a> command-
+   line. GH<a href='https://github.com/openssh/openssh-portable/pull/231'>PR231</a>
+
+ - <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: add a SessionType directive to ssh_config, allowing the
+    configuration file to offer equivalent control to the -N (no
+    session) and -s (subsystem) command-line flags. GH<a href='https://github.com/openssh/openssh-portable/pull/231'>PR231</a>
+
+ - <a href='https://man.openbsd.org/ssh-keygen.1'>ssh-keygen(1)</a>: allowed signers files used by <a href='https://man.openbsd.org/ssh-keygen.1'>ssh-keygen(1)</a>
+   signatures now support listing key validity intervals alongside
+   they key, and <a href='https://man.openbsd.org/ssh-keygen.1'>ssh-keygen(1)</a> can optionally check during signature
+   verification whether a specified time falls inside this interval.
+   This feature is intended for use by git to support signing and
+   verifying objects using ssh keys.
+
+ - <a href='https://man.openbsd.org/ssh-keygen.8'>ssh-keygen(8)</a>: support printing of the full public key in a sshsig
+   signature via a -Oprint-pubkey flag.
+
+Bugfixes
+--------
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>/<a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: start time-based re-keying exactly on schedule in
+   the client and server mainloops. Previously the re-key timeout
+   could expire but re-keying would not start until a packet was sent
+   or received, causing a spin in select() if the connection was
+   quiescent.
+
+ * <a href='https://man.openbsd.org/ssh-keygen.1'>ssh-keygen(1)</a>: avoid Y2038 problem in printing certificate
+   validity lifetimes. Dates past 2^31-1 seconds since epoch were
+   displayed incorrectly on some platforms. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3329'>bz#3329</a>
+
+ * <a href='https://man.openbsd.org/scp.1'>scp(1)</a>: allow spaces to appear in usernames for local to remote
+   and scp -3 remote to remote copies. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=1164'>bz#1164</a>
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>/<a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: remove references to ChallengeResponseAuthentication
+   in favour of KbdInteractiveAuthentication. The former is what was in
+   SSHv1, the latter is what is in SSHv2 (<a href='https://tools.ietf.org/html/rfc4256'>RFC4256</a>) and they were
+   treated as somewhat but not entirely equivalent. We retain the old
+   name as a deprecated alias so configuration files continue to work
+   as well as a reference in the man page for people looking for it.
+   <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3303'>bz#3303</a>
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>/<a href='https://man.openbsd.org/ssh-add.1'>ssh-add(1)</a>/<a href='https://man.openbsd.org/ssh-keygen.1'>ssh-keygen(1)</a>: fix decoding of X.509 subject name
+   when extracting a key from a PKCS#11 certificate. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3327'>bz#3327</a>
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: restore blocking status on stdio fds before close. <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>
+   needs file descriptors in non-blocking mode to operate but it was
+   not restoring the original state on exit. This could cause
+   problems with fds shared with other programs via the shell,
+   <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3280'>bz#3280</a> and GH<a href='https://github.com/openssh/openssh-portable/pull/246'>PR246</a>
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>/<a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: switch both client and server mainloops from
+   select(3) to pselect(3). Avoids race conditions where a signal
+   may arrive immediately before select(3) and not be processed until
+   an event fires. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=2158'>bz#2158</a>
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: sessions started with ControlPersist were incorrectly
+   executing a shell when the -N (no shell) option was specified.
+   <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3290'>bz#3290</a>
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: check if IPQoS or TunnelDevice are already set before
+   overriding. Prevents values in config files from overriding values
+   supplied on the command line. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3319'>bz#3319</a>
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: fix debug message when finding a private key to match a
+   certificate being attempted for user authentication. Previously it
+   would print the certificate's path, whereas it was supposed to be
+   showing the private key's path. GH<a href='https://github.com/openssh/openssh-portable/pull/247'>PR247</a>
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: match host certificates against host public keys, not
+   private keys. Allows use of certificates with private keys held in
+   a ssh-agent.  <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3524'>bz#3524</a>
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: add a workaround for a bug in OpenSSH 7.4 <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>, which
+   allows RSA/SHA2 signatures for public key authentication but fails
+   to advertise this correctly via SSH2_MSG_EXT_INFO. This causes
+   clients of these server to incorrectly match
+   PubkeyAcceptedAlgorithmse and potentially refuse to offer valid
+   keys. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3213'>bz#3213</a>
+
+ * <a href='https://man.openbsd.org/sftp.1'>sftp(1)</a>/<a href='https://man.openbsd.org/scp.1'>scp(1)</a>: degrade gracefully if a sftp-server offers the
+   limits@openssh.com extension but fails when the client tries to
+   invoke it. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3318'>bz#3318</a>
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: allow ssh_config SetEnv to override $TERM, which is
+   otherwise handled specially by the protocol. Useful in ~/.ssh/config
+   to set TERM to something generic (e.g. "xterm" instead of
+   "xterm-256color") for destinations that lack terminfo entries.
+
+ * <a href='https://man.openbsd.org/sftp-server.8'>sftp-server(8)</a>: the limits@openssh.com extension was incorrectly
+   marked as an operation that writes to the filesystem, which made it
+   unavailable in sftp-server read-only mode. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3318'>bz#3318</a>
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: fix SEGV in UpdateHostkeys debug() message, triggered when
+   the update removed more host keys than remain present.
+
+ * many manual page fixes.
+
+Portability
+-----------
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: move closefrom() to before first malloc. When built against
+   tcmalloc, the closefrom() would stomp on file descriptors created
+   for tcmalloc's internal use. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3321'>bz#3321</a>
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: handle GIDs &gt; 2^31 in getgrouplist. When compiled in 32bit
+   mode, the getgrouplist implementation may fail for GIDs greater than
+   LONG_MAX.
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: xstrdup environment variable used by ForwardAgent. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3328'>bz#3328</a>
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: don't sigdie() in signal handler in privsep child process;
+   this can end up causing sandbox violations per <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3286'>bz3286</a>
+
+Checksums:
+==========
+
+ - SHA1 (<a href='https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/openssh-8.7.tar.gz'>openssh-8.7.tar.gz</a>) = 61bfa5a55e2b7e851b1d463aa432e4ff508f61cc
+ - SHA256 (<a href='https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/openssh-8.7.tar.gz'>openssh-8.7.tar.gz</a>) = Q5jPfCaYhTKhkDPYH32jtjFN7qhNhkNHYC9awg2THLs=
+
+ - SHA1 (<a href='https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-8.7p1.tar.gz'>openssh-8.7p1.tar.gz</a>) = 8719032c1e47732c8fdb14adfb24b5e9e71de802
+ - SHA256 (<a href='https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-8.7p1.tar.gz'>openssh-8.7p1.tar.gz</a>) = fKNLi7JK6eUPM3krcJGzhB1+G0QP9XvJ+r3fAeLtHiQ=
+
+Please note that the SHA256 signatures are base64 encoded and not
+hexadecimal (which is the default for most checksum tools). The PGP
+key used to sign the releases is available from the mirror sites:
+<a href='https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/RELEASE_KEY.asc'>https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/RELEASE_KEY.asc</a>
+
+Please note that the OpenPGP key used to sign releases has been
+rotated for this release. The new key has been signed by the previous
+key to provide continuity.
+
+Reporting Bugs:
+===============
+
+- Please read <a href='https://www.openssh.com/report.html'>https://www.openssh.com/report.html</a>
+  Security bugs should be reported directly to openssh@openssh.com
+
+
+</pre><hr>
 <h3><a href='txt/release-8.6' id='8.6'>OpenSSH 8.6</a>/<a href='txt/release-8.6' id='8.6p1'>8.6p1</a> (2021-04-19)</h3>
 <pre>
 OpenSSH 8.6 was released on 2021-04-19. It is available from the
@@ -10193,4 +10471,4 @@ Damien Miller
 
 [1] <a href='http://violet.ibs.com.au/openssh/files/ChangeLog'>http://violet.ibs.com.au/openssh/files/ChangeLog</a>
 </pre><hr>
-<p>$OpenBSD: releasenotes.html,v 1.50 2021/04/19 00:33:38 djm Exp $
+<p>$OpenBSD: releasenotes.html,v 1.51 2021/08/20 05:09:09 djm Exp $
