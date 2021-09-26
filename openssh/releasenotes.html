@@ -22,6 +22,155 @@
 Release Notes
 </h2>
 <hr>
+<h3><a href='txt/release-8.8' id='8.8'>OpenSSH 8.8</a>/<a href='txt/release-8.8' id='8.8p1'>8.8p1</a> (2021-09-26)</h3>
+<pre>
+OpenSSH 8.8 was released on 2021-09-26. It is available from the
+mirrors listed at <a href='https://www.openssh.com/'>https://www.openssh.com/</a>.
+OpenSSH is a 100% complete SSH protocol 2.0 implementation and
+includes sftp client and server support.
+
+Once again, we would like to thank the OpenSSH community for their
+continued support of the project, especially those who contributed
+code or patches, reported bugs, tested snapshots or donated to the
+project. More information on donations may be found at:
+<a href='https://www.openssh.com/donations.html'>https://www.openssh.com/donations.html</a>
+
+Future deprecation notice
+=========================
+
+A near-future release of OpenSSH will switch <a href='https://man.openbsd.org/scp.1'>scp(1)</a> from using the
+legacy scp/rcp protocol to using SFTP by default.
+
+Legacy scp/rcp performs wildcard expansion of remote filenames (e.g.
+"scp host:* .") through the remote shell. This has the side effect of
+requiring double quoting of shell meta-characters in file names
+included on <a href='https://man.openbsd.org/scp.1'>scp(1)</a> command-lines, otherwise they could be interpreted
+as shell commands on the remote side.
+
+This creates one area of potential incompatibility: <a href='https://man.openbsd.org/scp.1'>scp(1)</a> when using
+the SFTP protocol no longer requires this finicky and brittle quoting,
+and attempts to use it may cause transfers to fail. We consider the
+removal of the need for double-quoting shell characters in file names
+to be a benefit and do not intend to introduce bug- compatibility for
+legacy scp/rcp in <a href='https://man.openbsd.org/scp.1'>scp(1)</a> when using the SFTP protocol.
+
+Another area of potential incompatibility relates to the use of remote
+paths relative to other user's home directories, for example -
+"scp host:~user/file /tmp". The SFTP protocol has no native way to
+expand a ~user path. However, <a href='https://man.openbsd.org/sftp-server.8'>sftp-server(8)</a> in OpenSSH 8.7 and later
+support a protocol extension "expand-path@openssh.com" to support
+this.
+
+Security
+========
+
+<a href='https://man.openbsd.org/sshd.8'>sshd(8)</a> from OpenSSH 6.2 through 8.7 failed to correctly initialise
+supplemental groups when executing an AuthorizedKeysCommand or
+AuthorizedPrincipalsCommand, where a AuthorizedKeysCommandUser or
+AuthorizedPrincipalsCommandUser directive has been set to run the
+command as a different user. Instead these commands would inherit
+the groups that <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a> was started with.
+
+Depending on system configuration, inherited groups may allow
+AuthorizedKeysCommand/AuthorizedPrincipalsCommand helper programs to
+gain unintended privilege.
+
+Neither AuthorizedKeysCommand nor AuthorizedPrincipalsCommand are
+enabled by default in <a href='https://man.openbsd.org/sshd_config.5'>sshd_config(5)</a>.
+
+Potentially-incompatible changes
+================================
+
+This release disables RSA signatures using the SHA-1 hash algorithm
+by default. This change has been made as the SHA-1 hash algorithm is
+cryptographically broken, and it is possible to create chosen-prefix
+hash collisions for &lt;USD$50K [1]
+
+For most users, this change should be invisible and there is
+no need to replace ssh-rsa keys. OpenSSH has supported <a href='https://tools.ietf.org/html/rfc8332'>RFC8332</a>
+RSA/SHA-256/512 signatures since release 7.2 and existing ssh-rsa keys
+will automatically use the stronger algorithm where possible.
+
+Incompatibility is more likely when connecting to older SSH
+implementations that have not been upgraded or have not closely tracked
+improvements in the SSH protocol. For these cases, it may be necessary
+to selectively re-enable RSA/SHA1 to allow connection and/or user
+authentication via the HostkeyAlgorithms and PubkeyAcceptedAlgorithms
+options. For example, the following stanza in ~/.ssh/config will enable
+RSA/SHA1 for host and user authentication for a single destination host:
+
+    Host old-host
+        HostkeyAlgorithms +ssh-rsa
+	PubkeyAcceptedAlgorithms +ssh-rsa
+
+We recommend enabling RSA/SHA1 only as a stopgap measure until legacy
+implementations can be upgraded or reconfigured with another key type
+(such as ECDSA or Ed25519).
+
+[1] "SHA-1 is a Shambles: First Chosen-Prefix Collision on SHA-1 and
+    Application to the PGP Web of Trust" Leurent, G and Peyrin, T
+    (2020) <a href='https://eprint.iacr.org/2020/014.pdf'>https://eprint.iacr.org/2020/014.pdf</a>
+
+Changes since OpenSSH 8.7
+=========================
+
+This release is motivated primarily by the above deprecation and
+security fix.
+
+New features
+------------
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: allow the <a href='https://man.openbsd.org/ssh_config.5'>ssh_config(5)</a> CanonicalizePermittedCNAMEs
+   directive to accept a "none" argument to specify the default
+   behaviour.
+
+Bugfixes
+--------
+
+ * <a href='https://man.openbsd.org/scp.1'>scp(1)</a>: when using the SFTP protocol, continue transferring files
+   after a transfer error occurs, better matching original scp/rcp
+   behaviour.
+    
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: fixed a number of memory leaks in multiplexing,
+
+ * <a href='https://man.openbsd.org/ssh-keygen.1'>ssh-keygen(1)</a>: avoid crash when using the -Y find-principals
+   command.
+
+ * A number of documentation and manual improvements, including
+   <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3340'>bz#3340</a>, <a href='https://github.com/openssh/openssh-portable/pull/139'>PR139</a>, <a href='https://github.com/openssh/openssh-portable/pull/215'>PR215</a>, <a href='https://github.com/openssh/openssh-portable/pull/241'>PR241</a>, <a href='https://github.com/openssh/openssh-portable/pull/257'>PR257</a>
+
+Portability
+-----------
+
+ * <a href='https://man.openbsd.org/ssh-agent.1'>ssh-agent(1)</a>: on FreeBSD, use procctl to disable ptrace(2)
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>/<a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: some fixes to the pselect(2) replacement
+   compatibility code. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3345'>bz#3345</a>
+
+Checksums:
+==========
+
+ - SHA1 (<a href='https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/openssh-8.8.tar.gz'>openssh-8.8.tar.gz</a>) = 732947082a8998047e839cc0b4c066bf0a7e1a5b
+ - SHA256 (<a href='https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/openssh-8.8.tar.gz'>openssh-8.8.tar.gz</a>) = AngyrPSQH255hnzU1l7y+LlVAUNcGWtuYQIFEl22nRo=
+
+ - SHA1 (<a href='https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-8.8p1.tar.gz'>openssh-8.8p1.tar.gz</a>) = 1eb964897a4372f6fb96c7effeb509ec71c379c9
+ - SHA256 (<a href='https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-8.8p1.tar.gz'>openssh-8.8p1.tar.gz</a>) = RZCJDqm7ms5Pca4zF4WjpYIyMkNRYZYO1fyGWI8zH+k=
+
+Please note that the SHA256 signatures are base64 encoded and not
+hexadecimal (which is the default for most checksum tools). The PGP
+key used to sign the releases is available from the mirror sites:
+<a href='https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/RELEASE_KEY.asc'>https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/RELEASE_KEY.asc</a>
+
+Please note that the OpenPGP key used to sign releases has been
+rotated for this release. The new key has been signed by the previous
+key to provide continuity.
+
+Reporting Bugs:
+===============
+
+- Please read <a href='https://www.openssh.com/report.html'>https://www.openssh.com/report.html</a>
+  Security bugs should be reported directly to openssh@openssh.com
+
+</pre><hr>
 <h3><a href='txt/release-8.7' id='8.7'>OpenSSH 8.7</a>/<a href='txt/release-8.7' id='8.7p1'>8.7p1</a> (2021-08-20)</h3>
 <pre>
 OpenSSH 8.7 was released on 2021-08-20. It is available from the
@@ -10471,4 +10620,4 @@ Damien Miller
 
 [1] <a href='http://violet.ibs.com.au/openssh/files/ChangeLog'>http://violet.ibs.com.au/openssh/files/ChangeLog</a>
 </pre><hr>
-<p>$OpenBSD: releasenotes.html,v 1.51 2021/08/20 05:09:09 djm Exp $
+<p>$OpenBSD: releasenotes.html,v 1.52 2021/09/26 14:44:16 djm Exp $
