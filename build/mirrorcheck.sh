@@ -38,7 +38,7 @@ for mirror in "${mirrors[@]}"; do
 	for arch in armv7 sparc64; do
 		path="${mirror}snapshots/$arch/SHA256"
 		printf 'Trying %s\n' "$path"
-		http_code=$(curl -A '' -s -o /dev/null -w '%{http_code}' -- "$path" 2>>"$stderr")
+		http_code=$(curl -A '' --connect-timeout 6 -s -o /dev/null -w '%{http_code}' -- "$path" 2>>"$stderr")
 		[[ "$http_code" == 200 ]] || set -A error_mirrors "${error_mirrors[@]}" "$http_code $path"
 	done
 done
@@ -49,7 +49,7 @@ for mirror in "${mirrors[@]}"; do
 	domain="${mirror#http*://}"
 	domain="${domain%%/*}"
 	printf 'Trying %s\n' "$path"
-	timestamp=$(ftp -MV -U '' -o - -- "$path" 2>>"$stderr")
+	timestamp=$(ftp -MV -U '' -w 6 -o - -- "$path" 2>>"$stderr")
 	timestamp=$(date -r "$timestamp" '+%Y-%m-%d %H:%M:%S')
 	set -A timestamps "${timestamps[@]}" "$timestamp $domain"
 done
