@@ -1,0 +1,600 @@
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="description" content="OpenSSH agent restriction">
+<link rel="stylesheet" href="https://openssh.com/openbsd.css">
+<link rel="shortcut icon" href="https://openssh.com/favicon.ico"
+ type="image/x-icon">
+<style>
+/* body { font-family: sans-serif; } */
+p { width: 80em }
+.hl { background-color: #d8ecff; }
+.cmd { font-family: monospace; color: #700; }
+.file { font-family: monospace; color: #005; }
+.msgtype { font-family: monospace; color: #060; }
+.example { font-family: monospace; background-color: #d8d0d6; }
+.proto { margin-left: 4em; }
+.code {
+	background-color: #311;
+	color: #ddf;
+	margin-left: 4em;
+	width: 40em;
+	padding: 0.5em 1em;
+}
+</style>
+<title>SSH agent restriction</title>
+</head>
+<body>
+<h1>SSH agent restriction</h1>
+<p>
+<b>Author:</b> Damien Miller &lt;djm&commat;openssh.com&gt;<br>
+<b>Last modified:</b> 2021-12-16
+</p>
+<h2>TLDR</h2>
+<p>
+OpenSSH 8.9 will include the ability to control how and where keys in
+<span class="cmd">ssh-agent</span> may be used, both locally and when forwarded (subject to some
+<a href="#limitations">limitations</a>).
+<h2>Background</h2>
+</p>
+<p>
+The OpenSSH SSH protocol implementation includes the <span class="cmd">ssh-agent</span>
+authentication agent. This tool supports two overlapping uses: a safe
+runtime store for unwrapped private keys, removing the need to enter a
+passphrase for each use, and a way to forward access to private keys to
+remote hosts, without exposing the private keys themselves.
+</p>
+<p>
+The agent is a deliberately simple program, since it holds private
+keys we consider it part of the <a href="https://en.wikipedia.org/wiki/Trusted_computing_base">TCB</a> and so want to minimise its attack
+surface. It speaks a simple, client-initiated <a href="https://datatracker.ietf.org/doc/html/draft-miller-ssh-agent">protocol</a> with a small
+number of operations including adding or deleting keys, retrieving
+a list of public halves for loaded keys and, critically, making a
+signature using a private key. Most interactions with the agent are
+through the <a class="cmd" href="https://man.openbsd.org/ssh-add.1">ssh-add</a> tool for adding, deleting and listing keys and ssh,
+which can use keys held in an agent for user authentication, but other
+tools can also be used if they speak the protocol.
+</p>
+<p>
+As mentioned above, access to the agent can be forwarded to a remote
+host. Typically this happens by a SSH client and server arranging to
+allow remote programs to establish a connection to a local agent and
+exchange messages over that connection. A forwarded agent appears
+effectively identical to a local one, as (until now) the protocol
+offered no way to distinguish between them.
+</p>
+<p>
+Unfortunately, because the agent holds sensitive keys, it is a desirable
+and frequently-exploited target for attackers. A typical scenario begins
+with a user forwarding their agent to a host that is controlled by an
+attacker. Once this occurs, the attacker has full use of the keys held
+in the agent and they will typically use them to authenticate a SSH
+connection to a host they’d like to access.
+</p>
+<p>
+The agent protocol has offered little defence against this sort of
+attack - it is possible to make keys auto-expire after a time period
+or mark a key as requiring confirmation (via a popup window) for each
+use, but these are seldom used and confirmation is somewhat easy to
+phish, e.g. if an attacker knows when a user is likely to be making
+SSH connections - unfortunately the confirmation popups can offer no
+information on the destination host being authenticated to or the
+forwarding path the request arrived over. FIDO keys that require
+user-presence confirmation offer a little more defence, but are also
+similarly phishable.
+</p>
+<h2>What would be better?</h2>
+<p>
+Thinking about what would be a better set of controls lets us identify
+some possible requirements for a safer agent protocol.
+</p>
+<p>
+An easy win for improving the security of the agent would be to provide
+better separation between the two use-cases mentioned above. Adding a
+key to an agent for local use should not necessarily make it available
+on a forwarded agent. This would let users store keys in the agent with
+less worry that they might be used on a malicious host. So the first
+requirement is being able to <span class="hl">add keys to an agent for local (i.e. not
+forwarded) use only</span>.
+</p>
+<p>
+Conversely, forwarded agents are useful too, but not all remote hosts
+are equally trustworthy and users often connect to hosts in entirely
+different trust domains (e.g. a user at a laptop connecting to testing,
+production or personal environments). A good solution would <span class="hl">allow
+forwarding varying subsets of keys to different remote hosts</span>.
+</p>
+<p>
+Since forwarding chains sometimes involve several hops, we’d like
+<span class="hl">key forwarding restrictions to be applied hop by hop</span>, with each
+additional hop only ever removing keys from those available for use
+at the destination. Having gone to the trouble of making a system
+of restrictions that can reason about key availability based on the
+forwarding path, it would also be good to <span class="hl">display path information in
+confirmation dialogs</span>. E.g. a notification for a FIDO key could state the
+destination host and the path over which the request was forwarded.
+</p>
+<p>
+Of course, the whole purpose of this exercise is to make agent
+forwarding more secure. In particular, the system should
+<span class="hl">cryptographically guarantee that a key is never usable for
+authentication to an unintended destination</span> and that <span class="hl">forwarded keys are
+only visible/available through permitted hosts</span>. Finally, the system
+should <span class="hl">fail safe</span> when some participant lacks the protocol features that
+it needs to function.
+</p>
+<h2>Agent restriction in OpenSSH</h2>
+<p>
+OpenSSH 8.9 will include an experimental set of agent restrictions
+that meet the above requirements, though with some caveats (<a href="#limitations">discussed
+below</a>). These are built around some two simple agent protocol extensions
+and a small modification to the public key authentication protocol.
+</p>
+<p>
+These extensions allow the user to add <em>destination constraints</em> to keys they add to a <span class="cmd">ssh-agent</span> and have <span class="cmd">ssh</span> enforce them. For example, this command:
+</p>
+<pre class="code">
+$ ssh-add -h “perseus@cetus.example.org” \
+          -h “scylla.example.org” \
+          -h “scylla.example.org&gt;medea@charybdis.example.org” \
+          ~/.ssh/id_ed25519
+</pre>
+<p>
+Adds a key that can only be used for authentication in the following
+circumstances:
+</p>
+<ol>
+	<li>From the origin host to <span class="example">scylla.example.org</span> as any user.</li>
+	<li>From the origin host to <span class="example">cetus.example.org</span> as user perseus.</li>
+	<li>Through <span class="example">scylla.example.org</span> to host <span class="example">charybdis.example.org</span> as user <span class="example">medea</span>.</li>
+</ol>
+<p>
+Attempts to use this key to authenticate to other hosts will be refused
+by the agent because they weren’t explicitly listed, as would an
+attempt to authenticate through <span class="example">scylla.example.org</span> to <span class="example">cetus.example.org</span>
+because the path was not permitted. Likewise, trying to authenticate
+as any other user then perseus to <span class="example">cetus.example.org</span> or <span class="example">medea</span> to
+<span class="example">charybdis.example.org</span> would fail because the destination users are not
+permitted.
+</p>
+<p>
+Deeper chains of forwarding restrictions are possible, with each hop needing to be specified separately:
+</p>
+<pre class="code">
+$ ssh-add -h “scylla.example.org” \
+          -h “cetus.example.org” \
+          -h “scylla.example.org&gt;charybdis.example.org” \
+          -h “cetus.example.org&gt;charybdis.example.org” \
+          -h “charybdis.example.org&gt;hydra.example.org” \
+          ~/.ssh/id_ed25519
+</pre>
+<p>
+Note that this set of restrictions permits two different paths by which
+the ultimate destination of <span class="example">hydra.example.org</span> could be reached:
+</p>
+<img src="data:image/png;base64,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" alt="allowed forwarding paths" />
+<p>
+At each hop, only the keys that are permitted for use there are
+visible. For example, if the user tried to list the available keys on
+<span class="example">hydra.example.org</span>, this key would not be shown as available. Similarly,
+attempts to remove or adjust options on a restricted key will be refused
+anywhere other than on the origin machine.
+</p>
+<h2 id="limitations">Limitations</h2>
+<h3>Protocol extensions are required</h3>
+<p>
+The most immediate practical consideration is that this feature requires
+protocol extensions in <span class="cmd">ssh-agent</span>, <span class="cmd">ssh-add</span>, <span class="cmd">ssh</span> and <span class="cmd">sshd</span> for most
+participating hosts. The requirement to run an updated <span class="cmd">ssh-agent</span>, ssh
+and <span class="cmd">ssh-add</span> is fairly obvious (older versions simply don’t support
+the feature), but the need to run an updated SSH server is less obvious
+(the reason is <a href="#authverify">discussed below</a>) and is more likely to be a challenge to
+deployment.
+</p>
+<p>
+<h3>Permitted forwarding hosts are identified by hostkey</h3>
+<p>
+Another practical limitation is due to forwarding constraints
+using hostkeys to identify allowed hosts. Hostkeys are the primary
+way of identifying hosts within the SSH protocol, and the only
+cryptographically-verifiable way that can be plumbed through to the
+agent.
+</p>
+<p>
+When adding a key with destination constraints, <span class="cmd">ssh-add</span> will use the
+local <span class="file">known_hosts</span> files to map the host names given on the command-line
+to hostkeys before passing them to <span class="cmd">ssh-agent</span>. This means that all the
+keys for all the hosts that the user lists must be present in the right
+place (the machine running <span class="cmd">ssh-add</span>) and the right time.
+</p>
+<p>
+Hostkeys aren’t always the easiest things to work with either. A host
+may have multiple keys of different types, or have multiple names - such
+as a fully-qualified domain name, an unqualified hostname or just an
+address.
+</p>
+<p>
+If you plan to make use of these new agent controls, then users will
+need to maintain good control over their <span class="file">known_hosts</span> databases. OpenSSH
+offers some features that might make this easier, including the
+UpdateHostkey extension that allows a client to learn the full set of a
+server’s hostkeys (this has recently been enabled by default), and the
+CanonicalizeHostname option that makes it easier for a client to store
+and refer to fully-qualified hostnames when unqualified names are used.
+</p>
+<p>
+The situation for certificate hostkeys is considerably simpler. If
+certificate hostkeys are in use, then the host running <span class="cmd">ssh-add</span> only
+needs the CA key(s) for the hosts listed in destination constraints, and
+will be able to match certificates made by these CA keys by name. This
+is another good reason to use host certificates in organisational
+settings.
+</p>
+<h3 id="pathtrust">Destinations are much more trustworthy than paths</h3>
+<p>
+Destination constraints are checked by <span class="cmd">ssh-agent</span>, using information
+passed from a cooperating ssh. If an agent is forward to an
+attacker-controlled host, then they will still be able to steal use of a
+forwarded agent on that host.
+</p>
+<p>
+Less obviously, they will also be able to forward use of the agent
+to other hosts, e.g. by using an SSH implementation that doesn’t
+cooperate with <span class="cmd">ssh-agent</span>, or another tool entirely, such as socat. Note
+that the attacker isn’t gaining any new access to keys here, they are
+still forced to act via the compromised host and their access is still
+restricted to the keys that were permitted for use though the intended
+host only.
+</p>
+<p>
+A related attack involves a malicious hop replaying session binding
+messages (<a href="#pathtrust">see below</a>). They are able to do this because there is no way
+for <span class="cmd">ssh-agent</span> to guarantee freshness of these messages. This attack
+allows a malicious hop to make the forwarding path appear longer than it
+actually is.
+</p>
+<p>
+In all cases however, the final destination cannot be forged because of
+the <a href="#authverify">binding</a> between the signature and the server hostkey. Because the binding
+is supplied by the local client, it's also reasonable to assume that the
+the identity of the first hop in a forwarding path is correct too.
+</p>
+<p>
+Because of these subtleties, it’s better to think of key constraints
+as permitting use of a key through a given host rather than as from a
+particular host, and, more generally, that any forwarding path is only
+as strong as its weakest link. Another helpful way to think about key
+constraints is that each one represents a delegation of a key to a host,
+that is only slightly more trustworthy than the delegate is.
+</p>
+<h3>Protocol extensions assume a particular sequence of operations</h3>
+<p>
+The restriction checking in <span class="cmd">ssh-agent</span> makes strong assumptions on what
+operations are performed over agent connections. This is only likely
+to matter to authors of tools that interact with the agent protocol
+directly.
+</p>
+<p>
+In OpenSSH, one connection from the <span class="cmd">ssh</span> client to the agent is made for
+user authentication, and this is closed after user authentication is
+completed. When a SSH session with a forwarded agent is established,
+additional agent connections are made as necessary when operations that
+invoke the agent are performed (e.g. to list keys or authenticate to
+another host).
+</p>
+<p>
+The agent protocol extension deliberately treats the initial connection
+that <span class="cmd">ssh</span> makes for authentication differently to connections made for
+agent forwarding. Other SSH implementations that want to use these
+extensions will have to follow this pattern.
+</p>
+<h3>Restrictions only work for user authentication</h3>
+<p>
+Destination restrictions in <span class="cmd">ssh-agent</span> strongly depend on the agent being
+able to parse the data being signed, and the contents having all the
+information needed to compare against the restrictions listed for a
+given key. SSH user authentication requests have a format that meets
+these requirements, but other uses of the agent protocol are not likely
+to.
+</p>
+<p>
+In particular, it is currently not possible to use
+destination-restricted keys for SSH signatures via <span class="cmd">ssh-keygen</span>, CA
+operations, etc. It may be possible to relax this limitation
+(<a href="#nextsteps">see below</a>).
+</p>
+<h2>How it works</h2>
+<p>
+Destination-restricted keys are implemented through three fairly simply
+protocol extensions:
+</p>
+<ul>
+	<li>A new agent protocol key constraint extension to allow communicating destination restrictions from <span class="cmd">ssh-add</span> to <span class="cmd">ssh-agent</span>.</li>
+	<li>A new agent protocol session binding extension to allow <span class="cmd">ssh</span> to inform <span class="cmd">ssh-agent</span> of where keys are being used.</li>
+	<li>A modified publickey authentication method used between <span class="cmd">ssh</span> and <span class="cmd">sshd</span> that incorporates the server hostkey into the signed data.</li>
+</ul>
+<p>
+These protocol extensions ensure the new permission-checking logic agent
+has all the requisite information that it needs to cryptographically
+verify the intended destination for authentication requests and the path
+over which it travelled.
+</p>
+<p>
+A detailed specification for the wire format for each of these
+extensions can be found via the OpenSSH source distribution’s PROTOCOL
+file.
+</p>
+<h3>Restricting keys</h3>
+<p>
+The protocol extensions begin with adding a destination-constrained key
+to <span class="cmd">ssh-agent</span> using the <span class="cmd">ssh-add</span> tool.
+</p>
+<p>
+When requested to add a key with one or more constraints for use
+to/through particular hosts, <span class="cmd">ssh-add</span> will look up the host’s hostkeys
+from the local <span class="file">known_hosts</span> database and encode them along with the key
+in the <span class="msgtype">SSH2_AGENTC_ADD_IDENTITY</span> message. Specifically, one or more of
+the following per-hop constraints will be encoded (non-primitive types
+are italicised):
+</p>
+<pre class="proto">
+byte         SSH_AGENT_CONSTRAIN_EXTENSION (0xff)
+string       “restrict-destination-v00@openssh.com”
+constraint[] constraints
+ 	string    [empty]
+string    from_hostname
+keyspec[] from_keyspec
+    string    keyblob
+    bool      key_is_ca
+string    to_username
+string    to_hostname
+keyspec[] to_hostspec
+    string    keyblob
+    bool      key_is_ca
+</pre>
+<p>
+<span class="cmd">ssh-agent</span> records each hop constraint against the key for later
+permission checking. The hostnames in the constraint are used primarily
+for hostname checking in certificate hostkeys (i.e. when key_is_ca is
+true). The from_hostname and from_keyspec fields may be empty to signify
+the origin host, but they are always mandatory for the to/through host.
+</p>
+<h3>Building the forwarding path</h3>
+<p>
+The path visible to <span class="cmd">ssh-agent</span>, from the origin through forwarding hosts
+to a destination authentication request is established by <span class="cmd">ssh</span> sending
+a session binding message as the first message on an agent connection
+after it is established. This message cryptographically links the SSH
+connection’s session identifier (as described in <a href="https://datatracker.ietf.org/doc/html/rfc4253#section-7.2">RFC4253 section 7.2</a>)
+with the server’s hostkey for the life of the agent connection. This
+allows the agent to establish a trustworthy linkage between an agent
+connection and a SSH connection.
+</p>
+<p>
+The message format is:
+</p>
+<pre class="proto">
+byte            SSH_AGENTC_EXTENSION (0x1b)
+string          session-bind@openssh.com
+string          hostkey
+string          session identifier
+string          signature
+bool            is_forwarding
+</pre>
+<p>
+Where the signature field is the server’s signature over the session
+identifier using its hostkey as sent in the final <span class="msgtype">SSH2_MSG_KEXDH_REPLY</span>
+/ <span class="msgtype">SSH2_MSG_KEXECDH_REPLY</span> message of the initial client/server key
+exchange. The is_forwarding flag indicates whether this binding is for a
+forwarding (true) or for an authentication attempt (false).
+</p>
+<p>
+When the agent receives this message, it verifies the signature using
+the included hostkey and checks that the session identifier has not been
+previously recorded on this connection. If these checks pass, then the
+hostkey and session id are appended to the connection’s binding list.
+</p>
+<p>
+When an agent connection is requested across a deep forwarding path,
+extending beyond the origin host, each SSH client will issue a binding
+request as soon as it has received confirmation of a successfully opened
+channel, and before it passes the channel on to the next hop. This
+ensures that the binding list will be extended in the correct order, and
+that it is only necessary to trust each hop’s SSH client to do its job
+properly.
+</p>
+<h3 id="authverify">Verifying an authentication attempt</h3>
+<p>
+To ensure that the agent has all the necessary information it needs to decide whether to allow an authentication attempt, the \public key authentication request is extended to also include the server’s host key:
+</p>
+<pre class="proto">
+byte            SSH2_MSG_USERAUTH_REQUEST
+string          username
+string          "ssh-connection"
+string          "publickey-hostbound-v00@openssh.com"
+bool            has_signature
+string          pkalg
+string          public key
+string          server host key
+string          signature [only if has_signature is true]
+</pre>
+<p>
+Apart from the bolded fields, this request is identical to the usual
+“publickey” authentication request described in <a href="https://datatracker.ietf.org/doc/html/rfc4252#section-7">RFC4252</a>. When
+an authentication attempt is made, the signature is made over the
+concatenation of the connection’s session identifier and the entire
+<span class="msgtype">SSH2_MSG_USERAUTH_REQUEST</span> packet (this unchanged from the standard SSH
+protocol).
+</p>
+<p>
+To make an authentication request using the agent, the client will
+pass the data to be signed to the agent via a <span class="msgtype">SSH2_AGENTC_SIGN_REQUEST</span>
+message. <span class="cmd">ssh-agent</span> can now attempt to parse the to-be-signed data and
+extract the session identifier, server username and, thanks to the above
+extension, server hostkey.
+</p>
+<p>
+At this point, the agent has all the information it needs to strongly
+identify the destination of an authentication request, and to relate
+this to the binding list established during the previous step. The agent
+will confirm that the signature request has been made along a permitted
+forwarding path and to a permitted destination before completing it.
+</p>
+<p>
+Inclusion of the hostkey in the signed data binds the signature to the
+intended destination and prevents an attack where a MITM with access to
+a hostkey for one permitted destination from signing session binding
+requests for a different host.
+</p>
+<p>
+Note that this hostkey binding is not required for the first-hop
+connections, i.e. those originating from the host where the agent
+is running. This allows non-transitive destination restrictions to
+be useful to servers that do not support the host-bound signature
+extension.
+</p>
+<p>
+Support for host-bound signatures is signalled by the server to the
+client using the <span class="msgtype">SSH2_MSG_EXT_INFO</span> mechanism (<a href="https://datatracker.ietf.org/doc/html/rfc8308">RFC8308</a>) using the
+following advertisement:
+</p>
+<pre class="proto">
+        string          "publickey-hostbound@openssh.com"
+        string          "0" (version)
+</pre>
+<h3>Fail-safe operation</h3>
+<p>
+This feature generally degrades safely (though not especially
+gracefully) when hosts lack the necessary protocol extensions.
+</p>
+<p>
+If the agent lacks destination constraint support, then attempting
+to add a constrained key using <span class="cmd">ssh-add</span> will fail because all key
+constraints are treated as critical, i.e. failure of an agent to support
+one will cause failure of the operation.
+</p>
+<p>
+As mentioned above, host-bound signature support is not required on the
+first hop, but if the agent parses an unbound authentication request on
+a forwarded connection then the operation will be refused.
+</p>
+<p>
+One case where the protocol does not degrade so gracefully is if access
+to the <span class="cmd">ssh-agent</span> is forwarded from the origin machine by tools that
+do not participate in the session binding protocol, to a host where
+the tools do support session binding. As per the previously discussed
+<a href="#pathtrust">limitation</a>, this is entirely invisible to the agent and could yield
+surprises. This situation is little contrived, but might occur if
+an old OpenSSH or non-OpenSSH implementation is used concurrently on
+the client machine and it is active in agent forwarding.
+</p>
+<h2 id="nextsteps">Next steps</h2>
+<p>
+This is a new feature in OpenSSH and it is likely to evolve further. 
+</p>
+<p>
+More path information will likely be shown in key confirmation and FIDO
+touch/PIN request dialogs in future.
+</p>
+<p>
+There is currently no communication for the reason signature requests
+and other operations are refused by <span class="cmd">ssh-agent</span> except debug logs that are
+not visible by default. This makes troubleshooting difficult.
+</p>
+<p>
+The user-interface as presented by <span class="cmd">ssh-add</span> might not be optimal for all
+uses. In particular, users might want to specify whole forwarding chains
+in a single argument. This was deliberately not implemented, as the
+current hop-by-hop specification emphasises the delegatory aspect of hop
+permissions, but it might be worth revisiting this.
+</p>
+<p>
+The path information accrued in <span class="cmd">ssh-agent</span> could be used for more
+expressive and fine-grained control of key availability than is
+currently implemented. E.g. it could be possible to make keys available
+on hosts towards the end of a forwarding path and not on initial
+hosts. Similarly, “wildcard” forwarding of keys through a particular
+host could be added, as could selective relaxation of the need for
+servers to support host-bound public key authentication. However, these
+come with additional caveats and MITM risks that would need to be
+assessed and explained carefully.
+</p>
+<p>
+Finally, it may also be possible to selectively allow signing requests
+other than those used for user authentication. SSH keys are being used
+for a growing number of signing operations, including git commits and
+pull requests. It may be possible, for example, to permit a key for
+forwarded use only for git signing. However, all trust would be placed
+on the forwarding path as there is no intrinsic destination binding
+analogous to that offered by host-bound signatures.
+</p>
+<h2>Alternatives considered</h2>
+<h3>Separate agent sockets</h3>
+<p>
+A previous design for agent restriction had the agent offering multiple
+sockets, and gave <span class="cmd">ssh-add</span> the ability to specify which of these sockets
+that keys would be available on. In conjunction with the IdentityAgent
+and ForwardAgent directives in ssh, this would give the ability to
+make keys available for authentication to only specific hosts from the
+origin, and to forward different subsets of keys to designated hosts.
+</p>
+<p>
+However, this design required considerable manual configuration to
+achieve this and offered no cryptographic guarantees of where keys could
+be used.
+</p>
+<h3>Changes to agent protocol only (i.e. no server-side changes)</h3>
+<p>
+A previous version of this protocol included only changes to the agent
+protocol and did not include the host-bound authentication method. This
+earlier design had the advantage of not requiring servers to update, but
+suffered from the re-signing attack described <a href="#pathtrust">above</a>.
+</p>
+<h3>Host-bound authentication and minimal agent protocol changes</h3>
+<p>
+Another potential variant of this protocol included the host-bound
+authentication change, but removed the session binding mechanism. This
+would allow the agent to strongly determine the destination of an
+authentication request when it was made, but would give it no visibility
+of the forwarding path over which it was made. This design was discarded
+as offering too little control and of being too easy for a MITM to phish
+requests against.
+</p>
+<h3>Hop by hop signing</h3>
+<p>
+Another alternative design involved <span class="cmd">sshd</span> in the protocol to a greater
+extent, by having it sign forwarded agent messages it received with
+its hostkey. This has the advantage of providing fresh signatures on
+requests and avoids the path extension attack described <a href="#pathtrust">above</a>. However,
+it requires that <span class="cmd">sshd</span> interpret the agent protocol (currently it does
+not), and risks creating an exposed hostkey signing oracle unless very
+carefully designed.
+</p>
+<h3>Host identification via name</h3>
+<p>
+This protocol uses hostkeys to identify hosts. It was suggested that,
+with additional modifications to other parts of the SSH protocol,
+hostnames could be used instead. Specifically, SSH servers could
+assert a hostname during key exchange and these names could be
+recorded in <span class="file">known_hosts</span> alongside the hostkey, rather than using
+the destination hostname as entered by the user. Agent restrictions
+could then potentially use these names instead of the more cumbersome
+hostkeys. This option was not pursues as it would be a fairly
+substantial modification to the SSH protocol, requiring modifications to
+key exchange (or at least a new extension message) and hostkey storage.
+</p>
+<h2>FAQ</h2>
+Q: Is it possible to modify a key’s constraints once it has been added?
+A: No, keys are immutable in the agent. You can replace the key with a new path though.
+<h2>Acknowledgments</h2>
+<p>
+The author would like to thank:
+</p>
+<ul>
+	<li>Jann Horn of Google Project Zero, who spotted the re-signing attack in an earlier version of the protocol with embarrassing speed,</li>
+	<li>Thai Duong of the Google Information Security Engineering team for reviewing the protocol, and</li>
+	<li>Markus Friedl of the OpenSSH project for many rounds of review of both the protocol and implementation.</li>
+<ul>
+</body>
+<!-- $OpenBSD: agent-restrict.html,v 1.1 2021/12/19 22:16:34 djm Exp $ -->
+</html>
