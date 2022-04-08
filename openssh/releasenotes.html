@@ -22,6 +22,156 @@
 Release Notes
 </h2>
 <hr>
+<h3><a href='txt/release-9.0' id='9.0'>OpenSSH 9.0</a>/<a href='txt/release-9.0' id='9.0p1'>9.0p1</a> (2022-04-08)</h3>
+<pre>
+OpenSSH 9.0 was released on 2022-04-08. It is available from the
+mirrors listed at <a href='https://www.openssh.com/'>https://www.openssh.com/</a>.
+OpenSSH is a 100% complete SSH protocol 2.0 implementation and
+includes sftp client and server support.
+
+Once again, we would like to thank the OpenSSH community for their
+continued support of the project, especially those who contributed
+code or patches, reported bugs, tested snapshots or donated to the
+project. More information on donations may be found at:
+<a href='https://www.openssh.com/donations.html'>https://www.openssh.com/donations.html</a>
+
+Changes since OpenSSH 8.9
+=========================
+
+This release is focused on bug fixing.
+
+Potentially-incompatible changes
+--------------------------------
+
+This release switches <a href='https://man.openbsd.org/scp.1'>scp(1)</a> from using the legacy scp/rcp protocol
+to using the SFTP protocol by default.
+
+Legacy scp/rcp performs wildcard expansion of remote filenames (e.g.
+"scp host:* .") through the remote shell. This has the side effect of
+requiring double quoting of shell meta-characters in file names
+included on <a href='https://man.openbsd.org/scp.1'>scp(1)</a> command-lines, otherwise they could be interpreted
+as shell commands on the remote side.
+
+This creates one area of potential incompatibility: <a href='https://man.openbsd.org/scp.1'>scp(1)</a> when using
+the SFTP protocol no longer requires this finicky and brittle quoting,
+and attempts to use it may cause transfers to fail. We consider the
+removal of the need for double-quoting shell characters in file names
+to be a benefit and do not intend to introduce bug-compatibility for
+legacy scp/rcp in <a href='https://man.openbsd.org/scp.1'>scp(1)</a> when using the SFTP protocol.
+
+Another area of potential incompatibility relates to the use of remote
+paths relative to other user's home directories, for example -
+"scp host:~user/file /tmp". The SFTP protocol has no native way to
+expand a ~user path. However, <a href='https://man.openbsd.org/sftp-server.8'>sftp-server(8)</a> in OpenSSH 8.7 and later
+support a protocol extension "expand-path@openssh.com" to support
+this.
+
+In case of incompatibility, the <a href='https://man.openbsd.org/scp.1'>scp(1)</a> client may be instructed to use
+the legacy scp/rcp using the -O flag.
+
+New features
+------------
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>, <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: use the hybrid Streamlined NTRU Prime + x25519 key
+   exchange method by default ("sntrup761x25519-sha512@openssh.com").
+   The NTRU algorithm is believed to resist attacks enabled by future
+   quantum computers and is paired with the X25519 ECDH key exchange
+   (the previous default) as a backstop against any weaknesses in
+   NTRU Prime that may be discovered in the future. The combination
+   ensures that the hybrid exchange offers at least as good security
+   as the status quo.
+
+   We are making this change now (i.e. ahead of cryptographically-
+   relevant quantum computers) to prevent "capture now, decrypt
+   later" attacks where an adversary who can record and store SSH
+   session ciphertext would be able to decrypt it once a sufficiently
+   advanced quantum computer is available.
+
+ * <a href='https://man.openbsd.org/sftp-server.8'>sftp-server(8)</a>: support the "copy-data" extension to allow server-
+   side copying of files/data, following the design in
+   draft-ietf-secsh-filexfer-extensions-00. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=2948'>bz2948</a>
+
+ * <a href='https://man.openbsd.org/sftp.1'>sftp(1)</a>: add a "cp" command to allow the sftp client to perform
+   server-side file copies.
+
+Bugfixes
+--------
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>, <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: upstream: fix poll(2) spin when a channel's output
+   fd closes without data in the channel buffer. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3405'>bz3405</a> and <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3411'>bz3411</a>
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: pack pollfd array in server listen/accept loop. Could
+   cause the server to hang/spin when MaxStartups &gt; RLIMIT_NOFILE
+
+ * <a href='https://man.openbsd.org/ssh-keygen.1'>ssh-keygen(1)</a>: avoid NULL deref via the find-principals and
+   check-novalidate operations. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3409'>bz3409</a> and GH<a href='https://github.com/openssh/openssh-portable/pull/307'>PR307</a> respectively.
+
+ * <a href='https://man.openbsd.org/scp.1'>scp(1)</a>: fix a memory leak in argument processing. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3404'>bz3404</a>
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: don't try to resolve ListenAddress directives in the sshd
+   re-exec path. They are unused after re-exec and parsing errors
+   (possible for example if the host's network configuration changed)
+   could prevent connections from being accepted.
+    
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: when refusing a public key authentication request from a
+   client for using an unapproved or unsupported signature algorithm
+   include the algorithm name in the log message to make debugging
+   easier.
+    
+Portability
+-----------
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: refactor platform-specific locked account check, fixing
+   an incorrect free() on platforms with both libiaf and shadow
+   passwords (probably only Unixware) GH<a href='https://github.com/openssh/openssh-portable/pull/284'>PR284</a>,
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>, <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: Fix possible integer underflow in scan_scaled(3)
+   parsing of K/M/G/etc quantities. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3401'>bz#3401</a>.
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: provide killpg implementation (mostly for Tandem NonStop)
+   GH<a href='https://github.com/openssh/openssh-portable/pull/301'>PR301</a>.
+
+ * Check for missing ftruncate prototype. GH<a href='https://github.com/openssh/openssh-portable/pull/301'>PR301</a>
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: default to not using sandbox when cross compiling. On most
+   systems poll(2) does not work when the number of FDs is reduced
+   with setrlimit, so assume it doesn't when cross compiling and we
+   can't run the test.  <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3398'>bz#3398</a>.
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: allow ppoll_time64 in seccomp sandbox. Should fix sandbox
+   violations on some (at least i386 and armhf) 32bit Linux platforms.
+   <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3396'>bz#3396</a>.
+
+ * Improve detection of -fzero-call-used-regs=all support in
+   configure script.
+
+
+Checksums:
+==========
+
+
+ - SHA1 (<a href='https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/openssh-9.0.tar.gz'>openssh-9.0.tar.gz</a>) = 05302aa4781e1a69db4261474ed940bd685afc24
+ - SHA256 (<a href='https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/openssh-9.0.tar.gz'>openssh-9.0.tar.gz</a>) = 9I/FrLf5Gij/4NIPts9A8yWVi0ienyyMqjqn8s0hyLk=
+
+ - SHA1 (<a href='https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-9.0p1.tar.gz'>openssh-9.0p1.tar.gz</a>) = 06dd658874dcd22d66311cf5999bd56c614de509
+ - SHA256 (<a href='https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-9.0p1.tar.gz'>openssh-9.0p1.tar.gz</a>) = A5dDAhYenszjIVPPoQAS8eZcjzdQ9XOnOrG+/Vlyooo=
+
+Please note that the SHA256 signatures are base64 encoded and not
+hexadecimal (which is the default for most checksum tools). The PGP
+key used to sign the releases is available from the mirror sites:
+<a href='https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/RELEASE_KEY.asc'>https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/RELEASE_KEY.asc</a>
+
+Please note that the OpenPGP key used to sign releases has been
+rotated for this release. The new key has been signed by the previous
+key to provide continuity.
+
+Reporting Bugs:
+===============
+
+- Please read <a href='https://www.openssh.com/report.html'>https://www.openssh.com/report.html</a>
+  Security bugs should be reported directly to openssh@openssh.com
+
+</pre><hr>
 <h3><a href='txt/release-8.9' id='8.9'>OpenSSH 8.9</a>/<a href='txt/release-8.9' id='8.9p1'>8.9p1</a> (2022-02-23)</h3>
 <pre>
 OpenSSH 8.9 was released on 2022-02-23. It is available from the
@@ -10899,4 +11049,4 @@ Damien Miller
 
 [1] <a href='http://violet.ibs.com.au/openssh/files/ChangeLog'>http://violet.ibs.com.au/openssh/files/ChangeLog</a>
 </pre><hr>
-<p>$OpenBSD: releasenotes.html,v 1.54 2022/02/24 03:38:15 djm Exp $
+<p>$OpenBSD: releasenotes.html,v 1.55 2022/04/08 01:48:38 djm Exp $
