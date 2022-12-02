@@ -160,8 +160,13 @@ sub output_release
 		s|bz #(\d+)|<a href='$bzurl$1'>bz #$1</a>|g;
 
 		# expand github pull requests into links.
-		s|PR(\d+)|<a href='$prurl$1'>PR$1</a>|g;
-		s|PR#(\d+)|<a href='$prurl$1'>PR$1</a>|g;
+		if (m|GHPR\d+|) {
+			s|GHPR(\d+)|<a href='$prurl$1'>GHPR$1</a>|g;
+		} elsif (m|PR\d+|) {
+			s|PR(\d+)|<a href='$prurl$1'>PR$1</a>|g;
+		} elsif (m|PR#\d+|) {
+			s|PR#(\d+)|<a href='$prurl$1'>PR$1</a>|g;
+		}
 
 		# expand RFC references into links.
 		s|RFC(\d{4})|<a href='$rfcurl$1'>RFC$1</a>|g;
