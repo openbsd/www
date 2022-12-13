@@ -15,32 +15,50 @@
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 add_mirror() {
+	local mirror maintainer
+
 	if [[ -n "$uhs" ]]; then
-		set -A mirrors "${mirrors[@]}" "$uhs"
+		mirror="$uhs"
 	elif [[ -n "$uh" ]]; then
-		set -A mirrors "${mirrors[@]}" "$uh"
+		mirror="$uh"
+	else
+		return
 	fi
+
+	if [[ -n "$mn" ]]; then
+		maintainer="$mn <$me>"
+	else
+		maintainer="$me"
+	fi
+
+	set -A mirrors "${mirrors[@]}" "$mirror"
+	set -A maintainers "${maintainers[@]}" "$maintainer"
 }
 
 stderr=$(mktemp) || exit 1
 
 while read -r key value; do
 	case "$key" in
+		ME) me="$value";;
+		MN) mn="$value";;
 		UH) uh="$value";;
 		UHS) uhs="$value";;
-		0) add_mirror; uh=; uhs=;;
+		0) add_mirror; me=; mn=; uh=; uhs=;;
 	esac
 done <mirrors.dat
 add_mirror
 
 printf 'Checking HTTP status codes...\n'
-for mirror in "${mirrors[@]}"; do
+i=0
+while (( i < ${#mirrors[@]} )); do
+	mirror="${mirrors[i]}"
 	for arch in armv7 sparc64; do
 		path="${mirror}snapshots/$arch/SHA256"
 		printf 'Trying %s\n' "$path"
 		http_code=$(curl -A '' --connect-timeout 6 -s -o /dev/null -w '%{http_code}' -- "$path" 2>>"$stderr")
-		[[ "$http_code" == 200 ]] || set -A error_mirrors "${error_mirrors[@]}" "$http_code $path"
+		[[ "$http_code" == 200 ]] || set -A error_mirrors "${error_mirrors[@]}" "$http_code $path ${maintainers[i]}"
 	done
+	(( i++ ))
 done
 
 printf 'Checking timestamps...\n'
