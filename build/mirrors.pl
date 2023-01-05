@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.52 2023/01/05 16:33:57 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.53 2023/01/05 17:01:17 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -339,6 +339,8 @@ sub _by_country {
 	my ($x, $y) = ($a->{GC}, $b->{GC});
 	$x =~ s/^the\s+//i;	# ignore leading 'the' as in 'The Netherlands'
 	$y =~ s/^the\s+//i;
+	$x =~ s/CDN/0/i;	# force CDN to sort first
+	$y =~ s/CDN/0/i;
 	if (($x eq $y) and $a->{GS} and $b->{GS}) {
 		return lc($a->{GS}) cmp lc($b->{GS})
 	}
