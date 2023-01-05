@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.53 2023/01/05 17:01:17 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.54 2023/01/05 17:38:55 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -208,7 +208,8 @@ sub _paste_mirrorlist($$$$$$) {
 	my ($fh, $mirrorref, $type, $proj, $version, $links) = @_;
 
 	# indent for first <td> to come
-	print $fh ' ' x 4 if ($type eq 'UH' || $type eq 'UF' || $type eq 'UR');
+	print $fh ' ' x 4;
+
 	foreach my $mirror (sort _by_country @$mirrorref) {
 		next unless ($mirror->{$type});
 
