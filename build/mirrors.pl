@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.51 2020/04/10 21:45:17 deraadt Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.52 2023/01/05 16:33:57 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -130,7 +130,7 @@ sub write_ftplist($$$$) {
 	foreach my $mirror (sort _by_country @$mirrorref) {
 		next unless ($mirror->{$type});
 		my $loc = '';
-		if ($mirror->{'GC'} eq 'Anycast') {
+		if ($mirror->{'GC'} eq 'CDN') {
 			$loc .= "$mirror->{'GI'} (CDN)";
 		} else {
 			$loc .= "$mirror->{'GT'}, " if $mirror->{'GT'};
@@ -352,7 +352,7 @@ sub _get_location($$) {
 
 	my $location = "";
 	if ($type =~ m/^(UH|UHS|UF|UR)$/) {
-		if ($m->{'GC'} eq 'Anycast') {
+		if ($m->{'GC'} eq 'CDN') {
 			$location = "$m->{'GI'} (CDN)";
 		} else {
 			$location = "$m->{'GC'}";
