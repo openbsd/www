@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.54 2023/01/05 17:38:55 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.55 2023/01/05 17:48:48 sthen Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -206,6 +206,7 @@ sub _paste_in($$) {
 # writes out the FTP/HTTP mirrorlist to a given filehandle
 sub _paste_mirrorlist($$$$$$) {
 	my ($fh, $mirrorref, $type, $proj, $version, $links) = @_;
+	my $seen_noncdn = 0;
 
 	# indent for first <td> to come
 	print $fh ' ' x 4;
@@ -215,6 +216,12 @@ sub _paste_mirrorlist($$$$$$) {
 
 		# if this mirror already has https, don't bother listing http
 		next if ($type eq 'UH' && defined $mirror->{'UHS'});
+
+		# blank line between CDN and non-CDN
+		if ($type eq 'UHS' and not $seen_noncdn and $mirror->{GC} ne 'CDN') {
+			print $fh "<tr><td colspan=2><br></td></tr>\n    ";
+			$seen_noncdn = 1;
+		}
 
 		my $loc = _get_location ($type, $mirror);
 		if ($type =~ m/^(UH|UHS|UF|UR)$/) {
