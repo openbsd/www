@@ -794,19 +794,148 @@ to 7.3.
     </ul>
   </ul>
 
-<li>OpenSSH 9.3.
+<li>OpenSSH 9.3 and OpenSSH 9.2<br>
+This release of OpenBSD includes the changes made to OpenSSH since release 9.1:
   <ul>
   <li>Security
     <ul>
-    <li>...
-    </ul>
+    <li>ssh-add(1): when adding smartcard keys to ssh-agent(1) with the
+      per-hop destination constraints (ssh-add -h ...) added in OpenSSH
+      8.9, a logic error prevented the constraints from being
+      communicated to the agent. This resulted in the keys being added
+      without constraints. The common cases of non-smartcard keys and
+      keys without destination constraints are unaffected. This problem
+      was reported by Luci Stanescu.
+    <li>ssh(1): Portable OpenSSH provides an implementation of the
+      getrrsetbyname(3) function if the standard library does not
+      provide it, for use by the VerifyHostKeyDNS feature. A
+      specifically crafted DNS response could cause this function to
+      perform an out-of-bounds read of adjacent stack data, but this
+      condition does not appear to be exploitable beyond denial-of-
+      service to the ssh(1) client.<br>
+      The getrrsetbyname(3) replacement is only included if the system's
+      standard library lacks this function and portable OpenSSH was not
+      compiled with the ldns library (--with-ldns). getrrsetbyname(3) is
+      only invoked if using VerifyHostKeyDNS to fetch SSHFP records. This
+      problem was found by the Coverity static analyzer.
+    <li>sshd(8): fix a pre-authentication double-free memory fault
+      introduced in OpenSSH 9.1. This is not believed to be exploitable,
+      and it occurs in the unprivileged pre-auth process that is
+      subject to chroot(2) and is further sandboxed on most major
+      platforms.
+    <li>ssh(8): in OpenSSH releases after 8.7, the PermitRemoteOpen option
+      would ignore its first argument unless it was one of the special
+      keywords "any" or "none", causing the permission list to fail open
+      if only one permission was specified. bz3515
+    <li>ssh(1): if the CanonicalizeHostname and CanonicalizePermittedCNAMEs
+      options were enabled, and the system/libc resolver did not check
+      that names in DNS responses were valid, then use of these options
+      could allow an attacker with control of DNS to include invalid
+      characters (possibly including wildcards) in names added to
+      known_hosts files when they were updated. These names would still
+      have to match the CanonicalizePermittedCNAMEs allow-list, so
+      practical exploitation appears unlikely.
+      </ul>
   <li>Potentially-incompatible changes
-    <ul>
-    <li>...
-    </ul>
+      <ul>
+    <li>ssh(1): add a new EnableEscapeCommandline ssh_config(5) option that
+      controls whether the client-side ~C escape sequence that provides a
+      command-line is available. Among other things, the ~C command-line
+      could be used to add additional port-forwards at runtime.<br>
+      This option defaults to "no", disabling the ~C command-line that
+      was previously enabled by default. Turning off the command-line
+      allows platforms that support sandboxing of the ssh(1) client
+      (currently only OpenBSD) to use a stricter default sandbox policy.
+      </ul>
+  <li>New features
+      <ul>
+    <li>ssh-keygen(1), ssh-keyscan(1): accept -Ohashalg=sha1|sha256 when
+      outputting SSHFP fingerprints to allow algorithm selection. bz3493
+    <li>sshd(8): add a `sshd -G` option that parses and prints the
+      effective configuration without attempting to load private keys
+      and perform other checks. This allows usage of the option before
+      keys have been generated and for configuration evaluation and
+      verification by unprivileged users.
+    <li>sshd(8): add support for channel inactivity timeouts via a new
+      sshd_config(5) ChannelTimeout directive. This allows channels that
+      have not seen traffic in a configurable interval to be
+      automatically closed. Different timeouts may be applied to session,
+      X11, agent and TCP forwarding channels.
+    <li>sshd(8): add a sshd_config UnusedConnectionTimeout option to
+      terminate client connections that have no open channels for a
+      length of time. This complements the ChannelTimeout option above.
+    <li>sshd(8): add a -V (version) option to sshd like the ssh client has.
+    <li>ssh(1): add a "Host" line to the output of ssh -G showing the
+      original hostname argument. bz3343
+    <li>scp(1), sftp(1): add a -X option to both scp(1) and sftp(1) to
+      allow control over some SFTP protocol parameters: the copy buffer
+      length and the number of in-flight requests, both of which are used
+      during upload/download. Previously these could be controlled in
+      sftp(1) only. This makes them available in both SFTP protocol
+      clients using the same option character sequence.
+    <li>ssh-keyscan(1): allow scanning of complete CIDR address ranges,
+      e.g.  "ssh-keyscan 192.168.0.0/24". If a CIDR range is passed, then
+      it will be expanded to all possible addresses in the range
+      including the all-0s and all-1s addresses. bz#976
+    <li>ssh(1): support dynamic remote port forwarding in escape
+      command-line's -R processing. bz#3499
+      </ul>
   <li>Bugfixes
-    <ul>
-    <li>...
+      <ul>
+    <li>scp(1), sftp(1): fix progressmeter corruption on wide displays;
+      bz3534
+    <li>ssh-add(1), ssh-keygen(1): use RSA/SHA256 when testing usability
+      of private keys as some systems are starting to disable RSA/SHA1
+      in libcrypto.
+    <li>sftp-server(8): fix a memory leak. GHPR363
+    <li>ssh(1), sshd(8), ssh-keyscan(1): remove vestigal protocol
+      compatibility code and simplify what's left.
+    <li>Fix a number of low-impact Coverity static analysis findings.
+      These include several reported via bz2687
+    <li>ssh_config(5), sshd_config(5): mention that some options are not
+      first-match-wins.
+    <li>Rework logging for the regression tests. Regression tests will now
+      capture separate logs for each ssh and sshd invocation in a test.
+    <li>ssh(1): make `ssh -Q CASignatureAlgorithms` work as the manpage
+      says it should; bz3532.
+    <li>ssh(1): ensure that there is a terminating newline when adding a
+      new entry to known_hosts; bz3529
+    <li>ssh(1): when restoring non-blocking mode to stdio fds, restore
+      exactly the flags that ssh started with and don't just clobber them
+      with zero, as this could also remove the append flag from the set.
+      bz3523
+    <li>ssh(1): avoid printf("%s", NULL) if using UserKnownHostsFile=none
+      and a hostkey in one of the system known hosts file changes.
+    <li>scp(1): switch scp from using pipes to a socket-pair for
+      communication with its ssh sub-processes, matching how sftp(1)
+      operates.
+    <li>sshd(8): clear signal mask early in main(); sshd may have been
+      started with one or more signals masked (sigprocmask(2) is not
+      cleared on fork/exec) and this could interfere with various things,
+      e.g. the login grace timer. Execution environments that fail to
+      clear the signal mask before running sshd are clearly broken, but
+      apparently they do exist.
+    <li>ssh(1): warn if no host keys for hostbased auth can be loaded.
+    <li>sshd(8): Add server debugging for hostbased auth that is queued and
+      sent to the client after successful authentication, but also logged
+      to assist in diagnosis of HostbasedAuthentication problems. bz3507
+    <li>ssh(1): document use of the IdentityFile option as being usable to
+      list public keys as well as private keys. GHPR352
+    <li>sshd(8): check for and disallow MaxStartups values less than or
+      equal to zero during config parsing, rather than failing later at
+      runtime.  bz3489
+    <li>ssh-keygen(1): fix parsing of hex cert expiry times specified on
+      the command-line when acting as a CA.
+    <li>scp(1): when scp(1) is using the SFTP protocol for transport (the
+      default), better match scp/rcp's handling of globs that don't match
+      the globbed characters but do match literally (e.g. trying to
+      transfer a file named "foo.[1]"). Previously scp(1) in SFTP mode
+      would not match these pathnames but legacy scp/rcp mode would.
+      bz3488
+    <li>ssh-agent(1): document the "-O no-restrict-websafe" command-line
+      option.
+    <li>ssh(1): honour user's umask(2) if it is more restrictive then the
+      ssh default (022).
     </ul>
   </ul>
 
