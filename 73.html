@@ -83,7 +83,6 @@ to 7.3.
 
 <li>Various kernel improvements:
   <ul>
-
   <li>Added support for the Rockchip RK3568 processor.
   <li>Implemented the <a
 	href="https://man.openbsd.org/waitid.2">waitid(2)</a> system call
@@ -713,62 +712,65 @@ response version 6.
 
 <li>Security improvements:
   <ul>
-  <li>Add Synthetic Memory Protections. These provide
-  <ul>
-	<li>Immutable memory mappings whose permissions and size cannot be
-		changed anymore. A new system call <a
-		href="https://man.openbsd.org/mimmutable.2">mimmutable(2)</a> enables
-		this feature. 
-	<li>Execute-Only permission on memory mappings. This uses hardware
-		support where possible and emulation where the hardware does not have
-		separate execute only features.
-	<li>Stack permission on mappings: On every system call the stack
-		pointer is checked. It must point to a mapping that has MAP_STACK
-		permissions.
-	<li>Pinning of syscall entry to a unique specific memory regions from
-		which system calls can be made.
-  </ul><br>
-  The execute-only mappings are active on arm64, risc-v, hppa,
-	aarch64, mips64, sparc64, amd64, mips, and power-pc platforms.
-  <!-- XXX xonly checks on copyin(9) are not described yet  -->
-
-  <li>Implemented a --executable-only option in <a href="https://man.openbsd.org/ld.bfd.1">ld.bfd(1)</a>.
-
-  <li>Changed <a href="https://man.openbsd.org/ld.so.1">ld.so(1)</a>
-	to map certain regions of memory as immutable when loading shared
-	libraries.
-
+  <li>Permissions (RWX, MAP_STACK, etc) on address space regions can
+	be made <a href="https://man.openbsd.org/mimmutable.2">immutable</a>,
+	so that <a href="https://man.openbsd.org/mmap.2">mmap(2)</a>, <a
+	href="https://man.openbsd.org/mprotect.2">mprotect(2)</a> or <a
+	href="https://man.openbsd.org/munmap.2">munmap(2)</a> fail with EPERM.
+	Most of the program static address space is now automatically
+	immutable (main program, ld.so, main stack, load-time shared
+	libraries, and dlopen()'d libraries mapped without RTLD_NODELETE).
+	Programmers can request non-immutable static data using the
+	"openbsd.mutable" section, or manually bring immutability to (page
+	aligned heap objects) using <a
+	href="https://man.openbsd.org/mimmutable.2">mimmutable(2)</a>.
+  <li>Some architectures now have non-readable code ("xonly"), both from
+	the perspective of userland reading its own memory, or the kernel
+	trying to read memory in a system call. Many sloppy practices in
+	userland code had to be repaired to allow this. The <a
+        href="https://man.openbsd.org/ld.lld.1">linker (ld.lld(1))</a> option
+	--execute-only is enabled by default. In order of development: arm64,
+	riscv64, hppa, amd64, powerpc64, powerpc (G5 only), octeon. sparc64
+	(sun4u only, unfinished). 
+  <li>On all architectures which lack hardware-enforcement of xonly,
+	system calls are now prevented from reading (via <a
+        href="https://man.openbsd.org/copyin.9">copyin(9)</a>/copyinst)
+	inside the program's main text, ld.so text, sigtramp text, or libc.so
+	text.
+  <li>can still benefit from switching to --execute-only binaries if the
+	cpu generates different traps for instruction-fetch versus data-fetch.
+	The VM system will not allow memory to be read before it was executed
+	which is valuable together with library relinking. Architectures
+	switched over include loongson. 
+  <li><a href="https://man.openbsd.org/ld.so.1">ld.so(1)</a> and crt0
+	register the location of the <a
+	href="https://man.openbsd.org/execve.2">execve(2)</a> stub with the
+	kernel using pinsyscall(2), after which the kernel only accepts an
+	execve call from that specific location.
   <li>Added <a href="https://man.openbsd.org/execve.2">execve(2)</a>
 	violations of <a
 	href="https://man.openbsd.org/pinsyscall.2">pinsyscall(2)</a> policy
 	to the daily mail, available by setting rc.conf.local(5)
 	accounting=YES.
-  <li>Added retguard to amd64 syscalls.
-
-  <li>Randomly relink and install <a
-	href="https://man.openbsd.org/sshd.8">sshd(8)</a> on boot, resulting
-	in a sshd with unknown address layout after every reboot.
-
+  <li>Added retguard (consistency-check the return address on the
+	stack) to amd64 syscalls.
+  <li>sshd random relinking at boot: Randomly relink and install <a
+	href="https://man.openbsd.org/sshd.8">sshd(8)</a>, resulting
+	in a sshd binary with unknown address layout after every reboot.
   <li>Add another mitigation against classic BROP on systems without
 	execute-only mmu hardware-enforcement. A range-checking wrapper in
-	front of copyin() and copyinstr() ensures the userland source address
-	doesn't overlap the main program text and other text segments, thereby
-	making this address ranges unreadable to the kernel. No programs have
-	been discovered which require reading their own text segments with a
-	system call.
-
+	front of <a href="https://man.openbsd.org/copyin.9">copyin(9)</a> and
+	href="https://man.openbsd.org/copyinstr.9">copyinstr(9)</a> ensures
+	the userland source address doesn't overlap the main program text and
+	other text segments, thereby making this address ranges unreadable to
+	the kernel. No programs have been discovered which require reading
+	their own text segments with a system call.
   <li>On arm64, introduce mitigation of the Spectre-BHB (Branch
 	History Injection) CPU vulnerability by using core-specific trampoline
 	vectors.
-
-  <li>Tightened the <a
-	href="https://man.openbsd.org/pledge.2">pledge(2)</a> after <a
-	href="https://man.openbsd.org/ssh.1">ssh(1)</a> session establishment.
-
-  <li>Enabled the Data Independent Timing (DIT) feature in both the kernel and
-	userland on arm64 CPUs that support it to mitigate timing side-channel
+  <li>Enabled the arm64 Data Independent Timing (DIT) feature in both the kernel and
+	userland on CPUs that support it to mitigate timing side-channel
 	attacks.
-
   </ul>
 
 <li>Changes in the network stack:
@@ -783,14 +785,11 @@ response version 6.
 		configuring IPv6.  This allows non-multicast interfaces such as
 		point-to-point interfaces and the NBMA / point-to-multipoint
 		interfaces like mpe(4), mgre(4) and wg(4) to work with IPv6.
-
 	<li>Use the new <a
 		href="https://man.openbsd.org/getnsecruntime.9">getnsecruntime(9)</a>
 		timer to check the TCP_KEEPALIVE timer only against the system
 		runtime, not the uptime.  Prevents TCP connections to fail after
 		wakeing up from suspend.
-
-
 	<li>Used stoeplitz (symmetric Toeplitz hash algorithm) to generate a
 		hash/flowid for <a href="https://man.openbsd.org/pf.4">pf(4)</a> state
 		keys.  With this change, pf will hash traffic the same way that
@@ -800,11 +799,9 @@ response version 6.
 		queues too. using the same algorithm throughout the stack encourages
 		affinity of packets to rings and softnet threads the whole way
 		through.
-
 	<li>Prevented possible kernel crashes by dropping TCP packets with
 		destination port 0 in <a href="https://man.openbsd.org/pf.4">pf(4)</a>
 		and the stack.
-
 	<li>Fixed a endian swap bug causing problems with <a
 		href="https://man.openbsd.org/vlan.4">vlans(4)</a> on <a
 		href="https://man.openbsd.org/em.4">em(4)</a> sparc64 systems.
@@ -826,7 +823,6 @@ response version 6.
 		half second even if there is nothing to read. By default this buffer
 		is infinite and must be filled to become readable.
 	<li>Avoided enabling TSO on interfaces which are already attached to a bridge.
-
   </ul>
 
 <li>Routing daemons and other userland network improvements:
@@ -956,11 +952,6 @@ response version 6.
     <li>When decoding and validating an individual RPKI file using filemode
 	(rpki-client -f file), display the optional CMS signing-time, and
   	non-optional X.509 notBefore, and X.509 notAfter timestamps.
-  </ul>
-
-  <li>In <a href="https://man.openbsd.org/snmpd.8">snmpd(8)</a>,
-  <ul>
-<!-- XXX -->
   </ul>
 
   <li>Switched <a href="https://man.openbsd.org/tftpd.8">tftpd(8)</a> to
