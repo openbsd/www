@@ -526,11 +526,11 @@ Supported softraid disciplines include the following:
   <tr>
     <td>RAID1
     <td>mirroring
-    <td>amd64, arm64, i386, sparc64
+    <td>amd64, arm64, i386, riscv64, sparc64
   <tr>
     <td>RAID1C
     <td>mirroring with disk encryption
-    <td>amd64, arm64, sparc64
+    <td>amd64, arm64, riscv64, sparc64
   <tr>
     <td>RAID5
     <td>striping with floating parity
@@ -542,7 +542,7 @@ Supported softraid disciplines include the following:
   <tr>
     <td>CRYPTO
     <td>disk encryption
-    <td>amd64, arm64, i386, sparc64
+    <td>amd64, arm64, i386, riscv64, sparc64
 </table>
 
 <p>
@@ -567,7 +567,7 @@ For example, if you need to support three
 be done from the shell prompt:
 
 <pre class="cmdbox">
-Welcome to the OpenBSD/amd64 7.2 installation program.
+Welcome to the OpenBSD/amd64 7.3 installation program.
 (I)nstall, (U)pgrade, (A)utoinstall or (S)hell? <b>s</b>
 # <b>cd /dev</b>
 # <b>sh MAKEDEV sd0 sd1 sd2</b>
@@ -686,129 +686,16 @@ or from the <a href="faq4.html#bsd.rd">install kernel</a>.
 Much like RAID, full disk encryption in OpenBSD is handled by the
 <a href="https://man.openbsd.org/softraid">softraid(4)</a> subsystem and
 <a href="https://man.openbsd.org/bioctl">bioctl(8)</a> command.
-This section covers installing OpenBSD to a single encrypted disk and is a
-very similar process to the previous one.
+The OpenBSD installer provides a way to install to a fully encrypted disk,
+using a passphrase to unlock it.
 
 <p>
-Select (S)hell at the initial prompt.
-
-<pre class="cmdbox">
-Welcome to the OpenBSD/amd64 7.2 installation program.
-(I)nstall, (U)pgrade, (A)utoinstall or (S)hell? <b>s</b>
-</pre>
-
-From here, you'll be given a shell within the live environment to manipulate
-the disks.
-For this example, we will install to the <code>sd0</code> SATA drive, erasing
-all of its previous contents.
+As an alternative to using a passphrase, it's also possible to use a key
+stored on a separate device (e.g. a USB stick) to unlock the encrypted disk.
 
 <p>
-Since the installer does not have many device nodes by default, make
-sure the <code>/dev/sd0</code> device exists:
-
-<pre class="cmdbox">
-# <b>cd /dev && sh MAKEDEV sd0</b>
-</pre>
-
-You may want to write random data to the drive first with something like the
-following:
-
-<pre class="cmdbox">
-# <b>dd if=/dev/urandom of=/dev/rsd0c bs=1m</b>
-</pre>
-
-This can be a very time-consuming process, depending on the speed of your
-CPU and disk, as well as the size of the disk.
-If you don't write random data to the whole device, it may be possible for an
-adversary to deduce how much space is actually being used.
-
-<p>
-Next, initialize the disk with
-<a href="https://man.openbsd.org/fdisk">fdisk(8)</a> and create the softraid
-partition with <a href="https://man.openbsd.org/disklabel">disklabel(8)</a>.
-
-<p>
-If you're booting from MBR, do:
-
-<pre class="cmdbox">
-# <b>fdisk -iy sd0</b>
-</pre>
-
-If you use GPT for UEFI booting, do:
-
-<pre class="cmdbox">
-# <b>fdisk -gy -b 532480 sd0</b>
-</pre>
-
-Next, create the partition layout:
-
-<pre class="cmdbox">
-# <b>disklabel -E sd0</b>
-Label editor (enter '?' for help at any prompt)
-sd0> <b>a a</b>			<!-- sparc64 users MUST use 'a a' here -->
-offset: [64]
-size: [39825135] <b>*</b>
-FS type: [4.2BSD] <b>RAID</b>
-sd0*> <b>w</b>
-sd0> <b>q</b>
-No label changes.
-</pre>
-
-We'll use the entire disk, but note that the encrypted device can be
-split up into multiple partitions as if it were a regular hard drive.
-
-<p>
-Now we can build the encrypted device on our "a" partition.
-
-<pre class="cmdbox">
-# <b>bioctl -c C -l sd0a softraid0</b>
-New passphrase:
-Re-type passphrase:
-sd1 at scsibus2 targ 1 lun 0: &lt;OPENBSD, SR CRYPTO, 005&gt; SCSI2 0/direct fixed
-sd1: 19445MB, 512 bytes/sector, 39824607 sectors
-softraid0: CRYPTO volume attached as sd1
-</pre>
-
-Instead of a passphrase, you may want to
-<a href="#softraidFDEkeydisk">use a keydisk</a>.
-
-<p>
-Make sure the <code>/dev/sd1</code> device is accounted for:
-
-<pre class="cmdbox">
-# <b>cd /dev && sh MAKEDEV sd1</b>
-</pre>
-
-All data written to <code>sd1</code> will now be encrypted with AES in XTS mode.
-
-<p>
-As in the previous example, we'll overwrite the first megabyte of our new
-pseudo-device.
-
-<pre class="cmdbox">
-# <b>dd if=/dev/zero of=/dev/rsd1c bs=1m count=1</b>
-</pre>
-
-Type <code>exit</code> to return to the main installer, then choose this new
-device as the one for your installation.
-
-<pre class="cmdbox">
-[...]
-Available disks are: sd0 sd1.
-Which disk is the root disk? ('?' for details) [sd0] <b>sd1</b>
-</pre>
-
-You will be prompted for the passphrase on startup, but all other operations
-should be handled transparently.
-
-<h4 id="softraidFDEkeydisk">Using a Keydisk</h4>
-
-As an alternative to using a passphrase, it's possible to use a key stored on a
-separate device (e.g. a USB stick) to unlock your encrypted disk.
-
-<p>
-Initialize your keydisk with
-<a href="https://man.openbsd.org/fdisk">fdisk(8)</a>, then use
+At the <code>(S)hell</code> prompt in the installer, initialize the keydisk
+with <a href="https://man.openbsd.org/fdisk">fdisk(8)</a>, then use
 <a href="https://man.openbsd.org/disklabel">disklabel(8)</a>
 to create a 1 MB RAID partition for the key data.
 If your keydisk is <code>sd1</code> and the drive you want to encrypt is
@@ -835,10 +722,8 @@ You can backup and restore your keydisk using
 
 <h3 id="softraidCrypto">Encrypting External Disks</h3>
 
-This section explains how you might set up a cryptographic softraid volume
+This section explains how to set up a cryptographic softraid volume
 for an external USB drive.
-If you already read the section on full disk encryption, this should be very
-familiar.
 An outline of the steps is as follows:
 
 <ul>
