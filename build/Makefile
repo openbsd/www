@@ -10,7 +10,7 @@ OPENBGPD_VERSION=		7.8
 OPENNTPD_PORTABLE_VERSION=	6.8p1
 
 # also update mirrors/rpki-client-portable.html.head
-RPKI_CLIENT_PORTABLE_VERSION=	8.3
+RPKI_CLIENT_PORTABLE_VERSION=	8.4
 
 OPENSSH_VERSION=		9.3
 OPENSSH_PORTABLE_VERSION=	9.3p1
@@ -32,7 +32,7 @@ all: ../groups.html ../support.html ../ftp.html
 		@rm -f support-tbl.html support.countries
 
 # Build the FTP/HTTP/RSYNC mirrors page.
-../ftp.html ftp: mirrors.pl mirrors.dat \
+../ftp.html ftp: Makefile mirrors.pl mirrors.dat \
      mirrors/ftp.html.{head,end,mid0,mid1,mid2} \
      mirrors/openbgpd-ftp.html.{head,end} \
      mirrors/openntpd-portable.html.{head,end} \
