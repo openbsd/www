@@ -74,7 +74,7 @@ for mirror in "${mirrors[@]}"; do
 	domain="${mirror#http*://}"
 	domain="${domain%%/*}"
 	printf 'Trying %s\n' "$path"
-	timestamp=$(ftp -MV -U '' -w 6 -o - -- "$path" 2>>"$stderr1")
+	timestamp=$(ftp -MV -w 6 -o - -- "$path" 2>>"$stderr1")
 	if [[ -n `cat $stderr1` ]]; then
 		echo ${path} >> $stderr
 		cat $stderr1 >> $stderr
