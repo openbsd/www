@@ -160,13 +160,10 @@ sub output_release
 		s|bz #(\d+)|<a href='$bzurl$1'>bz #$1</a>|g;
 
 		# expand github pull requests into links.
-		if (m|GHPR\d+|) {
-			s|GHPR(\d+)|<a href='$prurl$1'>GHPR$1</a>|g;
-		} elsif (m|PR\d+|) {
-			s|PR(\d+)|<a href='$prurl$1'>PR$1</a>|g;
-		} elsif (m|PR#\d+|) {
-			s|PR#(\d+)|<a href='$prurl$1'>PR$1</a>|g;
-		}
+		s|(GHPR#)(\d+)|<a href='$prurl$2'>$1$2</a>|g ||
+		s|(GHPR)(\d+)|<a href='$prurl$2'>$1$2</a>|g ||
+		s|(PR#)(\d+)|<a href='$prurl$2'>$1$2</a>|g ||
+		s|(PR)(\d+)|<a href='$prurl$2'>$1$2</a>|g;
 
 		# expand RFC references into links.
 		s|RFC(\d{4})|<a href='$rfcurl$1'>RFC$1</a>|g;
@@ -174,7 +171,8 @@ sub output_release
 
 		# expand man page references into links
 		my $manpages ="ssh|sshd|scp|sftp|sftp-server|ssh-keygen|" .
-		    "ssh-add|ssh-agent|ssh_config|sshd_config|moduli";
+		    "ssh-add|ssh-agent|ssh-keyscan|ssh-keysign|" .
+		    "ssh_config|sshd_config|moduli";
 		s@($manpages)\((\d)\)@<a href='$manurl$1.$2'>$1($2)</a>@g;
 
 		# download links.
