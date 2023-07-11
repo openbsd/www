@@ -57,8 +57,78 @@ use a snapshot to recover.
 Most of these changes will have to be performed as root.
 
 
-<h3 id="r20230408">2023/04/08 - No entries yet</h3>
+<h3 id="r20230711">2023/07/11 - [packages] databases/influxdb upgrade to v2.7</h3>
 
+
+<p>
+The <tt>databases/influxdb</tt> port was upgraded to a new major version,
+which has several impacts:
+<ul>
+<li>the <tt>influx</tt> CLI command is now in a separate <tt>influx-cli</tt>
+package, and has a completely different syntax</li>
+
+<li>authentication is now mandatory via token, and the db is multi-tenant so an
+organization is also mandatory</li>
+
+<li>the web interface is now built-in and accessible on port 8086 by
+default</li>
+
+<li>the database format needs to be upgraded (cf <a
+href="https://docs.influxdata.com/influxdb/v2.7/upgrade/v1-to-v2/automatic-upgrade/">the
+upstream documentation</a>):
+
+<blockquote><pre>
+# doas -u _influx influxd upgrade
+</pre></blockquote>
+</li>
+
+<li>this will:
+<ul>
+    <li>convert the existing <tt>/etc/influxdb/influxdb.conf</tt> into
+                <tt>/var/influxdb/.influxdbv2/config.toml</tt></li>
+    <li>convert the data from <tt>/var/influxdb/{data,wal,meta}</tt> into
+    <tt>/var/influxdb/.influxdbv2/{engine,influxd.bolt,influxd.sqlite}</tt></li>
+    <li>once properly upgraded, the v1 config/files can be safely removed</li>
+</ul>
+</li>
+
+<li>during upgrade it asks for l/p/org/default bucket/retention policy, that'll
+also generate a client config in <tt>/var/influxdb/.influxdbv2/configs</tt>
+that's used by <tt>doas -u _influx influx</tt> command afterwards for setup.
+The latter also contains a token for the admin</li>
+
+<li>for new installs, running the following will asks the same questions:
+<blockquote><pre>
+# doas -u _influx influx setup
+</pre></blockquote></li>
+
+<li>telegraf clients need to be updated to use <tt>outputs.influxdb_v2</tt>
+plugin (with org, token and bucket) per <a
+href="https://github.com/influxdata/telegraf/blob/release-1.27/plugins/outputs/influxdb_v2/README.md#configuration">the
+documentation</a></li>
+
+<li>no more collectd direct sink in influxdb, collectd now needs to talk to a
+telegraf with a <a
+href="https://docs.influxdata.com/telegraf/v1.9/data_formats/input/collectd/">collectd-enabled</a>
+sink. An example configuration for <tt>telegraf.conf</tt> is provided below:
+
+<blockquote><pre>
+[[inputs.socket_listener]]
+  service_address = "udp://:25826"
+  data_format = "collectd"
+  collectd_auth_file = "/etc/collectd/collectd.auth"
+  collectd_security_level = "encrypt"
+  collectd_typesdb = ["/usr/local/share/collectd_types.db"]
+  collectd_parse_multivalue = "split"
+[[outputs.influxdb_v2]]
+ urls = ["http://influxdb:8086"]
+ token = "$DOCKER_INFLUXDB_INIT_ADMIN_TOKEN"
+ organization = "$DOCKER_INFLUXDB_INIT_ORG"
+ bucket = "$DOCKER_INFLUXDB_INIT_BUCKET"
+</pre></blockquote>
+</li>
+</ul>
+</p>
 
 <!--
      Two blank lines before new sections.
@@ -67,4 +137,4 @@ Most of these changes will have to be performed as root.
 -->
 
 <hr id="end">
-<small>$OpenBSD: current.html,v 1.1104 2023/04/08 23:09:46 kmos Exp $</small>
+<small>$OpenBSD: current.html,v 1.1105 2023/07/11 12:10:41 landry Exp $</small>
