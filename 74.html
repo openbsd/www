@@ -105,6 +105,7 @@ to 7.4.
   <li>Implement dt(4) utrace support on amd64 and i386.
   <li>Implement battery management with sysctl(8)
 	hw.battery.chargemode, hw.battery.chargestop and hw.battery.chargestart.
+  <li>Correct undefined behavior when using MS-DOS filesystems, fixes imported from FreeBSD.
 
   </ul>
 
@@ -222,6 +223,21 @@ to 7.4.
 	a random offset less than the step value.  This can be used to avoid
 	thundering herd problems where multiple machines contact a server all
 	at the same time via cron jobs.
+  <li>Introduce a new group "_shutdown". Previously the "operator"
+	group gave a user the ability to shutdown(8) a system. But this group
+	also comes with superuser abilities for dumping disks and manipulating
+	tape drives. With this change, the permissions are seperated and users
+	using the shutdown/reboot functionality with group "operator" will
+	notice it no longer works. They need to move themselves to the new
+	group.
+  <li>Extend and improve the ibuf API in <a
+	href="https://man.openbsd.org/ibuf_add_buf.3">libutil</a> and add
+	function for more specific data types, for modifying data at specific
+	offsets, for getting and setting the filedescriptor stored on the ibuf
+	and for efficient wrapping of ibufs into imesgs. The ibuf API is
+	mostly used in network daemons.
+  <li>Introduce malloc option "D" for leak detection in malloc(3). To
+	produce and view leak reports via ktrace(1) and kdump(1) can be used.
   <li>In <a href="https://man.openbsd.org/wsconsctl.8">wsconsctl(8)</a>,
 	add button mappings for two- and three-finger clicks on clickpads.
   </ul>
@@ -285,7 +301,8 @@ to 7.4.
         >blink-and-insert</a> matching a very long line
         that is not currently visible in the window.
     <li>Skip checking permissions of conffile with access(2).
-    <li>Resurrect no-tab-mode.
+    <li>Resurrect no-tab-mode and add it to the list of modes that can
+	be set with set-default-mode.
     <li>Added a missing void.
     </ul>
   <li>On aarch64 architectures improve how BTI control flow integrity
@@ -337,10 +354,18 @@ to 7.4.
 	<a href="https://man.openbsd.org/ober_scanf_elements.3"
 	>ober_scanf_elements(3)</a> when encountering empty sequences.
   <li>Remove broken special handling of test -t in ksh(1).
+  <li>Consistently escape control chars when displaying file name
+	completions in ksh(1).
   <li>The caching mechanism used by
 	<a href="https://man.openbsd.org/pkg_add.1">pkg_add(1)</a>
 	to speed up <tt>pkg_add -u</tt> now also works if -stable packages
 	are available.
+  <li>In seq(1), fix a check for rounding error and truncation.
+  <li>In cron(8), introduce upstream fixes in the handling of @yearly, @monthly,
+	@weekly, @daily and @hourly entries.
+  <li>In pax(1), safely escape characters when displaying messages
+	that may include file names, and truncate times to the correct maximum
+	value.
   </ul>
 
 <li>Improved hardware support and driver bugfixes, including:
@@ -402,6 +427,13 @@ to 7.4.
   <li>Add qcaoss(4), a driver for the Always On Subsystem found on Qualcomm SoCs.
   <li>Implement battery charge control for the Apple System Management Controller aplsmc(4).
   <li>Add qcpas(4), a driver for the Peripheral Authentication Service found on Qualcomm SoCs.
+  <li>Fix use of MMC/SD/SDIO on RK3588 ARM SoC in dwmmc(4).
+  <li>Support thermal sensors on Ryzen 9 79xx in ksmn(4).
+  <li>Add qctsens(4), a driver for the Temperature Sensor found on Qualcomm SoCs.
+  <li>Add support for JH7110 to dwmmc(4), making eMMC and microSD
+	mostly work on the Starfive VisionFive 2.
+  <li>Enable AC detection in the qcpas(4) driver.
+  <li>Add driver qccpu(4) for QC cpu Power States.
   </ul>
 
 <li>New or improved network hardware support:
@@ -428,6 +460,7 @@ to 7.4.
 	marvell link street.
   <li>Add support for RTL8153D devices to
       <a href="https://man.openbsd.org/ure.4">ure(4)</a>.
+  <li>Provide byte and packet counter statistics in some dwge(4) implementations.
   </ul>
 
 <li>Added or improved wireless network drivers:
@@ -496,6 +529,10 @@ to 7.4.
   <li>Attempt to not overflow the ramdisk when extracting firmware on
 	Apple arm64 systems.
   <li>Add support for loading files from the EFI System Partition.
+  <li>Fix a bug in the handling of SCSI drives in the bootloader on the luna88k architecture.
+  <li>On luna88k, implement the chmod() signaling mechanism for
+	<code>/bsd.upgrade</code> to prevent re-upgrade, like other
+	architectures.
   </ul>
 
 <li>Security improvements:
@@ -569,7 +606,12 @@ to 7.4.
 	due to conflict on chosen source port number.
  <li>Implement TCP send offloading, for now in software only.  This is
 	meant as a fallback if network hardware does not support TSO.
- <li>pfsync(4) has been rewritten. The protocol is compatible with the older version. 
+ <li>Use TSO and LRO on the loopback interface to transfer TCP faster,
+	when <code>tcplro</code> is activated on lo(4).
+ <li>pfsync(4) has been rewritten. The protocol is compatible with the older version.
+ <li>Close all pf(4) transactions before opening a new one when
+	retrieving the ruleset. Fixes leaking transactions which can be
+	problematic when processes run a long time.
  </ul>
 
 <li>Routing daemons and other userland network improvements:
@@ -607,6 +649,8 @@ to 7.4.
 	    <a href="https://man.openbsd.org/EC_KEY_check_key.3"
 	    >EC_KEY_check_key(3)</a> fails right after generating
 	    a new key pair.
+	<li>In iked(8), fix a open file leak in error path.
+	<li>In iked(8), verify X509 chain from CERT payloads.
 	<li>Allow building
 	    <a href="https://man.openbsd.org/isakmpd.8">isakmpd(8)</a>
 	    with a libcrypto library that has
@@ -760,6 +804,7 @@ to 7.4.
   <li>Make the <code>tlsv1.0</code> and <code>tlsv1.1</code> options
 	in relayd(8) do nothing, as one should use the default <code>tlsv1.2</code>
 	instead.
+  <li>Fix IPv6 routes being changed by relayd(8) with Routers configuration.
   </ul>
 
 <li><a href="https://man.openbsd.org/tmux.1">tmux(1)</a> improvements and bug fixes:
