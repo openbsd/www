@@ -287,23 +287,46 @@ an address on the <code>10.0.0.0/24</code> network and set the default route to
 For convenience, you may wish to set up a
 <a href="faq6.html#DHCP">DHCP server</a> on <code>vport0</code>.
 
-<h3>Option 4 - VMs as real hosts on the same network</h3>
+<h3>Option 4 - VMs on the real network</h3>
 
-In this scenario, the VM interface will be attached to the same network as
-the host so it can be configured as if it were physically connected to the
-host network.
-This option only works for Ethernet-based devices, as the IEEE 802.11 standard
-prevents wireless interfaces from participating in network bridges.
+In this scenario, the VM interface will be bridged with the same
+network as the host. The VM can then be configured as if it were
+physically connected to the host network.
+This option only works for hosts with Ethernet connectivity, as the
+IEEE 802.11 standard prevents wireless interfaces from participating
+in network bridges.
 
 <p>
-Create the <code>bridge0</code> interface with the host network interface as a
-bridge port.
-In this example, the host network interface is <code>em0</code> - you should
-substitute the interface name that you wish to connect the VM to:
+The Ethernet network will be switched between the real network, the
+host, and the VM using <a href="https://man.openbsd.org/veb">veb(4)</a>.
+Because veb(4) disconnects interfaces added as ports from the IP
+stack, any IP configuration on the real interface has to be moved
+to a <a href="https://man.openbsd.org/vport">vport(4)</a> interface
+for the host to be able to participate in the network.
+In this example <code>em0</code> is the interface connected to the
+real network.
+
+<p>
+Move the IP configuration from <code>em0</code> to <code>vport0</code>:
 
 <pre class="cmdbox">
-# <b>echo 'add em0' > /etc/hostname.bridge0</b>
-# <b>sh /etc/netstart bridge0</b>
+# <b>mv /etc/hostname.em0 /etc/hostname.vport0</b>
+# <b>echo up >> /etc/hostname.vport0</b>
+# <b>echo up >> /etc/hostname.em0</b>
+# <b>sh /etc/netstart em0 vport0</b>
+</pre>
+
+<p>
+Create the <code>veb0</code> interface and add the <code>em0</code>
+and <code>vport0</code> interfacs:
+
+<pre class="cmdbox">
+# <b>cat &lt;&lt;END > /etc/hostname.veb0
+add em0
+add vport0
+up
+END</b>
+# <b>sh /etc/netstart veb0</b>
 </pre>
 
 As done in the previous example, create or modify the
@@ -312,7 +335,7 @@ that a virtual switch is defined:
 
 <pre class="cmdbox">
 switch "my_switch" {
-    interface bridge0
+    interface veb0
 }
 
 vm "my_vm" {
@@ -321,15 +344,18 @@ vm "my_vm" {
 }
 </pre>
 
-The <code>my_vm</code> guest can now participate in the host network as if it
+The <code>my_vm</code> guest can now participate on the real network as if it
 were physically connected.
 <p>
 
-<b>Note:</b> If the host interface (<code>em0</code> in the above example) is
-also configured using DHCP,
-<a href="https://man.openbsd.org/dhcpleased">dhcpleased(8)</a> running on that
-interface may block DHCP requests from reaching guest VMs.
-In this case, you should select a different host interface not using DHCP,
-or terminate any <a href="https://man.openbsd.org/dhcpleased">dhcpleased(8)</a>
-processes assigned to that interface before starting VMs, or use static IP
-addresses for the VMs.
+<b>Note:</b> If the host interface (<code>em0</code> in the above
+example) uses automatic address configuration (eg, DHCP), it may
+rely on the MAC address of the interface to get a particular IP
+address assigned. In this situation the MAC address from <code>em0</code>
+can be assigned to <code>vport0</code> so it can use it on the real
+network.
+
+<p>
+Virtual machines can be connected to a real network but isolated
+from the host by omitting the vport interface in the configuration
+above.
