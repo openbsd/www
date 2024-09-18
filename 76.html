@@ -192,31 +192,145 @@ to 7.6.
   <li>...
   </ul>
 
-<li>LibreSSL version XXX
+<li>LibreSSL version 4.0.0
   <ul>
   <li>Portable changes
     <ul>
-    <li>...
+    <li>Added initial Emscripten support in CMake builds.
+    <li>Removed timegm() compatibility layer since all uses were replaced
+        with OPENSSL_timegm(). Cleaned up the corresponding test harness.
+    <li>The mips32 platform is no longer actively supported.
     </ul>
   <li>Internal improvements
     <ul>
-    <li>...
+    <li>Cleaned up parts of the conf directory. Simplified some logic,
+        fixed memory leaks.
+    <li>Simplified X509_check_trust() internals to be somewhat readable.
+    <li>Removed last internal uses of gmtime() and timegm() and replaced
+        them with BoringSSL's posix time conversion API.
+    <li>Removed unnecessary stat calls in by_dir.
+    <li>Split parsing and processing of TLS extensions to ensure that
+        extension callbacks are called in a predefined order.
+    <li>Cleaned up the MD4 and MD5 implementations.
+    <li>Assembly functions are no longer exposed in the public API, they
+        are all wrapped by C functions.
+    <li>Removed assembly implementations of legacy ciphers on legacy
+        architectures.
+    <li>Merged most multi-file implementations of ciphers into one or two
+        C files.
+    <li>Removed the cache of certificate validity. This was added for
+        performance reasons which no longer apply since BoringSSL's time
+        conversion API isn't slow. Also, a recently added error check led
+        to obscure, undesirable validation failures.
+    <li>Stopped calling OPENSSL_cpuid_setup() from the .init section on
+        amd64 and i386.
+    <li>Rewrote various BN conversion functions.
+    <li>Improved certification request internals.
+    <li>Removed unused DSA methods.
+    <li>Improved X.509v3 extension internals. Fixed various bugs and leaks
+        in X509V3_add1_i2d() and X509V3_get_d2i(). Their implementations
+        now vaguely resemble code.
+    <li>Rewrote BN_bn2mpi() using CBB.
+    <li>Made most error string tables const.
+    <li>Removed handling for SSLv2 client hello messages.
+    <li>Improvements in the openssl(1) speed app's signal handler.
+    <li>Cleaned up various X509v3_<li>extension API.
+    <li>Unified the X.509v3 extension methods.
+    <li>Cleaned up cipher handling in SSL_SESSION.
+    <li>Removed get_cipher from SSL_METHOD.
+    <li>Rewrote CRYPTO_EX_DATA from scratch. The only intentional change of
+        behavior is that there is now a hard limit on the number of indexes
+        that can be allocated.
+    <li>Removed bogus connect() call from netcat.
+    <li>Uses of atoi() and strtol() in libcrypto were replaced with
+        strtonum().
+    <li>Introduced crypto_arch.h which will contain the architecture
+        dependent code and defines rather than the public opensslconf.h.
+    <li>OPENSSL_cpu_caps() is now architecture independent.
+    <li>Reorganized the DES implementation to use fewer files and removed
+        optimizations for ancient processors and compilers.
+    </ul>
+  <li>New features
+    <ul>
+    <li>Added CRLfile option to the cms command of openssl(1) to specify
+        additional CRLs for use during verification.
     </ul>
   <li>Documentation improvements
     <ul>
-    <li>...
-    </ul>
-  <li>Testing and proactive security
-    <ul>
-    <li>...
+    <li>Removed documentation of no longer existing API.
+    <li>Unified the description of the obsolete ENGINE parameter that
+        needs to remain in many functions and should always be NULL.
     </ul>
   <li>Compatibility changes
     <ul>
-    <li>...
+    <li>Protocol parsing in libtls was changed. The unsupported TLSv1.1
+        and TLSv1.0 protocols are ignored and no longer enable or disable
+        TLSv1.2 in surprising ways.
+    <li>The dangerous EVP_PKEY*_check(3) family of functions was removed.
+        The openssl(1) pkey and pkeyparam commands no longer support the
+        -check and -pubcheck flags.
+    <li>The one-step hashing functions, MD4(), MD5(), RIPEMD160(), SHA1(),
+        all SHA-2, and HMAC() no longer support returning a static buffer.
+        Callers must pass in a correctly sized buffer.
+    <li>Support for Whirlpool was removed. Applications still using this
+        should honor OPENSSL_NO_WHIRLPOOL.
+    <li>Removed workaround for F5 middle boxes.
+    <li>Removed the useless pem2.h, a public header that was added since
+        it was too hard to add a single prototype to one file.
+    <li>Removed conf_api.h and the public API therein.
+    <li>Removed ssl2.h, ssl23.h and ui_compat.h.
+    <li>Numerous conf and attribute functions were removed. Some unused
+        types were removed, others were made opaque.
+    <li>Removed the deprecated HMAC_Init() function.
+    <li>Removed OPENSSL_load_builtin_modules().
+    <li>Removed X509_REQ_{get,set}_extension_nids().
+    <li>X509_check_trust() and was removed, X509_VAL was made opaque.
+    <li>Only specified versions can be set on certs, CRLs and CSRs.
+    <li>Removed unused PEM_USER and PEM_CTX types from pem.h.
+    <li>Removed typdefs for COMP_CTX, COMP_METHOD, X509_CRL_METHOD, STORE,
+        STORE_METHOD, and SSL_AEAD_CTX.
+    <li>i2d_ASN1_OBJECT() now returns -1 on error like most other i2d_*.
+    <li>SPKAC support was removed from openssl(1).
+    <li>Added TLS1-PRF support to the EVP interface.
+    <li>Support for attributes in EVP_PKEYs was removed.
+    <li>The X509at_<li>API is no longer public.
+    <li>SSL_CTX_set1_cert_store() and SSL_CIPHER_get_handshake_digest()
+        were added to libssl.
+    <li>The completely broken UI_UTIL password API was removed.
+    <li>The OpenSSL pkcs12 command and PKCS12_create() no longer support
+        setting the Microsoft-specific Local Key Set and Cryptographic
+        Service Provider attributes.
     </ul>
   <li>Bug fixes
     <ul>
-    <li>...
+    <li>Made ASN1_TIME_set_string() and ASN1_TIME_set_string_X509() match
+        their documentation. They always set an RFC 5280 conformant time.
+    <li>Improved standards compliance for supported groups and key shares
+        extensions:
+        <ul>
+        <li>Duplicate key shares are disallowed.
+        <li>Duplicate supported groups are disallowed.
+        <li>Key shares must be sent in the order of supported groups.
+        <li>Key shares will only be selected if they match the most
+  	  preferred supported group by client preference order.
+        </ul>
+    <li>Fixed signed integer overflow in bnrand().
+    <li>Prevent negative zero from being created via BN_clear_bit() and
+        BN_mask_bits(). Avoids a one byte overread in BN_bn2mpi().
+    <li>Add guard to avoid contracting the number linear hash buckets
+        to zero, which could lead to a crash due to accessing a zero
+        sized allocation.
+    <li>Fixed i2d_ASN1_OBJECT() with an output buffer pointing to NULL.
+    <li>Implemented RSA key exchange in constant time. This is done by
+        decrypting with RSA_NO_PADDING and checking the padding in libssl
+        in constant time. This is possible because the pre-master secret
+        is of known length based on the size of the RSA key.
+    <li>Rewrote SSL_select_next_proto() using CBS, also fixing a buffer
+        overread that wasn't reachable when used as intended from an
+        ALPN callback.
+    <li>Avoid pushing a spurious error onto the error stack in
+        ssl_sigalg_select().
+    <li>Made fatal alerts fatal in QUIC.
     </ul>
   </ul>
 
