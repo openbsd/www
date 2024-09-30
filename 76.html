@@ -72,8 +72,8 @@ files fetched via <code>ports.tar.gz</code>.
 <p>
 This is a partial list of new features and systems included in OpenBSD 7.6.
 For a comprehensive list, see the <a href="plus76.html">changelog</a> leading <!-- plus? XXX -->
-to 7.6.
-
+to 7.6.<br>
+With this release all files that exited in the first release of OpenBSD have been updated, modified or replaced at some point in time.
 <ul>
 
 <li>Platforms specific improvements:
@@ -102,8 +102,8 @@ to 7.6.
     <li>Implemented hardware masking for MSI and MSI-X on amd64.
     <!-- ZZZ more details? --><li>Implemented wakeup interrupts on amd64.
     <li>Ensured the deepest possible C-state is selected during suspend-to-idle on amd64 and i386.
-    <li>Set the target ACPI to S5 when powering down amd64 (and i386) machines, rather than attempting to put devices into the D3 power
-state.
+    <li>Set the target ACPI to S5 when powering down amd64 (and i386) machines, rather than attempting to put devices into the D3 power state.
+    <li>Prevented livelocks on amd64 by avoiding caching pages belonging to memory ranges with a 'use' count to keep low pages available and avoid their exhaustion.
 
     </ul>
   <li>riscv64:
@@ -118,6 +118,16 @@ state.
     <ul>
     <li>Exported basic HWCAP bits to let applications detect Altivec and VSX on powerpc64.
     <li>Exported basic HWCAP bits to let applications detect Altivec on powerpc.
+    </ul>
+  </ul>
+  <li>mips64:
+    <ul>
+    <li>Enabled per-cpu page cache on mips64.
+    </ul>
+  </ul>
+  <li>alpha:
+    <ul>
+    <li>Switched alpha to MI mplock code.
     </ul>
   </ul>
 
@@ -152,6 +162,10 @@ state.
   <li>Used FEAT_RNG to feed entropy into the random subsystem on arm64 as on amd64.
   <li>Used atomic operations to access integers in <a href="https://man.openbsd.org/sysctl.2">sysctl(2)</a>.
   <li>Made exit1() wait for <a href="https://man.openbsd.org/sysctl.2">sysctl(2)</a> 'allprocess' loops to prevent possible kernel crash due to concurrent process exit1().
+  <li><span style="color:red;">ZZZ one line about suspend/resume improvements</span>
+  <li>Began printing "S0ix" instead of "S0" on the acpi: sleep states line when FADT indicates FADT_POWER_S0_IDLE_CAPABLE, assuming that for these machines the vendors agree S0 suspend is as good or better than S3.
+  <li>Corrected audio drivers to inform children about suspend/resume related events.
+  <li>Ensured <a href="https://man.openbsd.org/softraid.4">softraid(4)</a> sensors are unregistered when the volumes are removed.
   </ul>
 
 <li>SMP Improvements
@@ -185,6 +199,16 @@ state.
   <li>Run network protocol timer without kernel lock. TCP timers also run without kernel lock now. The whole TCP stack holds exclusive net lock, so additional kernel lock is useless.
   <li>Made sysctl_int() and sysctl_int_lower() mp-safe and unlocked KERN_HOSTID.
   <li>Pushed kernel lock down to net_sysctl() and mpls_sysctl().
+  <li>Atomically modify `hthreads' and move proc_free() out of KERNEL_LOCK().
+  <li>Unlocked divert_sysctl() and divert6_sysctl().
+  <li>Unlocked KERN_MAXFILES.
+  <li>Fixed hanging network transmits when bounce buffers are enforced for <a href="https://man.openbsd.org/vio.4">vio(4)</a>.
+  <li>Unlocked KERN_MAXPROC and KERN_MAXTHREAD from kern_vars.
+  <li>Unlocked etherip_sysctl().
+  <li>Unlocked igmp_sysctl(), pfsync_sysctl() and rip_sysctl().
+  <li>Unlocked sysctl_audio().
+  <li>Unlocked ipip_sysctl().
+  <li>Introduced sysctl_securelevel() to modify 'securelevel' mp-safe. Made sysctl_securelevel_int() mp-safe. Unlocked KERN_ALLOWDT.
 
 
   </ul>
@@ -269,6 +293,9 @@ state.
   <li>Rewrote <a href="https://man.openbsd.org/dd.1">dd(1)</a> bytes/sec calculation to make signal handler safe on OpenBSD.
   <li>Added an error message for <a href="https://man.openbsd.org/sed.1">sed(1)</a> -i when the file is unwritable.
   <li>Added check in <a href="https://man.openbsd.org/pwd_mkdb.8">pwd_mkdb(8)</a> preventing creation of a <a href="https://man.openbsd.org/passwd.5">passwd(5)</a> entry too large for <a href="https://man.openbsd.org/getpwent.3">getpwent(3)</a>.
+  <li>Audited programs that parse IP-adresses and replaced <a href="https://man.openbsd.org/inet_aton.3">inet_aton(3)</a> with better functions such as  <a href="https://man.openbsd.org/gethostbyname.3">gethostbyname(3)</a>, <a href="https://man.openbsd.org/getnameinfo.3">getnameinfo(3)</a>, <a href="https://man.openbsd.org/getaddrinfo.3">getaddrinfo(3)</a>, and <a href="https://man.openbsd.org/inet_pton.3">inet_pton(3)</a>.
+  <li>Fixed <a href="https://man.openbsd.org/cron.8">cron(8)</a> CVE-2024-43688: buffer underflow for very large step values.
+  <li>Made <a href="https://man.openbsd.org/gprof.1">gprof(1)</a> output more compact.
 
   </ul>
 
@@ -324,7 +351,12 @@ state.
   <li>Ensured some Intel <a href="https://man.openbsd.org/xhci.4">xhci(4)</a> controllers fully power down by issuing a "save state" command on suspend.
   <li>Fixed <a href="https://man.openbsd.org/xhci.4">xhci(4)</a> issues after resume by giving some AMD Ryzen hHCI controllers the extra time they need to transition from D3 into D0.
   <li>Made <a href="https://man.openbsd.org/acpi.4">acpi(4)</a> use ACPI_WAK upon resume, potentially improving S3 resume on some rare machines.
-  
+  <li>Made <a href="https://man.openbsd.org/xhci.4">xhci(4)</a> restore the saved state upon resume, needed for newer Intel xHCI controllers.
+  <li>Skipped Controller Save State (CSS) and Controller Restore State (CRS) on AMD 17h/1xh xHCI to avoid problem with resume after introduction of CRS to <a href="https://man.openbsd.org/xhci.4">xhci(4)</a>.
+  <li>Corrected <a href="https://man.openbsd.org/dwiic.4">dwiic(4)</a> to inform children of suspend/resume events and prevent sub-drivers racing against dwiic hardware re-initialization.
+  <li>Eliminated some resume-hangs on <a href="https://man.openbsd.org/dwiic.4">dwiic(4)</a> chips.
+  <li>Added missing child activate handling in <a href="https://man.openbsd.org/iatp.4">iatp(4)</a>.
+
 
 
   </ul><!-- end hardware support and driver bugfixes -->
@@ -344,6 +376,8 @@ state.
   <li>Mapped MSI-X in addition to MSI and INTx on <a href="https://man.openbsd.org/rge.4">rge(4)</a>.
   <li>Fixed TX descriptors DMA syncs in <a href="https://man.openbsd.org/rge.4">rge(4)</a>.
   <li>Added <a href="https://man.openbsd.org/rge.4">rge(4)</a> support for the Realtek RTL8126 chip.
+  <li>Improved bus_dmamap_syncs for rx ring descriptors on <a href="https://man.openbsd.org/rge.4">rge(4)</a> hardware.
+  <li>Supported building a single packet out of multiple rx descriptors in <a href="https://man.openbsd.org/rge.4">rge(4)</a>.
   <li>Attempted to leave a gap on the tx ring for <a href="https://man.openbsd.org/rge.4">rge(4)</a>/<a href="https://man.openbsd.org/re.4">re(4)</a> to keep entries on the ring from being overwritten, preventing confusion of the chip and the tx completion code.
   </ul>
 
@@ -354,6 +388,9 @@ state.
 	showing a mix of 802.11 modes after switching APs.
   <li>Added a reset attempt for <a href="https://man.openbsd.org/qwx.4">qwx(4)</a> devices when firmware crashes.
   <li>Made <a href="https://man.openbsd.org/qwx.4">qwx(4)</a> offload TKIP and CCMP crypto to hardware, fixing ARP and IPv6 multicast with WPA2.
+  <li>Plugged a memory leak in <a href="https://man.openbsd.org/qwx.4">qwx(4)</a>.
+  <li>Fixed a <a href="https://man.openbsd.org/qwx.4">qwx(4)</a> interrupt storm during resume.
+
   <li>Fixed <a href="https://man.openbsd.org/iwx.4">iwx(4)</a> monitor mode after firmware update.
   <li>Prevented firmware panic when <a href="https://man.openbsd.org/iwx.4">iwx(4)</a> runs in monitor mode with addresses configured on the interface and leaving 11n/11ac mode directly for monitor mode.
   <li>Added support for Quectel EM060K to <a href="https://man.openbsd.org/umb.4">umb(4)</a>.
@@ -398,6 +435,8 @@ state.
   <li>Enforced the <a
 	href="https://man.openbsd.org/pinsyscalls.2">pinsyscalls(2)</a> rules
 	on non-static/ld.so/libc.so text segments.
+  <li>Added pledge and unveil to <a
+	href="https://man.openbsd.org/rpcinfo.8">rpcinfo(8)</a>.
 
   </ul>
 
@@ -421,7 +460,9 @@ state.
   <li>Stop storing full IPv6 packet in common forwarding case. Instead of storing a copy of the full IPv6 packet for the possible need to generate an ICMP6 packet. Instead only store the header. In most cases this can be kept on the stack resulting in speedup and less memory use.
   <li>Fixed source and drain confusion in socket splicing somove(), improving performance in a corner case.
   <li>Fixed bridging IPv6 fragments with pf reassembly. When output by <a href="https://man.openbsd.org/veb.4">veb(4)</a> and <a href="https://man.openbsd.org/bridge.4">bridge(4)</a>, the packets were not refragmented.
- 
+  <li>Added BIOCSETFNR to <a href="https://man.openbsd.org/bpf.4">bpf(4)</a>, like BIOCSETF without resetting the buffer or stats.
+  <li>Allowed PPP interface to run in an rdomain and get a default route installed in the same routing domain.
+
   </ul>
 
 <li>The following changes were made to the <a
@@ -541,6 +582,8 @@ state.
 <!-- OTHER -->
   <li>Many other changes in various network programs and libraries:
   <ul>
+	<li>Audited programs that parse IP-adresses and replaced <a href="https://man.openbsd.org/inet_aton.3">inet_aton(3)</a> with better functions such as 
+	<a href="https://man.openbsd.org/gethostbyname.3">gethostbyname(3)</a>, <a href="https://man.openbsd.org/getnameinfo.3">getnameinfo(3)</a>, <a href="https://man.openbsd.org/getaddrinfo.3">getaddrinfo(3)</a>, and <a href="https://man.openbsd.org/inet_pton.3">inet_pton(3)</a>.
 <!-- syslogd -->
         <li>...
 <!-- dhcp, rad, ... -->
