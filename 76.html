@@ -161,7 +161,6 @@ With this release all files that existed in the first release of OpenBSD have be
   <li>Made arc4random() depend on fewer subsystems by decoupling extract_entropy() from the enqueue_randomness() logic.
   <li>Enabled uvm percpu caches on sparc64 and luna88k.
   <li>Used FEAT_RNG to feed entropy into the random subsystem on arm64 as on amd64.
-  <li>Used atomic operations to access integers in <a href="https://man.openbsd.org/sysctl.2">sysctl(2)</a>.
   <li>Made exit1() wait for <a href="https://man.openbsd.org/sysctl.2">sysctl(2)</a> 'allprocess' loops to prevent possible kernel crash due to concurrent process exit1().
   <li><span style="color:red;">ZZZ one line about suspend/resume improvements</span>
   <li>Began printing "S0ix" instead of "S0" on the acpi: sleep states line when FADT indicates FADT_POWER_S0_IDLE_CAPABLE, assuming that for these machines the vendors agree S0 suspend is as good or better than S3.
@@ -171,46 +170,41 @@ With this release all files that existed in the first release of OpenBSD have be
 
 <li>SMP Improvements
   <ul>
-  <li>Unlocked the <a href="https://man.openbsd.org/shutdown.2">shutdown(2)</a> system call.
-  <li>Various improvements in the locking of unix4 and udp sockets.
-  <li>Allowed running UDP input on multiple CPU in parallel.
+  <li>Network
+    <ul>
+    <li>Allowed running UDP input on multiple CPU in parallel.
+    <li>Made raw IPv4 and IPv6 sockets handle input in parallel.
+    <li>Various improvements in the locking of unix4 and udp sockets.
+    <li>Pushed socket lock down to sosend() for SOCK_RAW sockets.
+    <li>Pushed socket lock down to sosend() and removed it from soreceive()
+	  paths for <a href="https://man.openbsd.org/unix.4">unix(4)</a>
+	  sockets.
+    <li>Switched AF_ROUTE sockets to the new locking scheme.
+    <li>Mark the IP protocol GRE as MP safe from socket layer.
+    <li>Removed kernel lock from socket splice idle timeout.
+    <li>Removed kernel lock from <a href="https://man.openbsd.org/shutdown.2">shutdown(2)</a> system call.
+    <li>Run network protocol timer without kernel lock. TCP timers also run without kernel lock now.
+    <li>Stopped using KERNEL_LOCK to protect the per process <a href="https://man.openbsd.org/kqueue.2">kqueue(2)</a> list.
+    </ul>
+  <li>Sysctl
+    <ul>
+    <li>Used atomic operations to access integers in
+	<a href="https://man.openbsd.org/sysctl.2">sysctl(2)</a>
+	making it mp-safe.
+    <li>Removed net lock from
+	<a href="https://man.openbsd.org/sysctl.8">sysctl(8)</a>
+	net.inet.ip.forwarding, net.inet.ip6.forwarding,
+	net.inet6.ip6.redirect, net.inet.ip.directed-broadcast.
+    <li>Pushed kernel lock down to net_sysctl() to unlock uipc, bfp,
+	pflow and pipex sysctl.
+    <li>Removed kernel lock from various sysctl kern variables.
+    </ul>
+
   <li>Stopped grabbing the kernel lock in <a href="https://man.openbsd.org/kbind.2">kbind(2)</a>.
-  <li>Made raw IPv4 and IPv6 sockets handle input in parallel.
-  <li>Pushed solock() down to sosend() for SOCK_RAW sockets.
   <li>Added per-CPU caches to the pmemrange allocator.
-  <li>Pushed solock() down to sosend() and removed it from soreceive()
-	paths for <a href="https://man.openbsd.org/unix.4">unix(4)</a>
-	sockets.
   <li>Unlocked <a href="https://man.openbsd.org/sigsuspend.2">sigsuspend(2)</a> and __thrsigdivert syscalls.
   <li>Converted SCHED_LOCK from a recursive kernel lock to a mutex.
-  <li>Switched AF_ROUTE sockets to the new locking scheme.
   <li>Reworked per proc and per process time usage accounting, removing a SCHED_LOCK() dependency.
-  <li>Removed the net lock from the <a href="https://man.openbsd.org/sysctl.2">sysctl(2)</a> net.inet.ip.forwarding for IPv4.
-  <li>Removed the net lock from the <a href="https://man.openbsd.org/sysctl.2">sysctl(2)</a> net.inet.ip6.forwarding for IPv6.
-  <li>Mark the IP protocol GRE as MP safe from socket layer.
-  <li>Unlocked <a href="https://man.openbsd.org/sysctl.2">sysctl(2)</a> net.inet.ip.redirect and net.inet6.ip6.redirect.
-  <li>Unlocked <a href="https://man.openbsd.org/udp.4">udp(4)</a> somove().
-  <li>Removed kernel lock from socket splice idle timeout.
-  <li>Pushed the kernel lock down to <a href="https://man.openbsd.org/sysctl.2">sysctl(2)</a>.
-  <li>Unlocked most of kern_vars' variables. Unlocked KERN_SOMAXCONN and KERN_SOMINCONN.
-  <li>Stopped using KERNEL_LOCK to protect the per process <a href="https://man.openbsd.org/kqueue.2">kqueue(2)</a> list.
-  <li>Unlocked KERN_CLOCKRATE.
-  <li><span style="color:red;">summarize all sysctl related things</span>
-  <li>Unlocked <a href="https://man.openbsd.org/sysctl.2">sysctl(2)</a> net.inet.ip.directed-broadcast.
-  <li>Run network protocol timer without kernel lock. TCP timers also run without kernel lock now. The whole TCP stack holds exclusive net lock, so additional kernel lock is useless.
-  <li>Made sysctl_int() and sysctl_int_lower() mp-safe and unlocked KERN_HOSTID.
-  <li>Pushed kernel lock down to net_sysctl() and mpls_sysctl().
-  <li>Atomically modify `hthreads' and move proc_free() out of KERNEL_LOCK().
-  <li>Unlocked divert_sysctl() and divert6_sysctl().
-  <li>Unlocked KERN_MAXFILES.
-  <li>Unlocked KERN_MAXPROC and KERN_MAXTHREAD from kern_vars.
-  <li>Unlocked etherip_sysctl().
-  <li>Unlocked igmp_sysctl(), pfsync_sysctl() and rip_sysctl().
-  <li>Unlocked sysctl_audio().
-  <li>Unlocked ipip_sysctl().
-  <li>Introduced sysctl_securelevel() to modify 'securelevel' mp-safe. Made sysctl_securelevel_int() mp-safe. Unlocked KERN_ALLOWDT.
-
-
   </ul>
 
 <li>Direct Rendering Manager and graphics drivers
