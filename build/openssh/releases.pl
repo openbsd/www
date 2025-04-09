@@ -201,6 +201,11 @@ foreach my $rel (reverse sort numsort keys(%releases)) {
 	my $extra = "";
 	if ($rel =~ /p/) {
 		# Portable only release
+	} elsif ($rel eq "10.0") {
+		# blame djm
+		my $port = $rel . "p2";
+		$extra = "/<a href='txt/release-$rel' id='$port'>$port</a>";
+		$extra .= "<span id='${rel}p1'></span>";
 	} else {
 		# Joint release
 		my $port = $rel . "p1";
