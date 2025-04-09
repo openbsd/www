@@ -190,8 +190,12 @@ sub output_release
 	}
 }
 
+sub numsort {
+	($a =~ /^(\d+)/)[0] <=> ($b =~ /^(\d+)/)[0] || $a cmp $b
+}
+
 # Output the release notes in reverse revision order.
-foreach my $rel (reverse sort keys(%releases)) {
+foreach my $rel (reverse sort numsort keys(%releases)) {
 	my $date = $releases{$rel};
 	my $desc;
 	my $extra = "";
