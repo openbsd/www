@@ -85,6 +85,11 @@ For a comprehensive list, see the <a href="plus77.html">changelog</a> leading to
 	href="https://man.openbsd.org/pmap_enter.9">pmap_enter(9)</a> succeed
 	when there's enough free physical memory but we can't allocate KVA to
 	map that memory.
+    <li>Optimized pmap teardown by skipping TLB flushes, giving ~5%
+	performance boost for kernel build on arm64. 
+    <li>Enabled PAC on hardware that uses the new QARMA3 cipher.
+    <li>Implemented support for SVE (Scalable Vector Extension) on arm64.
+
     </ul>
   <li>amd64:
     <ul>
@@ -173,7 +178,28 @@ For a comprehensive list, see the <a href="plus77.html">changelog</a> leading to
   <li>Added 'socket' refcnt type to <a href="https://man.openbsd.org/dt.4">dt(4)</a>.
   <li>Made <a href="https://man.openbsd.org/btrace.8">btrace(8)</a>
 	support additional interval/profile units (hz, us, ms, s).
-  
+  <li>Fix possible races of changes to the per-process unveil
+	datastructures by either pledge() [removing all path promises] or
+	unveil() [adding new paths], against namei() inspecting in other
+	thread system calls.
+  <li>Added kern.audio.kbdcontrol <a
+	href="https://man.openbsd.org/sysctl.2">sysctl(2)</a> variable,
+	allowing the volume keys on multimedia keyboards to be handled as
+	regular keys if set to 0.
+  <li>Reworked how processes are stopped because of a signal. Now
+	multithreaded processes can be reliably stopped and continued. This
+	should fix problems seen in golang, mpv and in our regress tests.
+  <li>Implement <a
+	href="https://man.openbsd.org/busdma.9">busdma(9)</a> bounce buffering
+	for raw memory.
+  <li>Started ignoring sub-nodes of non-functional nodes in the ACPI
+	tree walk to fix doubel and triple attachments of the same PCIe root
+	bridges.
+  <li>Fixed a (mostly) hypothetical race in <a
+	href="https://man.openbsd.org/pinsyscalls.2">pinsyscalls(2)</a> by
+	making it return an error if called in a multi-threaded process.
+  <li>Fixed cpu idle percentage in <a
+	href="https://man.openbsd.org/top.1">top(1)</a> on macppc
 
   <li>Suspend/Hibernate Support
   <ul>
@@ -227,6 +253,13 @@ For a comprehensive list, see the <a href="plus77.html">changelog</a> leading to
   <li>Unlocked <a href="https://man.openbsd.org/open.2">open(2)</a>
 	and <a href="https://man.openbsd.org/openat.2">openat(2)</a>.
   <li>Made <a href="https://man.openbsd.org/wsmouse.4">wsmouse(4)</a> and wstpad filterops MP-safe.
+  <li>Use socket lock for inpcb notify.
+  <li>Pushed KERNEL_LOCK() inside __realpath(2).
+  <li>Made wakeup of parent process in dowait6 reliable even without kernel lock.
+  <li>Used ps_mtx to lock the child process that is being checked by dowait6.
+  <li>Started using shared net lock when calling <a
+	href="https://man.openbsd.org/shutdown.2">shutdown(2)</a> on internet
+	socket.
 
 
   </ul>
@@ -246,6 +279,13 @@ For a comprehensive list, see the <a href="plus77.html">changelog</a> leading to
 	which will be used by <a
 	href="https://man.openbsd.org/vmd.8">vmd(8)</a> to reset <a
 	href="https://man.openbsd.org/psp.4">psp(4)</a> on startup.
+  <li>Started using <a
+	href="https://man.openbsd.org/acpipci.4">acpipci(4)</a> on
+	hypervisors. If the hypervisor cpuid bit is set, use acpipci to attach
+	PCI busses. As virtualization is not that old, we can assume that in
+	VMs we don't need the quirk for old, broken ACPI.  This solves
+	problems with PCI BAR access and recent seabios versions on qemu.
+
   </ul>
 
 <li>Various new userland features:
@@ -255,8 +295,22 @@ For a comprehensive list, see the <a href="plus77.html">changelog</a> leading to
 	battery, extending the semantics of hw.perfpolicy to provide two
 	buttons to specify desired behavior. This gives users more flexibility
 	in setting the performance when AC-powered vs. battery powered.
-
-
+  <li>Made <a
+	href="https://man.openbsd.org/calendar.1">calendar(1)</a> use the
+	environment variable RECIPIENT_EMAIL for sending mails to.
+  <li>Made <a href="https://man.openbsd.org/security.8">security(8)</a>
+	use GMT rather than the local timezone when checking for changes in
+	device nodes and setuid files. Avoids false positives when changing
+	timezones.
+  <li>Added a new variable PASSWDSKIP that can be set in
+	/etc/daily.local to prevent <a
+	href="https://man.openbsd.org/security.8">security(8)</a> from
+	complaining about specific accounts that have no password. This is
+	typically used for services like anoncvs and gotd.
+  <li>Added [-f file] to <a
+	href="https://man.openbsd.org/sysctl.8">sysctl(8)</a> to apply
+	sysctl.conf in one go, and started using it in <a
+	href="https://man.openbsd.org/rc.8">rc(8)</a> instead of a parser implemented in ksh.
   </ul>
 
 <li>Various bugfixes and tweaks in userland:
@@ -289,6 +343,20 @@ For a comprehensive list, see the <a href="plus77.html">changelog</a> leading to
   <li>When syslogd(8) acting as logserver with TLS (-S) and
 	client-certificates are used for authentication (-K), use the CN from
 	the client's certificate as hostname.
+  <li>Adjusted the alignment when df prints inode columns. This makes
+	'df -hi' on systems with large partitions easier on the eyes.
+  <li>Made <a href="https://man.openbsd.org/test.1">test(1)</a> use
+	timespeccmp() and st_mtim intead of comparing st_mtime to fix
+	comparison of files with modification times that differ by less than a
+	second.
+  <li>Made <a href="https://man.openbsd.org/ksh.1">ksh(1)</a> use
+	timespeccmp() and st_mtim intead of comparing st_mtime to fix
+	comparison of files with modification times that differ by less than a
+	second.
+  <li>Added a digit to vsz and rss to accomodate larger procs with <a
+	href="https://man.openbsd.org/ps.1">ps(1)</a>.
+  <li>Updated <a href="https://man.openbsd.org/tzinfo.5">tzinfo(5)</a>
+	to 2025bgtz from https://github.com/JodaOrg/global-tz.
 
   <!-- audio -->
   <li>...
@@ -321,13 +389,22 @@ For a comprehensive list, see the <a href="plus77.html">changelog</a> leading to
   <li>Ensure <a href="https://man.openbsd.org/uvideo.4">uvideo(4)</a> fills v4l2_capability correctly (allowing some V4L consumers to use bus_info to identify the desired webcam when attempting to switch devices).
   <li>Added <a href="https://man.openbsd.org/uvideo.4">uvideo(4)</a> support for devices which report bulk and isochronous endpoints.
   <li>Made <a href="https://man.openbsd.org/uvideo.4">uvideo(4)</a> bypass unknown pixelformat to consumer rather than rejecting unknown driver formats.
+  <li>Support colorformat from <a href="https://man.openbsd.org/uvideo.4">uvideo(4)</a> device.
+  <li>Fixed a <a href="https://man.openbsd.org/uvideo.4">uvideo(4)</a> crash on close of anisochronous endpoint's webcam.
+  <li>Added USB 3.0 speed support to <a href="https://man.openbsd.org/xhci.4">xhci(4)</a> and <a href="https://man.openbsd.org/uvideo.4">uvideo(4)</a>.
   <li>Added PercentLoad sensor to upd.4, reporting the % of the available UPS power drawn by output outlets.
   <li>Made <a href="https://man.openbsd.org/qcpon.4">qcpon(4)</a> query hardware for the button state to detect release even if the press event is missed, and to signal wakeup when the button is pressed.
   <li>Implemented regulator-based signal voltage switch support in <a href="https://man.openbsd.org/dwmmc.4">dwmmc(4)</a>, fixing bootup on the MNT Reform2 with the RK3588 module.
   <li>Fixed <a href="https://man.openbsd.org/uaudio.4">uaudio(4)</a> devices that don't support sample rate changes.
   <li>Added LED support for <a href="https://man.openbsd.org/ikbd.4">ikbd(4)</a> keyboards.
   <li>Added <a href="https://man.openbsd.org/mtintc.4">mtintc(4)</a> a driver supporting interrupt controllers found on MediaTek SoCs.
+  <li>Forced 32-bit accesses when reading 8-bit or 16-bit registers, allowing use of <a href="https://man.openbsd.org/xhci.4">xhci(4)</a> on a Cadence xHCI controller as seen on the Radxa Orion O6.
+  <li>Introduce a pckbc@acpi driver attachment that is use instead of pckbc@isa when an interrupt configuration is incompatible with legacy ISA. This unbreaks, among other things, the keyboards in various ChromeBooks.
+  <li>Added <a href="https://man.openbsd.org/mtrng.4">mtrng(4)</a>, a driver supporting the 32-bit random number generator on MediaTek SoCs.
+  <li>Added <a href="https://man.openbsd.org/mtxhci.4">mtxhci(4)</a>, a driver for the xHCI USB controller found on MediaTek SoCs, and enable it on armv7 and arm64.
 
+
+  </ul>
 
 <li>New or improved network hardware support:
   <ul>
@@ -339,6 +416,8 @@ For a comprehensive list, see the <a href="plus77.html">changelog</a> leading to
   <li>Added support for AX88772D to <a href="https://man.openbsd.org/axen.4">axen(4)</a>.
   <li>Added <a href="https://man.openbsd.org/ixv.4">ixv(4)</a>, a driver for virtual functions of Intel 82598EB, 82559 and X540.
   <li>Enabled rx/tx checksum offloading on <a href="https://man.openbsd.org/ivaf.4">ivaf(4)</a>.
+  <li>Added RSS/multiqueue support for AQC11x models ("aq2") in <a href="https://man.openbsd.org/aq.4">aq(4)</a>.
+  <li>Added support for reading eeprom pages for <a href="https://man.openbsd.org/aq.4">aq(4)</a> cards with SFP slots.
 
   <!-- sort by driver at the end -->
   </ul>
@@ -346,6 +425,15 @@ For a comprehensive list, see the <a href="plus77.html">changelog</a> leading to
 <li>Added or improved wireless network drivers:
   <ul>
   <li>Added support for MA devices to <a href="https://man.openbsd.org/iwx.4">iwx(4)</a>.
+  <li>Restricted scanned channels appropriately when <a
+	href="https://man.openbsd.org/qwx.4">qwx(4)</a> runs in a fixed phy
+	mode.
+  <li>Add support for QCA2066 to <a href="https://man.openbsd.org/qwx.4">qwx(4)</a>.
+  <li>Changed <a href="https://man.openbsd.org/mtw.4">mtw(4)</a> to
+	only open bulk <a href="https://man.openbsd.org/usb.4">usb(4)</a>
+	pipes once for the lifetime of the device.
+  <li>Started clearing the OACTIVE flag on tx queues when <a
+	href="https://man.openbsd.org/ixl.4">ixl(4)</a> is reset.
   </ul>
 
 <li>IEEE 802.11 wireless stack improvements and bugfixes:
@@ -353,7 +441,7 @@ For a comprehensive list, see the <a href="plus77.html">changelog</a> leading to
   <li>...
   </ul>
 
-<li>Installer, upgrade and bootloader improvements:
+<li>Installer, upgrade and bootloader improvements:<!-- XXX sort -->
   <ul>
   <li>On the <a href="https://www.openbsd.org/macppc.html">macppc</a>
 	architecture, make ofwboot sync instruction cache before entering
@@ -366,6 +454,12 @@ For a comprehensive list, see the <a href="plus77.html">changelog</a> leading to
   <li>Changed to only install a second copy of the bootloader if the EFI
 	System Partition is at least 1MB to avoid filling up the tiny ESPs we
 	used to create a few releases ago.
+  <li>Made <a
+	href="https://man.openbsd.org/installboot.8">installboot(8)</a> only
+	set BootOrder if our boot option isn't already part of it. This means
+	sysupgrade (or reinstalls) will no longer set OpenBSD as the default
+	OS if users change the boot order by some other means.  Fresh installs
+	will still make OpenBSD the default OS.
   <li>Added <a
 	href="https://man.openbsd.org/sysupgrade.8">sysupgrade(8)</a> -R #.#
 	to try to use a specific release version rather than the immediate
@@ -391,9 +485,22 @@ For a comprehensive list, see the <a href="plus77.html">changelog</a> leading to
   <li>Added <a
 	href="https://man.openbsd.org/fw_update.8">fw_update(8)</a> -l flag to
 	list drivers or files.
+  <li>Added -D option to <a
+	href="https://man.openbsd.org/fw_update.8">fw_update(8)</a> for using
+	a different dmesg for driver detection.
+  <li>Reworked the "Default IPv6 router?" question in the installer to
+	behave like the other questions.
+  <li>On amd64 with ACPI >= 5, assume that the installer bootet in
+	UEFI mode and default to using a GUID Partition Table (GPT).
+  <li>Added a -c option <a
+	href="https://man.openbsd.org/installboot.8">installboot(8)</a> that
+	sets up the machine to boot from the specified disk, used on arm64 and
+	amd64 with UEFI and GPT.
+  </ul><li>On updates, added options to interactive <a
+	href="https://man.openbsd.org/sdiff.1">sdiff(1)</a> merge for choosing
+	both sides of a diff.
+  <li>Make IPv6 link-local scope identifiers in "HTTP Server?" answers work in the installer. 
 
-
-  </ul>
 
 <li>Security improvements:
   <ul>
@@ -413,7 +520,15 @@ For a comprehensive list, see the <a href="plus77.html">changelog</a> leading to
   <li>Added an AF_FRAME socket domain and an IFT_ETHER protocol family
 	under it, allowing userland to use sockets to send and receive
 	Ethernet frames.
+  <li>Added tunneldf support to <a href="https://man.openbsd.org/sec.4">sec(4)</a>.
+  <li>Added use of Toeplitz hash for UDP and IPv6 TCP output, giving an
+	improvement in traffic distribution over the queues and 20%
+	performance increase with UDP send on v4/v6 and TCP send on v6 without
+	pf.
+  <li>Cache route per softnet thread with netstack.<!-- XXX commit 1c7441f2bfafacf5a76ad7c383e938238ecc2290 -->
+
   </ul>
+
   <li>Further changes and bugfixes in the network stack:
   <ul>
   <li>Replaced rwlock with iterator in UDP input multicast loop, preventing a potential kernel crash.
@@ -424,9 +539,6 @@ For a comprehensive list, see the <a href="plus77.html">changelog</a> leading to
 	address families.
   <li>Let LLDP packets fall through to being handled on the port
 	interfaces for <a href="https://man.openbsd.org/aggr.4">aggr(4)</a>.
-  <li>Added <a
-	href="https://man.openbsd.org/ifconfig.8">ifconfig(8)</a> vxlan
-	"[-]endpoint" command, to remove a tunnel endpoint of a MAC address.
   <li>Enabled multiqueue for <a href="https://man.openbsd.org/vio.4">vio(4)</a>.
   <li>Let <a href="https://man.openbsd.org/pppoe.4">pppoe(4)</a> data
 	packets go through if_vinput instead of the pppoeinq, improving
@@ -434,8 +546,21 @@ For a comprehensive list, see the <a href="plus77.html">changelog</a> leading to
   <li>Fixed out-of-band data in <a
         href="https://man.openbsd.org/somove.9">somove(9)</a> socket splicing.
   <li>Added <a href="https://man.openbsd.org/wg.4">wg(4)</a> logging of IP addresses of remote endpoints.
+  <li>Limited RX queue of loopback interfaces with 8192 packets,
+	preventing unlimited queues from reaching mbuf limits and making
+	network unusable on some architectures.
+  <li>Fixed TCP checksum for IPv6 packets with extension headers.
+  <li>Fixed incorrect ICMP error translation in af-to NAT, making
+	traceroute6 behind af-to to provide meaningful information.
+  <li>Fixed a 24-year old bug where various checks for broadcast
+	packets were mistakenly skipped, allowing one to send broadcast
+	packets without the SO_BROADCAST option. 
+
+
+
 
   <!-- ipsec -->
+  <li>Prevented installation of path MTU routes for IPsec transport mode SAs.
   </ul>
 
 <li>The following changes were made to the <a
@@ -548,13 +673,15 @@ For a comprehensive list, see the <a href="plus77.html">changelog</a> leading to
 	    previously all failures were considered temporary and so delivery
 	    was attempted again.
   </ul>
-  <li>Network auto configuration improvements:
-  <ul>
-	<li>...
-  </ul>
 <!-- OTHER -->
   <li>Many other changes in various network programs and libraries:
   <ul>
+  <li>Added <a
+	href="https://man.openbsd.org/ifconfig.8">ifconfig(8)</a> vxlan
+	"[-]endpoint" command, to remove a tunnel endpoint of a MAC address.
+  <li>Made <a
+	href="https://man.openbsd.org/ifconfig.8">ifconfig(8)</a> scan display
+	wpa3.
   <li>Made <a href="https://man.openbsd.org/tcpdump.8">tcpdump(8)</a> print PPPoE tags as hex dumps.
   <li>Improved lldp output of <a href="https://man.openbsd.org/tcpdump.8">tcpdump(8)</a>.
   <li>Added support for client certificates to <a href="https://man.openbsd.org/relayd.8">relayd(8)</a>.
@@ -577,6 +704,8 @@ For a comprehensive list, see the <a href="plus77.html">changelog</a> leading to
   <li>Made iscsid send out all the values for session and connection
 	params for each login stage, keeping control of what is selected,
 	making it possible to connect to a lio target.
+  <li>Respect checksum offloading in <a href="https://man.openbsd.org/dhcrelay.8">dhcrelay(8)</a> and <a href="https://man.openbsd.org/dhcrelay6.8">dhcrelay6(8)</a>.
+  <li>Respect checksum offloading for incoming UDP in <a href="https://man.openbsd.org/dhcpd.8">dhcpd(8)</a>.
 
   </ul>
 </ul><!-- Routing daemons and other userland network improvements -->
@@ -602,6 +731,10 @@ For a comprehensive list, see the <a href="plus77.html">changelog</a> leading to
   <li>Added <a href="https://man.openbsd.org/tmux.1">tmux(1)</a> scrollbar style parameters width and pad.
   <li>Added copy-mode-position-style and copy-mode-selection-style options to <a href="https://man.openbsd.org/tmux.1">tmux(1)</a>.
   <li>Added a <a href="https://man.openbsd.org/tmux.1">tmux(1)</a> option allowing users to override the width of individual Unicode codepoints.
+  <li>Fixed mouse_hyperlink format in <a href="https://man.openbsd.org/tmux.1">tmux(1)</a> copy mode.
+  <li>Added S-Up and S-Down to move windows in <a href="https://man.openbsd.org/tmux.1">tmux(1)</a> tree mode.
+  <li>Made <a href="https://man.openbsd.org/tmux.1">tmux(1)</a> correctly skip wide characters in hyperlinks.
+  <li>Made <a href="https://man.openbsd.org/tmux.1">tmux(1)</a> only align panes and windows, not sessions.
 </ul>
 
 <li>LibreSSL version 4.1.0
