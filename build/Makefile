@@ -1,7 +1,7 @@
 # Makefile for WWW subdirectory.
 
-STABLE_VERSION=	7.6
-PREV_VERSION=	7.5
+STABLE_VERSION=	7.7
+PREV_VERSION=	7.6
 
 # also update mirrors/openbgpd-ftp.html.head
 OPENBGPD_VERSION=		8.8
