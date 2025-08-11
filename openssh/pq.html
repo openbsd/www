@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang=en>
+<meta charset=utf-8>
+
+<title>OpenSSH: Post-Quantum Cryptography</title>
+<meta name="description" content="OpenSSH post quantum cryptography">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" type="text/css" href="openbsd.css">
+<link rel="canonical" href="https://www.openssh.com/pq.html">
+
+<style>
+li {
+	margin-bottom: 1em;
+}
+</style>
+
+<h2 id=OpenBSD>
+<a href="/">
+<i>Open</i><b>SSH</b></a>
+Post-Quantum Cryptography
+</h2>
+<hr>
+
+<p>
+OpenSSH supports a number of cryptographic key agreement algorithms
+considered to be safe against attacks from quantum computers. 
+We recommend that all SSH connections use these algorithms.
+</p>
+
+<p>
+OpenSSH has offered post-quantum key agreement (<i>KexAlgorithms</i>)
+by default since release 9.0 (2022), initially via the
+<tt>sntrup761x25519-sha512</tt> algorithm. More recently, in OpenSSH 9.9,
+we have added a second post-quantum key agreement <tt>mlkem768x25519-sha256</tt>
+and it was made the default scheme in OpenSSH 10.0.
+</p>
+
+<p>
+To encourage migration to these stronger algorithms, OpenSSH 10.1 will warn
+the user when a non post-quantum key agreement scheme is selected. These
+warnings are displayed by default but may be disabled via the
+<i>WarnWeakCrypto</i> option in
+<a href="https://man.openbsd.org/ssh_config.5">ssh_config(5)</a>.
+</p>
+
+<h3>Background</h3>
+
+<p>
+A quantum computer (QC) is a device capable of performing computations
+with information encoded as quantum states. Such a device could quickly solve
+particular problems that are intractable for existing "classical" computers.
+</p>
+
+<p>
+The mathematics that underpin a number of cryptographic algorithms
+are among the problems that quantum computers are believed to be able to
+effectively solve. This means that a sufficiently-powerful quantum computer
+(a.k.a a "cryptographically-relevant" quantum computer) will be able to break
+them. Most affected is the cryptography used for key agreement and digital
+signatures, both of which play important roles in SSH.
+</p>
+
+<p>
+Fortunately, quantum computers of sufficient power to break cryptography
+have not been invented yet. Estimates for when a cryptographically-relevant
+quantum computer will arrive, based on the rate of progress in the field,
+range from 5-20 years, with many observers expecting them to arrive
+in the mid-2030s.
+</p>
+
+<p>
+The entire privacy of a SSH connection depends on cryptographic key agreement.
+If an attacker can break the key agreement then they are able to decrypt and
+view the entire session. The attacker need not perform this attack in real
+time; they may collect encrypted SSH sessions now and then decrypt them later
+once they have access to a quantum computer.
+This is referred to as a "store now, decrypt later" attack (also as
+"harvest now, decrypt later").
+</p>
+
+<p>
+OpenSSH supports post-quantum cryptography to protect user traffic against
+this attack.
+</p>
+
+<h2>FAQ</h2>
+
+<dl>
+<dt><b>I received a warning from ssh that directed me to this page. What should I do?</b></dt>
+<dd>
+As mentioned above, OpenSSH 10.1 started warning users when connections use
+cryptography that is not safe against quantum computers. If you received such
+a warning, it means that the server you connected to did not offer one of the
+two post-quantum key agreement algorithms that are being standardised for the
+SSH protocol:
+<a href="https://datatracker.ietf.org/doc/draft-ietf-sshm-mlkem-hybrid-kex/"><tt>mlkem768x25519-sha256</tt></a> and
+<a href="https://datatracker.ietf.org/doc/draft-josefsson-ntruprime-ssh/"><tt>sntrup761x25519-sha512</tt></a>
+<br><br>
+The ideal solution is to update the server to use a SSH implementation that
+supports at least one of these. OpenSSH versions 9.0 and greater support
+<tt>sntrup761x25519-sha512</tt> and versions 9.9 and greater support
+<tt>mlkem768x25519-sha256</tt>. If your server is already running one of these
+versions, then check whether the <i>KexAlgorithms</i> option has disabled
+their use.
+<br><br>
+If you are unable to update the server and/or you prefer to accept the risk
+of continuing to use quantum-unsafe cryptography then the warning may be
+silenced via the 
+<i>WarnWeakCrypto</i> option in
+<a href="https://man.openbsd.org/ssh_config.5">ssh_config(5)</a>.
+We recommend doing this selectively, for example:
+<pre>
+Match host unsafe.example.com
+    WarnWeakCrypto no
+</pre>
+</dd>
+<dt><b>Quantum computers don't exist yet, why go to all this trouble?</b></dt>
+<dd>
+Because of the "store now, decrypt later" attack mentioned above. Traffic
+sent today is at risk of decryption unless post-quantum key agreement is used.
+<br><br></dd>
+<dt><b>What about signature algorithms? You said they were at risk too</b></dt>
+<dd>
+Yes, most currently-used signature algorithms (including RSA and ECDSA) can be
+broken by a quantum computer. However, there is no risk to existing traffic
+in this situation (i.e. there is no analogous "store now, decrypt later").
+The only urgency for signature algorithms is ensuring that all classical
+signature keys are retired in advance of cryptographically-relevant computers
+becoming a reality. OpenSSH will add support for post-quantum signature
+algorithms in the future.
+<br><br></dd>
+<dt><b>I don't believe we'll ever get quantum computers. This is a waste of time</b></dt>
+<dd>
+Some people consider the task of scaling existing quantum computers up to the
+point where they can tackle cryptographic problems to be practically
+insurmountable. This is a possibilty. However, it appears that most of the
+barriers to a cryptographically-relevant quantum computer are engineering
+challenges rather than underlying physics.
+<br><br>
+If we're right about quantum computers being practical the we will have
+protected vast quantities of user data. If we're wrong about it, then all
+we'll have done is moved to cryptographic algorithms with stronger mathematical
+underpinnings.
+<br><br></dd>
+<dt><b>These post-quantum algorithms are new, are we sure they aren't broken?</b></dt>
+<dd>
+We're wary of this too. Though post-quantum key agreement algorithms have
+received a lot of concerted cryptographic attention over the last few years,
+it's possible that new attacks might be found.
+<br><br>
+To defend against this happening we have selected post-quantum algorithms with
+good safety margins, this means that even if they turn out to be weaker than
+expected they are still likely to be strong enough to be considered fit for
+purpose.
+<br><br>
+Additionally, all the post-quantum algorithms implemented by OpenSSH are
+"hybrids" that combine a post-quantum algorithm with a classical
+algorithm. For example <tt>mlkem768x25519-sha256</tt> combines ML-KEM, a
+post-quantum key agreement scheme, with ECDH/x25519, a classical key agreement
+algorithm that was formerly OpenSSH's preferred default. This ensures that the
+combined, hybrid algorithm is <i>no worse</i> than the previous best
+classical algorithm, even if the post-quantum algorithm turns out to be
+completely broken by future cryptanalysis.
+<br><br></dd>
+</dl>
+</html>
