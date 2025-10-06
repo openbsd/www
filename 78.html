@@ -265,24 +265,194 @@ For a comprehensive list, see the <a href="plus78.html">changelog</a> leading to
     </ul>
   </ul>
 
-<li>OpenSSH 10.0 xXX
+<li>OpenSSH 10.1
   <ul>
   <li>Security fixes
     <ul>
-    <li>...
+      <li><a href="https://man.openbsd.org/ssh.1">ssh(1)</a>:
+        disallow control characters in usernames passed via the
+        commandline or expanded using %-sequences from the configuration
+        file, and disallow \0 characters in ssh:// URIs.
+        <p>
+        If an ssh(1) commandline was constructed using usernames or URIs
+        obtained from an untrusted source, and if a ProxyCommand that uses
+        the %u expansion was configured, then it may be possible for an
+        attacker to inject shell expressions that may be executed when the
+        proxy command is started.
+        <p>
+        We strongly recommend against using untrusted inputs to construct
+        ssh(1) commandlines.
+        <p>
+        This change also relaxes the validity checks in one small way:
+        usernames supplied via the configuration file as literals (i.e.
+        that have no % expansion characters) are not subject to these
+        validity checks. This allows usernames that contain arbitrary
+        characters to be used, but only via configuration files. This is
+        done on the basis that ssh's configuration is trusted.
+        <p>
+        This issue was reported by David Leadbeater.
     </ul>
   <li>Potentially incompatible changes
     <ul>
-    <li>...
+      <li><a href="https://man.openbsd.org/ssh.1">ssh(1)</a>:
+        add a warning when the connection negotiates a non-post
+        quantum safe key agreement algorithm.
+        <p>
+        This warning has been added due to the risk of "store now, decrypt
+        later" attacks. More details at the <a
+        href="https://openssh.com/pq.html">OpenSSH Post-Quantum Cryptography
+        </a> page.
+        <p>
+        This warning may be controlled via a new <code>WarnWeakCrypto</code>
+        ssh_config option, defaulting to on. This option is likely to control
+        additional weak crypto warnings in the future.
+      <li><a href="https://man.openbsd.org/ssh.1">ssh(1)</a>,
+        <a href="https://man.openbsd.org/sshd.8">sshd(8)</a>:
+        major changes to handling of DSCP marking/<code>IPQoS</code>
+        <p>
+        Both the client and the server have changed the default DCSP
+        (a.k.a IPQos) values and the way these values are selected at
+        runtime.
+        <p>
+        Both endpoints now use Expedited Forward (EF) for interactive
+        traffic by default. This provides better prioritisation,
+        especially on wireless media (cf. RFC 8325). Non-interactive
+        traffic now uses the operating system default DSCP marking.
+        Both the interactive and non-interactive DSCP values may be
+        overridden via the <code>IPQoS</code> keyword in <a
+        href="https://man.openbsd.org/ssh_config.5">ssh_config(5)</a> and
+        <a href="https://man.openbsd.org/sshd_config.5">sshd_config(5)</a>.
+        <p>
+        The DSCP value selected may now change over the course of a
+        connection. ssh(1) and sshd(8) will automatically select between
+        the interactive and non-interactive IPQoS values depending on
+        the type of SSH channels open. E.g. if a sftp session is using
+        the connectionn, then the non-interactive value will be used.
+        <p>
+        This is important now that the default interactive IPQoS is EF
+        (Expedited Forwarding), as many networks are configured to allow
+        only relatively small amounts of traffic of this class and they will
+        aggressively deprioritise the entire connection if this is exceeded.
+      <li><a href="https://man.openbsd.org/ssh.1">ssh(1)</a>,
+        <a href="https://man.openbsd.org/sshd.8">sshd(8)</a>:
+        deprecate support for IPv4 type-of-service (TOS)
+        keywords in the IPQoS configuration directive.
+        <p>
+        Type of Service (ToS) was deprecated in the late nineties and
+        replaced with the Differentiated Services architecture. Diffserv
+        has significant advantages for operators because this mechanism
+        offers more granularity.
+        <p>
+        OpenSSH switched its default IPQoS from ToS to DSCP values in 2018.
+        <p>
+        IPQoS configurations with 'lowdelay', 'reliability', or
+        'throughput' will be ignored and instead the system default QoS
+        settings apply. Additionally, a debug message is logged about the
+        deprecation with a suggestion to use DSCP.
+      <li><a href="https://man.openbsd.org/ssh-add.1">ssh-add(1)</a>:
+        when adding certificates to an agent, set the expiry
+        to the certificate expiry time plus a short (5 min) grace period.
+        <p>
+        This will cause the agent to automtically remove certificates shortly
+        after they expire. A new ssh-add -N option disables this behaviour.
+      <li>All: remove experimental support for XMSS keys. This was never
+        enabled by default. We expect to implement a new post-quantu
+        signature scheme in the near future.
+      <li>ssh-agent(1), sshd(8): move agent listener sockets from /tmp to
+        under ~/.ssh/agent for both ssh-agent(1) and forwarded sockets
+        in sshd(8).
+        <p>
+        This ensures processes that have restricted filesystem access
+        that includes /tmp do not ambiently have the ability to use keys
+        in an agent.
+        <p>
+        Moving the default directory has the consequence that the OS will
+        no longer clean up stale agent sockets, so ssh-agent now gains
+        this ability.
+        <p>
+        To support $HOME on NFS, the socket path includes a truncated hash of
+        the hostname. ssh-agent will by default only clean up sockets from
+        the same hostname.
+        <p>
+        ssh-agent(1) gains some new flags: -U suppresses the automatic
+        cleanup of stale sockets when it starts. -u forces a cleanup
+        without keeping a running agent, -uu forces a cleanup that ignores
+        the hostname. -T makes ssh-agent put the socket back in /tmp.
     </ul>
 
   <li>New features
     <ul>
-    <li>...
+      <li>ssh(1), sshd(8): add SIGINFO handlers to log active channel and
+        session information.
+      <li>sshd(8): when refusing a certificate for user authentication, log
+         enough information to identify the certificate in addition to the
+         reason why it was being denied. Makes debugging certificate
+         authorisation problems a bit easier.
+      <li>ssh(1), ssh-agent(1): support ed25519 keys hosted on PKCS#11
+         tokens.
+      <li>ssh(1): add a ssh_config(5) RefuseConnection option that, when
+          encountered while processing an active section in a
+          configuration terminates ssh(1) with an error message that
+          contains the argument to the option.
+        <p>
+          This may be useful for expressing reminders or warnings in config
+          files, for example:
+        <pre>
+          Match host foo
+              RefuseConnection "foo is deprecated, use splork instead"
+        </pre>
+      <li>sshd(8): make the X11 display number check relative to
+        X11DisplayOffset. This will allows people to use X11DisplayOffset
+        to configure much higher port ranges if they really want, while
+        not changing the default behaviour.
+      <li>unit tests: the unit test framework now includes some basic
+        benchmarking capabilities. Run with "make UNITTEST_BENCHMARK=yes".
     </ul>
+
   <li>Bugfixes
     <ul>
-    <li>...
+      <li>sshd(8): fix mistracking of MaxStartups process exits in some
+        situations. At worst, this could cause all MaxStartups slots to
+        fill and sshd to refuse new connections.
+      <li>ssh(1): fix delay on X client startup when ObscureKeystrokeTiming
+        is enabled.
+      <li>sshd(8): increase the maximum size of the supported configuration
+        from 256KB to 4MB, which ought to be enough for anybody. Fail
+        early and visibly when this limit is breached.
+      <li>sftp(1): during sftp uploads, avoid a condition where a failed
+        write could be ignored if a subsequent write succeeded. This is
+        unlikely but technically possible because sftp servers are
+        allowed to reorder requests.
+      <li>sshd(8): avoid a race condition when the sshd-auth process exits
+        tha could cause a spurious error message to be logged.
+      <li>sshd(8): log at level INFO when PerSourcePenalties actually
+        blocks access to a source address range. Previously this was
+        logged at level VERBOSE, which hid enforcement actions under
+        default config settings.
+      <li>sshd(8): GssStrictAcceptor was missing from sshd -T output; fix
+      <li>sshd(8): Make the MaxStartups and PerSourceNetBlockSize options
+        first-match-wins as advertised.
+      <li>ssh(1): fix an incorrect return value check in the local forward
+        cancellation path that would cause failed cancellations not to be
+        logged.
+      <li>sshd(8): make "Match !final" not trigger a 2nd pass ssh_config
+        parsing pass (unless hostname canonicalisation or a separate
+        "Match final" does).
+      <li>ssh(1): better debug diagnostics when loading keys. Will now list
+        key fingerprint and algorithm (not just algorithm number) as well
+        as making it explicit which keys didn't load.
+      <li>All: fix a number of memory leaks found by LeakSanitizer,
+        Coverity and manual inspection.
+      <li>sshd(8): : Output the current name for PermitRootLogin's
+        "prohibit-password" in sshd -T instead of its deprecated alias
+        "without-password".
+      <li>ssh(1): make writing known_hosts lines more atomic by writing
+        the entire line in one operation and using unbuffered stdio.
+        <p>
+        Usually writes to this file are serialised on the "Are you sure you
+        want to continue connecting?" prompt, but if host key checking is
+        disabled and connections were being made with high concurrency
+        then interleaved writes might have been possible.
     </ul>
   </ul>
 
