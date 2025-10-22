@@ -1,7 +1,7 @@
 # Makefile for WWW subdirectory.
 
-STABLE_VERSION=	7.7
-PREV_VERSION=	7.6
+STABLE_VERSION=	7.8
+PREV_VERSION=	7.7
 
 # also update mirrors/openbgpd-ftp.html.head
 OPENBGPD_VERSION=		8.9
@@ -56,3 +56,4 @@ clean:
 version:
 	sh versionup ${STABLE_VERSION} ${PREV_VERSION}
 	make anoncvs ftp
+	rm ../mirror_list
