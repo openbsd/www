@@ -32,10 +32,13 @@ X1) Find enough disk space to hold the anoncvs tree, and mount it in an
 X   appropriate place.
 X
 X2) Compile and install anoncvssh, the shell used for the anoncvs user.
+X   Install the cvsync client using 'pkg_add cvsync' command.
+X   ( If you aren't using OpenBSD you'll probably need to compile a cvsync
+X     client as well. The easier path is to use OpenBSD ;).
 X
 X3) Add the anoncvs user to the password file, with no password, and
-X   anoncvssh as it's shell. Decide on a user that will run reposync to
-X   maintain the archive (this is a different user, NOT the anoncvs user).
+X   anoncvssh as it's shell. Decide on a user that will run cvsync to maintain
+X   the archive (this is a different user, NOT the anoncvs user).
 X
 X4) Make a home directory for the anoncvs user. The anoncvs user's
 X   home directory is a chroot jail in which the anoncvssh processes
@@ -46,16 +49,18 @@ X   statically. This example shows what is needed for OpenBSD. If you
 X   use another platform you'll need to be familiar with what needs
 X   to go in a chroot jail for your platform.
 X
-X5) Using reposync, retrieve the cvs tree from an appropriate place.
+X5) Get permission to use cvsync to obtain the cvs tree from a server.
 X
-X6) Once you get the distribution in, set up a cron job to run reposync
+X6) Set up cvsync to retrieve the cvs tree from an appropriate place.
+X
+X7) Run cvsync to retrieve the distribution from the server.
+X
+X8) Once you get the distribution in, set up a cron job to run cvsync
 X   periodically to keep your server up to date.
 X
 X**********************************************************************
 XSTEP 1) find enough disk space.
-X    As of early 2024, you need a minimum of around 12GB for the
-X    repository and some space for temporary files. 20GB would be
-X    better to allow room for growth.
+X    You need roughly 6GB.
 X    Mount it on /open, make sure it doesn't have nosuid and nodev flags.
 X    If you are not able to mount it as /open, substitute it's location
 X    throughout the rest of this description.
@@ -66,9 +71,9 @@ X    In the Makefile, change the variable CVSROOT.
 X    Install the binary setuid-root in /open/anoncvssh.
 X
 X**********************************************************************
-XSTEP 3) Create the anoncvs account and decide who will run "reposync"
+XSTEP 3) Create the anoncvs account and decide who will run "cvsync"
 X    to maintain the archive. The anoncvs account should *NOT* be the one
-X    running reposync to maintain the archive.
+X    running cvsync to maintain the archive.
 X
 Xcreate an account similar to:
 X
@@ -78,9 +83,9 @@ XYes, that is right - the account has no password. Be sure that the
 Xuid and gid are unique for your system, if the ones above aren't,
 Xpick different values.
 X
-XDecide who will run reposync to maintain the archive. Call that user
-X$REPOSYNCUSER.  Oh, and in case it hasn't been previously mentioned,
-X$REPOSYNCUSER should *NOT* be the anoncvs user :).
+XDecide who will run cvsync to maintain the archive. Call that user
+X$CVSYNCUSER.  Oh, and in case it hasn't been previously mentioned,
+X$CVSYNCUSER should *NOT* be the anoncvs user :).
 X
 XAdd the following to the end of your /etc/ssh/sshd_config and restart
 Xyour sshd daemon:
@@ -92,20 +97,14 @@ X        AllowAgentForwarding no
 X        X11Forwarding no
 X        PermitTTY no
 X
-XIf you will also run an rsync daemon to allow downstream reposync
-Xconnections, instead of using "AllowTcpForwarding no", permit local
-Xforwarding to the rsync port:
-X
-X        AllowTcpForwarding local
-X        PermitOpen localhost:873
-X
 X**********************************************************************
 XSTEP 4) Build the anoncvs user's home directory chroot jail. This
 X    example assumes that you're using OpenBSD. If you're not you
 X    may need different files in the chroot.
 X
-Xmkdir -p /open/anoncvs/cvs
-Xchown -R $REPOSYNCUSER /open/anoncvs
+Xmkdir /open/anoncvs
+Xmkdir /open/anoncvs/cvs
+Xchown -R $CVSYNCUSER /open/anoncvs/cvs /open/anoncvs
 X
 XStart filling the account up with nice stuff. You are building a chroot
 Xjail for anoncvs in /open/anoncvs.
@@ -116,19 +115,12 @@ X    touch .profile
 X    mkdir bin dev tmp usr var etc
 X    cp /bin/{cat,pwd,rm,sh} bin/
 X
-XConsider mounting a memory filesystem at /open/anoncvs/tmp. This can
-Ximprove access times for users.
-X
 XUsing mknod, make a dev/null that has the same major/minor numbers as
 X    your /dev/null, and make it mode 666.
 X
 XSome shared library systems require a dev/zero created in the same way.
-XThis is not needed on at least amd64.
 X
-XPrevious versions of this document advised filling etc space for the
-Xaccount. This seems to no longer be needed, so try without, but in
-Xcase you run into problems:
-X
+XFill etc space for the account
 X    cp /etc/{group,hosts,passwd,protocols} etc/
 X    cp /etc/{pwd.db,resolv.conf,services,ttys} etc/
 X    modify these files to suit your idea of system security
@@ -156,72 +148,115 @@ X
 XIf using shared libraries, use ldd to find out which shared libs you need:
 X    # ldd /usr/bin/cvs
 X        /usr/bin/cvs:
-X                Start            End              Type  Open Ref GrpRef Name
-X                0000095484470000 0000095484513000 exe   1    0   0      /usr/bin/cvs
-X                00000956e6fb6000 00000956e6fd4000 rlib  0    1   0      /usr/lib/libz.so.7.0
-X                00000956e3787000 00000956e387e000 rlib  0    1   0      /usr/lib/libc.so.99.0
-X                00000956c1ab9000 00000956c1ab9000 ld.so 0    1   0      /usr/libexec/ld.so
+X                Start    End      Type Open Ref GrpRef Name
+X                1c000000 3c01f000 exe  1    0   0      /usr/bin/cvs
+X                0f802000 2f80a000 rlib 0    1   0      /usr/lib/libz.so.5.0
+X                094d2000 2950b000 rlib 0    1   0      /usr/lib/libc.so.84.2
+X                094ca000 094ca000 rtld 0    1   0      /usr/libexec/ld.so
 X
 X    and then copy the required libraries to usr/lib/
 X
 XAs a final pass, make sure that all the files you have just created are
 Xnot world writable (except dev/null).
 X
-XThese binaries and libraries should be updated after updating to new
-Xreleases (or even at boot, so that the library linking order is
-Xrandomised via the "library aslr" mechanism).
+XFor :pserver: support (optional)
+X  - Create an entry in /etc/services
+X     cvspserver 2401/tcp    # CVS client/server operations
+X  - Create an entry in /etc/inetd.conf
+X     cvspserver stream tcp nowait anoncvs /open/anoncvssh anoncvssh pserver
+X  - Create a file /open/anoncvs/cvs/CVSROOT/passwd with the following entry
+X        anoncvs:AHDysQkJIubEc
+X    which would be a password of "anoncvs" (as per anoncvs.html)
+X  - Create a file /open/anoncvs/cvs/CVSROOT/readers with a single entry:
+X        anoncvs
+X    which tells cvs that user "anoncvs" is allowed readonly access.
+X  - Create a zero-length file /open/anoncvs/cvs/CVSROOT/writers since you don't
+X    want anyone to be able to write to the mirror.
+X        % cp /dev/null /open/anoncvs/cvs/CVSROOT/writers
+X
+XSee the example layout below for full details.
 X
 X**********************************************************************
-XSTEP 5): Run reposync to retrieve the tree for the first time.
-XInstall the reposync script using 'pkg_add reposync' command.
-XThis is a wrapper around rsync which makes it easy to run over an
-X"anonymous" ssh-forwarded connection and carries out some extra
-Xchecks to avoid some full syncs when the tree has not changed.
-XIf you aren't using OpenBSD you'll need a similar script.
-X
-XChoose an upstream mirror from https://www.openbsd.org/anoncvs.html.
-XSelect one that shows reposync without the -p flag so that the sync
-Xis run over an ssh-forwarded connection. Second-level mirrors will
-Xneed to ask beck or sthen for access to the unlisted primary server
-Xwhich is IP-restricted.
-X
-XLog in as or become the $REPOSYNCUSER, and run
-X
-Xreposync rsync://anoncvs.example.org/cvs /open/anoncvs/cvs
-X
-XYou should see a list of files start coming in after a short while.
-XIf you get a timeout or failure partway through syncing, simply
-Xrestart and it should continue where it left off.
+XSTEP 5): Get cvsync permission.
+Xsend mail to sup@openbsd.org
+X1) to have cvsync permissions granted on an appropriate machine for you
+X   to cvsync from. We will need to know your host's real hostname and
+X   IP address.
+X2) to have an anoncvsN.COUNTRY.openbsd.org alias created.
+X3) to have your site mentioned in the http://www.openbsd.org/anoncvs.html page.
 X
 X**********************************************************************
-XSTEP 6): Set up cron to keep the tree up to date.
+XSTEP 6): Configure cvsync.
 X
-XYou run reposync periodically from the cron by setting up the crontab file
-Xof the $REPOSYNCUSER.
+XYou have to install cvsync package.
 X
-XFor example, to update every two hours, using OpenBSD extensions to
-Xrun at a random minute of the hour (~) and suppress output unless
-Xthere's an error (-n):
+XThe file /etc/cvsync.conf contains the configuration of cvsync. It will
+Xnormally contain:
 X
-X~ */2 * * * -n /usr/local/bin/reposync rsync://anoncvs.example.org/cvs /open/anoncvs/cvs
+Xconfig {
+X        base-prefix /open/anoncvs/
+X        hostname anoncvs.ca.openbsd.org
+X        collection {
+X                name openbsd-cvsroot release rcs
+X                prefix cvs
+X        }
+X        collection {
+X                name openbsd-src release rcs
+X                prefix cvs
+X        }
+X        collection {
+X                name openbsd-ports release rcs
+X                prefix cvs
+X        }
+X        collection {
+X                name openbsd-www release rcs
+X                prefix cvs
+X        }
+X        collection {
+X                name openbsd-xenocara release rcs
+X                prefix cvs
+X        }
+X}
 X
-X/open/anoncvs/tmp will need to be cleared from time to time, otherwise
-Xfiles will build up from interrupted client connections:
+X**********************************************************************
+XSTEP 7): Run cvsync to retrieve the tree for the first time.
 X
-X~ * * * * find /open/anoncvs/tmp -mtime +3 -delete 2>&1 | grep -v 'No such file or directory'
+XLog in as or become the $CVSYNCUSER, and run
+X
+Xcvsync > /tmp/cvsynclog &; tail -f /tmp/cvsynclog
+X
+XIf you have cvsync permission, and have specified the correct host and
+Xprefix in /etc/cvsync.conf you should see a list of files start
+Xcoming in after a short while. Don't panic if nothing happens
+Ximmediately.  Watch for errors (cvsync can timeout or die). If you can't
+Xaccess files contact the cvsync server maintainer. If you get a timeout
+Xor if cvsync dies you can restart and it should continue where it left off.
+X
+XIt can take a good while (and a couple of restarts) to obtain the
+Xwhole tree for the first time.
+X
+X**********************************************************************
+XSTEP 8): Set up cron to keep the tree up to date.
+X
+XYou run cvsync periodically from the cron by setting up the crontab file
+Xof the $CVSYNCUSER.
+X
+XFor example, to update every two hours:
+X
+X15 */2 * * * /usr/local/bin/cvsync > /dev/null
 X
 X**********************************************************************
 X
 XEXAMPLE LAYOUT
 X
-XExample layout for OpenBSD. In this example "cvs" is the $REPOSYNCUSER.
+XExample layout for OpenBSD. In this example "deraadt" is the $CVSYNCUSER.
 X
 X$ cd /open
 X$ ls -alF
 Xtotal 64
 Xdrwxr-xr-x   5 root    wheel     512 Jun 18 22:29 ./
 Xdrwxr-xr-x  13 root    wheel     512 Jun  4 05:14 ../
-Xdrwxr-xr-x   9 cvs     wheel     512 Jun  3 02:15 anoncvs/
+Xdrwxr-xr-x   9 deraadt wheel     512 Jun  3 02:15 anoncvs/
 X---s--x--x   1 root    wheel   14302 Jun 18 22:29 anoncvssh*
 Xdrwxr-xr-x   4 root    wheel    5120 Jun 10 14:34 ftp/
 X
@@ -234,7 +269,7 @@ X-rw-r--r--   1 root    wheel      0 Jun  3 01:50 .hushlogin
 X-rw-r--r--   1 root    wheel     84 Jun  3 01:50 .plan
 X-rw-r--r--   1 root    wheel      0 Jun  3 01:50 .profile
 Xdrwxr-xr-x   2 root    wheel    512 Jun  3 01:40 bin/
-Xdrwxr-xr-x   7 cvs     wheel    512 Jun 18 22:19 cvs/
+Xdrwxr-xr-x   7 deraadt wheel    512 Jun 18 22:19 cvs/
 Xdrwxr-xr-x   2 root    wheel    512 Jun  3 01:51 dev/
 Xdrwxr-xr-x   2 root    wheel    512 Jun  3 01:53 etc/
 Xdrwxrwxrwx  10 root    wheel    512 Jun 18 17:38 tmp/
