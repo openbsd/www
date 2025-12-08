@@ -55,6 +55,7 @@ FAQ - Virtual Private Networks (VPN)
     </ul>
     <li><a href="#clientwindows">With a Windows Client</a>
   </ul>
+  <li><a href="#sec"            >Route-based IPsec VPNs</a>
   <li><a href="#clientikev1"    >Connecting to an IKEv1/L2TP OpenBSD VPN</a>
 </ul>
 
@@ -257,6 +258,136 @@ ikev2 'server2_rsa' active esp \
         peer 192.0.2.1 \
         srcid server2.domain
 </pre>
+
+<h2 id="sec">Route-based IPsec VPNs</h2>
+
+IPsec VPNs are traditionally configured as &quot;policy-based&quot;
+VPNs where entries in the Security Policy Database (SPD) define
+which packets are to be processed by the relevant Security Associations
+(SAs). An alternative to this approach is &quot;route-based&quot;
+VPNs, where SAs are configured for use by a tunnel interface, and
+routing packets over this interface is the mechanism by which packets
+get processed by those SAs. This enables capabilities such as Equal
+Cost Multi-Path (ECMP) routing, or the use of dynamic routing
+protocols such as OSPF and BGP for steering traffic over IPsec
+protected links.
+
+<p>
+OpenBSD supports route-based IPsec VPNs via the
+<a href="https://man.openbsd.org/sec.4">sec(4)</a> tunnel interface
+driver, which can be configured for use with IKEv2 VPNS using
+<a href="https://man.openbsd.org/iked.8">iked(8)</a>,
+or IKEv1 VPNs using
+<a href="https://man.openbsd.org/isakmpd.8">isakmpd(8)</a> and
+<a href="https://man.openbsd.org/ipsec.conf.5">ipsec.conf(5)</a>.
+
+<p>
+The site-to-site VPN demonstrated above can be implemented as a
+route-based VPN. The major differences from the policy-based
+configuration is the addition of a sec(4) interface on each server,
+and using routes instead of traffic selectors in iked.conf to steer
+traffic. Because sec(4) is a point-to-point interface, it needs IP
+addresses to be allocated and configured on each server for routes
+to use as gateway addresses.
+
+<p>
+<code>/etc/hostname.sec0</code> provides the configuration for the
+sec0 interface and routes on server1:
+
+<pre class="cmdbox">
+inet 192.168.0.1 255.255.255.255 192.168.0.2
+up
+!/sbin/route -qn add 10.0.2.0/24 192.168.0.2
+</pre>
+
+<p>
+<code>/etc/iked.conf</code> on server1 is adapted to configure
+SAs for use by sec0 instead of traffic selectors:
+
+<pre class="cmdbox">
+ikev2 'server1_rsa' passive esp \
+        from any to any \
+        local 192.0.2.1 peer 198.51.100.1 \
+        srcid server1.domain \
+        iface sec0
+</pre>
+
+<p>
+<code>/etc/hostname.sec0</code> on server2:
+
+<pre class="cmdbox">
+inet 192.168.0.2 255.255.255.255 192.168.0.1
+up
+!/sbin/route -qn add 10.0.1.0/24 192.168.0.1
+</pre>
+
+<p>
+<code>/etc/iked.conf</code> on server2:
+
+<pre class="cmdbox">
+ikev2 'server2_rsa' active esp \
+        from any to any \
+        peer 192.0.2.1 \
+        srcid server2.domain \
+        iface sec0
+</pre>
+
+Once the configuration has been applied you can see the SAs, but
+no flows as the routing table is used to steer traffic instead of
+SPD entries:
+
+<pre class="cmdbox">
+server1# <b>ipsecctl -sa</b>
+FLOWS:
+
+SAD:
+esp tunnel from 192.0.2.1 to 198.51.100.1 spi 0x729e61a5 auth hmac-sha2-256 enc aes-256
+esp tunnel from 198.51.100.1 to 192.0.2.1 spi 0x361e3a70 auth hmac-sha2-256 enc aes-256
+server1# <b>route -n get 10.0.2.0/24</b>
+   route to: 10.0.2.0
+destination: 10.0.2.0
+       mask: 255.255.255.0
+    gateway: 192.168.0.2
+  interface: sec0
+ if address: 192.168.0.1
+   priority: 8 (static)
+      flags: <GATEWAY,DONE,STATIC>
+     use       mtu    expire
+       0         0         0 
+</pre>
+
+<pre class="cmdbox">
+server2# <b>ipsecctl -sa</b>
+FLOWS:
+
+SAD:
+esp tunnel from 192.0.2.1 to 198.51.100.1 spi 0x729e61a5 auth hmac-sha2-256 enc aes-256
+esp tunnel from 198.51.100.1 to 192.0.2.1 spi 0x361e3a70 auth hmac-sha2-256 enc aes-256
+server2# <b>route -n get 10.0.1.0/24</b>
+   route to: 10.0.1.0
+destination: 10.0.1.0
+       mask: 255.255.255.0
+    gateway: 192.168.0.1
+  interface: sec0
+ if address: 192.168.0.2
+   priority: 8 (static)
+      flags: <GATEWAY,DONE,STATIC>
+     use       mtu    expire
+       0         0         0 
+</pre>
+
+<p>
+Note that route-based policy does not restrict which source addresses
+can traverse the sec(4) tunnel, unlike the traffic selectors which
+would create SPD entries that would apply only when both the source
+and destination addresses matched what was configured. However, pf
+can be used to filter packets traversing the sec(4) interfaces as
+expected.
+
+<p>
+The configuration can be extended to use a dynamic routing protocol
+to steer traffic over the sec(4) interfaces instead of statically
+configuring routes.
 
 <h2 id="clientikev2">Connecting to an IKEv2 VPN</h2>
 
