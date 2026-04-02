@@ -22,6 +22,334 @@
 Release Notes
 </h2>
 <hr>
+<h3><a href='txt/release-10.3' id='10.3'>OpenSSH 10.3</a>/<a href='txt/release-10.3' id='10.3p1'>10.3p1</a> (2026-04-02)</h3>
+<pre>
+OpenSSH 10.3 was released on 2026-04-02. It is available from the
+mirrors listed at <a href='https://www.openssh.com/'>https://www.openssh.com/</a>.
+OpenSSH is a 100% complete SSH protocol 2.0 implementation and
+includes sftp client and server support.
+
+Once again, we would like to thank the OpenSSH community for their
+continued support of the project, especially those who contributed
+code or patches, reported bugs, tested snapshots or donated to the
+project. More information on donations may be found at:
+<a href='https://www.openssh.com/donations.html'>https://www.openssh.com/donations.html</a>
+
+Potentially-incompatible changes
+--------------------------------
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>, <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: remove bug compatibility for implementations
+   that don't support rekeying. If such an implementation tries to
+   interoperate with OpenSSH, it will now eventually fail when the
+   transport needs rekeying.
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: prior to this release, a certificate that had an empty
+   principals section would be treated as matching any principal
+   (i.e. as a wildcard) when used via authorized_keys principals=""
+   option. This was intentional, but created a surprising and
+   potentially risky situation if a CA accidentally issued a
+   certificate with an empty principals section: instead of being
+   useless as one might expect, it could be used to authenticate as
+   any user who trusted the CA via authorized_keys. [Note that this
+   condition did not apply to CAs trusted via the <a href='https://man.openbsd.org/sshd_config.5'>sshd_config(5)</a>
+   TrustedUserCAKeys option.]
+
+   This release treats an empty principals section as never matching
+   any principal, and also fixes interpretation of wildcard
+   characters in certificate principals. Now they are consistently
+   implemented for host certificates and not supported for user
+   certificates.
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: the -J and equivalent -oProxyJump="..." options now
+   validate user and host names for ProxyJump/-J options passed
+   via the command-line (no such validation is performed for this
+   option in configuration files). This prevents shell injection in
+   situations where these were directly exposed to adversarial
+   input, which would have been a terrible idea to begin with.
+   Reported by rabbit.
+
+Changes since OpenSSH 10.2
+==========================
+
+This release contains some relatively minor security fixes as well
+as a number of feature improvements and general bugfixes.
+
+Security
+========
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: validation of shell metacharacters in user names supplied
+   on the command-line was performed too late to prevent some
+   situations where they could be expanded from %-tokens in
+   ssh_config. For certain configurations, such as those that use a
+   "%u" token in a "Match exec" block, an attacker who can control
+   the user name passed to <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a> could potentially execute arbitrary
+   shell commands.  Reported by Florian Kohnhäuser.
+
+   We continue to recommend against directly exposing <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a> and
+   other tools' command-lines to untrusted input. Mitigations such
+   as this can not be absolute given the variety of shells and user
+   configurations in use.
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: when matching an authorized_keys principals="" option
+   against a list of principals in a certificate, an incorrect
+   algorithm was used that could allow inappropriate matching in
+   cases where a principal name in the certificate contains a
+   comma character. Exploitation of the condition requires an
+   authorized_keys principals="" option that lists more than one
+   principal *and* a CA that will issue a certificate that encodes
+   more than one of these principal names separated by a comma
+   (typical CAs stronly constrain which principal names they will
+   place in a certificate). This condition only applies to user-
+   trusted CA keys in authorized_keys, the main certificate
+   authentication path (TrustedUserCAKeys/AuthorizedPrincipalsFile)
+   is not affected. Reported by Vladimir Tokarev.
+
+ * <a href='https://man.openbsd.org/scp.1'>scp(1)</a>: when downloading files as root in legacy (-O) mode and
+   without the -p (preserve modes) flag set, scp did not clear
+   setuid/setgid bits from downloaded files as one might typically
+   expect. This bug dates back to the original Berkeley rcp program.
+   Reported by Christos Papakonstantinou of Cantina and Spearbit.
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: fix incomplete application of PubkeyAcceptedAlgorithms
+   and HostbasedAcceptedAlgorithms with regard to ECDSA keys.
+   Previously if one of these directives contains any ECDSA algorithm
+   name (say "ecdsa-sha2-nistp384"), then any other ECDSA algorithm
+   would be accepted in its place regardless of whether it was
+   listed or not.  Reported by Christos Papakonstantinou of Cantina
+   and Spearbit.
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: connection multiplexing confirmation (requested using
+   "ControlMaster ask/autoask") was not being tested for proxy mode
+   multiplexing sessions (i.e. "ssh -O proxy ..."). Reported by
+   Michalis Vasileiadis.
+
+New features
+------------
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>, <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: support IANA-assigned codepoints for SSH agent
+   forwarding, as per draft-ietf-sshm-ssh-agent. Support for the new
+   names is advertised via the EXT_INFO message. If a server offers
+   support for the new names, then they are used preferentially.
+
+   Support for the pre-standardisation "@openssh.com" extensions for
+   agent forwarding remains supported.
+
+ * <a href='https://man.openbsd.org/ssh-agent.1'>ssh-agent(1)</a>: implement support for draft-ietf-sshm-ssh-agent
+   "query" extension.
+
+ * <a href='https://man.openbsd.org/ssh-add.1'>ssh-add(1)</a>: support querying the protocol extensions via the
+   agent "query" extension with a new -Q flag.
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: support multiple files in a ssh_config RevokedHostKeys
+   directive. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3918'>bz3918</a>
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: support multiple files in a sshd_config RevokedKeys
+   directive <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3918'>bz3918</a>
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: add a ~I escape option that shows information about the
+   current SSH connection.
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: add an "ssh -Oconninfo user@host" multiplexing command
+   that shows connection information, similar to the ~I escapechar.
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: add an "ssh -O channels user@host" multiplexing command to
+   get a running mux process to show information about what channels
+   are currently open.
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: add 'invaliduser' penalty to PerSourcePenalties, which is
+   applied to login attempts for usernames that do not match real
+   accounts. Defaults to 5s to match 'authfail' but allows
+   administrators to block such attempts for longer if desired.
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: add a GSSAPIDelegateCredentials option for the server,
+   controlling whether it accepts delegated credentials offered by
+   the client.  This option mirrors the same option in ssh_config.
+   <a href='https://github.com/openssh/openssh-portable/pull/614'>GHPR614</a>
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>, <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: support the VA DSCP codepoint in the IPQoS
+   directive.
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: convert PerSourcePenalties to using floating point time,
+   allowing penalties to be less than a second. This is useful if you
+   need to penalise things you expect to occur at &gt;=1 QPS.
+
+ * <a href='https://man.openbsd.org/ssh-keygen.1'>ssh-keygen(1)</a>: support writing ED25519 keys in PKCS8 format.
+   <a href='https://github.com/openssh/openssh-portable/pull/570'>GHPR570</a>
+
+ * Support the ed25519 signature scheme via libcrypto.
+
+Bugfixes
+--------
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: make IPQoS first-match-wins in sshd_config, like other
+   configuration directives. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3924'>bz3924</a>
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: fix potential crash when MaxStartups is using a single
+   argument (i.e. not using the MaxStartps x:y:z form) to a value
+   below 10. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3941'>bz3941</a>
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: fix a potential hang during key exchange if needed DH
+   group values were missing from /etc/moduli.
+
+ * <a href='https://man.openbsd.org/ssh-agent.1'>ssh-agent(1)</a>: fix return values from extensions to be correct wrt
+   draft-ietf-sshm-ssh-agent: extension requests should indicate
+   failure using SSH_AGENT_EXTENSION_FAILURE rather than the generic
+   SSH_AGENT_FAILURE error code. This allows the client to discern
+   between "the request failed" and "the agent doesn't support this
+   extension".
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: use fmprintf for showing challenge-response name and info
+   to preserve UTF-8 characters where appropriate. Prompted by GitHub
+   <a href='https://github.com/openssh/openssh-portable/pull/452'>PR#452</a>.
+
+ * <a href='https://man.openbsd.org/scp.1'>scp(1)</a>: when uploading a directory using sftp/sftp (e.g. during a
+   recursive transfer), don't clobber the remote directory
+   permissions unless either we created the directory during the
+   transfer or the -p flag was set. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3925'>bz3925</a>
+
+ * All: implement missing pieces of FIDO/webauthn signature support,
+   mostly related to certificate handling and enable acceptance of this
+   signature format by default.  <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3748'>bz3748</a> <a href='https://github.com/openssh/openssh-portable/pull/624'>GHPR624</a> <a href='https://github.com/openssh/openssh-portable/pull/625'>GHPR625</a>
+
+ * <a href='https://man.openbsd.org/sshd_config.5'>sshd_config(5)</a>: make it clear that DenyUsers/DenyGroups overrides
+   AllowUsers/AllowGroups. Previously we specified the order in which
+   the directives are processed but it was ambiguous as to what
+   happened if both matched.
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>: don't try to match certificates held in an agent to
+   private keys. This matching is done to support certificates that
+   were loaded without their private key material, but is
+   unnecessary for agent-hosted certificate which always have
+   private key material available in the agent. Worse, this matching
+   would mess up the request sent to the agent in such a way as to
+   break usage of these keys when the key usage was restricted in
+   the agent.  <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3752'>bz3752</a>
+
+ * <a href='https://man.openbsd.org/sftp.1'>sftp(1)</a>: if editline has been switched to vi mode (i.e. via "bind
+   -v" in .editrc), setup a keybinding so that command mode can be
+   entered.
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>, <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: improve performance of keying the sntrup761 key
+   agreement algorithm.
+
+ * <a href='https://man.openbsd.org/ssh.1'>ssh(1)</a>, <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: enforce maximum packet/block limit during
+   pre-authentication phase.
+
+ * <a href='https://man.openbsd.org/sftp.1'>sftp(1)</a>: don't misuse the sftp limits extension's open-handles
+   field. This value is supposed to be the number of handles a
+   server will allow to be opened and not a number of outstanding
+   read/write requests that can be sent during an upload/download.
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: don't crash at connection time if the main sshd_config
+   lacks any subsystem directive but one is defined in a Match block.
+   <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3906'>bz3906</a>
+
+ * <a href='https://man.openbsd.org/sshd_config.5'>sshd_config(5)</a>: add a warning next to the ForceCommand directive
+   that forcing a command doesn't automatically disable forwarding.
+
+ * <a href='https://man.openbsd.org/sshd_config.5'>sshd_config(5)</a>: add a warning that TOKENS are replaced without
+   filtering or escaping and that it's the administrator's
+   responsibility to ensure they are used safely in context.
+
+ * <a href='https://man.openbsd.org/scp.1'>scp(1)</a>: correctly quote filenames in verbose output for local-&gt;
+   local copies. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3900'>bz3900</a>
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: don't mess up the PerSourceNetBlockSize IPv6 mask if
+   sscanf didn't decode it. <a href='https://github.com/openssh/openssh-portable/pull/598'>GHPR598</a>
+
+ * <a href='https://man.openbsd.org/ssh-add.1'>ssh-add(1)</a>: when loading FIDO2 resident keys, set the comment to
+   the FIDO application string. This matches the behaviour of
+   ssh-keygen -K. <a href='https://github.com/openssh/openssh-portable/pull/608'>GHPR608</a>
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: don't strnvis() log messages that are going to be logged
+   by sshd-auth via its parent sshd-session process, as the parent
+   will also run them though strnvis(). Prevents double-escaping of
+   non-printing characters in some log messages. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3896'>bz3896</a>
+
+ * <a href='https://man.openbsd.org/ssh-agent.1'>ssh-agent(1)</a>: escape SSH_AUTH_SOCK paths that are sent to the
+   shell as setenv commands. Unbreaks ssh-agent for home directory
+   paths that contain whitespace. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3884'>bz3884</a>
+
+ * All: Remove unnecessary checks for ECDSA public key validity.
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: activate UnusedConnectionTimeout only after the last
+   channel has closed. Previously UnusedConnectionTimeout could fire
+   early after a ChannelTimeout. This was not a problem for the
+   OpenSSH client because it terminates once all channels have
+   closed but could cause problems for other clients (e.g. API
+   clients) that do things differently.  <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3827'>bz3827</a>
+
+ * All: fix PKCS#11 key PIN entry problems introduced in
+   openssh-10.1/10.2.  <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3879'>bz3879</a>
+
+ * <a href='https://man.openbsd.org/scp.1'>scp(1)</a>: when using the SFTP protocol for transfers, fix implicit
+   destination path selection when source path ends with "..". <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3871'>bz3871</a>
+
+ * <a href='https://man.openbsd.org/sftp.1'>sftp(1)</a>: when tab-completing a filename, ensure that the completed
+   string does not end up mid-way through a multibyte character, as
+   this will cause a fatal() later on. <a href='https://github.com/openssh/openssh-portable/pull/587'>GHPR#587</a>
+
+ * <a href='https://man.openbsd.org/ssh-keygen.1'>ssh-keygen(1)</a>: fix crash at exit (visible via ssh-keygen -D) when
+   multiple keys loaded.
+
+ * <a href='https://man.openbsd.org/scp.1'>scp(1)</a>/<a href='https://man.openbsd.org/sftp.1'>sftp(1)</a>: correctly display bandwidths &gt;2GBps in the
+   progress meter.
+
+Portability
+-----------
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: fix condition intoduced in openssh 10.2p1 stable branch
+   here a PAM module that changed the requested username between
+   SSH_MSG_USERAUTH_REQUEST messages during authentication could
+   confuse the PAM stack and let it proceed with a different
+   understanding of the active username than the rest of sshd.
+   Reported by Mike Damm.
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: immediately report interactive instructions to clients
+   when using keyboard-interactive authentication with PAM. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=2876'>bz2876</a>
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: fix duplicate PAM messages under some situations.
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: don't leak PAM handle on repeat invocations. <a href='https://bugzilla.mindrot.org/show_bug.cgi?id=3882'>bz3882</a>
+
+ * All: support linking libcrypto implementations (e.g. BoringSSL)
+   that require libstdc++.
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: fix ut_type for btmp records, correctly using
+   LOGIN_PROCESS and USER_PROCESS.
+
+ * <a href='https://man.openbsd.org/sshd.8'>sshd(8)</a>: allow uname(3) in the seccomp sandbox. This is needed by
+   zlib-ng on RISC-V platforms.
+
+ * All: remove remaining OpenSSL_add_all_algorithms() calls.
+   We already have OPENSSL_init_crypto() in the compat layer.
+   Prompted by github <a href='https://github.com/openssh/openssh-portable/pull/606'>PR#606</a>
+
+ * All: fix builds on older Mac OS wrt nfds_t.
+
+ * mdoc2man: several improvements including better support for Dl
+   and Ns inside Ic.
+
+Checksums:
+==========
+
+ - SHA1 (<a href='https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/openssh-10.3.tar.gz'>openssh-10.3.tar.gz</a>) = 854863c04cd28242d73ac6c3ee9c37fa756f1a2f
+ - SHA256 (<a href='https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/openssh-10.3.tar.gz'>openssh-10.3.tar.gz</a>) = aCU5P47rM+m4N8/i2JOHMOMhafMYqBhvQQSnPXczN5M=
+
+ - SHA1 (<a href='https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-10.3p1.tar.gz'>openssh-10.3p1.tar.gz</a>) = 9c78838ec07af14aff54f3755ac56ce6812452a9
+ - SHA256 (<a href='https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-10.3p1.tar.gz'>openssh-10.3p1.tar.gz</a>) = VmgqNruS3PS08Bb9jsjnQFm3mo3iXBXWcNcx59GORfQ=
+
+Please note that the SHA256 signatures are base64 encoded and not
+hexadecimal (which is the default for most checksum tools). The PGP
+key used to sign the releases is available from the mirror sites:
+<a href='https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/RELEASE_KEY.asc'>https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/RELEASE_KEY.asc</a>
+
+Reporting Bugs:
+===============
+
+- Please read <a href='https://www.openssh.com/report.html'>https://www.openssh.com/report.html</a>
+  Security bugs should be reported directly to openssh@openssh.com
+</pre><hr>
 <h3><a href='txt/release-10.2' id='10.2'>OpenSSH 10.2</a>/<a href='txt/release-10.2' id='10.2p1'>10.2p1</a> (2025-10-10)</h3>
 <pre>
 OpenSSH 10.2 was released on 2025-10-10. It is available from the
@@ -13512,4 +13840,4 @@ Damien Miller
 
 [1] <a href='http://violet.ibs.com.au/openssh/files/ChangeLog'>http://violet.ibs.com.au/openssh/files/ChangeLog</a>
 </pre><hr>
-<p>$OpenBSD: releasenotes.html,v 1.82 2026/03/10 10:23:28 sthen Exp $
+<p>$OpenBSD: releasenotes.html,v 1.83 2026/04/02 09:11:37 djm Exp $
