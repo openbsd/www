@@ -7,7 +7,7 @@
 use strict;
 use warnings 'all';
 use IO::Handle;		# for $fh->getlines()
-my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.55 2023/01/05 17:48:48 sthen Exp $';
+my $RCS_ID = '$OpenBSD: mirrors.pl,v 1.56 2026/07/27 22:19:15 naddy Exp $';
 
 my %format;
 $format{'alias'}	= 'Host also known as <strong>%s</strong>.';
@@ -94,7 +94,7 @@ sub read_mirrors ($) {
 			# before pushing, else die
 			push(@mirrors, $record) if (int(keys(%$record)));
 			$record = {};		# new empty one
-		} elsif ($line =~ /^(S[DER2])\s+(.*)/) {
+		} elsif ($line =~ /^(S[EMR2])\s+(.*)/) {
 			if ($record->{$1}) {
 				$record->{$1} .= ", <code>".$2."</code>";	# append key/value pair
 			} else {
@@ -291,13 +291,15 @@ sub _paste_mirrorlist($$$$$$) {
 			}
 			printf $fh $format{'fingerprints'}."<br>\n"
 				if ($mirror->{'SR'} || $mirror->{'SE'} ||
-					$mirror->{'S2'});
+					$mirror->{'S2'}) || $mirror->{'SM'};
 			print $fh "(RSA) $mirror->{'SR'}<br>\n"
 				if ($mirror->{'SR'});
 			print $fh "(ECDSA) $mirror->{'SE'}<br>\n"
 				if ($mirror->{'SE'});
 			print $fh "(ED25519) $mirror->{'S2'}<br>\n"
 				if ($mirror->{'S2'});
+			print $fh "(MLDSA44-ED25519) $mirror->{'SM'}<br>\n"
+				if ($mirror->{'SM'});
 			print $fh "<p>\n";
 		}
 	}
