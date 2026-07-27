@@ -175,6 +175,9 @@ pass out [log] on interface [af] [proto protocol] \
 <dd>When a packet traverses the ruleset and matches a <code>match</code>
     rule, any optional parameters specified in that rule are remembered
     for future use (made "sticky").
+<dd>If a <code>match</code> rule applies a network address translation
+    (<code>nat-to</code>, etc), any subsequent rules will compare
+    against the new translated address, not the original address.
 <p>
 <dt><code>pass</code>
 <dd>This rule allows the packet to be transmitted.
@@ -244,6 +247,12 @@ pass out [log] on interface [af] [proto protocol] \
       <li>A <a href="tables.html">table</a>.
       <li>Any of the above but negated using the <code>!</code> ("not")
           modifier.
+	<ul>
+          <li>Special care is needed if this expands to multiple
+              rules for multiple addresses!<br>
+              <code>pass from !192.0.2.1</code> and <code>pass from !192.0.2.2</code>
+	      is equivalent to just <code>pass</code>.
+        </ul>
       <li>A set of addresses using a <a href="macros.html#lists">list</a>.
       <li>The keyword <code>any</code> meaning all addresses
     </ul>
@@ -335,13 +344,6 @@ used.
 This would lead to a most basic form of these lines similar to this:
 
 <pre class="cmdbox">
-match out on tl0 from 192.168.1.0/24 to any nat-to 198.51.100.1
-pass on tl0 from 192.168.1.0/24 to any
-</pre>
-
-Or the following may be used:
-
-<pre class="cmdbox">
 pass out on tl0 from 192.168.1.0/24 to any nat-to 198.51.100.1
 </pre>
 
@@ -350,37 +352,50 @@ packets coming from 192.168.1.0/24 and to replace the source IP address
 with 198.51.100.1.
 
 <p>
-While the above rule is correct, it is not recommended form.
-Maintenance could be difficult as any change of the external or internal
-network numbers would require the line to be changed.
-Compare instead with this easier to maintain line (<code>tl0</code> is
-external, <code>dc0</code> internal):
+A more advanced form might take care of address translation first
+(possibly much earlier in the ruleset), and then pass permitted traffic:
 
 <pre class="cmdbox">
-pass out on tl0 inet from dc0:network to any nat-to tl0
+# using "tag"
+match out inet from 192.168.1.0/24 to any nat-to 198.51.100.1 tag natted
+pass out on tl0 to any tagged natted
+
+# or using "received-on"
+match out inet from dc0:network to any nat-to 195.51.100.1
+pass out on tl0 received-on dc0
+</pre>
+
+Rather than hard-coding addresses, it is also possible to specify interface
+names (and optional modifiers) instead:
+
+<pre class="cmdbox">
+match out inet from dc0:network to any nat-to tl0
+pass out on tl0 received-on dc0
 </pre>
 
 The advantage should be fairly clear: the IP addresses of either interface
 can be changed without changing this rule.
-Note that <code>inet</code> should be specified in this case to ensure that
-only IPv4 addresses are used, avoiding unexpected surprises.
+For <code>nat-to</code>, you will usually want to avoid translating IPv6
+traffic: <code>inet</code> will restrict to only matching IPv4 traffic,
+avoiding unexpected surprises.
 
 <p>
 When specifying an interface name for the translation address as above,
 the IP address is determined at pf.conf <i>load</i> time, not on the fly.
-If DHCP is being used to configure the external interface, this can be
-a problem.
-If the assigned IP address changes, NAT will continue translating outgoing
-packets using the old IP address.
+If DHCP or PPP is being used to configure the external interface, this can
+be a problem: if the assigned IP address changes, NAT will continue translating
+outgoing packets using the old IP address.
 This will cause outgoing connections to stop functioning.
 To get around this, PF can automatically update the translation address by
 putting parentheses around the interface name:
 
 <pre class="cmdbox">
-pass out on tl0 inet from dc0:network to any nat-to (tl0)
+match out inet from dc0:network to any nat-to (tl0)
+pass out on tl0 received-on dc0
 </pre>
 
-This method works for translation to both IPv4 and IPv6 addresses.
+The downside is that it incurs a slight overhead of looking up the
+current address for each new connection.
 
 <h2 id="binat">Bidirectional Mapping (1:1 Mapping)</h2>
 
@@ -406,21 +421,6 @@ web_serv_ext = "198.51.100.6"
 pass on tl0 from $web_serv_int to any binat-to $web_serv_ext
 </pre>
 
-<h2 id="except">Translation Rule Exceptions</h2>
-
-If exceptions to NAT rules need to be provided in some cases, make sure
-the exceptions are handled by a filter rule which does not include the
-<code>nat-to</code> parameter.
-For example, if the NAT example above was modified to look like this:
-
-<pre class="cmdbox">
-pass out on tl0 from 192.168.1.0/24 to any nat-to 198.51.100.79
-pass out on tl0 from 192.168.1.208  to any
-</pre>
-
-Then the entire 192.168.1.0/24 network would have its packets translated to
-the external address 198.51.100.79 except for 192.168.1.208.
-
 <h2 id="status">Checking NAT Status</h2>
 
 To view the active NAT translations,
@@ -430,17 +430,18 @@ This option will list all the current NAT sessions:
 
 <pre class="cmdbox">
 # <b>pfctl -s state</b>
-fxp0 tcp 192.168.1.35:2132 (198.51.100.1:53136) -&gt; 198.51.100.10:22 TIME_WAIT:TIME_WAIT
-fxp0 udp 192.168.1.35:2491 (198.51.100.1:60527) -&gt; 198.51.100.33:53   MULTIPLE:SINGLE
+all tcp 192.168.1.35:2132 (198.51.100.1:53136) -&gt; 198.51.100.10:22 TIME_WAIT:TIME_WAIT
+all udp 192.168.1.35:2491 (198.51.100.1:60527) -&gt; 198.51.100.33:53   MULTIPLE:SINGLE
 </pre>
 
 Explanations (first line only):
 
 <dl>
-<dt>fxp0
-<dd>Indicates the interface that the state is bound to.
-    The word <code>self</code> will appear if the state is
-    <a href="options.html#state-policy"><code>floating</code></a>.
+<dt>all
+<dd>Indicates the interface that the state is bound to if the
+    <a href="options.html#state-policy">state-policy</a> is
+    <code>if-bound</code>, otherwise the word <code>all</code> will
+    appear if the state is <code>floating</code> (the default).
 </dl>
 <p>
 <dl>
