@@ -68,11 +68,11 @@ $1 == "F" { follow = substr($0, 3); next }
 
 function dump() {
 	print "<tr>"
-	print "<td>" 
+	print "<td>"
 		if (indv != "")
-			print "<i>" indv "</i><br>" 
+			print "<i>" indv "</i><br>"
 		if (org != "")
-			print "<b>" org "</b><br>" 
+			print "<b>" org "</b><br>"
 		if (addr != "")
 			print addr "<br>"
 		line = ""
@@ -88,7 +88,7 @@ function dump() {
 			line = line " " zip
 		print line "<br>"
 		if (phone != "")
-			print "Phone: " phone "<br>" 
+			print "Phone: " phone "<br>"
 		if (fax != "")
 			print "FAX: " fax "<br>"
 		if (email != "")

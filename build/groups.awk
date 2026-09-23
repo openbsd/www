@@ -62,14 +62,14 @@ $1 == "N" { note = substr($0, 3); next }
 
 function dump() {
 	print "<tr>"
-	print "<td>" 
+	print "<td>"
 		if (indv != "")
-			print indv "<br>" 
+			print indv "<br>"
 		print "<b>" org "</b><br>" addr
 	print "	<td>" city "<br>" prov
-	print "	<td>" 
+	print "	<td>"
 		if (phone != "")
-			print phone "<br>" 
+			print phone "<br>"
 		print freq
 	print "	<td>"
 		if (email != "")
