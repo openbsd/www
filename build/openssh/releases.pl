@@ -23,7 +23,7 @@ $ENV{'TZ'} = 'UTC';
 # we use the date the release notes were first committed.
 # Releases before that are listed in this hash which is checked before we
 # check cvs.  If we know the exact release date then it's listed here, if
-# not we list an empty string, which supresses the date from the output.
+# not we list an empty string, which suppresses the date from the output.
 my %date_override = (
 	'1.0pre2'	=> '1999-09-27',
 	'1.2pre3'	=> '1999-09-27',
