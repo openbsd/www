@@ -1,12 +1,12 @@
 # Makefile for WWW subdirectory.
 
-STABLE_VERSION=	7.9
-PREV_VERSION=	7.8
+STABLE_VERSION=	8.0
+PREV_VERSION=	7.9
 
 # also update mirrors/openbgpd-ftp.html.head
 OPENBGPD_VERSION=		9.3
 
-# also update mirrors/openntpd-ftp.html.head
+# also update mirrors/openntpd-portable.html.head
 OPENNTPD_PORTABLE_VERSION=	7.9p1
 
 # also update mirrors/rpki-client-portable.html.head
