@@ -13,13 +13,61 @@ my $dlurl = "https://cdn.openbsd.org/pub/OpenBSD/rpki-client";
 my $rfcurl = "https://datatracker.ietf.org/html/rfc";
 my $drafturl = "https://datatracker.ietf.org/doc/html";
 
-my @releases;
+my %releases = (
+	'6.6p2' => '2020-04-19',
+	'6.7p0' => '2020-05-18',
+	'6.7p1' => '2020-07-27',
+	'6.8p0' => '2020-10-20',
+	'6.8p1' => '2020-11-12',
+	'7.0' => '2021-04-15',
+	'7.1' => '2021-05-18',
+	'7.2' => '2021-09-21',
+	'7.3' => '2021-09-22',
+	'7.4' => '2021-10-30',
+	'7.5' => '2021-11-09',
+	'7.6' => '2022-02-07',
+	'7.7' => '2022-04-07',
+	'7.8' => '2022-04-09',
+	'7.9' => '2022-07-13',
+	'8.0' => '2022-09-11',
+	'8.2' => '2022-12-13',
+	'8.3' => '2023-03-19',
+	'8.4' => '2023-05-02',
+	'8.5' => '2023-07-28',
+	'8.6' => '2023-10-04',
+	'8.7' => '2023-12-20',
+	'8.8' => '2023-12-29',
+	'8.9' => '2024-02-12',
+	'9.0' => '2024-03-02',
+	'9.1' => '2024-06-19',
+	'9.2' => '2024-08-21',
+	'9.3' => '2024-09-19',
+	'9.4' => '2025-01-07',
+	'9.5' => '2025-04-08',
+	'9.6' => '2025-09-20',
+	'9.7' => '2026-01-13',
+	'9.8' => '2026-04-14',
+	'9.9' => '2026-08-22',
+);
 
 # For each rpki-client-*.txt file in txtdir, extract the release number
+# and date (hardcoded or extracted from cvs history).
 opendir(my $dh, $txtdir) || die $!;
 while (readdir $dh) {
+	my $file = $_;
 	next unless (/rpki-client-(.*).txt/);
-	push(@releases, $1);
+	my $rel = $1;
+	my $date = "";
+	if (!defined($releases{$rel})) {
+		$_ = `cd $txtdir && cvs log -r1.1 $file | grep date:`;
+		if (/date: (\S+)/) {
+			$date = $1;
+			$date =~ s|/|-|g;
+		} else {
+			die "failed to look up date for $file";
+		}
+		$releases{$rel} = $date;
+	}
 }
 
 sub output_release
@@ -64,10 +112,11 @@ sub numsort {
 }
 
 # Output the release notes in reverse revision order.
-foreach my $rel (reverse sort numsort @releases) {
+foreach my $rel (reverse sort numsort keys(%releases)) {
 	print "<h3><a href='#$rel' id='$rel'>rpki-client $rel</a> ";
-	print "(<a href='$dlurl/rpki-client-$rel.txt'>txt</a>, ";
-	print "<a href='$dlurl/rpki-client-$rel.tar.gz'>tar.gz</a>)";
+	print "($releases{$rel}) ";
+	print "<a href='$dlurl/rpki-client-$rel.txt'>txt</a>, ";
+	print "<a href='$dlurl/rpki-client-$rel.tar.gz'>tar.gz</a>";
 	print "</h3>\n";
 	print "<pre>\n";
 	output_release($rel);
