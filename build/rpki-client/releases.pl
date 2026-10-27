@@ -15,7 +15,7 @@ my $drafturl = "https://datatracker.ietf.org/doc/html";
 
 my @releases;
 
-# For each release-* file in the txtdir directory, extract the release number
+# For each rpki-client-*.txt file in txtdir, extract the release number
 opendir(my $dh, $txtdir) || die $!;
 while (readdir $dh) {
 	next unless (/rpki-client-(.*).txt/);
